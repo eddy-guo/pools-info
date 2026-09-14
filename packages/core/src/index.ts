@@ -13,3 +13,5 @@ export * from "./candles";
 export * from "./catalog";
 
 export * from "./holders";
+export * from "./analytics-types";
+export * from "./analytics";

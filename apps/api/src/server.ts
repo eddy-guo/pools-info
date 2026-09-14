@@ -64,7 +64,7 @@ export function createApi(
           try {
             const body = JSON.stringify(await reader.read(request));
             const bytes = Buffer.byteLength(body);
-            if (bytes > 2 * 1024 * 1024) throw Error("Response exceeds bound");
+            if (bytes > 8 * 1024 * 1024) throw Error("Response exceeds bound");
             if (request.route !== "ready") {
               evict(request.cacheKey);
               while (cache.size >= 256 || cacheBytes + bytes > 16 * 1024 * 1024)

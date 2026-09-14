@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { ProductWallet } from "./product-wallet";
+import { useQuery } from "./state";
 import { useEffect, useRef, useState } from "react";
 import styles from "./detail-design.module.css";
 import { WalletLaunches } from "./creators";
@@ -26,7 +28,7 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-export function WalletView({ address }: { address: string }) {
+function PoolWalletView({ address }: { address: string }) {
   const { market, error, loading } = useSelectedMarket(),
     { audits } = useLive(),
     { window: period, setWindow } = useWindow();
@@ -468,3 +470,12 @@ export function WalletView({ address }: { address: string }) {
   );
 }
 export const walletWindows: LiveWindow[] = ["24h", "7d", "30d", "All"];
+
+export function WalletView({ address }: { address: string }) {
+  const { params } = useQuery();
+  return params.has("pool") ? (
+    <PoolWalletView address={address} />
+  ) : (
+    <ProductWallet address={address} />
+  );
+}

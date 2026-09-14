@@ -2,7 +2,19 @@ import { test, expect } from "@playwright/test";
 import chain from "../../data/snapshots/chain.json";
 import catalog from "../../data/catalog/chain.json";
 import captured from "../../data/pools/index.json";
+import { preloadedProduct } from "../../apps/web/src/lib/product-server";
+import type {
+  AnalyticsExploreResponse,
+  AnalyticsPoolDetail,
+  AnalyticsLeaderboardResponse,
+  AnalyticsWalletResponse,
+} from "@pools/core";
 import {
+  buildHolderLedger,
+  buildAnalyticsModel,
+  leaderboardAnalytics,
+  walletAnalytics,
+  searchAnalytics,
   poolHref,
   walletHref,
   type PoolAudit,
@@ -74,8 +86,8 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   await expect(
     page
       .locator(".stat")
-      .filter({ has: page.getByText("Launches covered", { exact: true }) })
-      .getByText(String(chain.markets.length), { exact: true })
+      .filter({ has: page.getByText("Pools discovered", { exact: true }) })
+      .locator("strong")
       .filter({ visible: true }),
   ).toBeVisible();
   await expect(page.getByText("DEMO SNAPSHOT", { exact: true })).toHaveCount(0);
@@ -109,7 +121,7 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   await page.getByRole("button", { name: "Holders", exact: true }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Holder balances are not collected yet",
+      name: "Holder snapshot is processing",
     }),
   ).toBeVisible();
   expect(
@@ -119,46 +131,46 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   ).toBe(true);
   expect(errors).toEqual([]);
 });
-test("refresh failure retains data and recovers, with pause stopping automatic requests", async ({
+test("saved product refresh retains data during failures and recovers without browser RPC", async ({
   page,
 }) => {
+  const response = preloadedProduct(
+    "explore",
+    new URLSearchParams("q=" + market.token),
+  ) as AnalyticsExploreResponse;
   let calls = 0;
-  const updated = structuredClone(chain);
-  updated.generatedAt = new Date().toISOString();
-  updated.toTimestamp = Math.floor(Date.now() / 1000);
-  updated.toBlock += 100;
-  updated.markets[0].name = "Updated real token";
-  await page.clock.install();
-  await page.route("**/api/markets/", async (r) => {
+  await page.route("**/api/product/explore?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (!params.get("q")) return route.continue();
     calls++;
-    await r.fulfill(
-      calls === 1
-        ? { status: 503, json: { error: "unavailable" } }
-        : { json: updated },
-    );
+    if (calls === 2)
+      return route.fulfill({
+        status: 503,
+        json: { error: "Saved index unavailable" },
+      });
+    return route.fulfill({
+      json: { ...response, delivery: { source: "indexer", notice: null } },
+    });
   });
-  await page.goto("/");
-  await expect(
-    page.getByText("Updates delayed - showing last captured data", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Check now", exact: true }).click();
-  await expect(
-    page.getByText("Automatic updates active", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .locator(".desktop-pools, .mobile-pools")
-      .getByText("Updated real token", { exact: true })
-      .filter({ visible: true }),
-  ).toBeVisible();
+  await page.goto(`/?q=${market.token}`);
+  const row = page
+    .locator(".desktop-pools, .mobile-pools")
+    .getByText(market.name, { exact: true })
+    .filter({ visible: true });
+  await expect(row).toBeVisible();
   await page
-    .getByRole("button", { name: "Pause updates", exact: true })
+    .locator("main")
+    .getByRole("button", { name: "Refresh saved data" })
     .click();
-  const before = calls;
-  await page.clock.fastForward(65000);
-  expect(calls).toBe(before);
+  await expect(page.locator("main").getByRole("alert")).toBeVisible();
+  await expect(row).toBeVisible();
+  await page
+    .locator("main")
+    .getByRole("button", { name: "Refresh saved data" })
+    .click();
+  await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
+  await expect(row).toBeVisible();
+  expect(calls).toBe(3);
 });
 test("audited leaderboard links to real wallet metrics and scoped share cards, retaining audit on failure", async ({
   page,
@@ -302,18 +314,18 @@ test("server-generated card uses captured RPC audit data and returns a 1200 by 6
     (m) => m.accounting?.executions?.length && m.accounting.wallets.length,
   )!;
   const address = m.accounting!.wallets[0].address;
-  const response = await request.get(
-    `/cards/${address}.png?pool=${m.id}&launch=${m.launchTx}&window=All`,
-  );
+  const response = await request.get(`/cards/${address}.png?window=All`);
   expect(response.status()).toBe(200);
   expect(response.headers()["content-type"]).toContain("image/png");
   const image = await response.body();
   expect(image.readUInt32BE(16)).toBe(1200);
   expect(image.readUInt32BE(20)).toBe(630);
   expect((await request.get("/cards/not-an-address.png")).status()).toBe(404);
-  expect(
-    (await request.get(`/cards/${address}.png?realized=999999`)).status(),
-  ).toBe(400);
+  const spoofed = await request.get(
+    `/cards/${address}.png?window=All&realized=999999`,
+  );
+  expect(spoofed.status()).toBe(200);
+  expect(await spoofed.body()).toEqual(image);
   expect((await request.get(walletHref(address, m))).status()).toBe(200);
 });
 
@@ -389,7 +401,7 @@ test("chart separates interval from range, switches FDV and keeps seven trade pa
     timestamp: chain.toTimestamp - i,
   }));
   let requests = 0;
-  await page.route("**/api/markets/", (r) => {
+  await page.route(`**/api/markets/${market.id}/?*`, (r) => {
     requests++;
     return r.fulfill({ json: update });
   });
@@ -536,6 +548,9 @@ test("captured pool history loads without RPC and survives a failed refresh", as
     `7 / ${Math.ceil(saved.trades.length / 20)}`,
   );
   expect(marketRequests).toBe(initialRequests);
+  await page.route(`**/api/markets/${pool.id}/**`, (r) =>
+    r.fulfill({ status: 503, json: { error: "Unavailable" } }),
+  );
   await page
     .getByRole("button", { name: "Refresh pool data", exact: true })
     .click();
@@ -550,11 +565,14 @@ test("captured pool history loads without RPC and survives a failed refresh", as
   await expect(
     page.getByRole("button", { name: "Refresh pool data", exact: true }),
   ).toBeEnabled();
-  // A market-only capture must not accidentally start a network audit in offline mode.
+  // The expanded capture includes saved accounting, available without a network audit.
   const audit = await page.request.get(
     `/api/markets/${pool.id}/accounting/?launch=${pool.launchTx}`,
   );
-  expect(audit.status()).toBe(503);
+  expect(audit.status()).toBe(200);
+  const savedAudit = await audit.json();
+  expect(savedAudit.executions).toHaveLength(saved.trades.length);
+  expect(savedAudit.wallets.length).toBeGreaterThan(100);
 });
 
 test("existing device watchlists survive the design key migration and can stay empty", async ({
@@ -632,13 +650,16 @@ test("a captured losing wallet shows independently signed PnL and real creator c
 test("a stale market snapshot never presents old launches as just minted", async ({
   page,
 }) => {
-  const now = chain.toTimestamp + 6 * 60 * 60;
+  const latest = [...catalog.pools, ...chain.markets].sort(
+    (a, b) => b.launchedAt - a.launchedAt,
+  )[0];
+  const now = latest.launchedAt + 6 * 60 * 60;
   await page.clock.install({ time: new Date(now * 1000) });
   await page.goto("/");
   const first = page
-    .locator(`.launch-card time[data-launched-at="${market.launchedAt}"]`)
+    .locator(`.launch-card time[data-launched-at="${latest.launchedAt}"]`)
     .first();
-  const ageMinutes = Math.floor((now - market.launchedAt) / 60);
+  const ageMinutes = Math.floor((now - latest.launchedAt) / 60);
   const expected =
     ageMinutes < 60
       ? `${ageMinutes}m`
@@ -647,4 +668,404 @@ test("a stale market snapshot never presents old launches as just minted", async
         : `${Math.floor(ageMinutes / 1440)}d`;
   await expect(first).toHaveText(expected);
   await expect(first).not.toHaveText("<1m");
+});
+
+test("saved global catalog shows unprocessed pools and paginates the global sort", async ({
+  page,
+  request,
+}) => {
+  const response = await request.get(
+    "/api/product/explore?limit=100&sort=launch&window=All",
+  );
+  const all = (await response.json()) as AnalyticsExploreResponse;
+  expect(all.total).toBeGreaterThan(25);
+  const unprocessed = all.items.find((p) => !p.processed)!;
+  await page.goto("/?sort=launch&window=All");
+  await expect(page.locator(".pagination")).toContainText(
+    `1-25 of ${all.total}`,
+  );
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page).toHaveURL(/offset=25/);
+  await expect(page.locator(".pagination")).toContainText(
+    `26-50 of ${all.total}`,
+  );
+  const displayed = page
+    .locator(".desktop-pools, .mobile-pools")
+    .getByText(all.items[25].name, { exact: true })
+    .filter({ visible: true });
+  await expect(displayed).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Filter pools" })
+    .fill(unprocessed.token);
+  await expect(page.locator(".pagination")).toContainText("1-1 of 1");
+  await page
+    .locator(".desktop-pools, .mobile-pools")
+    .getByRole("link", { name: new RegExp(unprocessed.symbol) })
+    .filter({ visible: true })
+    .first()
+    .click();
+  await expect(
+    page.getByRole("heading", { name: unprocessed.name, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/background analytics are still processing/),
+  ).toBeVisible();
+});
+
+test("default saved leaderboard opens matching global wallet positions, trades and card without audits", async ({
+  page,
+}) => {
+  const audit = fixture();
+  const snapshot = {
+    ...chain,
+    toTimestamp: Math.max(
+      chain.toTimestamp,
+      ...audit.executions.map((e) => e.trade.timestamp),
+    ),
+    toBlock: Math.max(
+      chain.toBlock,
+      ...audit.executions.map((e) => e.trade.block),
+    ),
+    markets: [
+      {
+        ...market,
+        accounting: {
+          executions: audit.executions,
+          wallets: audit.wallets,
+          unattributedSwaps: 0,
+          transfersChecked: 11,
+        },
+      },
+    ],
+    trades: audit.executions.map((e) => e.trade),
+  };
+  const model = buildAnalyticsModel(
+    [market],
+    [
+      {
+        snapshot,
+        holders: null,
+        liquidityWei: null,
+        sourceKind: "indexed",
+        generatedAt: chain.generatedAt,
+      },
+    ],
+  );
+  const board = leaderboardAnalytics(model, { window: "All", minTrades: 10 });
+  const profile = walletAnalytics(model, wallet, "All");
+  expect(board.items[0].realizedWei).toBe("500000000000000000");
+  expect(profile.wallet.realizedWei).toBe(board.items[0].realizedWei);
+  const reads: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/accounting/") || r.method() === "POST")
+      reads.push(r.url());
+  });
+  await page.route("**/api/product/leaderboard?**", (r) =>
+    r.fulfill({
+      json: { ...board, delivery: { source: "indexer", notice: null } },
+    }),
+  );
+  await page.route(`**/api/product/wallets/${wallet}?**`, (r) =>
+    r.fulfill({
+      json: { ...profile, delivery: { source: "indexer", notice: null } },
+    }),
+  );
+  await page.route(`**/cards/${wallet}.png?**`, (r) =>
+    r.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#0B0B0E"/></svg>',
+    }),
+  );
+  await page.goto("/traders/");
+  await expect(page.getByRole("button", { name: /Audit traders/ })).toHaveCount(
+    0,
+  );
+  await page
+    .locator(`a[href="/wallet/${wallet}/?window=All"]`)
+    .filter({ visible: true })
+    .first()
+    .click();
+  const realized = page
+    .locator(".stat")
+    .filter({ has: page.getByText("Realized PnL", { exact: true }) });
+  await expect(realized).toContainText("+0.5 ETH");
+  await expect(realized.locator(".positive")).toHaveCSS(
+    "color",
+    "rgb(63, 214, 140)",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Positions across covered pools" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Trades", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Observed trade history" }),
+  ).toBeVisible();
+  await expect(page.locator("main tbody tr")).toHaveCount(11);
+  await page
+    .getByRole("button", { name: "Share PnL card", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("img")).toHaveAttribute(
+    "src",
+    `/cards/${wallet}.png?window=All`,
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  expect(reads).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("command search extends instant local matches with saved-only tokens and wallets and keeps local results on outage", async ({
+  page,
+}) => {
+  const indexed = {
+    ...market,
+    id: `0x${"a".repeat(64)}`,
+    token: `0x${"a".repeat(40)}`,
+    name: "Quasar Indexed",
+    symbol: "QSR",
+    launchTx: `0x${"b".repeat(64)}`,
+  };
+  const model = buildAnalyticsModel([indexed], []);
+  let release: () => void = () => {};
+  let pending = false;
+  await page.route("**/api/product/search?**", async (r) => {
+    const q = new URL(r.request().url()).searchParams.get("q")!;
+    if (q === market.symbol) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+        pending = true;
+      });
+      return r.fulfill({ status: 503, json: { error: "Unavailable" } });
+    }
+    const result = await searchAnalytics(model, q);
+    if (q === "wallet:0x1111")
+      result.entries = [
+        {
+          id: `wallet:${wallet}`,
+          group: "Wallets",
+          title: "0x1111…1111",
+          context: "Saved wallet across processed pools",
+          address: wallet,
+          terms: [wallet],
+          href: `/wallet/${wallet}/?window=All`,
+        },
+      ];
+    return r.fulfill({
+      json: {
+        ...result,
+        delivery: { source: "indexer", notice: null },
+      },
+    });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Search tokens, wallets, creators, transactions",
+    })
+    .click();
+  const dialog = page.getByRole("dialog"),
+    input = dialog.getByRole("textbox");
+  await input.fill(market.symbol);
+  await expect(
+    dialog.getByRole("link", { name: new RegExp(market.symbol) }).first(),
+  ).toBeVisible();
+  await expect.poll(() => pending).toBe(true);
+  release();
+  await expect(dialog.getByText(/Saved search is unavailable/)).toBeVisible();
+  await expect(
+    dialog.getByRole("link", { name: new RegExp(market.symbol) }).first(),
+  ).toBeVisible();
+  await input.fill("wallet:0x1111");
+  await expect(dialog.getByRole("link", { name: /0x1111/ })).toHaveAttribute(
+    "href",
+    `/wallet/${wallet}/?window=All`,
+  );
+  await input.fill("Quasar");
+  const token = dialog.getByRole("link", { name: /Quasar Indexed/ });
+  await expect(token).toHaveAttribute("href", poolHref(indexed));
+  await token.click();
+  await expect(page).toHaveURL(new RegExp(indexed.id));
+});
+
+test("saved pool details show reconciled holders and label infrastructure separately", async ({
+  page,
+}) => {
+  const payload = (await preloadedProduct(
+    `pools/${market.id}`,
+    new URLSearchParams("window=All"),
+  )) as { analytics: AnalyticsPoolDetail };
+  const infrastructure = `0x${"2".repeat(40)}` as Address;
+  const zero = `0x${"0".repeat(40)}` as Address;
+  const hash = `0x${"a".repeat(64)}` as Address;
+  payload.analytics.holders = buildHolderLedger(
+    [wallet, infrastructure].map((address, index) => ({
+      token: market.token,
+      txHash: hash,
+      blockHash: hash,
+      block: market.launchBlock,
+      logIndex: index,
+      from: zero,
+      to: address as Address,
+      valueRaw: "100000000000000000000",
+    })),
+    {
+      token: market.token,
+      coverage: {
+        fromBlock: market.launchBlock,
+        toBlock: chain.toBlock,
+        cutoffBlockHash: hash,
+        tokenBirthBlock: market.launchBlock,
+      },
+      totalSupplyRaw: "200000000000000000000",
+      infrastructure: [{ address: infrastructure, label: "PoolManager" }],
+    },
+  );
+  let savedReads = 0;
+  await page.route(`**/api/product/pools/${market.id}`, (r) => {
+    savedReads++;
+    return r.fulfill({
+      json: { ...payload, delivery: { source: "indexer", notice: null } },
+    });
+  });
+  await page.goto(poolHref(market));
+  await page.getByRole("button", { name: "Holders", exact: true }).click();
+  await expect(page.getByText(/Reconciled holder snapshot/)).toBeVisible();
+  await expect(page.locator("main tbody tr")).toHaveCount(2);
+  await expect(
+    page.getByRole("cell", { name: "PoolManager", exact: true }),
+  ).toBeVisible();
+  const holders = page
+    .locator(".stat")
+    .filter({ has: page.getByText("Holders", { exact: true }) });
+  await expect(holders.locator("strong").filter({ visible: true })).toHaveText(
+    "1",
+  );
+  await page
+    .getByRole("button", { name: "Refresh pool data", exact: true })
+    .click();
+  await expect.poll(() => savedReads).toBe(2);
+  await expect(
+    page.getByText(/Balances do not establish cost basis or PnL/),
+  ).toBeVisible();
+});
+
+test("real preloaded leaderboard opens its profitable top wallet and generates the same global card", async ({
+  page,
+  request,
+}, testInfo) => {
+  // No product endpoint or image interception: this reads the actual captured dataset.
+  const boardResponse = await request.get(
+    "/api/product/leaderboard?window=All&minTrades=10&metric=realized&limit=25",
+  );
+  expect(boardResponse.status()).toBe(200);
+  const board = (await boardResponse.json()) as AnalyticsLeaderboardResponse;
+  expect(board.total).toBeGreaterThanOrEqual(50);
+  const top = board.items[0];
+  expect(top.address).toBe("0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1");
+  expect(top.realizedWei).toBe("11471084300772102");
+  const profileResponse = await request.get(
+    `/api/product/wallets/${top.address}?window=All`,
+  );
+  expect(profileResponse.status()).toBe(200);
+  const profile = (await profileResponse.json()) as AnalyticsWalletResponse;
+  expect(profile.wallet.realizedWei).toBe(top.realizedWei);
+  expect(profile.wallet.rank).toBe(1);
+  expect(profile.curve.at(-1)?.wei).toBe(top.realizedWei);
+  const browserErrors: string[] = [],
+    unexpected: string[] = [];
+  page.on("pageerror", (e) => browserErrors.push(e.message));
+  page.on("request", (r) => {
+    if (r.url().includes("/accounting/") || r.method() === "POST")
+      unexpected.push(r.url());
+  });
+  await page.goto("/traders/");
+  await expect(
+    page.getByLabel("Minimum swaps").filter({ visible: true }),
+  ).toHaveValue("10");
+  await page
+    .locator(`a[href="/wallet/${top.address}/?window=All"]`)
+    .filter({ visible: true })
+    .first()
+    .click();
+  const stat = page
+    .locator(".stat")
+    .filter({ has: page.getByText("Realized PnL", { exact: true }) })
+    .filter({ visible: true });
+  await expect(stat.locator(".positive")).toHaveAttribute(
+    "title",
+    `${top.realizedWei} wei`,
+  );
+  await expect(stat).toContainText("+0.0114711 ETH");
+  await page.getByRole("tab", { name: "Trades", exact: true }).click();
+  await expect(
+    page.locator("main tbody tr").filter({ visible: true }),
+  ).toHaveCount(profile.trades.length);
+  await page
+    .getByRole("button", { name: "Share PnL card", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  const card = dialog.getByRole("img");
+  await expect(card).toBeVisible();
+  await expect
+    .poll(() => card.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(1200);
+  await expect(
+    dialog.getByRole("link", { name: /Download PNG/ }),
+  ).toHaveAttribute("href", `/cards/${top.address}.png?window=All`);
+  const response = await request.get(`/cards/${top.address}.png?window=All`);
+  expect(response.status()).toBe(200);
+  const png = await response.body();
+  expect(png.readUInt32BE(16)).toBe(1200);
+  expect(png.readUInt32BE(20)).toBe(630);
+  await page.screenshot({
+    path: testInfo.outputPath("real-positive-wallet-card.png"),
+    fullPage: true,
+  });
+  expect(browserErrors).toEqual([]);
+  expect(unexpected).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("an empty saved analytics publication shows processing instead of the Unix epoch", async ({
+  page,
+}) => {
+  const base = preloadedProduct(
+    "explore",
+    new URLSearchParams(),
+  ) as AnalyticsExploreResponse;
+  await page.route("**/api/product/explore?**", (route) =>
+    route.fulfill({
+      json: {
+        ...base,
+        items: [],
+        total: 0,
+        nextOffset: null,
+        coverage: {
+          ...base.coverage,
+          catalogPools: 165,
+          processedPools: 0,
+          asOf: 0,
+          oldestAsOf: null,
+        },
+        delivery: { source: "indexer", notice: null },
+      },
+    }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByText("Analytics processing has not completed yet", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("1970");
 });

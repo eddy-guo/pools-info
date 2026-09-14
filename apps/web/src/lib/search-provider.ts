@@ -4,20 +4,112 @@ import {
   type ChainCatalog,
   type PoolAudit,
   type SearchProvider,
+  type SearchResponse,
 } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
-// Static/local lookup stays instant; only a complete ENS name triggers a remote
-// read. Replace this adapter with a paginated public index as coverage grows.
+// Local lookup appears first. Saved catalog search extends it asynchronously;
+// complete ENS names use the separate Ethereum resolver.
 export function createSearchProvider(
   snapshot: ChainSnapshot,
   audits: Record<string, PoolAudit>,
-): SearchProvider {
+): SearchProvider & {
+  extend(
+    query: string,
+    options: Parameters<SearchProvider["search"]>[1],
+    base: SearchResponse,
+  ): Promise<SearchResponse & { indexNotice?: string }>;
+} {
   const local = createLocalSearchProvider(
     snapshot,
     audits,
     catalog as ChainCatalog,
   );
   return {
+    async extend(query, options, base) {
+      if (base.kind === "ens") return base;
+      const prefixes = {
+        Tokens: "token",
+        Wallets: "wallet",
+        Creators: "creator",
+        Transactions: "tx",
+      };
+      const q =
+        options.group && !/^(token|wallet|creator|tx):/i.test(query.trim())
+          ? `${prefixes[options.group]}:${query}`
+          : query;
+      if (q.length > 100) return base;
+      try {
+        const response = await fetch(
+          `/api/product/search?q=${encodeURIComponent(q)}`,
+          {
+            signal: AbortSignal.any([
+              options.signal,
+              AbortSignal.timeout(12000),
+            ]),
+            cache: "no-store",
+          },
+        );
+        if (!response.ok) throw Error("Saved search unavailable");
+        const remote = (await response.json()) as SearchResponse & {
+          delivery?: { source: string; notice: string | null };
+        };
+        if (
+          !Array.isArray(remote.entries) ||
+          remote.entries.length > 32 ||
+          !remote.coverage ||
+          remote.entries.some(
+            (e) =>
+              !e ||
+              typeof e.href !== "string" ||
+              typeof e.address !== "string" ||
+              typeof e.title !== "string" ||
+              typeof e.context !== "string" ||
+              !["Tokens", "Wallets", "Creators", "Transactions"].includes(
+                e.group,
+              ) ||
+              (!/^\/(pool|wallet|creators)\//.test(e.href) &&
+                !e.href.startsWith("https://robinhoodchain.blockscout.com/")),
+          )
+        )
+          throw Error("Invalid saved search");
+        const verified = new Set(
+          remote.entries
+            .filter((e) => e.group === "Tokens" && !e.external)
+            .map((e) => e.address.toLowerCase()),
+        );
+        const merged = new Map<string, (typeof remote.entries)[number]>();
+        for (const e of [...remote.entries, ...base.entries]) {
+          if (
+            e.group === "Tokens" &&
+            e.external &&
+            verified.has(e.address.toLowerCase())
+          )
+            continue;
+          const key = `${e.group}:${e.href}`;
+          if (!merged.has(key)) merged.set(key, e);
+        }
+        const counts = new Map<string, number>();
+        const entries = [...merged.values()].filter((e) => {
+          const n = counts.get(e.group) ?? 0;
+          counts.set(e.group, n + 1);
+          return n < 8;
+        });
+        return {
+          ...base,
+          entries,
+          total: entries.length,
+          coverage: remote.coverage,
+          indexNotice:
+            remote.delivery?.notice ?? "Saved index and preloaded matches",
+        };
+      } catch {
+        return {
+          ...base,
+          indexNotice:
+            "Saved search is unavailable. Preloaded matches remain available.",
+        };
+      }
+    },
     async search(query, options) {
       const result = await local.search(query, options);
       if (result.kind !== "ens") return result;

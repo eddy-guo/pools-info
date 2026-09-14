@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ProductExplore } from "./product-explore";
 import { useSyncExternalStore } from "react";
 import {
   ArrowDown,
@@ -32,7 +33,7 @@ const subscribeClock = (notify: () => void) => {
 const clockSeconds = () => Math.floor(Date.now() / 1000);
 const serverClock = () => null;
 type Sort = "name" | "price" | "change" | "volume" | "age";
-export function Overview() {
+export function PreloadedOverview() {
   const { snapshot: s, audits } = useLive();
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -481,4 +482,8 @@ export function Overview() {
       </div>
     </div>
   );
+}
+
+export function Overview() {
+  return <ProductExplore />;
 }

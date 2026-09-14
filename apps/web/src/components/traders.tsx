@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { ProductTraders } from "./product-traders";
+import { useQuery } from "./state";
 import { useState } from "react";
 import { ArrowUpRight, ShieldCheck, Trophy } from "lucide-react";
 import {
@@ -365,7 +367,7 @@ export function AuditLeaderboard({
     </div>
   );
 }
-export function Traders() {
+function PoolTraders() {
   const { market, error, loading } = useSelectedMarket(),
     { audits } = useLive(),
     { window, setWindow } = useWindow();
@@ -419,4 +421,9 @@ export function Traders() {
       </p>
     </div>
   );
+}
+
+export function Traders() {
+  const { params } = useQuery();
+  return params.has("pool") ? <PoolTraders /> : <ProductTraders />;
 }

@@ -1,24 +1,7 @@
-import { unstable_cache } from "next/cache";
-import { collectRecentSwaps, type RecentSwaps } from "@pools/chain";
 import { indexedFeed } from "@/lib/indexed-feed";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
-const pending = new Map<string, Promise<RecentSwaps>>();
-const recent = unstable_cache(
-  async (ids: string) => {
-    let job = pending.get(ids);
-    if (!job) {
-      job = collectRecentSwaps(ids.split(",")).finally(() =>
-        pending.delete(ids),
-      );
-      pending.set(ids, job);
-    }
-    return job;
-  },
-  ["recent-swaps-v1"],
-  { revalidate: 10 },
-);
 export async function GET(request: Request) {
   const raw = new URL(request.url).searchParams.get("pools") ?? "";
   if (raw.length > 540)
@@ -30,14 +13,15 @@ export async function GET(request: Request) {
     ids.some((p) => !/^0x[0-9a-f]{64}$/.test(p))
   )
     return Response.json({ error: "Invalid pools" }, { status: 400 });
-  if (process.env.CHAIN_REFRESH_DISABLED === "1")
+  if (
+    process.env.CHAIN_REFRESH_DISABLED === "1" ||
+    !process.env.INDEXER_API_URL
+  )
     return Response.json({ error: "offline" }, { status: 503 });
   try {
     // Once configured, serve the stored index only. An outage must not silently
     // multiply RPC scans across visitors or mix unrelated coverage windows.
-    const data = process.env.INDEXER_API_URL
-      ? await indexedFeed(process.env.INDEXER_API_URL, ids)
-      : await recent(ids.join(","));
+    const data = await indexedFeed(process.env.INDEXER_API_URL!, ids);
     return Response.json(data, {
       headers: { "Cache-Control": "no-store" },
     });

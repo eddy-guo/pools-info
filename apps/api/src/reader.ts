@@ -1,5 +1,14 @@
 import pg from "pg";
 import {
+  exploreAnalytics,
+  leaderboardAnalytics,
+  walletAnalytics,
+  poolAnalytics,
+  searchAnalytics,
+  type AnalyticsModel,
+} from "@pools/core";
+import { loadAnalyticsModel } from "./analytics-read";
+import {
   encodeCursor,
   isAddress,
   RequestError,
@@ -104,15 +113,25 @@ function paginate(rows: Row[], request: ReadRequest, type: "pools" | "events") {
 export async function readData(
   query: Query,
   request: ReadRequest,
+  getModel: () => Promise<AnalyticsModel> = () => loadAnalyticsModel(query),
 ): Promise<unknown> {
   if (request.route === "ready") {
     // Zero-row reads check table access too, unlike SELECT 1 alone.
     await query("SELECT 1 FROM indexed_events WHERE false");
     await query("SELECT 1 FROM indexed_pools WHERE false");
     await query("SELECT 1 FROM indexer_streams WHERE false");
+    await query("SELECT 1 FROM analytics_pool_snapshots WHERE false");
     return { ready: true };
   }
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
+  if (request.route === "explore")
+    return exploreAnalytics(await getModel(), request.explore);
+  if (request.route === "leaderboard")
+    return leaderboardAnalytics(await getModel(), request.leaderboard);
+  if (request.route === "profile")
+    return walletAnalytics(await getModel(), request.wallet!, request.window);
+  if (request.route === "search")
+    return searchAnalytics(await getModel(), request.q, request.group);
   if (request.route === "feed") {
     const streams = await query(
       `SELECT s.stream_key, s.pool_id, ${coverageColumns}
@@ -257,6 +276,11 @@ export async function readData(
     return {
       ...base,
       pool: poolItem(result.rows[0]),
+      analytics: poolAnalytics(
+        await getModel(),
+        request.poolId!,
+        request.window,
+      ),
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
   }
@@ -323,6 +347,7 @@ export function createReader(
   pool.on("error", () =>
     process.stderr.write('{"event":"idle_database_connection_error"}\n'),
   );
+  let cachedModel: { model: AnalyticsModel; expires: number } | null = null;
   return {
     async read(request) {
       const client = await pool.connect();
@@ -333,6 +358,15 @@ export function createReader(
         const result = await readData(
           (sql, values) => client.query(sql, values),
           request,
+          async () => {
+            if (cachedModel && cachedModel.expires > Date.now())
+              return cachedModel.model;
+            const model = await loadAnalyticsModel((sql, values) =>
+              client.query(sql, values),
+            );
+            cachedModel = { model, expires: Date.now() + 15000 };
+            return model;
+          },
         );
         await client.query("COMMIT");
         return result;

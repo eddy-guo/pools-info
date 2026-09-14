@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { withLogRpc } from "./log-rpc";
 import { collectCatalog, collectPoolEvents, Rpc } from "@pools/chain";
 import {
   acquireWriter,
@@ -24,7 +25,7 @@ function integer(name: string, fallback: number, min: number, max: number) {
   return n;
 }
 function rpc() {
-  return new Rpc(undefined, {
+  const limits = {
     timeoutMs: 120000,
     maxRequests: 300,
     // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
@@ -34,7 +35,17 @@ function rpc() {
     // The current provider plan permits ten blocks per eth_getLogs request.
     // Start at that known limit instead of issuing a rejected probe every batch.
     logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
-  });
+  };
+  const state = new Rpc(undefined, limits);
+  return process.env.INDEXER_LOG_RPC_URL
+    ? withLogRpc(
+        state,
+        new Rpc(process.env.INDEXER_LOG_RPC_URL, {
+          ...limits,
+          logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 1000, 1, 10000),
+        }),
+      )
+    : state;
 }
 const hex = (n: number) => `0x${n.toString(16)}`;
 type Header = { number: string; hash: string; parentHash: string };
@@ -202,9 +213,10 @@ async function main() {
     // Stay alive while the old worker drains, without permitting two writers.
     if (mode === "run")
       console.log(JSON.stringify({ event: "waiting_for_writer" }));
-    const locked = mode === "run"
-      ? await waitForWriter(db, { signal: stop.signal })
-      : await acquireWriter(db);
+    const locked =
+      mode === "run"
+        ? await waitForWriter(db, { signal: stop.signal })
+        : await acquireWriter(db);
     if (stopping) return;
     if (!locked) throw Error("Another worker holds the writer lock");
     console.log(JSON.stringify({ event: "writer_acquired" }));

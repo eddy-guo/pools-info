@@ -2,12 +2,16 @@
 import Link from "next/link";
 import styles from "./detail-design.module.css";
 import { useState } from "react";
-import { poolWindow, shortAddress } from "@pools/core";
+import {
+  poolWindow,
+  shortAddress,
+  type AnalyticsPoolDetail,
+} from "@pools/core";
+import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { useLive } from "./live-provider";
 import { AddressLabel, Change, Price, WatchButton } from "./ui";
 import {
-  AuditAction,
   Eth,
   Stat,
   Trades,
@@ -30,24 +34,63 @@ export function PoolDetail({ id }: { id: string }) {
     refreshing,
   } = useMarket(id, params.get("launch"));
   const { audits } = useLive();
+  const saved = useProduct<{
+    name: string;
+    symbol: string;
+    token: string;
+    analytics: AnalyticsPoolDetail | null;
+  }>(`pools/${id}`);
   const [tab, setTab] = useState("Top traders");
   if (!m)
     return (
       <div className={`page ${styles.page}`}>
-        <h1>{loading ? "Loading pool…" : "Pool outside current coverage"}</h1>
+        <h1>
+          {saved.data?.name ??
+            (loading ? "Loading saved pool…" : "Pool outside current coverage")}
+        </h1>
         <p>
-          {loading
-            ? "Reading the verified launch and swap history. This pool is outside the preloaded sample, so its first load can take longer. No metrics are estimated while it loads."
-            : error ||
-              "Use a covered pool link to provide its verified launch transaction. This is a coverage limit, not proof that the pool does not exist."}
+          {saved.data && !saved.data.analytics
+            ? "This verified launch is in the catalog. Its background analytics are still processing; no prices, holders or profit are estimated."
+            : loading
+              ? "Loading saved market data. No blockchain scan is started by this page."
+              : error ||
+                "Use a covered pool link to provide its verified launch transaction. This is a coverage limit, not proof that the pool does not exist."}
         </p>
         <Link className="button" href="/">
           Explore pools
         </Link>
       </div>
     );
-  const a = audits[m.id],
-    stats = poolWindow(m, s, "24h"),
+  const a = m.accounting?.executions
+    ? {
+        poolId: m.id,
+        market: m,
+        toBlock: s.toBlock,
+        toTimestamp: s.toTimestamp,
+        generatedAt: s.generatedAt,
+        ...m.accounting,
+        executions: m.accounting.executions,
+      }
+    : audits[m.id];
+  const holders = saved.data?.analytics?.holders;
+  const holderRows = holders?.balances ?? [];
+  const sum = (rows: typeof holderRows) =>
+    rows.reduce((n, h) => n + BigInt(h.balanceRaw), 0n);
+  const users = holderRows.filter((h) => h.kind !== "infrastructure");
+  const ratio = (numerator: bigint, denominator: bigint) =>
+    denominator > 0n
+      ? `${(Number((numerator * 10000n) / denominator) / 100).toFixed(2)}%`
+      : null;
+  const concentration = holders?.complete
+    ? {
+        raw: ratio(
+          sum(holderRows.slice(0, 10)),
+          BigInt(holders.totalSupplyRaw),
+        ),
+        adjusted: ratio(sum(users.slice(0, 10)), sum(users)),
+      }
+    : null;
+  const stats = poolWindow(m, s, "24h"),
     fdv =
       m.priceWei === null
         ? null
@@ -105,7 +148,10 @@ export function PoolDetail({ id }: { id: string }) {
       <div className="live-controls">
         <button
           className="button secondary"
-          onClick={refresh}
+          onClick={() => {
+            refresh();
+            saved.refresh();
+          }}
           disabled={refreshing}
         >
           {refreshing ? "Refreshing pool…" : "Refresh pool data"}
@@ -176,7 +222,11 @@ export function PoolDetail({ id }: { id: string }) {
               <Eth wei={stats.volumeWei} />
             </Stat>
             <Stat label="Holders">
-              <Unavailable />
+              {holders?.complete ? (
+                holders.positiveHoldersExcludingInfrastructure
+              ) : (
+                <Unavailable />
+              )}
             </Stat>
             <Stat label="Fees compounded">
               <Unavailable />
@@ -208,7 +258,10 @@ export function PoolDetail({ id }: { id: string }) {
               />
             ) : tab === "Top traders" ? (
               <>
-                <AuditAction market={m} />
+                <p className="panel-footnote">
+                  Published trader positions load automatically. Unsupported
+                  positions remain excluded.
+                </p>
                 {a ? (
                   <AuditLeaderboard audit={a} />
                 ) : (
@@ -218,13 +271,61 @@ export function PoolDetail({ id }: { id: string }) {
                   </p>
                 )}
               </>
+            ) : holders ? (
+              <>
+                <p className="panel-footnote">
+                  {holders.complete
+                    ? "Reconciled holder snapshot"
+                    : "Partial tracked balances"}{" "}
+                  · block {holders.coverage.toBlock.toLocaleString()} ·
+                  infrastructure shown separately. Balances do not establish
+                  cost basis or PnL.
+                </p>
+                <div className="table-scroll">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Holder</th>
+                        <th>Balance</th>
+                        <th>Classification</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {holderRows.slice(0, 100).map((h) => (
+                        <tr key={h.address}>
+                          <td>
+                            <Link
+                              className="mono"
+                              href={`/wallet/${h.address}/`}
+                            >
+                              {shortAddress(h.address)}
+                            </Link>
+                          </td>
+                          <td>
+                            {(
+                              Number(h.balanceRaw) /
+                              10 ** m.decimals
+                            ).toLocaleString("en-US", {
+                              maximumSignificantDigits: 8,
+                            })}
+                          </td>
+                          <td>{h.infrastructureLabel ?? "Holder"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="panel-footnote">
+                  Showing {Math.min(100, holderRows.length)} of{" "}
+                  {holderRows.length} positive tracked balances.
+                </p>
+              </>
             ) : (
               <div className="empty-state">
-                <h3>Holder balances are not collected yet</h3>
+                <h3>Holder snapshot is processing</h3>
                 <p>
-                  Swap counts cannot establish holder count or concentration.
-                  Full token transfers and infrastructure exclusions are
-                  required.
+                  Holders are published by the background collector. This page
+                  does not scan transfers on demand.
                 </p>
               </div>
             )}
@@ -241,14 +342,21 @@ export function PoolDetail({ id }: { id: string }) {
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>
-                    <Unavailable />
+                    {label === "Raw top 10" ? (
+                      (concentration?.raw ?? <Unavailable />)
+                    ) : label === "Adjusted top 10" ? (
+                      (concentration?.adjusted ?? <Unavailable />)
+                    ) : (
+                      <Unavailable />
+                    )}
                   </dd>
                 </div>
               ))}
             </dl>
             <p className="panel-footnote">
-              Adjusted concentration excludes the v4 PoolManager, which holds
-              pooled liquidity. These figures need a verified holder snapshot.
+              Adjusted concentration excludes labelled infrastructure balances,
+              including the v4 PoolManager. These figures need a reconciled
+              holder snapshot.
             </p>
           </section>
           <section className="panel">

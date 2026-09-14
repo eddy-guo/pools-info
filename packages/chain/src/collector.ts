@@ -30,6 +30,8 @@ export async function collectSnapshot(
     rpc?: Rpc;
     onProgress?: (message: string) => void;
     includeAccounting?: boolean;
+    /** Reproducible historical capture, still bounded by the safe chain head. */
+    toBlock?: number;
     target?: { poolId: string; launchTx: Hex };
   } = {},
 ) {
@@ -52,7 +54,9 @@ export async function collectSnapshot(
   if (!Number.isSafeInteger(head) || head < 128)
     throw Error("Invalid chain head");
   // A 128-block lag reduces head churn; it does not claim L1 finality.
-  const toBlock = head - 128;
+  const toBlock = options.toBlock ?? head - 128;
+  if (!Number.isSafeInteger(toBlock) || toBlock < 0 || toBlock > head - 128)
+    throw Error("Invalid historical cutoff");
   let fromBlock = Math.max(0, toBlock - span + 1);
   type Block = { number: Hex; timestamp: Hex; hash: Hex };
   const blockCache = new Map<number, Block>();

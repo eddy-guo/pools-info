@@ -1,16 +1,40 @@
 # Pools Info
 
-Real Robinhood Chain pool analytics in a single pnpm workspace. Next.js serves the frontend and bounded RPC endpoints on Vercel. Market data comes only from Robinhood's public RPC; there is no Envio, pools.xyz API, database, or paid data feed in the application.
+Analytics for verified Pools launches on Robinhood Chain (4663). One pnpm repository contains the Next.js frontend on Vercel, a Railway chain collector and analytics worker, and a read API backed by private Railway Postgres. Public wallet addresses are chain identities, not user accounts.
 
-The synthetic dataset and demo reader have been removed. The product routes remain: Explore, pool detail, trader leaderboard, wallet profile, share cards, creators and creator detail, plus typed search and methodology. These pages now use captured or refreshed chain data. **Coverage is a recent pool sample plus a wider verified launch catalog, not the full chain.** Wallet metrics and rankings are scoped to one audited pool at a time.
+## How data reaches a page
 
-The chart now supports Price/FDV, fixed candle intervals, pan/zoom and crosshair. A bounded live swap feed polls recent Robinhood blocks every 15 seconds, with shared server caching and pause/retry. These are real observations, not generated activity. ENS uses PublicNode Ethereum RPC; no key is required initially. See [DATA-EXPERIENCE.md](docs/DATA-EXPERIENCE.md) for the exact architecture, source additions, cache behavior and limits.
+1. The collector discovers launches from the configured Pools contracts and stores validated swap/transfer events with receipts, block hashes, and resumable checkpoints.
+2. The analytics worker reconstructs each pool's wallet inventory and average-cost PnL, verifies cutoff balances, and publishes a dated snapshot and holder ledger. Successful pools become due again after 30 minutes; that is a scheduling target, not a freshness guarantee.
+3. The API reads the full saved catalog and processed pool publications. Global sorting and wallet aggregation happen before pagination. Page requests do not run chain scans.
+4. Next.js proxies the read API through server-only `INDEXER_API_URL`. A clearly labeled committed public dataset remains available when the service is unconfigured or unavailable. No fictional market or wallet data is used.
 
-The full requested product scope remains in [PRODUCT-SCOPE.md](docs/PRODUCT-SCOPE.md). Missing inputs are displayed as unavailable rather than zero. The user's supplied research documents remain in `docs/`.
+The database stays private. The HTTP service exposes read-only public chain analytics, never SQL or credentials. `ROBINHOOD_RPC_URL` supplies archival state; optional `INDEXER_LOG_RPC_URL` supplies historical logs. The public Robinhood endpoint supports the tested 1,000-block log ranges but did not serve the historical state needed by our audit. The existing Alchemy endpoint serves those state checks. ENS uses Ethereum PublicNode RPC, independently of Robinhood.
+
+## Product routes
+
+- `/`: searchable catalog, pending-metric pools included, global sorting and pagination, local watchlist.
+- `/pool/[id]/`: launch/creator facts, saved price/FDV candles, trades, pool wallet accounting and holders when processed.
+- `/traders/`: cross-pool supported-position rankings with a default 10-swap gate, windows and realized/net-ETH metrics.
+- `/wallet/[address]/`: positions, trades, PnL curve and creator launches from the same saved corpus. Arbitrary addresses work; an address outside coverage has no invented history.
+- `/cards/[address].png?window=All`: 1200×630 image using the same wallet figures and default rank as the profile.
+- `/creators/`, `/creators/[address]/`: creator discovery and public profile surfaces.
+- Cmd/Ctrl+K: tokens, wallet addresses, creators, transaction hashes and ENS. Saved search results augment immediate local results.
+- `/methodology/`: formulas and limitations. Legacy scoped audit endpoints remain advanced tools, not prerequisites for normal browsing.
+
+Account sign-in, account-synced watchlists and copy trading are design surfaces only. Browser-local watchlists work without accounts.
+
+## Coverage and accounting
+
+The configured initial discovery boundary is block 62,625,935. It does not include earlier launches or prove that every historical Pools contract version is covered. All catalog rows are visible; calculated metrics require a published pool snapshot. Different pools can have different historical cutoffs, which are disclosed.
+
+PnL uses integer average cost, carrying earlier purchases into later windows. Only reconciled positions with supported transaction attribution contribute to profit. Unsupported routes, unexplained transfers and unknown basis are excluded and counted, not assigned zero profit. Values are ETH-denominated and before gas. These are supported-position totals over processed pools, not complete wallet returns. A leaderboard ranks the available qualifying wallets; it does not fabricate 100 rows.
+
+Holders require birth-contiguous Transfer history and matching supply. Liquidity remains unavailable until pool-specific reserves are verified; the shared PoolManager balance is not pool liquidity. The read model has explicit corpus limits and fails clearly rather than silently ranking a truncated sample. Full indexed materialized wallet tables and continuous live streaming remain future extensions.
 
 ## Local development
 
-Node 22.9+ and pnpm 11.9.0:
+Use Node 22.9+ and pnpm 11.9.0:
 
 ```sh
 corepack enable
@@ -18,59 +42,43 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open http://127.0.0.1:3100. Keep this terminal running for hot reload. No API key is required. Root `.env.local` is optional and ignored by Git; `.env.example` documents supported settings.
-
-## Validation and deployment
+Open http://127.0.0.1:3100. `.env.local` is ignored; `.env.example` documents settings. The frontend can use the deployed API without direct database access. Local database tests must use a separate test database.
 
 ```sh
-pnpm check                    # lint, types, accounting/ingestion tests, production build
+pnpm check
+TEST_DATABASE_URL=postgresql://localhost/pools_test pnpm test:db
 pnpm exec playwright install chromium
-pnpm test:e2e                 # production Next.js on 3101, desktop and mobile
+pnpm test:e2e
 ```
 
-Tests run against production Next.js, independently of the dev server. Browser provider responses are controlled for failure/recovery testing. The PNG endpoint is exercised against the committed, RPC-audited sample. Normal builds never call RPC.
+Production is https://www.poolsinfo.com. Main pushes deploy through the existing Vercel integration, Next.js preset, root `apps/web`. No PR is required. Verify CI, Railway and Vercel after changes.
 
-Main pushes deploy to the existing Vercel project, using the Next.js preset and `apps/web` root. No PR is required for this personal-project workflow. Check CI, Vercel deployment status and the actual deployed site after pushing. Local development alone does not validate hosting timeouts or provider behavior.
-
-Production: https://www.poolsinfo.com. The Namecheap domain is already connected to Vercel. `SITE_URL` can override metadata origin; the default is the production custom domain. Robots remain noindex while coverage is still being established.
-
-## Routes and data
-
-- `/`: recent instant launches, windowed volume and price change, watchlist, latest observed swaps.
-- `/pool/[id]/?launch=[transaction]`: verified launch facts, FDV, observed spot-price candles and volume, swaps and on-demand trader audit.
-- `/traders/`: audited per-pool rankings, 10/25/100 gates, realized/net-ETH toggle, windows and visible exclusions.
-- `/wallet/[address]/?pool=[id]&launch=[transaction]`: public address profile, audit-scoped performance, open position, history, behaviour and card actions. `/wallet/` provides lookup.
-- `/cards/[address].png?pool=[id]&launch=[transaction]&window=All`: 1200×630 server-calculated audit card. Request parameters cannot supply PnL or rank.
-- `/creators/` and `/creators/[address]/`: launch-sender grouping, volume, median volume, 24h still-trading ratio, fee option and audited own-purchase evidence.
-- `Cmd/Ctrl+K`: covered tokens, audited wallets, launch senders and transaction hashes. Arbitrary addresses open a profile; untracked transaction hashes open the explorer. ENS names resolve through Ethereum public RPC and open the resulting address on Robinhood; unsupported/offchain resolvers report a limitation.
-- `/methodology/`: sources, formulas, attribution and limits. `/live/` redirects to Explore.
-
-Refreshes check about once a minute while visible. Market and audit cutoffs are independent and labeled. Linked pool URLs retain their launch transaction so bounded targeted scans can retrieve a pool after it leaves the newest-eight sample. They still have a 1,000,000-block scan ceiling.
-
-## Collector and repository
+## Background commands
 
 ```sh
-pnpm snapshot:chain                            # cheap market-only snapshot
-CHAIN_INCLUDE_ACCOUNTING=1 pnpm snapshot:chain  # also audit receipts and balances
-pnpm catalog:chain                             # extend the verified launch catalog
-pnpm snapshot:pool <token-address-or-pool-id>    # capture chart/trade history
-POOL_INCLUDE_ACCOUNTING=1 pnpm snapshot:pool <token-address-or-pool-id>
+pnpm db:migrate
+pnpm indexer:service   # collector and analytics in one Railway container
+pnpm indexer:once
+pnpm indexer:status
+pnpm analytics:once
+pnpm analytics:run
+pnpm api:run
 ```
 
-The CLI writes only after all verification succeeds and preserves raw evidence under ignored `.data/chain/`. Keep accounting in the committed sample to populate initial wallet data and run the offline card integration test.
+Railway indexer: Dockerfile `apps/indexer/Dockerfile`, pre-deploy `node --import tsx src/main.ts migrate`, start `node --import tsx src/service.ts`. API: Dockerfile `apps/api/Dockerfile`, healthcheck `/ready`, private `DATABASE_URL=${{Postgres.DATABASE_URL}}`. Both use the same repository. See [API README](apps/api/README.md) for read endpoints.
+
+CLI captures (`snapshot:chain`, `snapshot:pool`, `catalog:chain`) remain available for reproducible public datasets. Analytics capture seeds include raw evidence and are reconstructed and verified on import, not accepted as supplied profit numbers.
 
 ```text
-apps/web/           Next.js pages, shared live state, bounded APIs and OG cards
-packages/core/      Integer accounting, audit reconciliation and windowed read models
-packages/chain/     Robinhood RPC ingestion, event validation and attribution
-scripts/            Real snapshot and resumable catalog collection
-data/catalog/       Verified launch metadata for wider search
-data/pools/         Captured per-pool histories for fast first loads
-data/snapshots/     Captured on-chain sample, no fictional market data
-tests/e2e/          Product flows on a production server
-docs/               Original requirements and current implementation notes
+apps/web/          Next.js frontend, server proxies and share images
+apps/api/          Read-only saved-chain-data API
+apps/indexer/      Collector, analytics projector and process supervisor
+packages/db/       Postgres migrations and checkpoint persistence
+packages/core/     Integer accounting and shared product read models
+packages/chain/    RPC ingestion, validation and attribution
+scripts/           Snapshot and catalog exporters
+data/              Captured public datasets and seed evidence
+docs/              Original requirements and implementation notes
 ```
 
-The catalog currently contains 80 verified launches. PEPE has 1,477 captured swaps, so its 74 pages of history load without reconstructing history for every visitor. Catalog discovery and selected captures are run explicitly and committed; they do not update themselves in the deployment. Pool pages show their capture cutoff and support explicit refresh.
-
-A persistent worker and database can extend this same repo later. Complete wallet/global rankings, historical pool retention, holder concentration, reserve-based liquidity, compounded fees and crowd auctions remain data work, not removed product scope. See [LIVE-DATA.md](docs/LIVE-DATA.md) and [IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+Original scope and supplied research remain in [docs/PRODUCT-SCOPE.md](docs/PRODUCT-SCOPE.md). Older implementation notes describe prior rollout stages; this README describes the current saved-data architecture.

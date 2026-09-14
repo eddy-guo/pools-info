@@ -1,21 +1,128 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import type {
+  AnalyticsPoolRow,
+  AnalyticsCoverage,
+  AnalyticsExploreResponse,
+} from "@pools/core";
+import type { Delivered, ProductDelivery } from "@/lib/use-product";
+import { ProductCoverage } from "./product-common";
 import styles from "./detail-design.module.css";
-import { poolHref, shortAddress, walletHref } from "@pools/core";
+import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
 import { Eth, Unavailable, utc } from "./live-ui";
 import { AddressLabel } from "./ui";
 export function Creators({ address }: { address?: string }) {
-  const { snapshot: s, audits } = useLive();
-  const senders = [
-    ...new Set(s.markets.map((m) => m.launchSender.toLowerCase())),
-  ].filter((a) => !address || a === address.toLowerCase());
-  const catalogPools = catalog.pools.filter(
-    (m) =>
-      (!address || m.launchSender.toLowerCase() === address.toLowerCase()) &&
-      !s.markets.some((live) => live.id === m.id),
-  );
+  const [state, setState] = useState<{
+    items: AnalyticsPoolRow[];
+    coverage?: AnalyticsCoverage;
+    delivery?: ProductDelivery;
+    loading: boolean;
+    error?: string;
+  }>({ items: [], loading: true });
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      const items: AnalyticsPoolRow[] = [];
+      let offset = 0;
+      try {
+        for (;;) {
+          const response = await fetch(
+            `/api/product/explore?window=24h&sort=launch&limit=100&offset=${offset}${address ? `&q=${encodeURIComponent(address)}` : ""}`,
+            {
+              signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(12000),
+              ]),
+            },
+          );
+          if (!response.ok)
+            throw Error(
+              "The saved creator catalog is temporarily unavailable.",
+            );
+          const page =
+            (await response.json()) as Delivered<AnalyticsExploreResponse>;
+          items.push(...page.items);
+          if (controller.signal.aborted) return;
+          setState({
+            items: [...items],
+            coverage: page.coverage,
+            delivery: page.delivery,
+            loading: page.nextOffset !== null,
+          });
+          if (page.nextOffset === null) break;
+          if (page.nextOffset <= offset || page.nextOffset > 10000)
+            throw Error(
+              "Showing the first 10,000 catalog pools; remaining creator totals are unavailable.",
+            );
+          offset = page.nextOffset;
+        }
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setState((prior) => ({
+            ...prior,
+            loading: false,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Saved catalog unavailable",
+          }));
+      }
+    })();
+    return () => controller.abort();
+  }, [address]);
+  const groups = [
+    ...new Set(state.items.map((p) => p.launchSender.toLowerCase())),
+  ]
+    .filter((sender) => !address || sender === address.toLowerCase())
+    .map((sender) => {
+      const pools = state.items.filter(
+          (p) => p.launchSender.toLowerCase() === sender,
+        ),
+        measured = pools.filter((p) => p.stats.volumeWei !== null);
+      const volumes = measured
+          .map((p) => BigInt(p.stats.volumeWei!))
+          .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+        mid = Math.floor(volumes.length / 2);
+      const volume = volumes.length
+        ? volumes.reduce((a, b) => a + b, 0n)
+        : null;
+      const median = volumes.length
+        ? volumes.length % 2
+          ? volumes[mid]
+          : (volumes[mid - 1] + volumes[mid]) / 2n
+        : null;
+      const best = [...measured].sort((a, b) =>
+        BigInt(a.stats.volumeWei!) > BigInt(b.stats.volumeWei!) ? -1 : 1,
+      )[0];
+      const active = pools.filter((p) => (p.stats.trades ?? 0) > 0).length;
+      const complete = pools.every(
+        (p) => p.processed && p.stats.completeWindow,
+      );
+      return {
+        sender,
+        pools,
+        volume,
+        median,
+        best,
+        active,
+        complete,
+        measured: measured.length,
+      };
+    })
+    .sort((a, b) =>
+      a.volume === b.volume
+        ? a.sender.localeCompare(b.sender)
+        : a.volume === null
+          ? 1
+          : b.volume === null
+            ? -1
+            : a.volume > b.volume
+              ? -1
+              : 1,
+    );
   return (
     <div className={`page ${styles.page}`}>
       <div className="page-heading">
@@ -27,191 +134,159 @@ export function Creators({ address }: { address?: string }) {
           </h1>
           {address && <AddressLabel address={address} full />}
           <p>
-            Launches grouped by transaction sender. This is observed launch
-            activity, not independently verified creator identity.
+            Launches grouped by transaction sender, not independently verified
+            creator identity.
           </p>
         </div>
       </div>
-      <p className="coverage-notice">
-        Trading analytics cover {s.markets.length} recent pools. The wider
-        launch catalog below contains metadata only. Active means at least one
-        observed swap in the 24 hours before the cutoff. New pools have had less
-        time to trade.
-      </p>
-      {!address && <CreatorTable />}
-      <div className="creator-grid" hidden={!address}>
-        {senders.map((sender) => {
-          const pools = s.markets.filter(
-              (m) => m.launchSender.toLowerCase() === sender,
-            ),
-            volumes = pools
-              .map((m) => BigInt(m.volumeWei))
-              .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-            median =
-              volumes.length % 2
-                ? volumes[Math.floor(volumes.length / 2)]
-                : (volumes[volumes.length / 2 - 1] +
-                    volumes[volumes.length / 2]) /
-                  2n,
-            active = pools.filter((m) =>
-              s.trades.some(
-                (t) =>
-                  t.poolId === m.id && t.timestamp >= s.toTimestamp - 86400,
-              ),
-            ).length,
-            best = [...pools].sort((a, b) =>
-              Number(BigInt(b.volumeWei) - BigInt(a.volumeWei)),
-            )[0];
-          return (
-            <section className="panel creator-card" key={sender}>
-              <div className="creator-card-head">
-                <div>
-                  <h2>
-                    <Link href={`/creators/${sender}/`}>
-                      {shortAddress(sender)}
-                    </Link>
-                  </h2>
-                  <AddressLabel address={sender} />
-                </div>
-                <span className="badge">{pools.length} covered launches</span>
-              </div>
-              <dl className="live-facts">
-                <div>
-                  <dt>Still-trading ratio</dt>
-                  <dd>
-                    {((active / pools.length) * 100).toFixed(0)}% · {active}/
-                    {pools.length}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Observed volume</dt>
-                  <dd>
-                    <Eth wei={volumes.reduce((a, b) => a + b, 0n).toString()} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>Median pool volume</dt>
-                  <dd>
-                    <Eth wei={median.toString()} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>Best launch by volume</dt>
-                  <dd>
-                    <Link href={poolHref(best)}>{best.symbol}</Link>
-                  </dd>
-                </div>
-              </dl>
-              <div className="creator-pools">
-                {pools.map((m) => {
-                  const a = audits[m.id],
-                    bought = a?.executions.some(
-                      (e) =>
-                        e.trade.trader.toLowerCase() === sender &&
-                        e.trade.side === "buy" &&
-                        !e.flags.length,
-                    ),
-                    trading = s.trades.some(
-                      (t) =>
-                        t.poolId === m.id &&
-                        t.timestamp >= s.toTimestamp - 86400,
-                    );
-                  return (
-                    <div className="creator-pool" key={m.id}>
-                      <div>
-                        <Link href={poolHref(m)}>
-                          <strong>{m.name}</strong>
-                          <small className="cell-sub">
-                            {utc(m.launchedAt)}
-                          </small>
-                        </Link>
-                      </div>
-                      <div className="live-launch-badges">
-                        <span className="badge">
-                          {trading ? "Active" : "No swap observed"}
-                        </span>
-                        <small>
-                          Creator fees {m.creatorFees ? "on" : "off"}
-                        </small>
-                        {bought ? (
-                          <span className="badge lavender">
-                            BOUGHT OWN · sender
-                          </span>
-                        ) : (
-                          <small>
-                            Own purchase{" "}
-                            {a ? (
-                              "not established"
-                            ) : (
-                              <Unavailable reason="Run a pool audit to check supported sender purchases" />
-                            )}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <Link className="leader-link" href={walletHref(sender, pools[0])}>
-                View wallet profile ↗
-              </Link>
-            </section>
-          );
-        })}
-      </div>
-      {!!catalogPools.length && (
-        <section className="panel live-section">
+      {state.coverage && (
+        <ProductCoverage coverage={state.coverage} delivery={state.delivery} />
+      )}
+      {state.loading && (
+        <p role="status" className="panel-footnote">
+          Loading the saved creator catalog · {state.items.length} pools loaded.
+          Totals are partial until all catalog pages arrive.
+        </p>
+      )}
+      {state.error && (
+        <p role="alert" className="coverage-notice">
+          {state.error}
+        </p>
+      )}
+      {!address && (
+        <section className="panel">
           <div className="panel-heading">
-            <h2>Verified launch catalog</h2>
+            <h2>Creator discovery</h2>
+            <span className="badge">{groups.length} covered senders</span>
           </div>
-          <p className="panel-footnote">
-            {catalogPools.length} additional launches · catalog captured{" "}
-            {catalog.generatedAt.replace("T", " ").slice(0, 19)} UTC. Trading
-            metrics load when you open a pool; activity and profitability are
-            not assumed.
-          </p>
           <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Token</th>
-                  <th>Launch sender</th>
-                  <th>Launched (UTC)</th>
-                  <th>Coverage</th>
+                  <th>Creator / launch sender</th>
+                  <th>Launches</th>
+                  <th>Still trading</th>
+                  <th>Observed 24h volume</th>
+                  <th>Median measured volume</th>
+                  <th>Best measured launch</th>
+                  <th>Analytics</th>
                 </tr>
               </thead>
               <tbody>
-                {catalogPools.map((m) => (
-                  <tr key={m.id}>
-                    <td>
-                      <Link href={poolHref(m)}>
-                        {m.name} ({m.symbol})
-                      </Link>
-                    </td>
+                {groups.map((g) => (
+                  <tr key={g.sender}>
                     <td>
                       <Link
-                        className="mono"
-                        href={`/creators/${m.launchSender.toLowerCase()}/`}
+                        href={`/creators/${g.sender}/`}
+                        className={styles.identity}
                       >
-                        {shortAddress(m.launchSender)}
+                        <strong className="mono">
+                          {shortAddress(g.sender)}
+                        </strong>
                       </Link>
                     </td>
-                    <td>{utc(m.launchedAt)}</td>
-                    <td>Verified launch · analytics on demand</td>
+                    <td>{g.pools.length}</td>
+                    <td>
+                      {g.complete ? (
+                        `${g.active}/${g.pools.length}`
+                      ) : (
+                        <Unavailable
+                          reason={`${g.active} pools have observed swaps; full 24h coverage is incomplete`}
+                        />
+                      )}
+                    </td>
+                    <td>
+                      <Eth wei={g.volume?.toString()} />
+                    </td>
+                    <td>
+                      <Eth wei={g.median?.toString()} />
+                    </td>
+                    <td>
+                      {g.best ? (
+                        <Link href={poolHref(g.best)}>{g.best.symbol}</Link>
+                      ) : (
+                        <Unavailable />
+                      )}
+                    </td>
+                    <td>
+                      {g.measured}/{g.pools.length} measured
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="panel-footnote">
+            Sorted by measured 24h volume across the saved catalog. Unprocessed
+            launches remain included; unknown activity is never treated as zero.
+          </p>
         </section>
       )}
-      {!senders.length && !catalogPools.length && (
+      {address &&
+        groups.map((g) => (
+          <section className="panel live-section" key={g.sender}>
+            <div className="panel-heading">
+              <h2>Launches · {g.pools.length} covered</h2>
+              <Link href={`/wallet/${g.sender}/?window=All`}>
+                View wallet profile ↗
+              </Link>
+            </div>
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Token</th>
+                    <th>Launch (UTC)</th>
+                    <th>24h activity</th>
+                    <th>24h volume</th>
+                    <th>Creator fees</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.pools.map((p) => (
+                    <tr key={p.id}>
+                      <td>
+                        <Link href={poolHref(p)}>
+                          {p.name} ({p.symbol})
+                        </Link>
+                      </td>
+                      <td>{utc(p.launchedAt)}</td>
+                      <td>
+                        {(p.stats.trades ?? 0) > 0
+                          ? "Active"
+                          : p.processed
+                            ? "No swap observed"
+                            : "Processing"}
+                      </td>
+                      <td>
+                        <Eth wei={p.stats.volumeWei} />
+                      </td>
+                      <td>
+                        {p.market ? (
+                          p.market.creatorFees ? (
+                            "On"
+                          ) : (
+                            "Off"
+                          )
+                        ) : (
+                          <Unavailable />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="panel-footnote">
+              Activity refers to saved pool cutoffs. An unobserved trade does
+              not establish inactivity outside coverage.
+            </p>
+          </section>
+        ))}
+      {!groups.length && !state.loading && (
         <section className="panel empty-state">
-          <h2>No launches for this address in the recent sample</h2>
+          <h2>No launches in current coverage</h2>
           <p>This does not establish the address’s full launch history.</p>
-          <Link className="button" href="/creators/">
-            Browse covered creators
-          </Link>
         </section>
       )}
     </div>
@@ -308,134 +383,6 @@ export function WalletLaunches({ address }: { address: string }) {
         Grouped by launch transaction sender. Active means an observed swap in
         the 24 hours before the captured cutoff. This is a covered launch
         record, not a complete creator identity or allocation audit.
-      </p>
-    </section>
-  );
-}
-
-function CreatorTable() {
-  const { snapshot: s, audits } = useLive();
-  const groups = [
-    ...new Set(s.markets.map((m) => m.launchSender.toLowerCase())),
-  ]
-    .map((sender) => {
-      const pools = s.markets.filter(
-        (m) => m.launchSender.toLowerCase() === sender,
-      );
-      const volumes = pools
-        .map((m) => BigInt(m.volumeWei))
-        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-      const volume = volumes.reduce((sum, v) => sum + v, 0n);
-      const middle = Math.floor(volumes.length / 2);
-      const median =
-        volumes.length % 2
-          ? volumes[middle]
-          : (volumes[middle - 1] + volumes[middle]) / 2n;
-      const active = pools.filter((m) =>
-        s.trades.some(
-          (t) => t.poolId === m.id && t.timestamp >= s.toTimestamp - 86400,
-        ),
-      ).length;
-      const best = [...pools].sort((a, b) =>
-        BigInt(a.volumeWei) > BigInt(b.volumeWei)
-          ? -1
-          : BigInt(a.volumeWei) < BigInt(b.volumeWei)
-            ? 1
-            : 0,
-      )[0];
-      const bought = pools.some((m) =>
-        audits[m.id]?.executions.some(
-          (e) =>
-            e.trade.trader.toLowerCase() === sender &&
-            e.trade.side === "buy" &&
-            !e.flags.length,
-        ),
-      );
-      return { sender, pools, volume, median, active, best, bought };
-    })
-    .sort((a, b) =>
-      a.volume > b.volume
-        ? -1
-        : a.volume < b.volume
-          ? 1
-          : a.sender.localeCompare(b.sender),
-    );
-  return (
-    <section className="panel">
-      <div className="panel-heading">
-        <h2>Creator discovery</h2>
-        <span className="badge">{groups.length} covered senders</span>
-      </div>
-      <div className="table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Creator / launch sender</th>
-              <th>Launches</th>
-              <th>Still trading</th>
-              <th>Volume created</th>
-              <th>Median volume</th>
-              <th>Best launch</th>
-              <th>Creator fees</th>
-              <th>Own purchase</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.sender}>
-                <td>
-                  <Link
-                    href={`/creators/${g.sender}/`}
-                    className={styles.identity}
-                  >
-                    <span
-                      className={styles.avatar}
-                      style={{
-                        height: 32,
-                        flexBasis: 32,
-                        borderRadius: 10,
-                        fontSize: 12,
-                      }}
-                    >
-                      {g.sender.slice(2, 4).toUpperCase()}
-                    </span>
-                    <strong className="mono">{shortAddress(g.sender)}</strong>
-                  </Link>
-                </td>
-                <td>{g.pools.length}</td>
-                <td>
-                  {g.active}/{g.pools.length}
-                  <small className="cell-sub">observed in 24h</small>
-                </td>
-                <td>
-                  <Eth wei={g.volume.toString()} />
-                </td>
-                <td>
-                  <Eth wei={g.median.toString()} />
-                </td>
-                <td>
-                  <Link href={poolHref(g.best)}>{g.best.symbol}</Link>
-                </td>
-                <td>
-                  {g.pools.filter((m) => m.creatorFees).length}/{g.pools.length}{" "}
-                  enabled
-                </td>
-                <td>
-                  {g.bought ? (
-                    <span className="badge lavender">BOUGHT OWN</span>
-                  ) : (
-                    <Unavailable reason="No supported own purchase established" />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="panel-footnote">
-        Sorted by observed volume across {s.markets.length} covered pools.
-        Counts and activity describe this sample, not each sender’s entire
-        launch history. Open a creator for their wider catalog.
       </p>
     </section>
   );

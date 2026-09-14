@@ -1,4 +1,10 @@
 import { createHash } from "node:crypto";
+import type {
+  AnalyticsExploreOptions,
+  AnalyticsLeaderboardOptions,
+  LiveWindow,
+  SearchGroup,
+} from "@pools/core";
 
 export class RequestError extends Error {
   constructor(
@@ -19,6 +25,10 @@ export type Route =
   | "pool"
   | "trades"
   | "wallet"
+  | "explore"
+  | "leaderboard"
+  | "profile"
+  | "search"
   | "feed";
 export interface ReadRequest {
   route: Route;
@@ -30,6 +40,10 @@ export interface ReadRequest {
   scope: string;
   cursor: string[] | null;
   cacheKey: string;
+  explore: AnalyticsExploreOptions;
+  leaderboard: AnalyticsLeaderboardOptions;
+  window: LiveWindow;
+  group?: SearchGroup;
 }
 
 export function encodeCursor(scope: string, position: string[]): string {
@@ -39,7 +53,7 @@ export function encodeCursor(scope: string, position: string[]): string {
 }
 
 export function parseRequest(input: string): ReadRequest {
-  if (input.length > 2048) throw new RequestError(414, "url_too_long");
+  if (input.length > 20000) throw new RequestError(414, "url_too_long");
   const url = new URL(input, "http://localhost");
   let route: Route;
   let poolId: string | null = null;
@@ -48,13 +62,20 @@ export function parseRequest(input: string): ReadRequest {
   const activity = /^\/v1\/wallets\/(0x[\da-f]{40})\/activity$/i.exec(
     url.pathname,
   );
+  const profile = /^\/v1\/wallets?\/(0x[\da-f]{40})$/i.exec(url.pathname);
   if (url.pathname === "/health") route = "health";
   else if (url.pathname === "/ready") route = "ready";
   else if (url.pathname === "/v1/status") route = "status";
   else if (url.pathname === "/v1/pools") route = "pools";
   else if (url.pathname === "/v1/trades") route = "trades";
   else if (url.pathname === "/v1/feed") route = "feed";
-  else if (pool) {
+  else if (url.pathname === "/v1/explore") route = "explore";
+  else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
+  else if (url.pathname === "/v1/search") route = "search";
+  else if (profile) {
+    route = "profile";
+    wallet = profile[1].toLowerCase();
+  } else if (pool) {
     route = "pool";
     poolId = pool[1].toLowerCase();
   } else if (activity) {
@@ -62,15 +83,23 @@ export function parseRequest(input: string): ReadRequest {
     wallet = activity[1].toLowerCase();
   } else throw new RequestError(404, "not_found");
   const allowed =
-    route === "pools"
-      ? ["q", "limit", "cursor"]
-      : route === "trades"
-        ? ["poolId", "limit", "cursor"]
-        : route === "wallet"
-          ? ["limit", "cursor"]
-          : route === "feed"
-            ? ["pools"]
-            : [];
+    route === "explore"
+      ? ["q", "window", "sort", "direction", "view", "ids", "limit", "offset"]
+      : route === "leaderboard"
+        ? ["window", "minTrades", "metric", "offset", "limit"]
+        : route === "profile" || route === "pool"
+          ? ["window"]
+          : route === "search"
+            ? ["q", "group"]
+            : route === "pools"
+              ? ["q", "limit", "cursor"]
+              : route === "trades"
+                ? ["poolId", "limit", "cursor"]
+                : route === "wallet"
+                  ? ["limit", "cursor"]
+                  : route === "feed"
+                    ? ["pools"]
+                    : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
@@ -81,6 +110,65 @@ export function parseRequest(input: string): ReadRequest {
   const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
   if (q.length > 100 || /[\x00-\x1f\x7f]/.test(q))
     throw new RequestError(400, "invalid_search");
+  function choice<T extends string>(
+    key: string,
+    choices: readonly T[],
+    fallback: T,
+  ): T {
+    const value = url.searchParams.get(key) ?? fallback;
+    if (!choices.includes(value as T))
+      throw new RequestError(400, `invalid_${key}`);
+    return value as T;
+  }
+  const window = choice(
+    "window",
+    ["1h", "6h", "24h", "7d", "30d", "All"] as const,
+    route === "profile" || route === "leaderboard" ? "All" : "24h",
+  );
+  const offsetRaw = url.searchParams.get("offset") ?? "0",
+    minRaw = url.searchParams.get("minTrades") ?? "10";
+  if (!/^(0|[1-9]\d{0,5})$/.test(offsetRaw))
+    throw new RequestError(400, "invalid_offset");
+  if (!/^(0|[1-9]\d{0,2})$/.test(minRaw))
+    throw new RequestError(400, "invalid_min_trades");
+  const ids = (url.searchParams.get("ids") ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((s) => s.toLowerCase());
+  if (ids.length > 200 || ids.some((s) => !hash.test(s)))
+    throw new RequestError(400, "invalid_ids");
+  const explore: AnalyticsExploreOptions = {
+    window,
+    q,
+    limit: +rawLimit,
+    offset: +offsetRaw,
+    ids,
+    sort: choice(
+      "sort",
+      ["volume", "change", "launch", "liquidity"] as const,
+      "volume",
+    ),
+    direction: choice("direction", ["asc", "desc"] as const, "desc"),
+    view: choice(
+      "view",
+      ["all", "gainers", "new", "crowd", "watchlist"] as const,
+      "all",
+    ),
+  };
+  const leaderboard: AnalyticsLeaderboardOptions = {
+    window,
+    limit: +rawLimit,
+    offset: +offsetRaw,
+    minTrades: +minRaw,
+    metric: choice("metric", ["realized", "net"] as const, "realized"),
+  };
+  const group = url.searchParams.has("group")
+    ? choice(
+        "group",
+        ["Tokens", "Wallets", "Creators", "Transactions"] as const,
+        "Tokens",
+      )
+    : undefined;
   if (route === "trades" && url.searchParams.has("poolId")) {
     poolId = url.searchParams.get("poolId")!.toLowerCase();
     if (!hash.test(poolId)) throw new RequestError(400, "invalid_pool_id");
@@ -98,7 +186,18 @@ export function parseRequest(input: string): ReadRequest {
   )
     throw new RequestError(400, "invalid_pools");
   const scope = createHash("sha256")
-    .update(JSON.stringify([route, poolId, wallet, q, pools]))
+    .update(
+      JSON.stringify([
+        route,
+        poolId,
+        wallet,
+        q,
+        pools,
+        explore,
+        leaderboard,
+        group,
+      ]),
+    )
     .digest("hex")
     .slice(0, 24);
   let cursor: string[] | null = null;
@@ -147,6 +246,10 @@ export function parseRequest(input: string): ReadRequest {
     scope,
     cursor,
     cacheKey: JSON.stringify([scope, +rawLimit, cursor]),
+    explore,
+    leaderboard,
+    window,
+    group,
   };
 }
 

@@ -1,8 +1,10 @@
 # Indexed chain read API
 
 This small Node service reads public chain evidence from the private Railway
-Postgres database. It makes no RPC calls, writes no account/profile data, and
-does not calculate PnL. Indexer migrations and ingestion remain separate.
+Postgres database. It makes no RPC calls and writes no account/profile data.
+Product endpoints aggregate the published, supported pool positions using the
+same exact average-cost rules as the frontend. Indexer migrations, evidence
+verification, holder reconstruction and publication remain separate.
 
 ## Running
 
@@ -24,13 +26,14 @@ Set `DATABASE_URL` through Railway's private Postgres reference; Railway supplie
 `PORT`, otherwise it defaults to 3102. Keep the database private. This read
 service can have a Railway HTTPS domain for the Next.js server to call. No new
 RPC key is required. Prefer a dedicated database role with SELECT access only
-to `indexed_pools`, `indexed_events`, `indexer_streams`, and `indexer_batches`,
+to `indexed_pools`, `indexed_events`, `indexer_streams`, `indexer_batches`, and
+`analytics_pool_snapshots`,
 plus schema USAGE. Even when using the existing connection initially, all API
 transactions explicitly run READ ONLY. Database roles are infrastructure
 permissions and are unrelated to user accounts.
 
 Deploy the indexer first so its pre-deploy migration applies
-`002_read_indexes.sql` before exposing the growing event history. The API has
+`002_read_indexes.sql` and `003_analytics.sql` before exposing the growing event history. The API has
 no migration privileges or startup migration command.
 
 No deployment is implied by these files. The website must be explicitly wired
@@ -45,7 +48,7 @@ on-chain timestamps remain decimal strings in ordinary endpoints; `logIndex`
 and chain ID are numbers. The feed has the existing `RecentSwaps` numeric
 block/timestamp contract, with safe-integer validation for its boundaries.
 
-Every `/v1` response has `generatedAt` and `coverage`:
+Raw-event `/v1` responses have `generatedAt` and this `coverage`:
 
 ```json
 {
@@ -129,7 +132,7 @@ decreasing cutoff or changed cutoff hash must invalidate previous assumptions.
 Four Postgres connections, 2-second connection timeout, 3-second statement
 timeout, 16 concurrent database reads, 240 requests/minute per instance, and
 five-second cache/request coalescing keep a public read service bounded. Cache
-storage caps at 256 entries and 16 MiB; each response caps at 2 MiB. This
+storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. This
 is an instance-wide pilot budget, not an account/IP tracking system. Search and
 wallet reads still need the read indexes as history grows; timeouts return a
 retryable 503. No HTTP response exposes credentials, SQL, or provider errors.
@@ -139,3 +142,58 @@ Errors use `{error:code}` with 400 for validation, 404 for missing routes/pools,
 unavailable data, or missing feed coverage. Responses use `Cache-Control:
 no-store`; only the bounded in-process cache is shared. No permissive CORS is
 enabled. Browsers should use Next.js's same-origin adapter.
+
+## Published analytics and product endpoints
+
+The background projector publishes one validated `ChainSnapshot` per pool into
+`analytics_pool_snapshots`. Pools with no publication remain in Explore with
+null analytics. An indexed publication references its source batch, so a rewind
+cascades to that publication. A separately verified RPC capture records its own
+cutoff/evidence rather than pretending the raw indexer is caught up. Publication
+jobs have their own retry/success timestamps in `analytics_pool_jobs`.
+
+| Endpoint                                                                    | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
+| `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
+| `/v1/wallets/:address?window=All`                                           | Public wallet summary, all available positions, bounded latest 500 recorded executions, cumulative supported realized-PnL curve and observed launches. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                               |
+| `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |
+| `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports fuzzy text through the shared provider. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                                      |
+
+Windows support `1h`, `6h`, `24h`, `7d`, `30d`, and `All`. Their common endpoint
+is `coverage.asOf`, the latest published chain timestamp, not the current clock.
+Each pool and position exposes its own older cutoff when applicable. Overview
+coverage reports `catalogPools`, `processedPools`, `asOf`, `oldestAsOf`,
+`generatedAt`, `complete:false`, `registryExhaustive:false`, and
+`pnlScope:"supported_pool_positions_only"`. These are asynchronously published
+captures, not proof of identical complete windows for every pool.
+Wallet summaries additionally expose their own `asOf`, `oldestAsOf`, and
+`completeWindow` so a newer unrelated pool cannot make an older wallet capture
+appear current. The All selector means all observed supported history, not
+complete lifetime/whole-chain profit.
+
+Only supported positions contribute to aggregate PnL. Unknown basis, unmatched
+transfers, inconsistent balances or disagreement between stored and recomputed
+accounting exclude that position, while its exclusion count remains visible.
+Earlier purchases are retained when computing the cost of sales within a later
+window. ROI uses summed disposed cost; wins/losses describe closed inventory
+cycles. Missing price marks make aggregate unrealized PnL unavailable instead
+of treating missing marks as zero. Gas and separate router fees remain outside
+the existing swap-amount accounting policy. Holdings/volume and PnL are distinct
+measures. A pool's holder count is only reported when its published holder ledger
+is complete, with ledger cutoff/proof available in pool details.
+Repeated identical log identities are deduplicated before trade gates, net
+flows, volume, ROI and accounting; conflicting duplicates reject the capture.
+Unsupported positions expose null folded position/cost values rather than
+letting a consumer accidentally display an incomplete basis as valid.
+
+The shared pure functions in `@pools/core` provide the same fallback and hosted
+calculations. The API loads and caches a complete product read model for 15
+seconds, grouping audits by wallet and memoizing window calculations. Global
+sorting never happens on an already-paginated page. This bounded pilot supports
+10,000 catalog pools, 500 published captures, and 32 MiB of snapshot/holder JSON.
+Exceeding those limits returns `analytics_materialization_limit` (503), not a
+silently truncated leaderboard. Larger corpora should publish relational
+position/stat summaries before increasing the limits. In-process response
+caching can add up to another five seconds before a corrected publication is
+visible.

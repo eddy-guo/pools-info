@@ -41,7 +41,7 @@ export function Search() {
     query: string;
     group?: SearchGroup;
     provider: typeof provider;
-    data?: SearchResponse;
+    data?: SearchResponse & { indexNotice?: string };
     error?: string;
   }>();
   const current =
@@ -85,9 +85,16 @@ export function Search() {
       () => {
         provider
           .search(query, { group, signal: controller.signal })
-          .then((data) => {
+          .then(async (data) => {
+            if (controller.signal.aborted) return;
+            setResult({ query, group, provider, data });
+            const extended = await provider.extend(
+              query,
+              { group, signal: controller.signal },
+              data,
+            );
             if (!controller.signal.aborted)
-              setResult({ query, group, provider, data });
+              setResult({ query, group, provider, data: extended });
           })
           .catch(() => {
             if (!controller.signal.aborted)
@@ -211,6 +218,9 @@ export function Search() {
               ? `${data.coverage.pools} covered pools + audited activity · partial coverage`
               : "Searching current coverage…"}
           </p>
+          {data?.indexNotice && (
+            <p className="search-help">{data.indexNotice}</p>
+          )}
           {!query && (
             <p className="search-help">
               Try a name or a typo, paste an address, or use <code>token:</code>

@@ -21,3 +21,13 @@ export {
 } from "./pool-events";
 export type { RawLog } from "./events";
 export type { Receipt } from "./audit";
+
+export { auditPool, attributeSwap } from "./audit";
+export {
+  contracts,
+  decodeLaunch,
+  decodeSwap,
+  spotPriceWei,
+  swapEvent,
+  transferEvent,
+} from "./events";

@@ -1,8 +1,7 @@
-import { unstable_cache } from "next/cache";
-import { collectSnapshot, Rpc } from "@pools/chain";
-import type { ChainSnapshot } from "@pools/core";
+import type { AnalyticsPoolDetail, ChainSnapshot } from "@pools/core";
 import captured from "../../../../data/pools/index.json";
-
+import initial from "../../../../data/snapshots/chain.json";
+import { readProduct } from "./product-server";
 export function capturedPoolSnapshot(
   poolId: string,
   launchTx: string,
@@ -14,87 +13,35 @@ export function capturedPoolSnapshot(
     ? snapshot
     : undefined;
 }
-
-let pending: Promise<ChainSnapshot> | undefined;
-async function refresh() {
-  // Coalesce concurrent cold requests in this function instance. The Next data
-  // cache shares successful results across requests; a failed refresh throws.
-  pending ??= collectSnapshot({ rpc: new Rpc(undefined, { timeoutMs: 90000 }) })
-    .then(({ snapshot }) => snapshot)
-    .finally(() => {
-      pending = undefined;
-    });
-  return pending;
+/** Shared legacy context is a preloaded snapshot. Product views read saved DB pages. */
+export async function currentChainSnapshot(): Promise<ChainSnapshot> {
+  return initial as ChainSnapshot;
 }
-// Retain the documented Data Cache API while existing static routes use the
-// non-Cache-Components model. No provider credentials enter the cache key.
-export const currentChainSnapshot = unstable_cache(
-  refresh,
-  ["chain-markets-v4"],
-  { revalidate: 60 },
-);
-
-const audits = new Map<string, Promise<ChainSnapshot>>();
-async function audit(poolId: string, launchTx: `0x${string}`) {
-  const key = `${poolId}:${launchTx}`;
-  let pending = audits.get(key);
-  if (!pending) {
-    pending = collectSnapshot({
-      target: { poolId, launchTx },
-      poolLimit: 1,
-      includeAccounting: true,
-      rpc: new Rpc(undefined, { timeoutMs: 180000, maxRequests: 10000 }),
-    })
-      .then((r) => r.snapshot)
-      .finally(() => audits.delete(key));
-    audits.set(key, pending);
-  }
-  return pending;
+export async function targetedMarketSnapshot(
+  poolId: string,
+  launchTx: `0x${string}`,
+  _refresh = false,
+): Promise<ChainSnapshot> {
+  void _refresh;
+  const result = await readProduct<{ analytics: AnalyticsPoolDetail | null }>(
+    ["pools", poolId.toLowerCase()],
+    new URLSearchParams(),
+  );
+  const snapshot = result.analytics?.snapshot;
+  if (
+    !snapshot ||
+    snapshot.markets[0]?.launchTx.toLowerCase() !== launchTx.toLowerCase()
+  )
+    throw Error("Pool analytics are not published yet");
+  return snapshot;
 }
-const liveAuditedPoolSnapshot = unstable_cache(audit, ["chain-accounting-v2"], {
-  revalidate: 300,
-});
-
 export async function auditedPoolSnapshot(
   poolId: string,
   launchTx: `0x${string}`,
   refresh = false,
 ) {
-  const saved = !refresh && capturedPoolSnapshot(poolId, launchTx);
-  return (
-    (saved && saved.markets[0]?.accounting ? saved : undefined) ||
-    liveAuditedPoolSnapshot(poolId, launchTx)
-  );
-}
-
-const liveTargetedMarketSnapshot = unstable_cache(
-  async (poolId: string, launchTx: `0x${string}`) =>
-    (
-      await collectSnapshot({
-        target: { poolId, launchTx },
-        poolLimit: 1,
-        rpc: new Rpc(undefined, { timeoutMs: 90000 }),
-      })
-    ).snapshot,
-  ["chain-target-v1"],
-  { revalidate: 60 },
-);
-
-export async function targetedMarketSnapshot(
-  poolId: string,
-  launchTx: `0x${string}`,
-  refresh = false,
-) {
-  const result =
-    (!refresh && capturedPoolSnapshot(poolId, launchTx)) ||
-    (await liveTargetedMarketSnapshot(poolId, launchTx));
-  // Pool charts/history do not need the heavier per-wallet audit payload.
-  return {
-    ...result,
-    markets: result.markets.map((m) => {
-      const { accounting, ...market } = m;
-      void accounting;
-      return market;
-    }),
-  };
+  const snapshot = await targetedMarketSnapshot(poolId, launchTx, refresh);
+  if (!snapshot.markets[0]?.accounting?.executions)
+    throw Error("Saved accounting is not published yet");
+  return snapshot;
 }

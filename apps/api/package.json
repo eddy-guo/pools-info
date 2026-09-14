@@ -9,6 +9,7 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
+    "@pools/core": "workspace:*",
     "pg": "^8.16.3",
     "tsx": "^4.20.0"
   },

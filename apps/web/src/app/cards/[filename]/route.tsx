@@ -1,16 +1,9 @@
 import { ImageResponse } from "next/og";
-import { auditedPoolSnapshot } from "@/lib/chain-server";
-import { initialSnapshot } from "@/lib/data";
-import {
-  shortAddress,
-  walletMetrics,
-  windows,
-  type LiveWindow,
-  type PoolAudit,
-} from "@pools/core";
+import { walletCaptureLabel, readCardWallet } from "@/lib/product-card";
+import { shortAddress, windows, type LiveWindow } from "@pools/core";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 240;
+export const maxDuration = 30;
 const money = (wei: string | null) =>
   wei === null
     ? "Unavailable"
@@ -24,66 +17,30 @@ export async function GET(
     return new Response("Invalid wallet address", { status: 404 });
   const address = filename.slice(0, -4).toLowerCase(),
     q = new URL(request.url).searchParams,
-    pool = q.get("pool"),
-    launch = q.get("launch"),
     raw = q.get("window") ?? "All",
     window: LiveWindow = Object.hasOwn(windows, raw)
       ? (raw as LiveWindow)
       : "All";
-  if (
-    !pool ||
-    !/^0x[0-9a-f]{64}$/i.test(pool) ||
-    !launch ||
-    !/^0x[0-9a-f]{64}$/i.test(launch)
-  )
-    return new Response(
-      "Open a wallet profile with a selected pool to generate its audit card.",
-      { status: 400 },
-    );
   try {
-    // Offline tests may use a committed RPC-audited snapshot, never request-supplied metrics.
-    const snapshot =
-      process.env.CHAIN_REFRESH_DISABLED === "1"
-        ? initialSnapshot
-        : await auditedPoolSnapshot(
-            pool.toLowerCase(),
-            launch as `0x${string}`,
-          );
-    const market = snapshot.markets.find((m) => m.id === pool.toLowerCase());
-    if (!market?.accounting?.executions)
-      return new Response("Audit unavailable. Try again later.", {
-        status: 503,
-        headers: { "Cache-Control": "no-store" },
-      });
-    const audit: PoolAudit = {
-      poolId: market.id,
-      market,
-      toBlock: snapshot.toBlock,
-      toTimestamp: snapshot.toTimestamp,
-      generatedAt: snapshot.generatedAt,
-      ...market.accounting,
-      executions: market.accounting.executions,
-    };
-    const m = walletMetrics(audit, address, window);
-    if (!m)
-      return new Response("No attributed swaps for this wallet in this pool", {
+    const poolId = q.get("pool")?.toLowerCase(),
+      launch = q.get("launch")?.toLowerCase();
+    if (
+      (poolId && !/^0x[0-9a-f]{64}$/.test(poolId)) ||
+      (launch && !/^0x[0-9a-f]{64}$/.test(launch))
+    )
+      return new Response("Invalid pool scope", { status: 400 });
+    const { result, scope, global } = await readCardWallet(
+      address,
+      window,
+      poolId,
+      launch,
+    );
+    const m = result.wallet;
+    if (!m.tradeCount)
+      return new Response("No trades in the available saved coverage", {
         status: 404,
       });
-    const ranked = audit.wallets
-      .map((w) => walletMetrics(audit, w.address, window)!)
-      .filter((w) => w.complete && w.trades.length >= 10)
-      .sort((a, b) =>
-        BigInt(a.realizedWei!) > BigInt(b.realizedWei!)
-          ? -1
-          : BigInt(a.realizedWei!) < BigInt(b.realizedWei!)
-            ? 1
-            : a.row.address.localeCompare(b.row.address),
-      );
-    const rank =
-      ranked.findIndex((w) => w.row.address.toLowerCase() === address) + 1;
-    // Contract names can include unsupported glyphs. Keep OG text ASCII to avoid remote glyph loading.
-    const symbol =
-      market.symbol.replace(/[^\x20-\x7e]/g, "").slice(0, 24) || "Token";
+    const rank = m.rank;
     const image = new ImageResponse(
       <div
         style={{
@@ -110,7 +67,8 @@ export async function GET(
               {shortAddress(address).replace("…", "...")}
             </span>
             <span style={{ fontSize: 17, color: "#8A8A94" }}>
-              {symbol} / {window} / Robinhood Chain
+              Pools traders / {window === "All" ? "All observed" : window} /
+              Robinhood Chain
             </span>
           </div>
           <div style={{ display: "flex", fontSize: 32, fontWeight: 600 }}>
@@ -131,7 +89,9 @@ export async function GET(
               REALIZED SWAP PNL
             </span>
             <span style={{ color: "#4DE1C1", fontSize: 17 }}>
-              {rank ? `#${rank} in this pool` : "Unranked"}
+              {rank
+                ? `#${rank} ${global ? "across" : "in"} ${scope}`
+                : `Unranked · ${scope}`}
             </span>
           </div>
           <div
@@ -174,7 +134,7 @@ export async function GET(
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <span style={{ color: "#8A8A94", fontSize: 17 }}>Record</span>
               <span style={{ fontSize: 27 }}>
-                {m.complete ? `${m.wins}W / ${m.losses}L` : "N/A"}
+                {m.realizedWei !== null ? `${m.wins}W / ${m.losses}L` : "N/A"}
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -209,19 +169,17 @@ export async function GET(
           }}
         >
           <span>
-            Selected pool only. Average cost, before gas. Unsupported or unknown
-            basis excluded.
+            Supported positions {global ? "across" : "in"} {scope}. Average
+            cost, before gas.
           </span>
-          <span>
-            Block {audit.toBlock} /{" "}
-            {new Date(audit.toTimestamp * 1000)
-              .toISOString()
-              .slice(0, 19)
-              .replace("T", " ")}{" "}
-            UTC
-          </span>
+          <span>{walletCaptureLabel(m)}</span>
           <span>{`poolsinfo.com/wallet/${address}/`}</span>
-          <span style={{ fontSize: 13 }}>{`Pool ${market.id}`}</span>
+          <span style={{ fontSize: 13 }}>
+            {m.excludedPositionCount} unsupported positions excluded.
+            {result.delivery.source === "preloaded"
+              ? " Preloaded public dataset."
+              : " Saved chain data."}
+          </span>
         </div>
       </div>,
       {
@@ -234,7 +192,7 @@ export async function GET(
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
     });
   } catch {
-    return new Response("Audit card unavailable. Try again later.", {
+    return new Response("PnL card unavailable. Try again later.", {
       status: 503,
       headers: { "Cache-Control": "no-store", "Retry-After": "300" },
     });

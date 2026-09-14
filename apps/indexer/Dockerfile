@@ -11,7 +11,8 @@ COPY apps/indexer apps/indexer
 COPY packages/core packages/core
 COPY packages/chain packages/chain
 COPY packages/db packages/db
+COPY data/analytics data/analytics
 RUN pnpm --filter @pools/indexer typecheck
 WORKDIR /app/apps/indexer
 USER node
-CMD ["node", "--import", "tsx", "src/main.ts", "run"]
+CMD ["node", "--import", "tsx", "src/service.ts"]

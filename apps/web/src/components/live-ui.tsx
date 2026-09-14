@@ -110,7 +110,7 @@ export function useMarket(id?: string, launch?: string | null) {
   const hasKnown = !!known;
   const refreshCount = attempt.id === id ? attempt.count : 0;
   useEffect(() => {
-    if ((hasKnown && !refreshCount) || !id || !launch) return;
+    if (!id || !launch) return;
     const controller = new AbortController();
     // Defer the request state with the fetch so a cancelled effect cannot leave
     // the new route marked as loading or display the previous route's error.

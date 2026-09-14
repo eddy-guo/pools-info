@@ -1,17 +1,11 @@
 "use client";
 import Link from "next/link";
+import { useProduct } from "@/lib/use-product";
+import type { AnalyticsExploreResponse } from "@pools/core";
 import { usePathname } from "next/navigation";
-import {
-  ArrowUpRight,
-  BookOpen,
-  Wallet,
-  Pause,
-  Play,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowUpRight, BookOpen, Wallet, RefreshCw } from "lucide-react";
 import { FeaturePreview } from "./feature-preview";
 import { Search } from "./search";
-import { useLive } from "./live-provider";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -117,44 +111,42 @@ export function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function ShellStatus() {
-  const { snapshot, status, enabled, setEnabled, refresh } = useLive();
-  const labels: Record<string, string> = {
-    checking: "Checking for updates",
-    current: "Automatic updates active",
-    delayed: "Updates delayed - showing last captured data",
-    paused: "Updates paused",
-  };
-  const captured = new Date(snapshot.generatedAt).toISOString();
+  const { data, loading, error } =
+    useProduct<AnalyticsExploreResponse>("explore?limit=1");
+  const captured = data
+    ? new Date(data.coverage.asOf * 1000).toISOString()
+    : null;
   return (
-    <div className={`network-subnav ${status === "delayed" ? "stale" : ""}`}>
+    <div className="network-subnav">
       <strong role="status" className="status-label">
         <span className="network-indicator" />
-        {labels[status]}
+        {loading
+          ? "Reading saved data"
+          : data?.delivery.source === "indexer"
+            ? "Saved index"
+            : data
+              ? "Preloaded coverage"
+              : (error ?? "Saved data unavailable")}
       </strong>
       <span className="network-context">Uniswap v4 · Robinhood Chain</span>
-      <span className="mono">
-        block {snapshot.toBlock.toLocaleString("en-US")}
-      </span>
-      <span className="capture-time" title={`Captured ${captured}`}>
-        Captured {captured.slice(5, 10)} {captured.slice(11, 16)} UTC
-      </span>
-      <span className="coverage-tag">
-        {snapshot.markets.length} covered pools
-      </span>
+      {captured && (
+        <span className="capture-time" title={captured}>
+          Latest capture {captured.slice(5, 10)} {captured.slice(11, 16)} UTC
+        </span>
+      )}
+      {data && (
+        <span className="coverage-tag">
+          {data.coverage.catalogPools} discovered ·{" "}
+          {data.coverage.processedPools} processed
+        </span>
+      )}
       <div className="status-actions">
         <button
           className="icon-button"
-          title={enabled ? "Pause updates" : "Resume updates"}
-          aria-label={enabled ? "Pause updates" : "Resume updates"}
-          onClick={() => setEnabled(!enabled)}
-        >
-          {enabled ? <Pause size={12} /> : <Play size={12} />}
-        </button>
-        <button
-          className="icon-button"
-          title="Check now"
-          aria-label="Check now"
-          onClick={refresh}
+          title="Refresh saved data"
+          aria-label="Refresh saved data"
+          disabled={loading}
+          onClick={() => window.dispatchEvent(new Event("product-refresh"))}
         >
           <RefreshCw size={12} />
         </button>
