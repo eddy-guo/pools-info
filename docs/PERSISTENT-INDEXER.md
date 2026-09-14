@@ -123,9 +123,17 @@ RPC counts separately. One slow or broken pool retains its old checkpoint.
 1. In the existing project, add a GitHub service from `eddy-guo/pools-info`,
    branch `main`. Name it `indexer`.
 2. Keep the root directory at `/` so the build can access workspace packages.
-3. Set the Railway configuration file path to `/apps/indexer/railway.json`.
-   This selects the worker Dockerfile, migration pre-deploy command and worker
-   start command. Do not use the default Next.js build/start commands.
+3. Configure the service directly in Railway Settings. The dashboard now says
+   new services cannot opt into legacy Config as Code after 28 August 2026.
+   `apps/indexer/railway.json` remains a reference for legacy services, but is not
+   connected to this deployment. Use these settings:
+   - Builder: Dockerfile; path: `apps/indexer/Dockerfile`.
+   - Pre-deploy command: `node --import tsx src/main.ts migrate`.
+   - Start command: `node --import tsx src/main.ts run`.
+   - Watch paths: `/apps/indexer/**`, `/packages/**`, `/pnpm-lock.yaml`,
+     `/pnpm-workspace.yaml`, `/package.json`.
+   - Wait for CI enabled; one replica, serverless disabled.
+     Do not use the default Next.js build/start commands.
 4. Set `DATABASE_URL` to the Postgres service's private URL via Railway's variable
    reference picker. Set `ROBINHOOD_RPC_URL` to the existing Alchemy URL and
    `INDEXER_START_BLOCK=62625935` for the pilot. Keep one replica and disable
