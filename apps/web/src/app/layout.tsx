@@ -5,7 +5,12 @@ import { DataProvider } from "@/components/state";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.SITE_URL ?? "http://localhost:3100"),
+  metadataBase: new URL(
+    process.env.SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "http://localhost:3100"),
+  ),
   title: {
     default: "Pools Info | Explore pools on Robinhood Chain",
     template: "%s | Pools Info",

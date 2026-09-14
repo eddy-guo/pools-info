@@ -31,6 +31,10 @@ test("watchlist persists per device and has a useful empty state", async ({
   page,
 }) => {
   await page.goto("/?q=Orbit");
+  await expect(page.getByRole("textbox", { name: "Filter pools" })).toHaveValue(
+    "Orbit",
+  );
+  await expect(page.getByText("1-1 of 1", { exact: true })).toBeVisible();
   await page
     .getByRole("button", { name: "Add to watchlist" })
     .filter({ visible: true })
