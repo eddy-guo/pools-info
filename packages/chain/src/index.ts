@@ -10,3 +10,14 @@ export {
 } from "./recent-swaps";
 
 export { collectCatalog } from "./catalog";
+export type { CatalogRange } from "./catalog";
+export {
+  collectPoolEvents,
+  type PoolEventRange,
+  type PoolEvents,
+  type IndexedSwap,
+  type IndexedTransfer,
+  type EventHeader,
+} from "./pool-events";
+export type { RawLog } from "./events";
+export type { Receipt } from "./audit";

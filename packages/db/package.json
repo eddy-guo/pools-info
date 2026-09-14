@@ -1,0 +1,20 @@
+{
+  "name": "@pools/db",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}

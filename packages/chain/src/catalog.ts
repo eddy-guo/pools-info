@@ -9,17 +9,36 @@ import { mergeCatalog, type ChainCatalog, type CatalogPool } from "@pools/core";
 import { contracts, decodeLaunch, launchEvent } from "./events";
 import { Rpc, hex } from "./rpc";
 import type { Receipt } from "./audit";
+export interface CatalogRange {
+  fromBlock: number;
+  toBlock: number;
+}
 // Metadata discovery only: no swap, transfer, balance or trader backfill.
 export async function collectCatalog(
   previous?: ChainCatalog,
   rpc = new Rpc(undefined, { timeoutMs: 120000, maxRequests: 1000 }),
+  range?: CatalogRange,
 ) {
+  if (
+    range &&
+    (previous ||
+      !Number.isSafeInteger(range.fromBlock) ||
+      !Number.isSafeInteger(range.toBlock) ||
+      range.fromBlock < 0 ||
+      range.toBlock < range.fromBlock ||
+      range.toBlock - range.fromBlock >= 2000)
+  )
+    throw Error(
+      "Explicit catalog range must be at most 2000 blocks with no previous catalog",
+    );
   if (Number(await rpc.call<Hex>("eth_chainId", [])) !== 4663)
     throw Error("Wrong chain");
   const head = Number(await rpc.call<Hex>("eth_blockNumber", []));
-  if (!Number.isSafeInteger(head) || head < 100128)
+  if (!Number.isSafeInteger(head) || head < (range ? 128 : 100128))
     throw Error("Invalid chain head");
-  const toBlock = head - 128;
+  const toBlock = range?.toBlock ?? head - 128;
+  if (toBlock > head - 128)
+    throw Error("Catalog range exceeds confirmed cutoff");
   if (
     previous &&
     (previous.chainId !== 4663 ||
@@ -38,10 +57,9 @@ export async function collectCatalog(
         "Catalog checkpoint changed; rebuild before extending coverage",
       );
   }
-  const fromBlock = Math.max(
-    toBlock - 99999,
-    previous ? previous.toBlock - 128 : 0,
-  );
+  const fromBlock =
+    range?.fromBlock ??
+    Math.max(toBlock - 99999, previous ? previous.toBlock - 128 : 0);
   const logs = await rpc.logs(
     contracts.strategies,
     [toEventSelector(launchEvent)],
@@ -52,6 +70,15 @@ export async function collectCatalog(
     throw Error(
       "Catalog batch exceeds 250 launches; split the scan before publishing",
     );
+  if (
+    logs.some(
+      (l) =>
+        !Number.isSafeInteger(Number(l.blockNumber)) ||
+        Number(l.blockNumber) < fromBlock ||
+        Number(l.blockNumber) > toBlock,
+    )
+  )
+    throw Error("Out-of-range catalog log");
   const decoded = logs.map(decodeLaunch);
   const heights = [
     ...new Set([toBlock, ...logs.map((l) => Number(l.blockNumber))]),

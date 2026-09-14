@@ -8,14 +8,34 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pools_test
+          POSTGRES_PASSWORD: pools_test
+          POSTGRES_DB: pools_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pools_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6.1.0
       - uses: actions/setup-node@v7.0.0
         with:
-          node-version: '22'
+          node-version: "22"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - run: pnpm test:db
+        env:
+          TEST_DATABASE_URL: postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test
+      - run: docker build -f apps/indexer/Dockerfile -t pools-indexer:test .
+      - run: docker run --rm --network host -e DATABASE_URL=postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test pools-indexer:test node --import tsx src/main.ts migrate
+      - run: docker run --rm --network host -e DATABASE_URL=postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test pools-indexer:test node --import tsx src/main.ts status
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
