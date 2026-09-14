@@ -11,3 +11,5 @@ export * from "./search";
 export * from "./candles";
 
 export * from "./catalog";
+
+export * from "./holders";

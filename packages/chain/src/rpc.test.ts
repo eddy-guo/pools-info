@@ -75,3 +75,73 @@ test("batches stay bounded at twenty calls per HTTP request", async () => {
     await endpoint.close();
   }
 });
+
+async function rangeLimitedServer() {
+  const accepted: [number, number][] = [];
+  let rejected = 0;
+  const http = createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const input = JSON.parse(body);
+    const rows = Array.isArray(input) ? input : [input];
+    const results = rows.map((row) => {
+      const { fromBlock, toBlock } = row.params[0];
+      const from = Number(fromBlock),
+        to = Number(toBlock);
+      if (to - from + 1 > 10) {
+        rejected++;
+        res.statusCode = 400;
+        return {
+          id: row.id,
+          error: {
+            code: -32600,
+            message:
+              "Under the Free tier plan, you can make eth_getLogs requests with up to a 10 block range.",
+          },
+        };
+      }
+      accepted.push([from, to]);
+      return { id: row.id, result: [] };
+    });
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(Array.isArray(input) ? results : results[0]));
+  });
+  await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+  return {
+    url: `http://127.0.0.1:${(http.address() as { port: number }).port}`,
+    accepted,
+    rejected: () => rejected,
+    close: () => new Promise<void>((resolve) => http.close(() => resolve())),
+  };
+}
+test("provider HTTP 400 range limits are learned once and paged without gaps", async () => {
+  const endpoint = await rangeLimitedServer();
+  try {
+    const rpc = new Rpc(endpoint.url);
+    assert.deepEqual(await rpc.logs("0x123", [], 100, 124), []);
+    assert.deepEqual(endpoint.accepted, [
+      [100, 109],
+      [110, 119],
+      [120, 124],
+    ]);
+    assert.equal(endpoint.rejected(), 1);
+    assert.equal(rpc.requests, 2); // One rejected probe, one batch for all small ranges.
+    await rpc.logs("0x123", [], 125, 134);
+    assert.equal(endpoint.rejected(), 1);
+    assert.deepEqual(endpoint.accepted.at(-1), [125, 134]);
+  } finally {
+    await endpoint.close();
+  }
+});
+test("adapting a provider range never bypasses the request budget", async () => {
+  const endpoint = await rangeLimitedServer();
+  try {
+    await assert.rejects(
+      new Rpc(endpoint.url, { maxRequests: 1 }).logs("0x123", [], 100, 124),
+      /budget exceeded/,
+    );
+    assert.equal(endpoint.accepted.length, 0);
+  } finally {
+    await endpoint.close();
+  }
+});

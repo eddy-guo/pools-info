@@ -47,3 +47,12 @@ Next, partition histories and wallet summaries as coverage grows, retain explici
 The deeper PEPE accounting capture failed with HTTP 429 both before and after request pacing. The successful market-only capture remained intact; no partial trader audit was published. This does not prevent existing audited sample wallets/cards from working. It does mean full PEPE PnL is not captured yet. A market-only recapture is blocked from overwriting an existing accounting capture; request accounting explicitly to replace one.
 
 Free public RPC has rate limits and variable latency. Larger coverage and concurrent visitors may require a provider key or shared hosted index. Disclose those integrations before setup. Uniswap is a set of contracts on Robinhood Chain here, not a second chain to monitor.
+
+
+## Alchemy endpoint validation and holder groundwork
+
+The locally configured Alchemy endpoint was verified against Robinhood mainnet (4663): historical block reads, historical totalSupply matching the existing PEPE capture, and historical Transfer logs. The configured free tier rejected a 10,000-block eth_getLogs query and advertised a maximum 10-block range. Do not describe this account as automatically providing higher throughput than the public endpoint.
+
+The RPC client now learns that advertised range limit and batches small nonoverlapping ranges while retaining the same overall timeout/request budget. A real 100-block PEPE transfer query returned 11 events using two HTTP requests (one rejected capability probe and one successful batch). Batching reduces HTTP overhead, not the number of billable RPC calls. Large backfills still need measured quotas and resumable storage.
+
+The new pure holder ledger reconstructs exact raw balances from canonical Transfer events, handles mint/burn and duplicate replay, labels supplied infrastructure separately, and requires token-birth coverage plus supply reconciliation before marking its output complete. This is accounting groundwork, not yet a connected holder API, persistent indexer or scheduled 30-minute preload.

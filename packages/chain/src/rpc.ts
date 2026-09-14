@@ -7,11 +7,17 @@ type Request = {
   params: unknown[];
 };
 type Reply = { id: number; result?: unknown; error?: { message: string } };
+class LogRangeLimit extends Error {
+  constructor(readonly blocks: number) {
+    super(`RPC log range limited to ${blocks} blocks`);
+  }
+}
 export class Rpc {
   requests = 0;
   calls = 0;
   private started = Date.now();
   private nextRequestAt = 0;
+  private logRange = 10000;
   constructor(
     private url = process.env.ROBINHOOD_RPC_URL ??
       "https://rpc.mainnet.chain.robinhood.com",
@@ -42,14 +48,35 @@ export class Rpc {
           signal: AbortSignal.timeout(Math.max(1, Math.min(10000, remaining))),
           cache: "no-store",
         });
+        const result = (await response.json().catch(() => null)) as
+          Reply | Reply[] | null;
+        // Some providers return plan limits as HTTP 400 JSON-RPC errors. Keep
+        // provider messages private and only extract the advertised range size.
+        if (
+          !Array.isArray(body) &&
+          body.method === "eth_getLogs" &&
+          result &&
+          !Array.isArray(result)
+        ) {
+          const match = result.error?.message?.match(
+            /up to (?:a )?([\d,]+) block range/i,
+          );
+          const blocks = match ? Number(match[1].replaceAll(",", "")) : 0;
+          if (
+            Number.isSafeInteger(blocks) &&
+            blocks > 0 &&
+            blocks < this.logRange
+          )
+            throw new LogRangeLimit(blocks);
+        }
         if (!response.ok) throw Error(`RPC HTTP ${response.status}`);
-        const result = (await response.json()) as Reply | Reply[];
+        if (!result) throw Error("RPC returned invalid JSON");
         for (const row of Array.isArray(result) ? result : [result])
           if (row.error || row.result === undefined)
             throw Error("RPC returned an error or missing result");
         return result;
       } catch (error) {
-        if (attempt === 3) throw error;
+        if (error instanceof LogRangeLimit || attempt === 3) throw error;
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }
@@ -92,18 +119,42 @@ export class Rpc {
     to: number,
   ): Promise<RawLog[]> {
     const rows: RawLog[] = [];
-    // Explicit bounded chunks. No silent partial snapshot on failure.
-    for (let start = from; start <= to; start += 10000) {
-      rows.push(
-        ...(await this.call<RawLog[]>("eth_getLogs", [
-          {
-            address,
-            topics,
-            fromBlock: hex(start),
-            toBlock: hex(Math.min(to, start + 9999)),
-          },
-        ])),
-      );
+    // Plan-limited endpoints can use small ranges batched into one HTTP request.
+    // Existing time/request budgets still apply; never return partial coverage.
+    for (let start = from; start <= to;) {
+      const ranges: { from: number; to: number }[] = [];
+      const batchSize = this.logRange < 10000 ? 20 : 1;
+      for (
+        let next = start;
+        next <= to && ranges.length < batchSize;
+        next += this.logRange
+      )
+        ranges.push({ from: next, to: Math.min(to, next + this.logRange - 1) });
+      const params = ranges.map((r) => [
+        { address, topics, fromBlock: hex(r.from), toBlock: hex(r.to) },
+      ]);
+      try {
+        const result =
+          ranges.length === 1
+            ? [await this.call<RawLog[]>("eth_getLogs", params[0])]
+            : await this.batch<RawLog[]>("eth_getLogs", params);
+        result.forEach((logs, i) => {
+          if (!Array.isArray(logs)) throw Error("Invalid RPC log result");
+          if (
+            logs.some(
+              (l) =>
+                Number(l.blockNumber) < ranges[i].from ||
+                Number(l.blockNumber) > ranges[i].to,
+            )
+          )
+            throw Error("Out-of-range log batch");
+          rows.push(...logs);
+        });
+        start = ranges.at(-1)!.to + 1;
+      } catch (error) {
+        if (!(error instanceof LogRangeLimit)) throw error;
+        this.logRange = error.blocks;
+      }
     }
     const unique = new Map<string, RawLog>();
     for (const row of rows) {
