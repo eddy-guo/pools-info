@@ -66,14 +66,17 @@ export async function collectSnapshot(
   }
   const cutoff = await block(toBlock);
 
-  for (const address of [
+  const deployments = [
     contracts.manager,
     contracts.launcher,
     ...contracts.strategies,
-  ]) {
-    if ((await rpc.call<Hex>("eth_getCode", [address, hex(toBlock)])) === "0x")
-      throw Error("Missing deployed contract");
-  }
+  ];
+  const deploymentCode = await rpc.batch<Hex>(
+    "eth_getCode",
+    deployments.map((address) => [address, hex(toBlock)]),
+  );
+  if (deploymentCode.some((code) => code === "0x"))
+    throw Error("Missing deployed contract");
   const launches = options.target
     ? (
         await rpc.call<Receipt>("eth_getTransactionReceipt", [
@@ -154,24 +157,29 @@ export async function collectSnapshot(
       !receipt.logs.some((l) => l.address.toLowerCase() === contracts.launcher)
     )
       throw Error("Unverified launch receipt");
-    async function tokenRead(
-      name: "name" | "symbol" | "decimals" | "totalSupply",
-    ) {
-      const data = await rpc.call<Hex>("eth_call", [
+    const metadataFields = [
+      "name",
+      "symbol",
+      "decimals",
+      "totalSupply",
+    ] as const;
+    const metadataResults = await rpc.batch<Hex>(
+      "eth_call",
+      metadataFields.map((functionName) => [
         {
           to: launch.token,
-          data: encodeFunctionData({ abi: erc20Abi, functionName: name }),
+          data: encodeFunctionData({ abi: erc20Abi, functionName }),
         },
         hex(toBlock),
-      ]);
-      return decodeFunctionResult({ abi: erc20Abi, functionName: name, data });
-    }
-    const [name, symbol, decimals, supply] = await Promise.all([
-      tokenRead("name"),
-      tokenRead("symbol"),
-      tokenRead("decimals"),
-      tokenRead("totalSupply"),
-    ]);
+      ]),
+    );
+    const [name, symbol, decimals, supply] = metadataResults.map((data, i) =>
+      decodeFunctionResult({
+        abi: erc20Abi,
+        functionName: metadataFields[i],
+        data,
+      }),
+    );
     const rawSwaps = await rpc.logs(
       contracts.manager,
       [toEventSelector(swapEvent), launch.poolId],

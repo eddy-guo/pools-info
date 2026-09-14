@@ -61,7 +61,7 @@ export function useLiveChain(initial: ChainSnapshot) {
           cache: "no-store",
           signal: AbortSignal.any([
             controller.signal,
-            AbortSignal.timeout(55000),
+            AbortSignal.timeout(105000),
           ]),
         });
         if (!response.ok) throw Error("Source unavailable");

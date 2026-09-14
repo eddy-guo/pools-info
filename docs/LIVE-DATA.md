@@ -91,3 +91,10 @@ An independent fresh-RPC check decoded the signed native-ETH words from two rece
 - Full closure: -314,690,450,473,335 wei, or -0.000314690450473335 ETH before gas. This matches the wallet page and fresh server-generated PNG. Two swaps do not satisfy the ranking minimum.
 
 The local market API also returned HTTP 200 with a fresh 08:35:34 UTC snapshot at block 62,670,182; 84 requests and 14.4 seconds. A real RPC-backed card rendered at 1200×630, and desktop/mobile pages were inspected. Lint, strict types, 29 unit tests, production build, frozen install, and 12 desktop/mobile production-browser checks pass. Direct pool-chart hydration is covered after fixing an SVG title mismatch.
+
+
+## Production refresh budget
+
+The first real-page deployment passed CI and generated a live RPC-backed PNG, but its cold eight-pool market refresh returned 503 under the original 45-second collection budget. Deployment-code and per-token metadata reads are now JSON-RPC batches, preserving response-ID and canonical-block checks while reducing HTTP round trips. The market collector has a bounded 90-second budget, the route allows 110 seconds, and the browser waits up to 105 seconds. Polls do not overlap. This keeps the public RPC source and eight-pool coverage; no external integration is added.
+
+The legacy `/live/` alias now redirects at the HTTP routing layer and preserves query parameters. A streamed page redirect could otherwise remount Explore after early typing and discard the filter; the production browser test checks the actual 307 and retained query.

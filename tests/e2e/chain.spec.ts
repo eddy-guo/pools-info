@@ -63,8 +63,11 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  const redirect = await page.request.get("/live/?q=keep", { maxRedirects: 0 });
+  expect(redirect.status()).toBe(307);
+  expect(redirect.headers().location).toBe("/?q=keep");
   await page.goto("/live/");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL("http://127.0.0.1:3101/");
   await expect(
     page.getByRole("heading", { name: "Explore pools." }),
   ).toBeVisible();

@@ -6,7 +6,7 @@ let pending: Promise<ChainSnapshot> | undefined;
 async function refresh() {
   // Coalesce concurrent cold requests in this function instance. The Next data
   // cache shares successful results across requests; a failed refresh throws.
-  pending ??= collectSnapshot()
+  pending ??= collectSnapshot({ rpc: new Rpc(undefined, { timeoutMs: 90000 }) })
     .then(({ snapshot }) => snapshot)
     .finally(() => {
       pending = undefined;
@@ -17,7 +17,7 @@ async function refresh() {
 // non-Cache-Components model. No provider credentials enter the cache key.
 export const currentChainSnapshot = unstable_cache(
   refresh,
-  ["chain-markets-v2"],
+  ["chain-markets-v3"],
   { revalidate: 60 },
 );
 
