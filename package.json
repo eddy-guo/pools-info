@@ -1,0 +1,27 @@
+{
+  "name": "pools-info",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @pools/web dev",
+    "build": "pnpm --filter @pools/web build",
+    "preview": "serve apps/web/out -l 3100",
+    "lint": "pnpm --filter @pools/web lint",
+    "typecheck": "pnpm --filter @pools/core typecheck && pnpm --filter @pools/web typecheck",
+    "test": "tsx --test packages/core/src/*.test.ts",
+    "test:e2e": "playwright test",
+    "snapshot:demo": "tsx scripts/generate-demo.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.0.0",
+    "prettier": "^3.9.6",
+    "serve": "^14.2.4",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

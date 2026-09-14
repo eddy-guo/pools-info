@@ -1,0 +1,670 @@
+"use client";
+import Link from "next/link";
+import { useId, useState } from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Search,
+  Star,
+} from "lucide-react";
+import {
+  compact,
+  displayEth,
+  formatMoney,
+  shortAddress,
+  since,
+  type PoolRow,
+  type PricePoint,
+  type Trade,
+  type Window,
+} from "@pools/core";
+import { useCurrency, useManifest, useQuery, useWatchlist } from "./state";
+
+export function TokenIcon({
+  pool,
+  size = "normal",
+}: {
+  pool: Pick<PoolRow, "color" | "mark" | "name">;
+  size?: "normal" | "large" | "small";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`token-icon ${size}`}
+      style={{ "--token": pool.color } as React.CSSProperties}
+    >
+      {pool.mark}
+    </span>
+  );
+}
+export function Avatar({
+  address,
+  color = "#b3a5dd",
+  small = false,
+}: {
+  address: string;
+  color?: string;
+  small?: boolean;
+}) {
+  const bits = address
+    .slice(2, 11)
+    .split("")
+    .map((x) => parseInt(x, 16) % 2 === 0);
+  return (
+    <span
+      aria-hidden="true"
+      className={`avatar ${small ? "small" : ""}`}
+      style={{ "--token": color } as React.CSSProperties}
+    >
+      <svg viewBox="0 0 5 5">
+        {Array.from({ length: 25 }, (_, i) => {
+          const col = i % 5;
+          const row = Math.floor(i / 5);
+          return bits[(row * 3 + Math.min(col, 4 - col)) % bits.length] ? (
+            <rect
+              key={i}
+              x={col}
+              y={row}
+              width="1"
+              height="1"
+              fill="currentColor"
+            />
+          ) : null;
+        })}
+      </svg>
+    </span>
+  );
+}
+export function CopyButton({
+  value,
+  label = "Copy address",
+}: {
+  value: string;
+  label?: string;
+}) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus("copied");
+    } catch {
+      setStatus("failed");
+    }
+    setTimeout(() => setStatus("idle"), 1800);
+  }
+  return (
+    <span className="copy-wrap">
+      <button
+        type="button"
+        className="icon-button"
+        title={status === "copied" ? "Copied" : label}
+        aria-label={label}
+        onClick={copy}
+      >
+        {status === "copied" ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+      <span
+        role="status"
+        className={status === "idle" ? "sr-only" : "copy-status"}
+      >
+        {status === "copied"
+          ? "Copied"
+          : status === "failed"
+            ? "Copy unavailable"
+            : ""}
+      </span>
+    </span>
+  );
+}
+export function AddressLabel({
+  address,
+  full = false,
+}: {
+  address: string;
+  full?: boolean;
+}) {
+  const manifest = useManifest();
+  return (
+    <span className="address-label">
+      <span className="mono">{full ? address : shortAddress(address)}</span>
+      <CopyButton value={address} />
+      {manifest.source === "verified" && (
+        <a
+          aria-label="Open address on explorer"
+          href={`https://robinhoodchain.blockscout.com/address/${address}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <ExternalLink size={14} />
+        </a>
+      )}
+    </span>
+  );
+}
+export function Money({
+  wei,
+  signed = false,
+  className = "",
+}: {
+  wei: string;
+  signed?: boolean;
+  className?: string;
+}) {
+  const { currency } = useCurrency();
+  const manifest = useManifest();
+  return (
+    <span
+      className={`number ${signed ? (BigInt(wei) >= 0n ? "positive" : "negative") : ""} ${className}`}
+      title={`${wei} wei`}
+    >
+      {formatMoney(wei, currency, manifest.ethUsd, signed)}
+    </span>
+  );
+}
+export function Price({ wei }: { wei: string }) {
+  const { currency } = useCurrency();
+  const { ethUsd } = useManifest();
+  const value = displayEth(wei) * (currency === "USD" ? Number(ethUsd) : 1);
+  const prefix = currency === "USD" ? "$" : "";
+  if (value > 0 && value < 0.0001) {
+    const str = value.toFixed(16).split(".")[1];
+    const zeros = str.match(/^0+/)?.[0].length ?? 0;
+    return (
+      <span
+        className="number price"
+        title={`${value.toPrecision(8)} ${currency}`}
+      >
+        {prefix}0.0<sub>{zeros}</sub>
+        {str.slice(zeros, zeros + 4)}
+        {currency === "ETH" && <small> ETH</small>}
+      </span>
+    );
+  }
+  return (
+    <span className="number price" title={`${value} ${currency}`}>
+      {prefix}
+      {value.toLocaleString("en-US", { maximumSignificantDigits: 4 })}
+      {currency === "ETH" && <small> ETH</small>}
+    </span>
+  );
+}
+export function Change({ value }: { value: number }) {
+  return (
+    <span className={`number change ${value >= 0 ? "positive" : "negative"}`}>
+      {value >= 0 ? "+" : ""}
+      {value.toFixed(2)}%
+    </span>
+  );
+}
+export function ModeBadge({ mode }: { mode: PoolRow["mode"] }) {
+  return (
+    <span className={`badge ${mode === "crowd" ? "lavender" : ""}`}>
+      {mode === "crowd" ? "Crowd" : "Instant"}
+    </span>
+  );
+}
+export function WatchButton({ id }: { id: string }) {
+  const { ids, toggle } = useWatchlist();
+  const active = ids.includes(id);
+  return (
+    <button
+      className={`icon-button watch ${active ? "active" : ""}`}
+      aria-label={active ? "Remove from watchlist" : "Add to watchlist"}
+      aria-pressed={active}
+      onClick={() => toggle(id)}
+    >
+      <Star size={16} fill={active ? "currentColor" : "none"} />
+    </button>
+  );
+}
+export function PeriodTabs({
+  value,
+  onChange,
+}: {
+  value: Window;
+  onChange: (value: Window) => void;
+}) {
+  return (
+    <div className="segmented" aria-label="Time period">
+      {(["24h", "7d"] as const).map((w) => (
+        <button
+          key={w}
+          onClick={() => onChange(w)}
+          aria-pressed={w === value}
+          className={w === value ? "selected" : ""}
+        >
+          {w === "7d" ? "7D" : "24H"}
+        </button>
+      ))}
+    </div>
+  );
+}
+export function EmptyState({
+  title = "No results found",
+  description,
+  action,
+}: {
+  title?: string;
+  description: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="empty-symbol">
+        <Search size={25} />
+      </span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {action}
+    </div>
+  );
+}
+export function Pagination({
+  total,
+  page,
+  pageSize,
+  onChange,
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  onChange: (page: number) => void;
+}) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  return (
+    <div className="pagination">
+      <span>
+        {total
+          ? `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`
+          : "0 results"}
+      </span>
+      <div>
+        <button
+          className="icon-button"
+          aria-label="Previous page"
+          disabled={page <= 1}
+          onClick={() => onChange(page - 1)}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span>
+          {page} / {pages}
+        </span>
+        <button
+          className="icon-button"
+          aria-label="Next page"
+          disabled={page >= pages}
+          onClick={() => onChange(page + 1)}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+function geometry(
+  points: PricePoint[],
+  width: number,
+  height: number,
+  padding = 0,
+  stepped = false,
+) {
+  const values = points.map((p) => displayEth(p.wei));
+  const min = Math.min(...values),
+    max = Math.max(...values);
+  const span = max - min || Math.abs(max) * 0.1 || 1;
+  const firstTime = points[0]?.time ?? 0;
+  const lastTime = points.at(-1)?.time ?? firstTime + 1;
+  const x = (i: number) =>
+    padding +
+    (((points[i]?.time ?? firstTime) - firstTime) /
+      Math.max(1, lastTime - firstTime)) *
+      (width - padding * 2);
+  const y = (v: number) =>
+    height - padding - ((v - min) / span) * (height - padding * 2);
+  return {
+    values,
+    min,
+    max,
+    x,
+    y,
+    path: values
+      .map((v, i) =>
+        i > 0 && stepped
+          ? `H${x(i).toFixed(2)}V${y(v).toFixed(2)}`
+          : `${i === 0 ? "M" : "L"}${x(i).toFixed(2)},${y(v).toFixed(2)}`,
+      )
+      .join(" "),
+  };
+}
+export function Sparkline({
+  points,
+  positive = true,
+}: {
+  points: PricePoint[];
+  positive?: boolean;
+}) {
+  const limited = points.filter(
+    (_, i) => i % Math.max(1, Math.floor(points.length / 24)) === 0,
+  );
+  const g = geometry(limited, 100, 32, 2);
+  return (
+    <svg
+      className={`sparkline ${positive ? "positive" : "negative"}`}
+      viewBox="0 0 100 32"
+      role="img"
+      aria-label={`${positive ? "Rising" : "Falling"} price trend`}
+    >
+      <path
+        d={g.path}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        fill="none"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+export function Chart({
+  points,
+  label = "Price",
+  profit = false,
+}: {
+  points: PricePoint[];
+  label?: string;
+  profit?: boolean;
+}) {
+  const gradient = useId().replace(/:/g, "");
+  const [hover, setHover] = useState<number | null>(null);
+  const { currency } = useCurrency();
+  const manifest = useManifest();
+  const g = geometry(points, 820, 230, 8, profit);
+  const index =
+    hover === null ? points.length - 1 : Math.min(hover, points.length - 1);
+  const point = points[Math.max(0, index)];
+  if (!point)
+    return (
+      <EmptyState
+        title="No chart data"
+        description="No observations are available for this period."
+      />
+    );
+  const dates = [
+    points[0],
+    points[Math.floor(points.length / 3)],
+    points[Math.floor((points.length * 2) / 3)],
+    points.at(-1)!,
+  ];
+  return (
+    <div className="chart">
+      <div className="chart-readout">
+        <span className="muted">{label}</span>
+        <strong>
+          {profit ? (
+            <Money wei={point.wei} signed />
+          ) : (
+            <Price wei={point.wei} />
+          )}
+        </strong>
+        <time>
+          {new Date(point.time * 1000).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZone: "UTC",
+          })}{" "}
+          UTC
+        </time>
+      </div>
+      <div className="chart-frame">
+        <svg
+          viewBox="0 0 820 230"
+          preserveAspectRatio="none"
+          tabIndex={0}
+          role="img"
+          aria-label={`${label} chart. Use left and right arrow keys to inspect observations.`}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+              e.preventDefault();
+              setHover(
+                Math.max(
+                  0,
+                  Math.min(
+                    points.length - 1,
+                    index + (e.key === "ArrowRight" ? 1 : -1),
+                  ),
+                ),
+              );
+            }
+          }}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const fraction = Math.max(
+              0,
+              Math.min(1, (e.clientX - rect.left) / rect.width),
+            );
+            const targetTime =
+              points[0].time +
+              fraction * (points.at(-1)!.time - points[0].time);
+            let nearest = 0;
+            for (let i = 1; i < points.length; i++)
+              if (
+                Math.abs(points[i].time - targetTime) <
+                Math.abs(points[nearest].time - targetTime)
+              )
+                nearest = i;
+            setHover(nearest);
+          }}
+          onPointerLeave={() => setHover(null)}
+        >
+          <defs>
+            <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.16" />
+              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0, 1, 2, 3].map((n) => (
+            <line
+              key={n}
+              x1="0"
+              x2="820"
+              y1={8 + n * 71}
+              y2={8 + n * 71}
+              stroke="var(--line)"
+              strokeDasharray="3 5"
+            />
+          ))}
+          <path d={`${g.path} L812,230 L8,230 Z`} fill={`url(#${gradient})`} />
+          <path
+            d={g.path}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+          {hover !== null && (
+            <>
+              <line
+                x1={g.x(index)}
+                x2={g.x(index)}
+                y1="0"
+                y2="230"
+                stroke="var(--muted)"
+                strokeDasharray="4 4"
+              />
+              <circle
+                cx={g.x(index)}
+                cy={g.y(g.values[index])}
+                r="4"
+                fill="var(--accent)"
+              />
+            </>
+          )}
+        </svg>
+        <div className="chart-axis">
+          {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
+            <span key={i}>
+              {compact(v * (currency === "USD" ? Number(manifest.ethUsd) : 1))}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="chart-dates">
+        {dates.map((p, i) => (
+          <span key={i}>
+            {new Date(p.time * 1000).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              timeZone: "UTC",
+            })}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+export function TradeTable({
+  trades,
+  pools,
+  showPool = true,
+}: {
+  trades: Trade[];
+  pools: PoolRow[];
+  showPool?: boolean;
+}) {
+  const { params, set } = useQuery();
+  const manifest = useManifest();
+  const side = params.get("side") ?? "all";
+  const tx = params.get("tx");
+  const filtered = trades.filter(
+    (t) => (side === "all" || t.side === side) && (!tx || t.txHash === tx),
+  );
+  const page = Math.max(
+    1,
+    Math.min(
+      Math.ceil(filtered.length / 12) || 1,
+      Number(params.get("tradePage")) || 1,
+    ),
+  );
+  return (
+    <div id="trades" className="panel">
+      <div className="panel-heading">
+        <h2>
+          Transactions <span className="count">{filtered.length}</span>
+        </h2>
+        <div className="segmented">
+          {["all", "buy", "sell"].map((s) => (
+            <button
+              key={s}
+              className={side === s ? "selected" : ""}
+              onClick={() =>
+                set({ side: s === "all" ? null : s, tradePage: null })
+              }
+            >
+              {s === "all" ? "All" : s === "buy" ? "Buys" : "Sells"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tx && (
+        <div className="inline-notice">
+          Showing one transaction.{" "}
+          <button onClick={() => set({ tx: null, tradePage: null })}>
+            Show all
+          </button>
+        </div>
+      )}
+      <div className="table-scroll">
+        <table className="data-table trades-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              {showPool && <th>Token</th>}
+              <th>Amount</th>
+              <th>Trader</th>
+              <th>Transaction</th>
+              <th title="Time before snapshot cutoff">Age at snapshot</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.slice((page - 1) * 12, page * 12).map((t) => {
+              const pool = pools.find((p) => p.id === t.poolId)!;
+              return (
+                <tr key={t.id}>
+                  <td>
+                    <span
+                      className={`trade-side ${t.side === "buy" ? "positive" : "negative"}`}
+                    >
+                      {t.side === "buy" ? (
+                        <ArrowDownLeft size={14} />
+                      ) : (
+                        <ArrowUpRight size={14} />
+                      )}
+                      {t.side === "buy" ? "Buy" : "Sell"}
+                    </span>
+                  </td>
+                  {showPool && (
+                    <td>
+                      <Link className="token-cell" href={`/pool/${pool.id}/`}>
+                        <TokenIcon pool={pool} size="small" />
+                        <strong>{pool.symbol}</strong>
+                      </Link>
+                    </td>
+                  )}
+                  <td>
+                    <Money wei={t.ethWei} />
+                    <small className="cell-sub">
+                      {compact(Number(t.tokenRaw) / 10 ** pool.decimals)}{" "}
+                      {pool.symbol}
+                    </small>
+                  </td>
+                  <td>
+                    <Link
+                      className="wallet-link mono"
+                      href={`/wallet/${t.trader}/`}
+                    >
+                      {shortAddress(t.trader)}
+                    </Link>
+                  </td>
+                  <td>
+                    <span className="address-label">
+                      <span className="mono">{shortAddress(t.txHash)}</span>
+                      <CopyButton
+                        value={t.txHash}
+                        label="Copy transaction hash"
+                      />
+                    </span>
+                  </td>
+                  <td
+                    className="muted"
+                    title={new Date(t.timestamp * 1000).toISOString()}
+                  >
+                    {since(t.timestamp, manifest.to)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!filtered.length && (
+        <EmptyState
+          title="No transactions"
+          description="No trades match this filter in the snapshot."
+        />
+      )}
+      <Pagination
+        total={filtered.length}
+        page={page}
+        pageSize={12}
+        onChange={(p) => set({ tradePage: String(p) })}
+      />
+    </div>
+  );
+}
