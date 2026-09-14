@@ -1,4 +1,17 @@
 import type { Metadata } from "next";
+import localFont from "next/font/local";
+const geist = localFont({
+  src: "../../public/fonts/Geist.woff2",
+  variable: "--font-geist",
+  display: "swap",
+  weight: "100 900",
+});
+const geistMono = localFont({
+  src: "../../public/fonts/GeistMono.woff2",
+  variable: "--font-geist-mono",
+  display: "swap",
+  weight: "100 900",
+});
 import { Shell } from "@/components/shell";
 import "./globals.css";
 import { LiveProvider } from "@/components/live-provider";
@@ -21,7 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
       <body>
         <LiveProvider initial={initial as ChainSnapshot}>
           <Shell>{children}</Shell>

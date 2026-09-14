@@ -184,3 +184,36 @@ acceptance check, not a completed historical backfill. The hosted worker has
 also applied migrations and persisted launch discoveries and checkpoints via
 Railway's private network. Hosted event collection is verified separately from
 the deployment's online status.
+
+### Website read path
+
+`apps/api` is a separate, read-only HTTP process in the same repository. It
+reads the Railway database over the private network; it does not call RPC or
+run migrations. Pool discovery, per-pool progress, paginated swap history and
+wallet activity are exposed with explicit coverage. Wallet activity means
+transaction initiator or token-transfer participation, not verified profit.
+The API contract and deployment settings are in `apps/api/README.md`.
+
+The Next `/api/trades/` route supports a server-only `INDEXER_API_URL` origin.
+When configured, it reads `/v1/feed` from the read service; on failure it keeps
+the last visible feed rather than starting extra RPC scans. Without the setting,
+the current bounded RPC feed continues. The database feed uses the shared
+indexed interval of the requested pools and a saved canonical header timestamp.
+It refuses unknown or unstarted pool streams and never calls a recent database
+write proof of recent chain coverage. Enable this origin only after verifying
+coverage for the selected pools. This adapter does not yet switch the screener,
+charts or wallet PnL away from their existing captured/audited data providers.
+
+Public wallet and creator views should share the wallet address as identity.
+Launch records provide the creator activity section; trade positions and
+accounting provide trading activity. No account table, login or user preferences
+are needed for that public profile. Derived positions, realized sales, candle
+buckets and holder balances are subsequent read models, rebuilt from verified
+source events with their own coverage/version. They must not interpret a
+transaction initiator alone as the beneficiary or treat incomplete cost basis
+as zero. Current cross-pool ranking and persistent derived PnL remain unfinished.
+
+Fresh block following and historical backfill need independent scheduling before
+claiming continuously current, all-Pools coverage. Adding a database or the read
+service alone does not increase collection throughput. Until that work is
+verified, the website must keep showing the actual observation cutoff.

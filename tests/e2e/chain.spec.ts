@@ -70,10 +70,14 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   expect(redirect.headers().location).toBe("/?q=keep");
   await page.goto("/live/");
   await expect(page).toHaveURL("http://127.0.0.1:3101/");
+  await expect(page.getByRole("heading", { name: "Pools." })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Explore pools." }),
+    page
+      .locator(".stat")
+      .filter({ has: page.getByText("Launches covered", { exact: true }) })
+      .getByText(String(chain.markets.length), { exact: true })
+      .filter({ visible: true }),
   ).toBeVisible();
-  await expect(page.getByText("ON-CHAIN DATA", { exact: true })).toBeVisible();
   await expect(page.getByText("DEMO SNAPSHOT", { exact: true })).toHaveCount(0);
   await page.getByRole("textbox", { name: "Filter pools" }).fill(market.token);
   await expect(
@@ -94,7 +98,7 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   ).toBeVisible();
   await page.goto(poolHref(market));
   await expect(
-    page.getByRole("heading", { name: market.name + "." }),
+    page.getByRole("heading", { name: market.name, exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Launch transaction" }),
@@ -145,6 +149,7 @@ test("refresh failure retains data and recovers, with pause stopping automatic r
   ).toBeVisible();
   await expect(
     page
+      .locator(".desktop-pools, .mobile-pools")
       .getByText("Updated real token", { exact: true })
       .filter({ visible: true }),
   ).toBeVisible();
@@ -198,19 +203,41 @@ test("audited leaderboard links to real wallet metrics and scoped share cards, r
     .first()
     .click();
   await expect(
-    page.getByRole("heading", { name: "0x1111…1111." }),
+    page.getByRole("heading", { name: "0x1111…1111", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("+0.5 ETH", { exact: true }).first(),
   ).toBeVisible();
+  await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Observed trade history" }),
   ).toBeVisible();
+  await expect(page.getByText("+0.5 ETH", { exact: true }).first()).toHaveCSS(
+    "color",
+    "rgb(63, 214, 140)",
+  );
+  // The UI fixture supplies a synthetic audited wallet. Reuse a real captured
+  // PNG for its image request; server-side card generation is tested separately.
+  const capturedWallet = market.accounting!.wallets[0].address;
+  const png = await page.request.get(
+    `/cards/${capturedWallet}.png?pool=${market.id}&launch=${market.launchTx}&window=All`,
+  );
+  expect(png.status()).toBe(200);
+  await page.route(`**/cards/${wallet}.png?*`, async (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: await png.body(),
+    }),
+  );
   await page
     .getByRole("button", { name: "Generate share card", exact: true })
     .click();
+  const share = page.getByRole("dialog", { name: "Share card" });
+  await expect(share).toBeVisible();
+  await expect(share.getByRole("img")).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Download PNG" }),
+    share.getByRole("link", { name: "Download PNG" }),
   ).toHaveAttribute(
     "href",
     new RegExp(`/cards/${wallet}.png\\?pool=${market.id}`),
@@ -227,11 +254,8 @@ test("creator routes, arbitrary wallet lookup and typed global search remain usa
   await page.goto("/creators/");
   await expect(page.getByRole("heading", { name: "Creators." })).toBeVisible();
   await page
-    .getByRole("link", {
-      name:
-        market.launchSender.slice(0, 6) + "…" + market.launchSender.slice(-4),
-      exact: true,
-    })
+    .locator(`a[href="/creators/${market.launchSender.toLowerCase()}/"]`)
+    .filter({ visible: true })
     .first()
     .click();
   await expect(page).toHaveURL(/\/creators\/0x/);
@@ -390,6 +414,7 @@ test("chart separates interval from range, switches FDV and keeps seven trade pa
       .getByLabel("Candle interval", { exact: true })
       .filter({ visible: true }),
   ).toHaveValue("1s");
+  await page.getByRole("button", { name: "Trades", exact: true }).click();
   await expect(
     page.getByText("140 swap events", { exact: true }),
   ).toBeVisible();
@@ -481,7 +506,7 @@ test("catalog token search opens a verified pool link and loads its details on d
   await result.click();
   await expect(page).toHaveURL(new RegExp(`/pool/${entry.id}/`));
   await expect(
-    page.getByRole("heading", { name: entry.name + ".", exact: true }),
+    page.getByRole("heading", { name: entry.name, exact: true }),
   ).toBeVisible();
   expect(requested).toBe(true);
 });
@@ -497,8 +522,9 @@ test("captured pool history loads without RPC and survives a failed refresh", as
   });
   await page.goto(poolHref(pool));
   await expect(
-    page.getByRole("heading", { name: pool.name + "." }),
+    page.getByRole("heading", { name: pool.name, exact: true }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Trades", exact: true }).click();
   await expect(page.locator(".pagination")).toContainText(
     `${saved.trades.length} swap events`,
   );
@@ -529,4 +555,96 @@ test("captured pool history loads without RPC and survives a failed refresh", as
     `/api/markets/${pool.id}/accounting/?launch=${pool.launchTx}`,
   );
   expect(audit.status()).toBe(503);
+});
+
+test("existing device watchlists survive the design key migration and can stay empty", async ({
+  page,
+}) => {
+  await page.addInitScript((id) => {
+    if (localStorage.getItem("pools:watchlist") === null)
+      localStorage.setItem("pools:watchlist", JSON.stringify([id]));
+  }, market.id);
+  await page.goto(`/?view=watchlist&q=${market.token}`);
+  const remove = page
+    .getByRole("button", { name: "Remove from watchlist" })
+    .filter({ visible: true });
+  await expect(remove).toHaveCount(1);
+  await remove.click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("poolsinfo.watchlist.v1")),
+    )
+    .toBe("[]");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Pools." })).toBeVisible();
+  await expect(
+    page
+      .getByRole("button", { name: "Remove from watchlist" })
+      .filter({ visible: true }),
+  ).toHaveCount(0);
+});
+
+test("a captured losing wallet shows independently signed PnL and real creator coverage", async ({
+  page,
+}) => {
+  const pool = chain.markets.find((p) =>
+    p.accounting?.wallets.some(
+      (w) => w.realizedWei !== null && BigInt(w.realizedWei) < 0n,
+    ),
+  )!;
+  const losing = pool.accounting!.wallets.find(
+    (w) => w.realizedWei !== null && BigInt(w.realizedWei) < 0n,
+  )!;
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(walletHref(losing.address, pool));
+  await expect(
+    page
+      .locator(".stat")
+      .filter({ has: page.getByText("Realized PnL", { exact: true }) })
+      .locator(".negative"),
+  ).toHaveCSS("color", "rgb(255, 97, 105)");
+  await expect(
+    page
+      .locator(".stat")
+      .filter({ has: page.getByText("Realized ROI", { exact: true }) })
+      .locator(".negative"),
+  ).toHaveCSS("color", "rgb(255, 97, 105)");
+  await page.getByRole("tab", { name: "Launches", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /Launches.*covered/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Grouped by launch transaction sender/),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Trades", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Observed trade history" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("a stale market snapshot never presents old launches as just minted", async ({
+  page,
+}) => {
+  const now = chain.toTimestamp + 6 * 60 * 60;
+  await page.clock.install({ time: new Date(now * 1000) });
+  await page.goto("/");
+  const first = page
+    .locator(`.launch-card time[data-launched-at="${market.launchedAt}"]`)
+    .first();
+  const ageMinutes = Math.floor((now - market.launchedAt) / 60);
+  const expected =
+    ageMinutes < 60
+      ? `${ageMinutes}m`
+      : ageMinutes < 1440
+        ? `${Math.floor(ageMinutes / 60)}h`
+        : `${Math.floor(ageMinutes / 1440)}d`;
+  await expect(first).toHaveText(expected);
+  await expect(first).not.toHaveText("<1m");
 });

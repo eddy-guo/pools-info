@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import styles from "./detail-design.module.css";
 import { useState } from "react";
 import { poolWindow, shortAddress } from "@pools/core";
 import { useQuery } from "./state";
@@ -29,10 +30,10 @@ export function PoolDetail({ id }: { id: string }) {
     refreshing,
   } = useMarket(id, params.get("launch"));
   const { audits } = useLive();
-  const [tab, setTab] = useState("Trades");
+  const [tab, setTab] = useState("Top traders");
   if (!m)
     return (
-      <div className="page">
+      <div className={`page ${styles.page}`}>
         <h1>{loading ? "Loading pool…" : "Pool outside current coverage"}</h1>
         <p>
           {loading
@@ -55,48 +56,50 @@ export function PoolDetail({ id }: { id: string }) {
             10n ** BigInt(m.decimals)
           ).toString();
   return (
-    <div className="page">
+    <div className={`page ${styles.page}`}>
+      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+        <Link href="/">Explore</Link>
+        <span>/</span>
+        <span>{m.symbol}</span>
+      </nav>
       <div className="page-heading">
-        <div>
-          <div className="eyebrow">INSTANT LAUNCH / ROBINHOOD CHAIN</div>
-          <h1>
-            {m.name}
-            <span className="title-dot">.</span>
-          </h1>
-          <AddressLabel address={m.token} full />
-          <p>
-            Launch sender{" "}
-            <Link href={`/creators/${m.launchSender.toLowerCase()}/`}>
-              {shortAddress(m.launchSender)}
-            </Link>{" "}
-            · {utc(m.launchedAt)}
-          </p>
+        <div className={styles.identity}>
+          <span className={styles.avatar} aria-hidden="true">
+            {m.symbol.slice(0, 2)}
+          </span>
+          <div>
+            <div className={styles.title}>
+              <h1>{m.name}</h1>
+              <span className={styles.symbol}>{m.symbol}</span>
+              <span className={styles.mode}>INSTANT</span>
+            </div>
+            <AddressLabel address={m.token} full />
+            <div className={styles.meta}>
+              Launched {utc(m.launchedAt)} · sender{" "}
+              <Link href={`/creators/${m.launchSender.toLowerCase()}/`}>
+                {shortAddress(m.launchSender)}
+              </Link>
+            </div>
+          </div>
         </div>
-        <WatchButton id={m.id} />
-      </div>
-      <div className="live-price-heading">
-        {m.priceWei ? (
-          <Price wei={m.priceWei} />
-        ) : (
-          <Unavailable reason="No observed swap price" />
-        )}
-        <div className="live-changes">
-          {(["1h", "6h", "24h", "7d"] as const).map((w) => {
-            const v = poolWindow(m, s, w);
-            return (
-              <span key={w}>
-                {w}{" "}
-                {v.change === null ? (
-                  <Unavailable />
-                ) : (
-                  <Change value={v.change} />
-                )}
-                <small>
-                  {v.sinceLaunch ? "since first swap" : "at cutoff"}
-                </small>
-              </span>
-            );
-          })}
+        <div className={styles.actions}>
+          <WatchButton id={m.id} />
+          <a
+            className="button secondary"
+            href={`${explorer}/token/${m.token}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Explorer ↗
+          </a>
+          <a
+            className="button"
+            href={`https://pools.xyz/t/robinhood/${m.token}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Trade on Pools ↗
+          </a>
         </div>
       </div>
       <div className="live-controls">
@@ -118,38 +121,74 @@ export function PoolDetail({ id }: { id: string }) {
         {s.toBlock.toLocaleString("en-US")} · {utc(s.toTimestamp)}. Audit
         results below have their own cutoff.
       </p>
-      <div className="stats-grid live-six-stats">
-        <Stat label="FDV" note="Spot price × contract total supply">
-          <Eth wei={fdv} />
-        </Stat>
-        <Stat label="Liquidity">
-          <Unavailable />
-        </Stat>
-        <Stat
-          label="Observed 24h volume"
-          note={
-            stats.sinceLaunch
-              ? "Pool launched within this window"
-              : "Within covered history"
-          }
-        >
-          <Eth wei={stats.volumeWei} />
-        </Stat>
-        <Stat label="Holders">
-          <Unavailable />
-        </Stat>
-        <Stat label="Fees compounded">
-          <Unavailable />
-        </Stat>
-        <Stat label="Creator fee option" note="Derived from launch strategy">
-          {m.creatorFees ? "Enabled" : "Disabled"}
-        </Stat>
-      </div>
       <div className="workspace-grid">
         <div>
           <section className="panel">
+            <div className={styles.context}>
+              <strong>Price context</strong>
+              <span>ETH · Robinhood Chain</span>
+            </div>
+            <div className={styles.chartHeader}>
+              {" "}
+              <div className="live-price-heading">
+                {m.priceWei ? (
+                  <Price wei={m.priceWei} />
+                ) : (
+                  <Unavailable reason="No observed swap price" />
+                )}
+                <div className="live-changes">
+                  {(["1h", "6h", "24h", "7d"] as const).map((w) => {
+                    const v = poolWindow(m, s, w);
+                    return (
+                      <span key={w}>
+                        {w}{" "}
+                        {v.change === null ? (
+                          <Unavailable />
+                        ) : (
+                          <Change value={v.change} />
+                        )}
+                        <small>
+                          {v.sinceLaunch ? "since first swap" : "at cutoff"}
+                        </small>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
             <Candles market={m} snapshot={s} />
           </section>
+          <div className="stats-grid live-six-stats">
+            <Stat label="FDV" note="Spot price × contract total supply">
+              <Eth wei={fdv} />
+            </Stat>
+            <Stat label="Liquidity">
+              <Unavailable />
+            </Stat>
+            <Stat
+              label="Observed 24h volume"
+              note={
+                stats.sinceLaunch
+                  ? "Pool launched within this window"
+                  : "Within covered history"
+              }
+            >
+              <Eth wei={stats.volumeWei} />
+            </Stat>
+            <Stat label="Holders">
+              <Unavailable />
+            </Stat>
+            <Stat label="Fees compounded">
+              <Unavailable />
+            </Stat>
+            <Stat
+              label="Creator fee option"
+              note="Derived from launch strategy"
+            >
+              {m.creatorFees ? "Enabled" : "Disabled"}
+            </Stat>
+          </div>
+
           <section className="panel live-section">
             <div className="table-tabs live-controls">
               {["Top traders", "Holders", "Trades"].map((t) => (
@@ -198,20 +237,18 @@ export function PoolDetail({ id }: { id: string }) {
               <h2>Concentration</h2>
             </div>
             <dl className="live-facts">
-              {["Raw top 10", "Adjusted top 10", "Gini", "Risk score"].map(
-                (label) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>
-                      <Unavailable />
-                    </dd>
-                  </div>
-                ),
-              )}
+              {["Raw top 10", "Adjusted top 10", "Gini"].map((label) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>
+                    <Unavailable />
+                  </dd>
+                </div>
+              ))}
             </dl>
             <p className="panel-footnote">
-              The PoolManager must be treated separately from wallet holders. No
-              concentration or risk score is inferred from swaps.
+              Adjusted concentration excludes the v4 PoolManager, which holds
+              pooled liquidity. These figures need a verified holder snapshot.
             </p>
           </section>
           <section className="panel">

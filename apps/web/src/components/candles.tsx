@@ -74,25 +74,25 @@ export function Candles({
     const chart = createChart(container.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#171719" },
-        textColor: "#a3a0aa",
-        fontFamily: "system-ui",
+        background: { type: ColorType.Solid, color: "#0E0E11" },
+        textColor: "#8A8A94",
+        fontFamily: "Geist, system-ui",
         fontSize: 11,
         attributionLogo: true,
         panes: {
-          separatorColor: "#2a292e",
-          separatorHoverColor: "#51434c",
+          separatorColor: "#1A1A1F",
+          separatorHoverColor: "#33333D",
           enableResize: true,
         },
       },
       grid: {
-        vertLines: { color: "#242329" },
-        horzLines: { color: "#242329" },
+        vertLines: { color: "#17171C" },
+        horzLines: { color: "#17171C" },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#2a292e" },
+      rightPriceScale: { borderColor: "#1A1A1F" },
       timeScale: {
-        borderColor: "#2a292e",
+        borderColor: "#1A1A1F",
         timeVisible: true,
         secondsVisible: true,
       },
@@ -104,10 +104,10 @@ export function Candles({
       handleScroll: { vertTouchDrag: false },
     });
     const price = chart.addSeries(CandlestickSeries, {
-      upColor: "#8bddb6",
-      downColor: "#ed8e9f",
-      wickUpColor: "#8bddb6",
-      wickDownColor: "#ed8e9f",
+      upColor: "#3FD68C",
+      downColor: "#FF6169",
+      wickUpColor: "#3FD68C",
+      wickDownColor: "#FF6169",
       borderVisible: false,
       priceFormat: {
         type: "custom",
@@ -152,7 +152,7 @@ export function Candles({
       bars.map((b) => ({
         time: b.time as UTCTimestamp,
         value: Number(b.volume) / 1e18,
-        color: b.close >= b.open ? "#8bddb655" : "#ed8e9f55",
+        color: b.close >= b.open ? "#3FD68C55" : "#FF616955",
       })),
     );
     a.chart.applyOptions({ timeScale: { secondsVisible: interval === "1s" } });
@@ -161,12 +161,10 @@ export function Candles({
         if (range === "All") {
           a.chart.timeScale().fitContent();
           if (bars.length < 40)
-            a.chart
-              .timeScale()
-              .setVisibleLogicalRange({
-                from: bars.length - 40,
-                to: bars.length + 3,
-              });
+            a.chart.timeScale().setVisibleLogicalRange({
+              from: bars.length - 40,
+              to: bars.length + 3,
+            });
         } else
           a.chart.timeScale().setVisibleRange({
             from: Math.max(
@@ -296,12 +294,10 @@ export function Candles({
           onClick={() => {
             api.current?.chart.timeScale().fitContent();
             if (bars.length < 40)
-              api.current?.chart
-                .timeScale()
-                .setVisibleLogicalRange({
-                  from: bars.length - 40,
-                  to: bars.length + 3,
-                });
+              api.current?.chart.timeScale().setVisibleLogicalRange({
+                from: bars.length - 40,
+                to: bars.length + 3,
+              });
           }}
         >
           Fit loaded history

@@ -27,7 +27,7 @@ export function Eth({
   const n = Number(wei) / 1e18;
   return (
     <span
-      className={`number ${signed ? (n < 0 ? "negative" : "positive") : ""}`}
+      className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
       title={`${wei} wei`}
     >
       {signed && n > 0 ? "+" : ""}

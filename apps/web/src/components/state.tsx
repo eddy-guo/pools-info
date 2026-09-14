@@ -46,7 +46,8 @@ function writeLocal(key: string, value: string) {
 export function useWatchlist() {
   const value = useSyncExternalStore(
     subscribePrefs,
-    () => readLocal("pools:watchlist"),
+    // Retain existing stars when adopting the design system's versioned key.
+    () => readLocal("poolsinfo.watchlist.v1") || readLocal("pools:watchlist"),
     empty,
   );
   let ids: string[] = [];
@@ -61,7 +62,7 @@ export function useWatchlist() {
     ids,
     toggle: (id: string) =>
       writeLocal(
-        "pools:watchlist",
+        "poolsinfo.watchlist.v1",
         JSON.stringify(
           ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id],
         ),

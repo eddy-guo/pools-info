@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useId, useRef } from "react";
+import { useId, useRef, useState } from "react";
+import styles from "./detail-design.module.css";
 import { Wallet, X, LockKeyhole, ArrowUpRight } from "lucide-react";
 
 const features = {
@@ -38,7 +39,7 @@ const features = {
   },
   copy: {
     title: "Follow a trader’s next move.",
-    text: "Copy trading is part of the planned product. Its controls and execution will be defined in a later iteration.",
+    text: "Mirror supported buys and sells using your own allocation. The controls preview the planned experience.",
     notice:
       "Copy trading is a UI preview. No trades, approvals or transactions can be submitted.",
     action: "Explore trader performance",
@@ -150,5 +151,91 @@ export function PersonalRankPreview() {
       </div>
       <FeaturePreview feature="rank">View my rank</FeaturePreview>
     </div>
+  );
+}
+
+/** Interactive design controls only; no orders, signatures or subscriptions. */
+export function TradingPreviewPanels() {
+  const [size, setSize] = useState("0.1 ETH");
+  const [alerts, setAlerts] = useState<string[]>([]);
+  return (
+    <>
+      <section className={`panel ${styles.copyPanel}`}>
+        <div className="panel-heading">
+          <h2>Copy trading</h2>
+          <span className={styles.preview}>PREVIEW</span>
+        </div>
+        <div className={styles.copyBody}>
+          <p>
+            Follow this wallet’s buys and sells, sized to your own allocation.
+          </p>
+          <span>Per trade</span>
+          <div className="segmented" aria-label="Copy trade size preview">
+            {["0.05 ETH", "0.1 ETH", "0.5 ETH"].map((v) => (
+              <button
+                key={v}
+                aria-pressed={size === v}
+                onClick={() => setSize(v)}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <div className={styles.rules}>
+            {[
+              "Mirror sells",
+              "Skip first-block entries",
+              "Skip tokens already held",
+            ].map((label) => (
+              <label key={label}>
+                <input type="checkbox" defaultChecked />
+                {label}
+              </label>
+            ))}
+          </div>
+          <FeaturePreview feature="copy" className="button">
+            Set up copy trading
+          </FeaturePreview>
+          <p style={{ marginTop: 12, marginBottom: 0 }}>
+            Preview only. These settings do not submit orders or connect a
+            wallet. No returns or execution lag are estimated.
+          </p>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Alerts</h2>
+          <span className={styles.preview}>PREVIEW</span>
+        </div>
+        {[
+          ["New trade", "When this wallet buys or sells"],
+          ["New launch", "When this wallet launches a pool"],
+          ["Position closed", "When their inventory returns to zero"],
+        ].map(([label, note]) => (
+          <button
+            className={styles.alert}
+            key={label}
+            aria-pressed={alerts.includes(label)}
+            onClick={() =>
+              setAlerts((p) =>
+                p.includes(label)
+                  ? p.filter((v) => v !== label)
+                  : [...p, label],
+              )
+            }
+          >
+            <span>
+              {label}
+              <small>{note}</small>
+            </span>
+            <span className={styles.switch} aria-hidden="true" />
+          </button>
+        ))}
+        <p className="panel-footnote">
+          Controls preview the experience. Notifications are not delivered or
+          saved.
+        </p>
+      </section>
+    </>
   );
 }

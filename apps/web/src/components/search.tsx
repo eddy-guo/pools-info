@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import styles from "./detail-design.module.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Command,
@@ -122,7 +123,7 @@ export function Search() {
       </button>
       <dialog
         ref={dialog}
-        className="search-dialog"
+        className={`search-dialog ${styles.search}`}
         aria-label="Search Pools Info"
         onClose={() => {
           setOpen(false);
@@ -167,7 +168,7 @@ export function Search() {
             ref={input}
             name="global-search"
             aria-label="Search tokens, wallets, creators, or transaction hashes"
-            placeholder="Token, address, ENS or transaction"
+            placeholder="Token, wallet, transaction, or name.eth"
             value={query}
             maxLength={256}
             onChange={(e) => setQuery(e.target.value)}

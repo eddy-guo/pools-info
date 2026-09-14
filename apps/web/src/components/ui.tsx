@@ -36,7 +36,7 @@ export function TokenIcon({
 }
 export function Avatar({
   address,
-  color = "#b3a5dd",
+  color = "#4DE1C1",
   small = false,
 }: {
   address: string;
@@ -148,7 +148,7 @@ export function Money({
 }) {
   return (
     <span
-      className={`number ${signed ? (BigInt(wei) >= 0n ? "positive" : "negative") : ""} ${className}`}
+      className={`number ${signed ? (BigInt(wei) > 0n ? "positive" : BigInt(wei) < 0n ? "negative" : "muted") : ""} ${className}`}
       title={`${wei} wei`}
     >
       {signed && BigInt(wei) > 0n ? "+" : ""}
@@ -186,10 +186,13 @@ export function Price({ wei }: { wei: string }) {
   );
 }
 export function Change({ value }: { value: number }) {
+  const displayed = Number(value.toFixed(2));
   return (
-    <span className={`number change ${value >= 0 ? "positive" : "negative"}`}>
-      {value >= 0 ? "+" : ""}
-      {value.toFixed(2)}%
+    <span
+      className={`number change ${displayed > 0 ? "positive" : displayed < 0 ? "negative" : "muted"}`}
+    >
+      {displayed > 0 ? "+" : ""}
+      {displayed.toFixed(2)}%
     </span>
   );
 }
@@ -345,12 +348,17 @@ export function Sparkline({
     (_, i) => i % Math.max(1, Math.floor(points.length / 24)) === 0,
   );
   const g = geometry(limited, 100, 32, 2);
+  const neutral = limited.length < 2 || limited[0].wei === limited.at(-1)?.wei;
   return (
     <svg
-      className={`sparkline ${positive ? "positive" : "negative"}`}
+      className={`sparkline ${neutral ? "muted" : positive ? "positive" : "negative"}`}
       viewBox="0 0 100 32"
       role="img"
-      aria-label={`${positive ? "Rising" : "Falling"} price trend`}
+      aria-label={
+        neutral
+          ? "No price movement observed"
+          : `${positive ? "Rising" : "Falling"} price trend`
+      }
     >
       <path
         d={g.path}
@@ -372,6 +380,14 @@ export function Chart({
   profit?: boolean;
 }) {
   const gradient = useId().replace(/:/g, "");
+  const last = BigInt(points.at(-1)?.wei ?? "0");
+  const chartColor = profit
+    ? last > 0n
+      ? "var(--green)"
+      : last < 0n
+        ? "var(--red)"
+        : "var(--muted)"
+    : "var(--accent)";
   const [hover, setHover] = useState<number | null>(null);
   const g = geometry(points, 820, 230, 8, profit);
   const index =
@@ -455,8 +471,8 @@ export function Chart({
         >
           <defs>
             <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.16" />
-              <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+              <stop offset="0%" stopColor={chartColor} stopOpacity="0.16" />
+              <stop offset="100%" stopColor={chartColor} stopOpacity="0" />
             </linearGradient>
           </defs>
           {[0, 1, 2, 3].map((n) => (
@@ -474,7 +490,7 @@ export function Chart({
           <path
             d={g.path}
             fill="none"
-            stroke="var(--accent)"
+            stroke={chartColor}
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
@@ -492,7 +508,7 @@ export function Chart({
                 cx={g.x(index)}
                 cy={g.y(g.values[index])}
                 r="4"
-                fill="var(--accent)"
+                fill={chartColor}
               />
             </>
           )}

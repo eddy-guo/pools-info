@@ -89,11 +89,12 @@ export async function GET(
         style={{
           display: "flex",
           flexDirection: "column",
+          justifyContent: "space-between",
           width: "100%",
           height: "100%",
-          background: "#151216",
-          color: "#f4eff3",
-          padding: 52,
+          background: "#0B0B0E",
+          color: "#F2F2F5",
+          padding: "50px 64px",
           fontFamily: "sans-serif",
         }}
       >
@@ -104,88 +105,115 @@ export async function GET(
             alignItems: "center",
           }}
         >
-          <span style={{ fontSize: 36, color: "#f2a4ce" }}>poolsinfo.</span>
-          <span style={{ fontSize: 20, color: "#b7acb8" }}>
-            ON-CHAIN AUDIT / ROBINHOOD
-          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <span style={{ fontSize: 30, fontWeight: 600 }}>
+              {shortAddress(address).replace("…", "...")}
+            </span>
+            <span style={{ fontSize: 17, color: "#8A8A94" }}>
+              {symbol} / {window} / Robinhood Chain
+            </span>
+          </div>
+          <div style={{ display: "flex", fontSize: 32, fontWeight: 600 }}>
+            pools<span style={{ color: "#8A8A94" }}>info</span>
+            <span style={{ color: "#4DE1C1" }}>.</span>
+          </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 42,
-            fontSize: 30,
-          }}
-        >
-          <span>{shortAddress(address).replace("…", "...")}</span>
-          <span style={{ color: "#f2a4ce" }}>
-            {rank ? `#${rank} in this pool` : "Unranked"}
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 70,
-            marginTop: 25,
-            color:
-              m.realizedWei === null
-                ? "#b7acb8"
-                : BigInt(m.realizedWei) >= 0n
-                  ? "#8bddb6"
-                  : "#ed8e9f",
-          }}
-        >
-          {money(m.realizedWei)}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 22,
-            marginTop: 12,
-          }}
-        >
-          {window} realized swap PnL - {symbol} only - before gas
-        </div>
-        <div style={{ display: "flex", gap: 40, marginTop: 25, fontSize: 23 }}>
-          <span>ROI {m.roi === null ? "N/A" : m.roi.toFixed(2) + "%"}</span>
-          <span>{m.complete ? `${m.wins}W / ${m.losses}L` : "Record N/A"}</span>
-          <span>{m.trades.length} observed swaps</span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 22,
-            marginTop: 18,
-            color: "#b7acb8",
-          }}
-        >
-          Best realized sale: {money(m.bestWei)}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            fontSize: 17,
-            marginTop: 20,
-            color: "#b7acb8",
-          }}
-        >
-          Not wallet-wide returns. Average cost. Unsupported or unknown basis is
-          excluded.
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              marginBottom: 15,
+            }}
+          >
+            <span style={{ color: "#8A8A94", fontSize: 18 }}>
+              REALIZED SWAP PNL
+            </span>
+            <span style={{ color: "#4DE1C1", fontSize: 17 }}>
+              {rank ? `#${rank} in this pool` : "Unranked"}
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              fontSize: 76,
+              fontWeight: 600,
+              letterSpacing: -3,
+              color:
+                m.realizedWei === null || BigInt(m.realizedWei) === 0n
+                  ? "#F2F2F5"
+                  : BigInt(m.realizedWei) > 0n
+                    ? "#3FD68C"
+                    : "#FF6169",
+            }}
+          >
+            {money(m.realizedWei)}
+          </div>
+          <div style={{ display: "flex", gap: 60, marginTop: 25 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ color: "#8A8A94", fontSize: 17 }}>
+                Realized ROI
+              </span>
+              <span
+                style={{
+                  fontSize: 27,
+                  color:
+                    m.roi === null || m.roi === 0
+                      ? "#F2F2F5"
+                      : m.roi > 0
+                        ? "#3FD68C"
+                        : "#FF6169",
+                }}
+              >
+                {m.roi === null
+                  ? "N/A"
+                  : `${m.roi > 0 ? "+" : ""}${m.roi.toFixed(2)}%`}
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ color: "#8A8A94", fontSize: 17 }}>Record</span>
+              <span style={{ fontSize: 27 }}>
+                {m.complete ? `${m.wins}W / ${m.losses}L` : "N/A"}
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ color: "#8A8A94", fontSize: 17 }}>
+                Best realized sale
+              </span>
+              <span
+                style={{
+                  fontSize: 27,
+                  color:
+                    m.bestWei === null || BigInt(m.bestWei) === 0n
+                      ? "#F2F2F5"
+                      : BigInt(m.bestWei) > 0n
+                        ? "#3FD68C"
+                        : "#FF6169",
+                }}
+              >
+                {money(m.bestWei)}
+              </span>
+            </div>
+          </div>
         </div>
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            borderTop: "1px solid #41333d",
-            paddingTop: 17,
-            marginTop: "auto",
-            gap: 8,
-            fontSize: 16,
-            color: "#b7acb8",
+            gap: 9,
+            borderTop: "1px solid #26262E",
+            paddingTop: 19,
+            color: "#8A8A94",
+            fontSize: 15,
           }}
         >
           <span>
-            Block {audit.toBlock} -{" "}
+            Selected pool only. Average cost, before gas. Unsupported or unknown
+            basis excluded.
+          </span>
+          <span>
+            Block {audit.toBlock} /{" "}
             {new Date(audit.toTimestamp * 1000)
               .toISOString()
               .slice(0, 19)
@@ -193,7 +221,7 @@ export async function GET(
             UTC
           </span>
           <span>{`poolsinfo.com/wallet/${address}/`}</span>
-          <span>{`Pool ${market.id}`}</span>
+          <span style={{ fontSize: 13 }}>{`Pool ${market.id}`}</span>
         </div>
       </div>,
       {

@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { collectRecentSwaps, type RecentSwaps } from "@pools/chain";
+import { indexedFeed } from "@/lib/indexed-feed";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
@@ -32,7 +33,12 @@ export async function GET(request: Request) {
   if (process.env.CHAIN_REFRESH_DISABLED === "1")
     return Response.json({ error: "offline" }, { status: 503 });
   try {
-    return Response.json(await recent(ids.join(",")), {
+    // Once configured, serve the stored index only. An outage must not silently
+    // multiply RPC scans across visitors or mix unrelated coverage windows.
+    const data = process.env.INDEXER_API_URL
+      ? await indexedFeed(process.env.INDEXER_API_URL, ids)
+      : await recent(ids.join(","));
+    return Response.json(data, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch {

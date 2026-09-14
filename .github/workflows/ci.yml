@@ -37,5 +37,12 @@ jobs:
       - run: docker build -f apps/indexer/Dockerfile -t pools-indexer:test .
       - run: docker run --rm --network host -e DATABASE_URL=postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test pools-indexer:test node --import tsx src/main.ts migrate
       - run: docker run --rm --network host -e DATABASE_URL=postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test pools-indexer:test node --import tsx src/main.ts status
+      - run: docker build -f apps/api/Dockerfile -t pools-api:test .
+      - name: Verify read API container
+        run: |
+          docker run --detach --name pools-api-test --network host -e PORT=3102 -e DATABASE_URL=postgresql://pools_test:pools_test@127.0.0.1:5432/pools_test pools-api:test
+          trap 'docker rm -f pools-api-test' EXIT
+          curl --fail --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:3102/ready
+          curl --fail http://127.0.0.1:3102/v1/status
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e

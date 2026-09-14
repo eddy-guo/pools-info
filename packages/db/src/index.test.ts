@@ -43,11 +43,15 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
   });
   await migrate(db);
   await migrate(db);
-  assert.equal(
-    (await db.query("SELECT count(*) FROM pools_schema_migrations")).rows[0]
-      .count,
-    "1",
+  assert.deepEqual(
+    (await db.query("SELECT name FROM pools_schema_migrations ORDER BY name")).rows.map((r) => r.name),
+    ["001_indexer.sql", "002_read_indexes.sql"],
   );
+  const readIndexes = await db.query(
+    "SELECT indexname FROM pg_indexes WHERE schemaname=$1 AND indexname IN ('indexed_events_global_trades','indexed_events_transfer_from','indexed_events_transfer_to','indexer_streams_pool_lookup') ORDER BY indexname",
+    [schema],
+  );
+  assert.equal(readIndexes.rowCount, 4);
   const s = await ensureDiscovery(db, 10);
   await assert.rejects(ensureDiscovery(db, 11), /differs/);
   const first: Batch = {

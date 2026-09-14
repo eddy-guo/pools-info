@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import styles from "./detail-design.module.css";
+import { WalletLaunches } from "./creators";
 import {
   walletMetrics,
   walletHref,
@@ -8,7 +10,7 @@ import {
   poolHref,
   type LiveWindow,
 } from "@pools/core";
-import { FeaturePreview } from "./feature-preview";
+import { FeaturePreview, TradingPreviewPanels } from "./feature-preview";
 import { useLive } from "./live-provider";
 import { AddressLabel, Chart } from "./ui";
 import {
@@ -22,6 +24,7 @@ import {
   useSelectedMarket,
   useWindow,
   utc,
+  explorer,
 } from "./live-ui";
 export function WalletView({ address }: { address: string }) {
   const { market, error, loading } = useSelectedMarket(),
@@ -30,7 +33,14 @@ export function WalletView({ address }: { address: string }) {
   const a = market ? audits[market.id] : undefined,
     m = a ? walletMetrics(a, address, period) : null;
   const [card, setCard] = useState(false),
-    [copy, setCopy] = useState("");
+    [copy, setCopy] = useState(""),
+    [tab, setTab] = useState("Positions"),
+    [cardError, setCardError] = useState(false);
+  const cardDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (card) cardDialog.current?.showModal();
+    else cardDialog.current?.close();
+  }, [card]);
   const cardParams = new URLSearchParams(
     market ? { pool: market.id, launch: market.launchTx, window: period } : {},
   );
@@ -51,29 +61,76 @@ export function WalletView({ address }: { address: string }) {
   }
   const pct = (n: number | null | undefined) =>
     n === null || n === undefined ? <Unavailable /> : `${n.toFixed(1)}%`;
+  const activityTabs = (
+    <>
+      <div className={styles.tabs} role="tablist" aria-label="Wallet activity">
+        {["Positions", "Trades", "Launches"].map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={t === tab}
+            onClick={() => setTab(t)}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      {tab === "Launches" && <WalletLaunches address={address} />}
+    </>
+  );
   return (
-    <div className="page">
+    <div className={`page ${styles.page}`}>
+      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+        <Link href="/traders/">Traders</Link>
+        <span>/</span>
+        <span>{shortAddress(address)}</span>
+      </nav>
       <div className="page-heading">
-        <div>
-          <div className="eyebrow">WALLET PROFILE / VERIFIED COVERAGE</div>
-          <h1>
-            {shortAddress(address)}
-            <span className="title-dot">.</span>
-          </h1>
-          <AddressLabel address={address} full />
-          <p>
-            Any address, no account. Metrics below cover one audited pool; they
-            are not wallet-wide totals.
-          </p>
+        <div className={styles.identity}>
+          <span className={styles.avatar} aria-hidden="true">
+            {address.slice(2, 4).toUpperCase()}
+          </span>
+          <div>
+            <div className={styles.title}>
+              <h1>{shortAddress(address)}</h1>
+              <span className={styles.mode}>PUBLIC WALLET</span>
+            </div>
+            <AddressLabel address={address} full />
+            <div className={styles.meta}>
+              {m?.last
+                ? `Last covered trade ${utc(m.last)}`
+                : "Public on-chain activity"}
+            </div>
+          </div>
         </div>
-        <div className="profile-actions">
-          <FeaturePreview feature="copy">Copy trade</FeaturePreview>
+        <div className={styles.actions}>
+          <a
+            className="button secondary"
+            href={`${explorer}/address/${address}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Explorer ↗
+          </a>
+          <button
+            className="button secondary"
+            onClick={() => {
+              setCardError(false);
+              setCard(true);
+            }}
+          >
+            Share PnL card
+          </button>
           <FeaturePreview feature="profile">Edit profile</FeaturePreview>
-          <Link className="button secondary" href="/wallet/">
-            Look up another wallet
-          </Link>
+          <FeaturePreview feature="copy" className="button">
+            Copy trade
+          </FeaturePreview>
         </div>
       </div>
+      <p className="page-intro-note">
+        Any address, no account. Performance covers the selected audited pool,
+        not wallet-wide returns.
+      </p>
       <section className="panel">
         <div className="live-controls">
           <PoolPicker />
@@ -100,7 +157,19 @@ export function WalletView({ address }: { address: string }) {
           <Eth wei={m?.unrealizedWei} signed />
         </Stat>
         <Stat label="Realized ROI" note="Profit / disposed cost basis">
-          {pct(m?.roi)}
+          <span
+            className={
+              m?.roi == null
+                ? ""
+                : m.roi > 0
+                  ? "positive"
+                  : m.roi < 0
+                    ? "negative"
+                    : ""
+            }
+          >
+            {pct(m?.roi)}
+          </span>
         </Stat>
         <Stat label="Win rate" note="Closed inventory cycles">
           {pct(m?.winRate)}
@@ -122,6 +191,7 @@ export function WalletView({ address }: { address: string }) {
           <Eth wei={m?.bestWei} signed />
         </Stat>
       </div>
+      {!m && activityTabs}
       {!a ? (
         <div className="panel empty-state">
           <h2>Audit this pool to load the wallet’s data</h2>
@@ -153,7 +223,9 @@ export function WalletView({ address }: { address: string }) {
             <div>
               <section className="panel">
                 <div className="panel-heading">
-                  <h2>Cumulative realized PnL · {period}</h2>
+                  <div>
+                    <h2>Cumulative realized PnL · {period}</h2>
+                  </div>
                 </div>
                 {m.complete ? (
                   <Chart
@@ -167,7 +239,11 @@ export function WalletView({ address }: { address: string }) {
                   </div>
                 )}
               </section>
-              <section className="panel live-section">
+              {activityTabs}
+              <section
+                className="panel live-section"
+                hidden={tab !== "Positions"}
+              >
                 <div className="panel-heading">
                   <h2>Open position · {a.market.symbol}</h2>
                 </div>
@@ -226,7 +302,7 @@ export function WalletView({ address }: { address: string }) {
                   proceeds.
                 </p>
               </section>
-              <section className="panel live-section">
+              <section className="panel live-section" hidden={tab !== "Trades"}>
                 <div className="panel-heading">
                   <h2>Observed trade history</h2>
                 </div>
@@ -237,6 +313,7 @@ export function WalletView({ address }: { address: string }) {
               </section>
             </div>
             <aside className="market-sidebar">
+              <TradingPreviewPanels />
               <section className="panel">
                 <div className="panel-heading">
                   <h2>Behaviour</h2>
@@ -283,7 +360,13 @@ export function WalletView({ address }: { address: string }) {
                   from RPC audit data.
                 </p>
                 <div className="live-share-actions">
-                  <button className="button" onClick={() => setCard(true)}>
+                  <button
+                    className="button"
+                    onClick={() => {
+                      setCardError(false);
+                      setCard(true);
+                    }}
+                  >
                     Generate share card
                   </button>
                   <button className="button secondary" onClick={copyLink}>
@@ -307,27 +390,80 @@ export function WalletView({ address }: { address: string }) {
                     {copy}
                   </p>
                 )}
-                {card && (
-                  <>
-                    <a
-                      className="leader-link"
-                      href={cardUrl}
-                      download={`${address}-${period}.png`}
-                    >
-                      Download PNG ↗
-                    </a>
-                    <p className="panel-footnote">
-                      <a href={cardUrl} target="_blank" rel="noreferrer">
-                        Open card preview
-                      </a>
-                    </p>
-                  </>
-                )}
               </section>
             </aside>
           </div>
         </>
       )}
+      <dialog
+        ref={cardDialog}
+        className={styles.cardModal}
+        aria-labelledby="share-card-title"
+        onClose={() => setCard(false)}
+        onClick={(e) => {
+          if (e.target === cardDialog.current) setCard(false);
+        }}
+      >
+        <div className={styles.cardTop}>
+          <h2 id="share-card-title">
+            Share card<small>1200 × 630 · selected pool and window</small>
+          </h2>
+          <button
+            className="icon-button"
+            aria-label="Close share card"
+            onClick={() => setCard(false)}
+          >
+            ×
+          </button>
+        </div>
+        <div className={styles.cardPreview}>
+          {card && !cardError && market ? (
+            // The image endpoint uses independently audited data, never client-supplied PnL.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={cardUrl}
+              alt={`${shortAddress(address)} PnL card for ${market.symbol}`}
+              onError={() => setCardError(true)}
+            />
+          ) : (
+            <p className={styles.cardError}>
+              A share card needs a completed pool audit. Close this preview and
+              audit a covered pool to generate one.
+            </p>
+          )}
+        </div>
+        <div className={styles.cardActions}>
+          <button className="button secondary" onClick={copyLink}>
+            Copy link
+          </button>
+          <button
+            className="button secondary"
+            onClick={() =>
+              window.open(
+                `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl())}`,
+                "_blank",
+                "noopener,noreferrer",
+              )
+            }
+          >
+            Post on X
+          </button>
+          {market && !cardError && (
+            <a
+              className="button"
+              href={cardUrl}
+              download={`${address}-${period}.png`}
+            >
+              Download PNG ↗
+            </a>
+          )}
+        </div>
+        {copy && (
+          <p className="panel-footnote" role="status">
+            {copy}
+          </p>
+        )}
+      </dialog>
     </div>
   );
 }

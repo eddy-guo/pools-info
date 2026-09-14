@@ -1,0 +1,20 @@
+{
+  "name": "@pools/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "pg": "^8.16.3",
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0"
+  }
+}
