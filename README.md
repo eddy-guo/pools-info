@@ -9,7 +9,7 @@ Analytics for verified Pools launches on Robinhood Chain (4663). One pnpm reposi
 3. The API reads the full saved catalog and processed pool publications. Global sorting and wallet aggregation happen before pagination. Page requests do not run chain scans.
 4. Next.js proxies the read API through server-only `INDEXER_API_URL`. A clearly labeled committed public dataset remains available when the service is unconfigured or unavailable. No fictional market or wallet data is used.
 
-The database stays private. The HTTP service exposes read-only public chain analytics, never SQL or credentials. `ROBINHOOD_RPC_URL` supplies archival state; optional `INDEXER_LOG_RPC_URL` supplies historical logs. The public Robinhood endpoint supports the tested 1,000-block log ranges but did not serve the historical state needed by our audit. The existing Alchemy endpoint serves those state checks. ENS uses Ethereum PublicNode RPC, independently of Robinhood.
+The database stays private. The HTTP service exposes read-only public chain analytics, never SQL or credentials. Production uses the existing Alchemy endpoint for both logs and archival state, with ten-block log ranges. The public Robinhood endpoint worked for local historical captures but returned HTTP 403 from Railway, so it is not the hosted collector's source. Optional `INDEXER_LOG_RPC_URL` can select a separately verified log provider; production references the existing `ROBINHOOD_RPC_URL`. ENS uses Ethereum PublicNode RPC, independently of Robinhood.
 
 ## Product routes
 

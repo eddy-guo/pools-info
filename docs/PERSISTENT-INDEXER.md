@@ -148,7 +148,7 @@ learn a smaller advertised limit. It does not increase throughput or quota.
    connected to this deployment. Use these settings:
    - Builder: Dockerfile; path: `apps/indexer/Dockerfile`.
    - Pre-deploy command: `node --import tsx src/main.ts migrate`.
-   - Start command: `node --import tsx src/main.ts run`.
+   - Start command: `node --import tsx src/service.ts` (collector and analytics).
    - Watch paths: `/apps/indexer/**`, `/packages/**`, `/pnpm-lock.yaml`,
      `/pnpm-workspace.yaml`, `/package.json`.
    - Wait for CI enabled; one replica, serverless disabled.
