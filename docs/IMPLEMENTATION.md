@@ -8,7 +8,7 @@ The private GitHub repo is connected and the initial Vercel deployment is live a
 
 ## Implemented
 
-A pnpm workspace with current stable Next.js and React, TypeScript, Tailwind, and a static export. There is no runtime API server, database, or cloud provisioning.
+A pnpm workspace with Next.js, React, TypeScript, and Tailwind. The initial deployment used a static export. The local extension now pre-renders the same pages in ordinary Next.js and adds two bounded runtime routes; no database or worker is required. This extension is not published until authenticated live-data validation succeeds.
 
 The screener, pool pages, leaderboards, wallet pages, typed search, creator profiles, and performance cards use one deterministic demo snapshot. Creator profiles are the first stretch feature. The snapshot is not real chain data; the demo flag is visible throughout.
 
@@ -38,7 +38,7 @@ The demo generator must never be relabeled or repurposed as a real-data generato
 
 ## Later persistent backend
 
-Add a worker and database package inside this repository. Preserve raw events, block hashes, and cursor updates transactionally. Reorg recovery must delete and replay an affected suffix; insert-ignore alone is insufficient. Query endpoints should return the existing read-model contract with pagination and coverage metadata. If runtime routes are needed, change the static export configuration at that time.
+Add a worker and database package inside this repository. Preserve raw events, block hashes, and cursor updates transactionally. Reorg recovery must delete and replay an affected suffix; insert-ignore alone is insufficient. Query endpoints should return the existing read-model contract with pagination and coverage metadata. The runtime rendering change is now prepared locally; a worker can reuse `packages/chain` and `packages/core`.
 
 Holder data-source selection, auction settlement, and full backfill are not completed. They do not block the static preview.
 
@@ -52,3 +52,13 @@ Holder data-source selection, auction settlement, and full backfill are not comp
 - Frozen-lockfile installation passes.
 
 These original checks establish demo behavior. The deployment and bounded chain-data work are documented in LIVE-DATA.md.
+
+## Local runtime extension, awaiting provider validation
+
+- `/api/markets/` caches successful bounded market snapshots for 60 seconds. The browser polls while visible, supports pause/retry, and keeps the last snapshot on failure.
+- `/api/markets/[poolId]/accounting/` audits only a pool present in the current sample. Audit results have an independent cutoff and five-minute cache.
+- `packages/chain` shares collectors between the CLI and Next.js. Envio supplies bulk logs/headers when configured; RPC supplies complete receipts, deployment checks, token metadata, sender code, and balances.
+- Per-pool gross realized swap PnL uses BigInt average basis and is before gas. Only supported direct router/token flows qualify; unknown-basis transfers and inventory mismatches exclude positions.
+- The public RPC hit 429 responses and time budgets on larger pools. No full-history throughput or production reliability claim is established. See LIVE-DATA.md before publishing.
+
+The runtime extension passes lint, strict typechecking, 37 unit tests, the production build, and 24 desktop/mobile Playwright tests. A frozen-lockfile install succeeds. Native HyperSync files are present in both local API route traces. Mobile refresh and audit layouts were inspected at a 390px viewport. Browser success/failure cases use controlled API fixtures; authenticated ingestion and the Vercel Linux deployment still require verification.

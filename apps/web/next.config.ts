@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
-  output: "export",
   trailingSlash: true,
   images: { unoptimized: true },
-  transpilePackages: ["@pools/core"],
+  transpilePackages: ["@pools/core", "@pools/chain"],
+  serverExternalPackages: ["@envio-dev/hypersync-client"],
 };
 
 export default config;

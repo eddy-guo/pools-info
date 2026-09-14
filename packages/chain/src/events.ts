@@ -7,6 +7,7 @@ import {
 } from "viem";
 
 export const contracts = {
+  router: "0x8876789976decbfcbbbe364623c63652db8c0904",
   manager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
   launcher: "0x0000ffffbe8efe702c8703ae3477ff5de3d319c0",
   strategies: [

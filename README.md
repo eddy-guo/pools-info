@@ -1,14 +1,14 @@
 # Pools Info
 
-A static Next.js analytics dashboard for pools on Robinhood Chain, designed to gain a real data pipeline without rebuilding its interface.
+A Next.js analytics dashboard for pools on Robinhood Chain, designed to gain a real data pipeline without rebuilding its interface.
 
 **The original dashboard uses a reproducible fictional dataset.** Its 12 tokens, 8 wallets, 1,536 trades, prices, liquidity, and creator identities are simulated. It is a working product preview, not an indexed market feed or a verified trader leaderboard. The disclosure is included on every page and downloadable card.
 
-A separate **On-chain** view at `/live/` now uses real recent launches and swaps from Robinhood Chain. It includes capture time, exact block coverage, and transaction evidence. It is a bounded snapshot, not an automatically refreshing feed. See [real-data notes](docs/LIVE-DATA.md) and run `pnpm snapshot:chain` to refresh it.
+A separate **On-chain** view at `/live/` now uses real recent launches and swaps from Robinhood Chain. It includes capture time, exact block coverage, and transaction evidence. The deployed version is a bounded snapshot. The local runtime extension adds cached automatic refreshes and on-demand per-pool trader audits; authenticated provider validation is pending before that extension is published. See [real-data notes](docs/LIVE-DATA.md) and run `pnpm snapshot:chain` to refresh it.
 
 ## Run locally
 
-Requires Node 22+ and pnpm 11.9.0 (pinned in package.json).
+Requires Node 22.9+ and pnpm 11.9.0 (pinned in package.json).
 
 ```sh
 corepack enable
@@ -18,14 +18,14 @@ pnpm dev
 
 Open http://127.0.0.1:3100. No API keys, database, wallet connection, or hosting account is required.
 
-To build and serve the actual static export:
+To build and serve the production application:
 
 ```sh
 pnpm build
 pnpm preview
 ```
 
-Stop the development server before using preview, since both use port 3100. Static files are emitted in `apps/web/out`.
+Stop the development server before using preview, since both use port 3100. Next.js pre-renders the pages, cards, and search index; two server routes provide on-chain refresh and audit data. Set `CHAIN_REFRESH_DISABLED=1` in root `.env.local` for an offline preview.
 
 ## Included
 
@@ -43,11 +43,12 @@ The USD toggle uses one simulated ETH/USD rate. It does not claim historical dol
 ## Repository
 
 ```text
-apps/web/           Next.js App Router, static export, UI, build-time cards
+apps/web/           Next.js App Router, UI, build-time cards, bounded data APIs
 packages/core/      Domain types, AnalyticsReader, SnapshotReader, accounting
-scripts/            Deterministic snapshot generator
-data/snapshots/     Small, versioned demo dataset
-tests/e2e/          Browser tests against the exported static site
+packages/chain/     RPC/bulk ingestion, event verification, trader auditing
+scripts/            Demo and real snapshot generators
+data/snapshots/     Separate, versioned demo and on-chain snapshots
+tests/e2e/          Browser tests against the production Next.js server
 docs/               Original project research, setup, and implementation notes
 ```
 
@@ -58,12 +59,12 @@ Add `apps/indexer` and `packages/db` only when persistent indexing is ready. Lar
 ## Validation
 
 ```sh
-pnpm check                    # lint, typecheck, core tests, static build
+pnpm check                    # lint, typecheck, accounting/ingestion tests, build
 pnpm exec playwright install chromium
-pnpm test:e2e                 # desktop + mobile, actual exported files on 3101
+pnpm test:e2e                 # desktop + mobile, production server on 3101
 ```
 
-The browser suite serves the export automatically on a separate port. Regenerate a snapshot deterministically with `pnpm snapshot:demo`. That script always produces fictional data; it never contacts a chain.
+The browser suite starts production Next.js on a separate port and stubs runtime provider responses, including failure and recovery. Regenerate a snapshot deterministically with `pnpm snapshot:demo`. That script always produces fictional data; it never contacts a chain.
 
 ## Vercel setup
 
@@ -73,12 +74,12 @@ The browser suite serves the export automatically on a separate port. Regenerate
 4. Use Node 22. Add `SITE_URL` at build time with the final HTTPS origin to generate correct social-preview image URLs. Without an override, Vercel builds use the project production domain; local metadata uses `http://localhost:3100`.
 5. Add the purchased domain in Vercel and use the DNS records that Vercel supplies.
 
-No Railway services or data-source secrets are needed for this preview. Robots metadata is deliberately `noindex` while the site contains synthetic data. Revisit that when replacing it with verified data.
+No Railway services or data-source secrets are needed for the snapshot preview. Runtime ingestion uses server-only `ENVIO_API_TOKEN` and optionally `ROBINHOOD_RPC_URL`; see [setup and validation](docs/LIVE-DATA.md). Robots metadata is deliberately `noindex` while the site contains synthetic data. Revisit that when replacing it with verified data.
 
 ## Deliberate omissions
 
-- **Verified chain data:** a bounded ingestion and reconciliation pass is required before reporting actual market performance.
-- **Live pricing and activity:** this is a fixed snapshot. Nothing refreshes on a timer.
+- **Global real trader rankings:** only bounded pool data is established. The local per-pool audit excludes unsupported attribution and unknown basis; it does not establish wallet-wide returns.
+- **Continuous indexing:** runtime refresh polls bounded history; it does not persist every chain event or replace a reorg-aware indexer.
 - **Holder metrics:** not fabricated from swaps. Data-source research is deferred.
 - **ENS and wallet connect:** public address pages already work for covered wallets. No account or signature flow is present.
 - **Unknown-address data:** a static lookup explains missing coverage instead of reporting a zero balance.

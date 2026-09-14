@@ -29,12 +29,13 @@ Add apps/indexer and packages/db when the persistent backend is justified. These
 
 ## Eddy's actions now
 
-1. Create an empty GitHub repository named pools-info, without an initial README, license, or gitignore. The local repository and scaffold already exist.
-2. Provide its URL when ready to connect and push.
-3. Connect Vercel after the first push: Next.js preset, apps/web root, shared workspace files included.
-4. After purchasing the domain, add it through Vercel and apply the DNS records shown there. No DNS changes are needed before that.
+GitHub and the default Vercel deployment are connected. No second repository is needed.
 
-No Railway setup, database, Blockscout key, or deployment is required now. Vercel can be connected whenever a preview is useful; its project root will be apps/web with access to shared workspace files. Provider selection and holder-source alternatives are deferred.
+1. Create an Envio HyperSync token and put `ENVIO_API_TOKEN=...` in root `.env.local`. Do not paste it into chat. This enables the next authenticated ingestion test.
+2. After local validation succeeds, add the same server-only variable to Vercel Production and Preview and redeploy. Do not prefix it with `NEXT_PUBLIC_`.
+3. Add `poolsinfo.com` in Vercel and apply its DNS records after purchase. Set `SITE_URL=https://poolsinfo.com` once the domain works.
+
+No Railway or database setup is required for this step. Public RPC state calls remain a potential throughput bottleneck even with bulk event retrieval; measure before choosing a paid provider.
 
 ## What the MVP contains
 

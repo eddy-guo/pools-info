@@ -22,9 +22,10 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "pnpm exec serve apps/web/out -l 3101",
+    command: "pnpm --filter @pools/web start --hostname 127.0.0.1 --port 3101",
     url: "http://127.0.0.1:3101",
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
+    env: { CHAIN_REFRESH_DISABLED: "1" },
   },
 });

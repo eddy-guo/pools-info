@@ -3,6 +3,8 @@ import { useState } from "react";
 import { ArrowUpRight, Search, ShieldCheck } from "lucide-react";
 import { shortAddress, type ChainSnapshot } from "@pools/core";
 import { Sparkline } from "./ui";
+import { useLiveChain } from "@/lib/use-live-chain";
+import { PoolAccounting } from "./pool-accounting";
 
 const explorer = "https://robinhoodchain.blockscout.com";
 const eth = (wei: string) =>
@@ -17,7 +19,14 @@ const date = (timestamp: number) =>
     minute: "2-digit",
     timeZone: "UTC",
   });
-export function ChainMarkets({ snapshot: s }: { snapshot: ChainSnapshot }) {
+export function ChainMarkets({ snapshot }: { snapshot: ChainSnapshot }) {
+  const {
+    snapshot: s,
+    enabled,
+    setEnabled,
+    refresh,
+    status,
+  } = useLiveChain(snapshot);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(s.markets[0]?.id);
   const markets = s.markets.filter((p) =>
@@ -25,8 +34,8 @@ export function ChainMarkets({ snapshot: s }: { snapshot: ChainSnapshot }) {
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
-  const selected = s.markets.find((p) => p.id === selectedId)!;
-  const trades = s.trades.filter((t) => t.poolId === selectedId);
+  const selected = s.markets.find((p) => p.id === selectedId) ?? s.markets[0];
+  const trades = s.trades.filter((t) => t.poolId === selected.id);
   return (
     <div className="page chain-page">
       <div className="page-heading">
@@ -48,23 +57,41 @@ export function ChainMarkets({ snapshot: s }: { snapshot: ChainSnapshot }) {
           </span>
         </div>
       </div>
-      <div className="chain-coverage">
+      <div
+        className={`chain-coverage ${status === "delayed" ? "chain-delayed" : ""}`}
+      >
         <span className="chain-status-dot" />
         <div>
-          <strong>On-chain snapshot</strong>
+          <strong role="status">
+            {status === "current"
+              ? "Automatic updates active"
+              : status === "paused"
+                ? "Updates paused"
+                : status === "delayed"
+                  ? "Updates delayed - showing last captured data"
+                  : "Checking for fresh data"}
+          </strong>
           <p>
             Captured {date(Math.floor(Date.parse(s.generatedAt) / 1000))} UTC.
             Newest {s.markets.length} of {s.discoveredLaunches} instant launches
             discovered between blocks {s.fromBlock.toLocaleString("en-US")} and{" "}
             {s.toBlock.toLocaleString("en-US")}. Each pool includes swaps from
-            its launch to that cutoff. This is a captured dataset, not a
-            streaming feed.
+            its launch to that cutoff. Checks for updates run about once a
+            minute while this page is visible.
           </p>
+        </div>
+        <div className="chain-refresh-actions">
+          <button className="button" onClick={() => setEnabled(!enabled)}>
+            {enabled ? "Pause updates" : "Resume updates"}
+          </button>
+          <button className="button" onClick={refresh}>
+            Check now
+          </button>
         </div>
       </div>
       <div className="stats-grid">
         <div className="stat">
-          <span>Observed swap volume</span>
+          <span>Observed volume (ETH)</span>
           <strong>
             {eth(
               s.markets
@@ -115,9 +142,9 @@ export function ChainMarkets({ snapshot: s }: { snapshot: ChainSnapshot }) {
             {markets.map((p) => (
               <button
                 key={p.id}
-                className={`chain-pool-row ${p.id === selectedId ? "selected" : ""}`}
+                className={`chain-pool-row ${p.id === selected.id ? "selected" : ""}`}
                 onClick={() => setSelectedId(p.id)}
-                aria-pressed={p.id === selectedId}
+                aria-pressed={p.id === selected.id}
               >
                 <span className="chain-token-icon">{p.symbol.slice(0, 2)}</span>
                 <span className="chain-token-name">
@@ -268,6 +295,12 @@ export function ChainMarkets({ snapshot: s }: { snapshot: ChainSnapshot }) {
           )}
         </div>
       </section>
+      <PoolAccounting
+        key={selected.id}
+        market={selected}
+        toBlock={s.toBlock}
+        toTimestamp={s.toTimestamp}
+      />
       <section className="chain-evidence">
         <ShieldCheck size={20} />
         <div>

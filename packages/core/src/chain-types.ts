@@ -19,6 +19,25 @@ export interface ChainMarket {
   buys: number;
   sells: number;
   series: { time: number; wei: string }[];
+  accounting?: {
+    wallets: ChainWallet[];
+    unattributedSwaps: number;
+    transfersChecked: number;
+  };
+}
+export interface ChainWallet {
+  address: string;
+  swaps: number;
+  buys: number;
+  sells: number;
+  volumeWei: string;
+  realizedWei: string | null;
+  inventoryRaw: string;
+  balanceRaw: string;
+  balanceMatches: boolean;
+  eligible: boolean;
+  flags: string[];
+  evidenceTx: string;
 }
 export interface ChainTrade {
   poolId: string;
