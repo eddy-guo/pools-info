@@ -113,9 +113,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
 function ShellStatus() {
   const { data, loading, error } =
     useProduct<AnalyticsExploreResponse>("explore?limit=1");
-  const captured = data
-    ? new Date(data.coverage.asOf * 1000).toISOString()
-    : null;
+  const captured =
+    data &&
+    data.coverage.processedPools > 0 &&
+    data.coverage.asOf > 0 &&
+    Number.isFinite(data.coverage.asOf)
+      ? new Date(data.coverage.asOf * 1000).toISOString()
+      : null;
   return (
     <div className="network-subnav">
       <strong role="status" className="status-label">

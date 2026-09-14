@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { withLogRpc } from "./log-rpc";
+import { safeError, errorDetails } from "./errors";
 import { collectCatalog, collectPoolEvents, Rpc } from "@pools/chain";
 import {
   acquireWriter,
@@ -83,90 +84,116 @@ async function runBatch(
   token?: string,
 ) {
   const client = rpc();
-  if (Number(await client.call<string>("eth_chainId", [])) !== 4663)
-    throw Error("Wrong chain");
-  const s = await reconcile(db, initial, client);
-  const head = Number(await client.call<string>("eth_blockNumber", []));
-  if (!Number.isSafeInteger(head) || head < 128)
-    throw Error("Invalid chain head");
-  const from = s.cursor === null ? s.start : s.cursor + 1;
-  const to = Math.min(head - 128, from + batchSize - 1);
-  if (from > to) return;
-  await markAttempt(db, s.key);
-  // Pin both boundaries before collecting, including the link to saved history.
-  const first = await header(client, from);
-  if (s.hash && first.parentHash !== s.hash)
-    throw Error("Checkpoint parent changed");
-  if (s.kind === "discovery") {
-    const result = await collectCatalog(undefined, client, {
-      fromBlock: from,
-      toBlock: to,
-    });
-    if (
-      (await header(client, from)).hash !== first.hash ||
-      (await header(client, to)).hash !== result.catalog.blockHash
-    )
-      throw Error("Discovery boundary changed");
-    await commitBatch(db, s, {
-      from,
-      to,
-      hash: result.catalog.blockHash,
-      evidence: result.evidence,
-      pools: result.catalog.pools,
-    });
-    console.log(
-      JSON.stringify({
-        event: "discovered",
+  let stage = "chain_check";
+  try {
+    if (Number(await client.call<string>("eth_chainId", [])) !== 4663)
+      throw Error("Wrong chain");
+    stage = "checkpoint_reconcile";
+    const s = await reconcile(db, initial, client);
+    stage = "head_read";
+    const head = Number(await client.call<string>("eth_blockNumber", []));
+    if (!Number.isSafeInteger(head) || head < 128)
+      throw Error("Invalid chain head");
+    const from = s.cursor === null ? s.start : s.cursor + 1;
+    const to = Math.min(head - 128, from + batchSize - 1);
+    if (from > to) return;
+    stage = "mark_attempt";
+    await markAttempt(db, s.key);
+    // Pin both boundaries before collecting, including the link to saved history.
+    stage = "boundary_pin";
+    const first = await header(client, from);
+    if (s.hash && first.parentHash !== s.hash)
+      throw Error("Checkpoint parent changed");
+    if (s.kind === "discovery") {
+      stage = "discovery_collect";
+      const result = await collectCatalog(undefined, client, {
+        fromBlock: from,
+        toBlock: to,
+      });
+      stage = "discovery_boundary_check";
+      if (
+        (await header(client, from)).hash !== first.hash ||
+        (await header(client, to)).hash !== result.catalog.blockHash
+      )
+        throw Error("Discovery boundary changed");
+      stage = "discovery_commit";
+      await commitBatch(db, s, {
         from,
         to,
-        pools: result.catalog.pools.length,
-        httpRequests: client.requests,
-        rpcCalls: client.calls,
-      }),
-    );
-  } else {
-    if (!token || !s.poolId) throw Error("Missing pool identity");
-    const result = await collectPoolEvents(
-      { poolId: s.poolId, token, fromBlock: from, toBlock: to },
-      client,
-    );
-    if (
-      result.fromBlockParentHash !== first.parentHash ||
-      (await header(client, from)).hash !== first.hash ||
-      (await header(client, to)).hash !== result.blockHash
-    )
-      throw Error("Pool boundary changed");
-    await commitBatch(db, s, {
-      from,
-      to,
-      hash: result.blockHash,
-      token,
-      evidence: result.evidence,
-      events: [
-        ...result.swaps.map((e) => ({
-          ...e,
-          kind: "swap" as const,
-          payload: e,
-        })),
-        ...result.transfers.map((e) => ({
-          ...e,
-          kind: "transfer" as const,
-          payload: e,
-        })),
-      ],
-    });
-    console.log(
-      JSON.stringify({
-        event: "indexed",
-        pool: s.poolId,
+        hash: result.catalog.blockHash,
+        evidence: result.evidence,
+        pools: result.catalog.pools,
+      });
+      console.log(
+        JSON.stringify({
+          event: "discovered",
+          from,
+          to,
+          pools: result.catalog.pools.length,
+          httpRequests: client.requests,
+          rpcCalls: client.calls,
+        }),
+      );
+    } else {
+      if (!token || !s.poolId) throw Error("Missing pool identity");
+      stage = "pool_collect";
+      const result = await collectPoolEvents(
+        { poolId: s.poolId, token, fromBlock: from, toBlock: to },
+        client,
+      );
+      stage = "pool_boundary_check";
+      if (
+        result.fromBlockParentHash !== first.parentHash ||
+        (await header(client, from)).hash !== first.hash ||
+        (await header(client, to)).hash !== result.blockHash
+      )
+        throw Error("Pool boundary changed");
+      stage = "pool_commit";
+      await commitBatch(db, s, {
         from,
         to,
-        swaps: result.swaps.length,
-        transfers: result.transfers.length,
+        hash: result.blockHash,
+        token,
+        evidence: result.evidence,
+        events: [
+          ...result.swaps.map((e) => ({
+            ...e,
+            kind: "swap" as const,
+            payload: e,
+          })),
+          ...result.transfers.map((e) => ({
+            ...e,
+            kind: "transfer" as const,
+            payload: e,
+          })),
+        ],
+      });
+      console.log(
+        JSON.stringify({
+          event: "indexed",
+          pool: s.poolId,
+          from,
+          to,
+          swaps: result.swaps.length,
+          transfers: result.transfers.length,
+          httpRequests: client.requests,
+          rpcCalls: client.calls,
+        }),
+      );
+    }
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        event: "batch_operation_failed",
+        stream: initial.key,
+        stage,
         httpRequests: client.requests,
         rpcCalls: client.calls,
+        error: safeError(e),
+        ...errorDetails(e),
       }),
     );
+    throw e;
   }
 }
 let stopping = false;
@@ -289,77 +316,7 @@ async function main() {
     await db.end();
   }
 }
-function safeError(e: unknown) {
-  // Return our own descriptions, never arbitrary provider, SQL or fetch text.
-  const message = e instanceof Error ? e.message : "";
-  if (
-    /^Invalid INDEXER_(START_BLOCK|BATCH_BLOCKS|POLL_MS|POOLS_PER_CYCLE|LOG_RANGE_BLOCKS)$/.test(
-      message,
-    )
-  )
-    return `configuration_invalid: ${message}`;
-  const categories: [RegExp, string][] = [
-    [
-      /^DATABASE_URL is required$/,
-      "database_configuration_missing: set DATABASE_URL",
-    ],
-    [
-      /^ROBINHOOD_RPC_URL is required for the persistent worker$/,
-      "rpc_configuration_missing: set ROBINHOOD_RPC_URL",
-    ],
-    [
-      /^INDEXER_START_BLOCK differs from saved start;/,
-      "start_block_changed: restore the original INDEXER_START_BLOCK",
-    ],
-    [
-      /^Another worker holds the writer lock$/,
-      "writer_busy: keep one indexer replica",
-    ],
-    [/^Wrong chain$/, "wrong_chain: configure Robinhood chain 4663 RPC"],
-    [
-      /^(Invalid chain head|Missing canonical header|Missing or invalid event header|Missing header)$/,
-      "invalid_header: check the RPC endpoint and retry",
-    ],
-    [
-      /^(Checkpoint parent changed|Discovery boundary changed|Pool boundary changed|Cutoff changed during (event )?collection)$/,
-      "chain_changed: retry and reconcile the saved checkpoint",
-    ],
-    [
-      /^Collection budget exceeded after [0-9]+ HTTP requests and [0-9]+ RPC calls$/,
-      "rpc_budget_exceeded: reduce INDEXER_BATCH_BLOCKS or check RPC capacity",
-    ],
-    [
-      /^(Event batch exceeds 10000 logs;|Catalog batch exceeds 250 launches;)/,
-      "batch_too_large: reduce INDEXER_BATCH_BLOCKS",
-    ],
-    [
-      /^(RPC HTTP (429|5[0-9]{2})|RPC returned an error or missing result)$/,
-      "rpc_unavailable: check provider capacity and retry",
-    ],
-    [
-      /^(Unexpected event source or range|Unexpected launch source|Unsupported or inconsistent PoolKey|Unverified catalog launch|Inconsistent event receipt or canonical block|Missing or invalid event receipt|Duplicate event evidence)$/,
-      "evidence_rejected: inspect contract registry and RPC evidence before resuming",
-    ],
-    [
-      /^(Conflicting replay|Stale checkpoint or noncontiguous batch|Stale rewind|Unknown ancestor)$/,
-      "checkpoint_conflict: stop duplicate writers and inspect saved coverage",
-    ],
-    [
-      /^Applied migration changed;/,
-      "migration_changed: restore the applied migration and add a new one",
-    ],
-  ];
-  for (const [pattern, description] of categories)
-    if (pattern.test(message)) return description;
-  if (e && typeof e === "object" && "code" in e) {
-    if (e.code === "42P01") return "schema_missing: run indexer migrations";
-    if (e.code === "28P01")
-      return "database_authentication_failed: check DATABASE_URL credentials";
-    if (e.code === "ECONNREFUSED" || e.code === "ENOTFOUND")
-      return "connection_failed: check database and RPC connectivity";
-  }
-  return "operation_failed: saved checkpoint preserved; inspect configuration and retry";
-}
+
 main().catch((e) => {
   console.error(
     JSON.stringify({ event: "worker_stopped", error: safeError(e) }),

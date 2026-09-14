@@ -985,6 +985,10 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
       unexpected.push(r.url());
   });
   await page.goto("/traders/");
+  await expect(page.locator(".network-subnav .capture-time")).toHaveAttribute(
+    "title",
+    new Date(board.coverage.asOf * 1000).toISOString(),
+  );
   await expect(
     page.getByLabel("Minimum swaps").filter({ visible: true }),
   ).toHaveValue("10");
@@ -1068,4 +1072,6 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText("1970");
+  await expect(page.locator(".network-subnav .capture-time")).toHaveCount(0);
+  await expect(page.locator(".network-subnav")).toContainText("0 processed");
 });
