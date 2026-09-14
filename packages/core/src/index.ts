@@ -5,3 +5,7 @@ export * from "./chain-types";
 export * from "./chain-accounting";
 
 export * from "./live-analytics";
+
+export * from "./search";
+
+export * from "./candles";

@@ -8,6 +8,7 @@ import {
   type PoolAudit,
   type LiveWindow,
 } from "@pools/core";
+import { PersonalRankPreview } from "./feature-preview";
 import { useLive } from "./live-provider";
 import {
   AuditAction,
@@ -260,6 +261,7 @@ export function Traders() {
           Look up your wallet
         </Link>
       </div>
+      <PersonalRankPreview />
       <section className="panel">
         <div className="live-controls">
           <PoolPicker />

@@ -22,3 +22,7 @@ Methodology, accessible loading/empty/failed states and mobile layouts are part 
 4. Add auction accounting and other sources only after their need and verification are clear. Inform Eddy before any API key or external integration is required.
 
 Current runtime source: Robinhood public JSON-RPC. Explorer and X links are outbound user actions, not market-data dependencies. No Envio or pools.xyz API integration. Railway/Postgres remains optional future infrastructure.
+
+## Current implementation update
+
+See [Data experience](./DATA-EXPERIENCE.md) for the current source/caching design, real ENS resolution, the replaceable search contract, interactive chart controls and the bounded live trade feed. Authentication, editable profiles and synced accounts are functionality-out-of-scope UI placeholders. Copy trading remains planned. Broader public-chain indexing is separate from user-account persistence.

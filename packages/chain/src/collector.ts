@@ -19,6 +19,7 @@ import {
 } from "./events";
 import { Rpc, hex } from "./rpc";
 import { auditPool, type Receipt } from "./audit";
+import { discoverRecentLaunches } from "./discovery";
 import type { ChainMarket, ChainSnapshot, ChainTrade } from "@pools/core";
 
 // This exporter is opt-in. Normal web builds never depend on a live provider.
@@ -77,6 +78,10 @@ export async function collectSnapshot(
   );
   if (deploymentCode.some((code) => code === "0x"))
     throw Error("Missing deployed contract");
+  const discovery = options.target
+    ? null
+    : await discoverRecentLaunches(rpc, fromBlock, toBlock, poolLimit);
+  if (discovery) fromBlock = discovery.fromBlock;
   const launches = options.target
     ? (
         await rpc.call<Receipt>("eth_getTransactionReceipt", [
@@ -88,12 +93,7 @@ export async function collectSnapshot(
           l.topics[0] === toEventSelector(launchEvent) &&
           l.topics[1] === options.target!.poolId,
       )
-    : await rpc.logs(
-        contracts.strategies,
-        [toEventSelector(launchEvent)],
-        fromBlock,
-        toBlock,
-      );
+    : discovery!.launches;
   if (options.target && launches.length !== 1) throw Error("Unknown launch");
   if (options.target) {
     const first = Number(launches[0].blockNumber);
@@ -138,6 +138,55 @@ export async function collectSnapshot(
     }
     return pending;
   }
+  const launchBlocks = [
+    ...new Set(selected.map((log) => Number(log.blockNumber))),
+  ].filter((n) => !blockCache.has(n));
+  const launchHeaders = await rpc.batch<Block>(
+    "eth_getBlockByNumber",
+    launchBlocks.map((n) => [hex(n), false]),
+  );
+  launchHeaders.forEach((header, i) => {
+    if (!header || Number(header.number) !== launchBlocks[i])
+      throw Error("Missing or mismatched launch header");
+    blockCache.set(launchBlocks[i], header);
+  });
+  const launchHashes = [...new Set(selected.map((log) => log.transactionHash))];
+  const launchReceipts = await rpc.batch<Receipt>(
+    "eth_getTransactionReceipt",
+    launchHashes.map((hash) => [hash]),
+  );
+  launchReceipts.forEach((receipt, i) => {
+    if (!receipt || receipt.transactionHash !== launchHashes[i])
+      throw Error("Missing or mismatched launch receipt");
+    receiptCache.set(launchHashes[i], Promise.resolve(receipt));
+    evidence.receipts.push(receipt);
+  });
+  const metadataFields = ["name", "symbol", "decimals", "totalSupply"] as const;
+  const selectedLaunches = selected.map(decodeLaunch);
+  const metadataResults = await rpc.batch<Hex>(
+    "eth_call",
+    selectedLaunches.flatMap((launch) =>
+      metadataFields.map((functionName) => [
+        {
+          to: launch.token,
+          data: encodeFunctionData({ abi: erc20Abi, functionName }),
+        },
+        hex(toBlock),
+      ]),
+    ),
+  );
+  const metadata = new Map(
+    selectedLaunches.map((launch, i) => [
+      launch.poolId,
+      metadataFields.map((functionName, j) =>
+        decodeFunctionResult({
+          abi: erc20Abi,
+          functionName,
+          data: metadataResults[i * metadataFields.length + j],
+        }),
+      ),
+    ]),
+  );
   for (const log of selected) {
     const launch = decodeLaunch(log);
     const launchBlock = Number(log.blockNumber);
@@ -157,29 +206,7 @@ export async function collectSnapshot(
       !receipt.logs.some((l) => l.address.toLowerCase() === contracts.launcher)
     )
       throw Error("Unverified launch receipt");
-    const metadataFields = [
-      "name",
-      "symbol",
-      "decimals",
-      "totalSupply",
-    ] as const;
-    const metadataResults = await rpc.batch<Hex>(
-      "eth_call",
-      metadataFields.map((functionName) => [
-        {
-          to: launch.token,
-          data: encodeFunctionData({ abi: erc20Abi, functionName }),
-        },
-        hex(toBlock),
-      ]),
-    );
-    const [name, symbol, decimals, supply] = metadataResults.map((data, i) =>
-      decodeFunctionResult({
-        abi: erc20Abi,
-        functionName: metadataFields[i],
-        data,
-      }),
-    );
+    const [name, symbol, decimals, supply] = metadata.get(launch.poolId)!;
     const rawSwaps = await rpc.logs(
       contracts.manager,
       [toEventSelector(swapEvent), launch.poolId],

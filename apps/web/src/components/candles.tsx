@@ -1,6 +1,23 @@
 "use client";
-import { useState } from "react";
-import type { ChainMarket, ChainSnapshot } from "@pools/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createChart,
+  CandlestickSeries,
+  HistogramSeries,
+  ColorType,
+  CrosshairMode,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+  type Time,
+} from "lightweight-charts";
+import {
+  buildCandles,
+  candleIntervals,
+  candleValue,
+  type ChainMarket,
+  type ChainSnapshot,
+} from "@pools/core";
 import { Price } from "./ui";
 import { Eth, utc } from "./live-ui";
 const ranges = {
@@ -9,7 +26,25 @@ const ranges = {
   "6h": 21600,
   "24h": 86400,
   "1W": 604800,
+  All: Infinity,
 };
+function axisPrice(value: number) {
+  if (!Number.isFinite(value)) return "N/A";
+  if (value === 0) return "0";
+  if (Math.abs(value) >= 0.001)
+    return new Intl.NumberFormat("en-US", {
+      maximumSignificantDigits: 5,
+      notation: Math.abs(value) >= 1000 ? "compact" : "standard",
+    }).format(value);
+  const zeros = Math.max(0, -Math.floor(Math.log10(Math.abs(value))) - 1);
+  const digits = (Math.abs(value) * 10 ** (zeros + 1))
+    .toPrecision(4)
+    .replace(".", "");
+  return `${value < 0 ? "-" : ""}0.0${String(zeros)
+    .split("")
+    .map((n) => "₀₁₂₃₄₅₆₇₈₉"[Number(n)])
+    .join("")}${digits}`;
+}
 export function Candles({
   market,
   snapshot,
@@ -17,60 +52,231 @@ export function Candles({
   market: ChainMarket;
   snapshot: ChainSnapshot;
 }) {
-  const [range, setRange] = useState<keyof typeof ranges>("1h");
-  const [focused, setFocused] = useState<number | null>(null);
-  const from = snapshot.toTimestamp - ranges[range],
-    interval = Math.max(5, Math.ceil(ranges[range] / 60));
-  const buckets = new Map<
-    number,
-    {
-      time: number;
-      open: bigint;
-      close: bigint;
-      high: bigint;
-      low: bigint;
-      volume: bigint;
+  const [interval, setInterval] = useState<keyof typeof candleIntervals>("1m"),
+    [metric, setMetric] = useState<"Price" | "FDV">("Price"),
+    [range, setRange] = useState<keyof typeof ranges>("All"),
+    [focused, setFocused] = useState<number>();
+  const container = useRef<HTMLDivElement>(null);
+  const api = useRef<{
+    chart: IChartApi;
+    price: ISeriesApi<"Candlestick">;
+    volume: ISeriesApi<"Histogram">;
+  } | null>(null);
+  const bars = useMemo(
+    () => buildCandles(market, snapshot, candleIntervals[interval]),
+    [market, snapshot, interval],
+  );
+  const active = bars.find((b) => b.time === focused) ?? bars.at(-1);
+  const viewKey = `${market.id}:${range}:${interval}`;
+  const previousView = useRef("");
+  useEffect(() => {
+    if (!container.current) return;
+    const chart = createChart(container.current, {
+      autoSize: true,
+      layout: {
+        background: { type: ColorType.Solid, color: "#171719" },
+        textColor: "#a3a0aa",
+        fontFamily: "system-ui",
+        fontSize: 11,
+        attributionLogo: true,
+        panes: {
+          separatorColor: "#2a292e",
+          separatorHoverColor: "#51434c",
+          enableResize: true,
+        },
+      },
+      grid: {
+        vertLines: { color: "#242329" },
+        horzLines: { color: "#242329" },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#2a292e" },
+      timeScale: {
+        borderColor: "#2a292e",
+        timeVisible: true,
+        secondsVisible: true,
+      },
+      localization: {
+        locale: "en-US",
+        timeFormatter: (t: Time) =>
+          typeof t === "number" ? utc(t) : String(t),
+      },
+      handleScroll: { vertTouchDrag: false },
+    });
+    const price = chart.addSeries(CandlestickSeries, {
+      upColor: "#8bddb6",
+      downColor: "#ed8e9f",
+      wickUpColor: "#8bddb6",
+      wickDownColor: "#ed8e9f",
+      borderVisible: false,
+      priceFormat: {
+        type: "custom",
+        minMove: 1,
+        formatter: (v: number) => axisPrice(v / 1e18),
+      },
+    });
+    const volume = chart.addSeries(
+      HistogramSeries,
+      {
+        priceFormat: { type: "volume" },
+        priceLineVisible: false,
+        lastValueVisible: false,
+      },
+      1,
+    );
+    chart.panes()[1].setHeight(90);
+    chart.subscribeCrosshairMove((p) =>
+      setFocused(typeof p.time === "number" ? p.time : undefined),
+    );
+    api.current = { chart, price, volume };
+    return () => {
+      api.current = null;
+      previousView.current = "";
+      chart.remove();
+    };
+  }, []);
+  useEffect(() => {
+    const a = api.current;
+    if (!a) return;
+    const previous = a.chart.timeScale().getVisibleLogicalRange();
+    a.price.setData(
+      bars.map((b) => ({
+        time: b.time as UTCTimestamp,
+        open: Number(candleValue(b.open, market, metric)),
+        high: Number(candleValue(b.high, market, metric)),
+        low: Number(candleValue(b.low, market, metric)),
+        close: Number(candleValue(b.close, market, metric)),
+      })),
+    );
+    a.volume.setData(
+      bars.map((b) => ({
+        time: b.time as UTCTimestamp,
+        value: Number(b.volume) / 1e18,
+        color: b.close >= b.open ? "#8bddb655" : "#ed8e9f55",
+      })),
+    );
+    a.chart.applyOptions({ timeScale: { secondsVisible: interval === "1s" } });
+    if (bars.length) {
+      if (previousView.current !== viewKey) {
+        if (range === "All") {
+          a.chart.timeScale().fitContent();
+          if (bars.length < 40)
+            a.chart
+              .timeScale()
+              .setVisibleLogicalRange({
+                from: bars.length - 40,
+                to: bars.length + 3,
+              });
+        } else
+          a.chart.timeScale().setVisibleRange({
+            from: Math.max(
+              bars[0].time,
+              snapshot.toTimestamp - ranges[range],
+            ) as UTCTimestamp,
+            to: Math.max(
+              bars[0].time + 1,
+              snapshot.toTimestamp,
+            ) as UTCTimestamp,
+          });
+      } else if (previous) a.chart.timeScale().setVisibleLogicalRange(previous);
     }
-  >();
-  for (const p of market.series.filter((p) => p.time >= from)) {
-    const time = Math.floor(p.time / interval) * interval,
-      value = BigInt(p.wei),
-      old = buckets.get(time);
-    if (old) {
-      old.close = value;
-      old.high = old.high > value ? old.high : value;
-      old.low = old.low < value ? old.low : value;
-    } else
-      buckets.set(time, {
-        time,
-        open: value,
-        close: value,
-        high: value,
-        low: value,
-        volume: 0n,
-      });
-  }
-  for (const t of snapshot.trades.filter(
-    (t) => t.poolId === market.id && t.timestamp >= from,
-  )) {
-    const bucket = buckets.get(Math.floor(t.timestamp / interval) * interval);
-    if (bucket) bucket.volume += BigInt(t.ethWei);
-  }
-  const bars = [...buckets.values()].sort((a, b) => a.time - b.time),
-    max = Math.max(...bars.map((b) => Number(b.high)), 1),
-    min = Math.min(...bars.map((b) => Number(b.low)), max),
-    span = max - min || max * 0.05 || 1,
-    maxVol = Math.max(...bars.map((b) => Number(b.volume)), 1);
-  const y = (v: bigint) => 14 + (1 - (Number(v) - min) / span) * 185,
-    step = 720 / Math.max(bars.length, 1);
-  const active =
-    bars[
-      focused === null ? bars.length - 1 : Math.min(focused, bars.length - 1)
-    ];
+    previousView.current = viewKey;
+  }, [bars, metric, market, range, interval, snapshot.toTimestamp, viewKey]);
   return (
     <div className="live-candles">
-      <div className="live-controls">
-        <strong>Observed spot-price candles</strong>
+      <div className="live-controls chart-toolbar">
+        <strong>
+          {metric} <small>ETH</small>
+        </strong>
+        <div className="chart-selects">
+          <label>
+            Display
+            <select
+              aria-label="Chart display"
+              value={metric}
+              onChange={(e) => setMetric(e.target.value as typeof metric)}
+            >
+              <option>Price</option>
+              <option>FDV</option>
+            </select>
+          </label>
+          <label>
+            Candle interval
+            <select
+              aria-label="Candle interval"
+              value={interval}
+              onChange={(e) => {
+                setInterval(e.target.value as typeof interval);
+                setFocused(undefined);
+              }}
+            >
+              {Object.keys(candleIntervals).map((i) => (
+                <option key={i}>{i}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="candle-readout" aria-live="off">
+        {active ? (
+          <>
+            <span>{utc(active.time)}</span>
+            {(
+              [
+                ["O", active.open],
+                ["H", active.high],
+                ["L", active.low],
+                ["C", active.close],
+              ] as const
+            ).map(([name, value]) => (
+              <span key={name}>
+                {name}{" "}
+                {metric === "Price" ? (
+                  <Price wei={value.toString()} />
+                ) : (
+                  <Eth wei={candleValue(value, market, metric).toString()} />
+                )}
+              </span>
+            ))}
+            <span>
+              V <Eth wei={active.volume.toString()} />
+            </span>
+          </>
+        ) : (
+          <span>No observed candles in the loaded history</span>
+        )}
+      </div>
+      <div
+        className="interactive-chart"
+        ref={container}
+        role="img"
+        aria-label={`${metric} candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect.`}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if ((e.key !== "ArrowRight" && e.key !== "ArrowLeft") || !bars.length)
+            return;
+          e.preventDefault();
+          const i = Math.max(
+            0,
+            bars.findIndex((b) => b.time === (focused ?? bars.at(-1)?.time)),
+          );
+          const b =
+            bars[
+              Math.min(
+                bars.length - 1,
+                Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)),
+              )
+            ];
+          setFocused(b.time);
+          if (api.current)
+            api.current.chart.setCrosshairPosition(
+              Number(candleValue(b.close, market, metric)),
+              b.time as UTCTimestamp,
+              api.current.price,
+            );
+        }}
+      />
+      <div className="chart-bottom">
         <div className="segmented" aria-label="Chart range">
           {Object.keys(ranges).map((r) => (
             <button
@@ -78,127 +284,42 @@ export function Candles({
               aria-pressed={range === r}
               onClick={() => {
                 setRange(r as keyof typeof ranges);
-                setFocused(null);
+                setFocused(undefined);
               }}
             >
               {r}
             </button>
           ))}
         </div>
+        <button
+          className="text-button"
+          onClick={() => {
+            api.current?.chart.timeScale().fitContent();
+            if (bars.length < 40)
+              api.current?.chart
+                .timeScale()
+                .setVisibleLogicalRange({
+                  from: bars.length - 40,
+                  to: bars.length + 3,
+                });
+          }}
+        >
+          Fit loaded history
+        </button>
       </div>
-      {active ? (
-        <>
-          <div className="candle-readout">
-            <span>{utc(active.time)}</span>
-            <span>
-              O <Price wei={active.open.toString()} />
-            </span>
-            <span>
-              H <Price wei={active.high.toString()} />
-            </span>
-            <span>
-              L <Price wei={active.low.toString()} />
-            </span>
-            <span>
-              C <Price wei={active.close.toString()} />
-            </span>
-            <span>
-              Volume <Eth wei={active.volume.toString()} />
-            </span>
-          </div>
-          <div className="candle-frame">
-            <svg
-              viewBox="0 0 740 280"
-              role="img"
-              aria-label="Observed spot-price candle chart with ETH volume bars. Arrow keys inspect candles."
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                  e.preventDefault();
-                  setFocused(
-                    Math.min(
-                      bars.length - 1,
-                      Math.max(
-                        0,
-                        (focused ?? bars.length - 1) +
-                          (e.key === "ArrowRight" ? 1 : -1),
-                      ),
-                    ),
-                  );
-                }
-              }}
-            >
-              {[14, 76, 138, 200].map((y) => (
-                <line
-                  key={y}
-                  x1="0"
-                  x2="740"
-                  y1={y}
-                  y2={y}
-                  stroke="var(--line)"
-                  strokeDasharray="3 5"
-                />
-              ))}
-              {bars.map((b, i) => {
-                const color = b.close >= b.open ? "var(--green)" : "var(--red)",
-                  x = 10 + step * (i + 0.5);
-                return (
-                  <g key={b.time} onPointerEnter={() => setFocused(i)}>
-                    <title>
-                      {`${utc(b.time)} · close ${Number(b.close) / 1e18} ETH`}
-                    </title>
-                    <rect
-                      x={x - step / 2}
-                      y="0"
-                      width={step}
-                      height="280"
-                      fill="transparent"
-                    />
-                    <line
-                      x1={x}
-                      x2={x}
-                      y1={y(b.high)}
-                      y2={y(b.low)}
-                      stroke={color}
-                    />
-                    <rect
-                      x={x - Math.min(step * 0.6, 18) / 2}
-                      width={Math.min(step * 0.6, 18)}
-                      y={Math.min(y(b.open), y(b.close))}
-                      height={Math.max(2, Math.abs(y(b.open) - y(b.close)))}
-                      fill={color}
-                    />
-                    <rect
-                      x={x - Math.min(step * 0.6, 18) / 2}
-                      width={Math.min(step * 0.6, 18)}
-                      y={275 - (Number(b.volume) / maxVol) * 55}
-                      height={Math.max(1, (Number(b.volume) / maxVol) * 55)}
-                      fill={color}
-                      opacity="0.4"
-                    />
-                  </g>
-                );
-              })}
-            </svg>
-            <div className="candle-axis">
-              {[max, (max + min) / 2, min].map((v, i) => (
-                <Price key={i} wei={BigInt(Math.round(v)).toString()} />
-              ))}
-            </div>
-          </div>
-          <p className="panel-footnote">
-            {interval}s buckets from post-swap spot observations. Empty buckets
-            are omitted; no price movement is invented between swaps.
-          </p>
-        </>
-      ) : (
-        <div className="empty-state">
-          <h3>No price observations in this range</h3>
-          <p>
-            Choose a longer range. This does not mean the token price is zero.
-          </p>
-        </div>
-      )}
+      <p className="panel-footnote">
+        {interval} candles from observed post-swap prices · volume in ETH · UTC.
+        Gaps contain no invented trades.{" "}
+        {metric === "FDV" &&
+          "FDV uses contract total supply at the capture cutoff. "}
+        Panning does not fetch older history yet.
+      </p>
+      <p className="chart-credit">
+        <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
+          TradingView Lightweight Charts™
+        </a>{" "}
+        · Copyright (c) 2026 TradingView, Inc.
+      </p>
     </div>
   );
 }

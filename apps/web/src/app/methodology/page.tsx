@@ -42,11 +42,12 @@ export default function Methodology() {
             </p>
             <p>
               By default, we discover launches in the last 100,000 blocks and
-              cover the newest eight supported instant pools. Each selected pool
-              includes swaps from its launch through the common cutoff. This is
-              a recent sample, not a chain-wide screener. The cutoff trails the
-              scan head by 128 blocks; that buffer is not a claim of L1
-              finality.
+              cover the newest eight supported instant pools, stopping discovery
+              once enough launches are found. The displayed range is the actual
+              scanned range. Each selected pool includes swaps from its launch
+              through the common cutoff. This is a recent sample, not a
+              chain-wide screener. The cutoff trails the scan head by 128
+              blocks; that buffer is not a claim of L1 finality.
             </p>
             <p>
               Collection checks deployment code, successful launch receipts,

@@ -15,6 +15,7 @@ import {
   useMarket,
   utc,
 } from "./live-ui";
+import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
 export function PoolDetail({ id }: { id: string }) {
@@ -173,6 +174,7 @@ export function PoolDetail({ id }: { id: string }) {
           </section>
         </div>
         <aside className="market-sidebar">
+          <TradeStream markets={[m]} />
           <section className="panel">
             <div className="panel-heading">
               <h2>Concentration</h2>

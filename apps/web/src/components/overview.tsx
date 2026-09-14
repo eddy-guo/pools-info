@@ -7,6 +7,8 @@ import {
   since,
   type ChainMarket,
 } from "@pools/core";
+import { TradeStream } from "./trade-stream";
+import { FeaturePreview } from "./feature-preview";
 import { useLive } from "./live-provider";
 import { useQuery, useWatchlist } from "./state";
 import { Change, Price, Sparkline, WatchButton } from "./ui";
@@ -177,6 +179,16 @@ export function Overview() {
               options={["1h", "24h", "7d", "30d"]}
             />
           </div>
+          {tab === "watchlist" && (
+            <div className="watchlist-sync">
+              <span>
+                Saved in this browser <small>Account sync coming soon</small>
+              </span>
+              <FeaturePreview feature="watchlist">
+                Sync watchlist
+              </FeaturePreview>
+            </div>
+          )}
           <div className="filter-row">
             <label className="filter-input">
               <input
@@ -254,6 +266,7 @@ export function Overview() {
           )}
         </section>
         <aside className="market-sidebar">
+          <TradeStream markets={s.markets} />
           <section className="panel">
             <div className="panel-heading">
               <h2>Latest observed trades</h2>

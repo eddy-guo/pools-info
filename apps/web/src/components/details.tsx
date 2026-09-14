@@ -8,6 +8,7 @@ import {
   poolHref,
   type LiveWindow,
 } from "@pools/core";
+import { FeaturePreview } from "./feature-preview";
 import { useLive } from "./live-provider";
 import { AddressLabel, Chart } from "./ui";
 import {
@@ -65,9 +66,13 @@ export function WalletView({ address }: { address: string }) {
             are not wallet-wide totals.
           </p>
         </div>
-        <Link className="button secondary" href="/wallet/">
-          Look up another wallet
-        </Link>
+        <div className="profile-actions">
+          <FeaturePreview feature="copy">Copy trade</FeaturePreview>
+          <FeaturePreview feature="profile">Edit profile</FeaturePreview>
+          <Link className="button secondary" href="/wallet/">
+            Look up another wallet
+          </Link>
+        </div>
       </div>
       <section className="panel">
         <div className="live-controls">

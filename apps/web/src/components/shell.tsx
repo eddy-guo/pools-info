@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowRight, BookOpen } from "lucide-react";
+import { FeaturePreview } from "./feature-preview";
 import { Search } from "./search";
 import { Freshness } from "./live-provider";
 
@@ -44,6 +45,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="header-actions">
           <Search />
+          <FeaturePreview feature="connect" className="button connect-button">
+            Connect wallet
+          </FeaturePreview>
           <span className="network-badge">
             <span className="network-mark">R</span>
             <span>Robinhood</span>

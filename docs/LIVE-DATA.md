@@ -4,7 +4,7 @@
 
 ## Running the collector
 
-`pnpm snapshot:chain` collects a bounded slice from Robinhood Chain mainnet (4663). It defaults to the public RPC, a 100,000-block discovery window, a 128-block lag behind the scan head, and the newest 8 instant launches. The lag is not a claim of L1 finality.
+`pnpm snapshot:chain` collects a bounded slice from Robinhood Chain mainnet (4663). It defaults to the public RPC, an up-to-100,000-block discovery window, a 128-block lag behind the scan head, and the newest 8 instant launches. The lag is not a claim of L1 finality.
 
 Root `.env.local` is loaded by `pnpm dev`, `pnpm preview`, and `pnpm snapshot:chain`. All chain retrieval currently uses RPC. The CLI collects market data by default; set `CHAIN_INCLUDE_ACCOUNTING=1` explicitly for expensive per-pool receipt and balance audits. Override `ROBINHOOD_RPC_URL`, `CHAIN_BLOCK_SPAN` (up to 1,000,000), and `CHAIN_POOL_LIMIT` (up to 30) in the process environment. Credentials stay outside the browser and repository. Builds consume the committed snapshot and never require a working RPC.
 
@@ -98,3 +98,8 @@ The local market API also returned HTTP 200 with a fresh 08:35:34 UTC snapshot a
 The first real-page deployment passed CI and generated a live RPC-backed PNG, but its cold eight-pool market refresh returned 503 under the original 45-second collection budget. Deployment-code and per-token metadata reads are now JSON-RPC batches, preserving response-ID and canonical-block checks while reducing HTTP round trips. The market collector has a bounded 90-second budget, the route allows 110 seconds, and the browser waits up to 105 seconds. Polls do not overlap. This keeps the public RPC source and eight-pool coverage; no external integration is added.
 
 The legacy `/live/` alias now redirects at the HTTP routing layer and preserves query parameters. A streamed page redirect could otherwise remount Explore after early typing and discard the filter; the production browser test checks the actual 307 and retained query.
+
+
+A second cold deployment reached the 90-second scan budget. Discovery now scans newest-first in 10,000-block chunks and stops once enough launches are found, with `fromBlock` and discovered count reflecting only the actual scanned range. Selected launch headers, receipts and token metadata are prefetched in bounded batches before the same verification/folding steps. This avoids scanning old discovery chunks just to discard their launches.
+
+The subsequent [data-experience update](./DATA-EXPERIENCE.md) adds public Ethereum RPC for ENS only, and a lightweight Robinhood swap feed. Market data still comes from Robinhood RPC; there is no Pools API/Envio integration or hosted database. See that document for exact coverage, polling, caching and pending production verification.

@@ -305,3 +305,149 @@ test("direct pool links hydrate their candle charts without browser errors", asy
     expect(errors, `Hydration errors for ${pool.symbol}`).toEqual([]);
   }
 });
+
+test("command search handles fuzzy names, keyboard navigation, real resolver results and stale responses", async ({
+  page,
+}) => {
+  await page.route("**/api/ens/**", async (r) => {
+    if (r.request().url().includes("missing.eth"))
+      return r.fulfill({ json: { name: "missing.eth", address: null } });
+    await r.fulfill({
+      json: { name: "example.eth", address: wallet, chainId: 1 },
+    });
+  });
+  await page.goto("/");
+  await page.keyboard.press("Control+k");
+  const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
+  const input = dialog.getByRole("textbox");
+  await input.fill("FOLIOO");
+  await expect(dialog.getByRole("link").first()).toContainText("FOLIO");
+  await input.press("ArrowDown");
+  await expect(dialog.getByRole("link").first()).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(input).toBeFocused();
+  await input.fill("missing.eth");
+  await expect(dialog.getByText(/No Ethereum address record/)).toBeVisible();
+  await input.fill("example.eth");
+  const result = dialog.getByRole("link", { name: /example.eth/ });
+  await expect(result).toHaveAttribute("href", `/wallet/${wallet}/`);
+  await input.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`/wallet/${wallet}/`));
+  await page.keyboard.press("Control+k");
+  await expect(dialog.getByRole("textbox")).toHaveValue("");
+  await dialog.getByRole("textbox").fill("example.eth");
+  await dialog.getByRole("textbox").fill("nonsensexyz");
+  await expect(
+    dialog.getByText("No matches in current coverage"),
+  ).toBeVisible();
+  await expect(dialog.getByRole("link", { name: /example.eth/ })).toHaveCount(
+    0,
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+});
+test("chart separates interval from range, switches FDV and keeps seven trade pages local", async ({
+  page,
+}) => {
+  const update = structuredClone(chain);
+  update.markets[0].series = Array.from({ length: 140 }, (_, i) => ({
+    time: chain.toTimestamp - 140 + i,
+    wei: String(1000000000 + i * 1000000),
+  }));
+  update.trades = Array.from({ length: 140 }, (_, i) => ({
+    ...chain.trades[0],
+    poolId: market.id,
+    txHash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+    logIndex: i,
+    timestamp: chain.toTimestamp - i,
+  }));
+  let requests = 0;
+  await page.route("**/api/markets/", (r) => {
+    requests++;
+    return r.fulfill({ json: update });
+  });
+  await page.goto(poolHref(market));
+  await expect(
+    page.getByRole("img", { name: /Price candle chart/ }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Candle interval", { exact: true })
+    .filter({ visible: true })
+    .selectOption("1s");
+  await page
+    .getByLabel("Chart display")
+    .filter({ visible: true })
+    .selectOption("FDV");
+  await expect(
+    page.getByRole("img", { name: /FDV candle chart/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "6h", exact: true }).click();
+  await expect(
+    page
+      .getByLabel("Candle interval", { exact: true })
+      .filter({ visible: true }),
+  ).toHaveValue("1s");
+  await expect(
+    page.getByText("140 swap events", { exact: true }),
+  ).toBeVisible();
+  const before = requests;
+  for (let i = 0; i < 6; i++)
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByText("7 / 7", { exact: true })).toBeVisible();
+  expect(requests).toBe(before);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("live feed deduplicates overlapping checks, retains data on failure, and pauses", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let count = 0;
+  const event = {
+    poolId: market.id,
+    txHash: chain.trades[0].txHash,
+    logIndex: 0,
+    block: chain.toBlock,
+    timestamp: Math.floor(Date.now() / 1000),
+    amount0: "-100000000000000000",
+    amount1: "1000000",
+    transactionSender: wallet,
+  };
+  const batch = {
+    fromBlock: chain.toBlock - 999,
+    toBlock: chain.toBlock,
+    toTimestamp: Math.floor(Date.now() / 1000),
+    events: [event],
+    truncated: false,
+    generatedAt: new Date().toISOString(),
+  };
+  await page.route("**/api/trades/**", (r) => {
+    count++;
+    return r.fulfill(
+      count === 3
+        ? { status: 503, json: { error: "unavailable" } }
+        : { json: batch },
+    );
+  });
+  await page.goto("/");
+  const feed = page.locator(".trade-stream");
+  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await expect(feed.getByText("0.1 ETH", { exact: true })).toBeVisible();
+  await page.clock.fastForward(16000);
+  await expect.poll(() => count).toBe(2);
+  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await page.clock.fastForward(16000);
+  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await feed.getByRole("button", { name: "Pause feed" }).click();
+  const before = count;
+  await page.clock.fastForward(32000);
+  expect(count).toBe(before);
+  await feed.getByRole("button", { name: "Resume feed" }).click();
+  await expect.poll(() => count).toBe(before + 1);
+  await expect(feed.locator(".stream-event")).toHaveCount(1);
+});

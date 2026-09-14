@@ -17,7 +17,7 @@ async function refresh() {
 // non-Cache-Components model. No provider credentials enter the cache key.
 export const currentChainSnapshot = unstable_cache(
   refresh,
-  ["chain-markets-v3"],
+  ["chain-markets-v4"],
   { revalidate: 60 },
 );
 

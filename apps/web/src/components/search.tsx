@@ -1,96 +1,105 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { Command, Search as SearchIcon, X } from "lucide-react";
-import { poolHref, shortAddress, walletHref } from "@pools/core";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Command,
+  Search as SearchIcon,
+  X,
+  ArrowUpRight,
+  Coins,
+  Wallet,
+  Users,
+  ArrowLeftRight,
+} from "lucide-react";
+import {
+  searchGroups,
+  type SearchGroup,
+  type SearchResponse,
+} from "@pools/core";
+import { createSearchProvider } from "@/lib/search-provider";
 import { useLive } from "./live-provider";
-import { explorer } from "./live-ui";
+const icons = {
+  Tokens: Coins,
+  Wallets: Wallet,
+  Creators: Users,
+  Transactions: ArrowLeftRight,
+};
 export function Search() {
-  const { snapshot: s, audits } = useLive();
+  const { snapshot, audits } = useLive();
+  const provider = useMemo(
+    () => createSearchProvider(snapshot, audits),
+    [snapshot, audits],
+  );
   const dialog = useRef<HTMLDialogElement>(null),
     input = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(""),
+    [group, setGroup] = useState<SearchGroup>();
+  const [isOpen, setOpen] = useState(false);
+  const [result, setResult] = useState<{
+    query: string;
+    group?: SearchGroup;
+    provider: typeof provider;
+    data?: SearchResponse;
+    error?: string;
+  }>();
+  const current =
+    result?.query === query &&
+    result?.group === group &&
+    result?.provider === provider
+      ? result
+      : undefined;
+  const data = current?.data;
   function open() {
-    dialog.current?.showModal();
+    if (!dialog.current?.open) dialog.current?.showModal();
+    setOpen(true);
     input.current?.focus();
   }
   function close() {
     dialog.current?.close();
-    setQuery("");
   }
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        open();
+        if (dialog.current?.open) dialog.current.close();
+        else {
+          dialog.current?.showModal();
+          setOpen(true);
+          input.current?.focus();
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-  const q = query.trim().toLowerCase();
-  const rows: {
-    type: string;
-    title: string;
-    subtitle: string;
-    href: string;
-    external?: boolean;
-  }[] = [
-    ...s.markets.map((m) => ({
-      type: "Tokens",
-      title: `${m.name} (${m.symbol})`,
-      subtitle: m.token,
-      href: poolHref(m),
-    })),
-    ...[...new Set(s.markets.map((m) => m.launchSender.toLowerCase()))].map(
-      (a) => ({
-        type: "Creators",
-        title: shortAddress(a),
-        subtitle: `${a} · launch sender`,
-        href: `/creators/${a}/`,
-      }),
-    ),
-    ...Object.values(audits).flatMap((a) =>
-      a.wallets.map((w) => ({
-        type: "Wallets",
-        title: shortAddress(w.address),
-        subtitle: `${w.address} · audited in ${a.market.symbol}`,
-        href: walletHref(w.address, a.market),
-      })),
-    ),
-    ...s.trades.map((t) => ({
-      type: "Transactions",
-      title: `${t.side} · ${s.markets.find((m) => m.id === t.poolId)?.symbol}`,
-      subtitle: t.txHash,
-      href: `${explorer}/tx/${t.txHash}`,
-      external: true,
-    })),
-  ];
-  const matches = rows
-    .filter((r) => `${r.title} ${r.subtitle}`.toLowerCase().includes(q))
-    .filter(
-      (r, i, all) =>
-        all.findIndex((p) => p.href === r.href && p.type === r.type) === i,
+  useEffect(() => {
+    if (!isOpen) return;
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => {
+        provider
+          .search(query, { group, signal: controller.signal })
+          .then((data) => {
+            if (!controller.signal.aborted)
+              setResult({ query, group, provider, data });
+          })
+          .catch(() => {
+            if (!controller.signal.aborted)
+              setResult({
+                query,
+                group,
+                provider,
+                error: "Search is unavailable. Try again shortly.",
+              });
+          });
+      },
+      query ? 100 : 0,
     );
-  if (/^0x[0-9a-f]{40}$/.test(q) && !matches.some((r) => r.type === "Wallets"))
-    matches.push({
-      type: "Wallets",
-      title: shortAddress(q),
-      subtitle: "Look up this address · coverage is checked on the wallet page",
-      href: walletHref(q),
-    });
-  if (
-    /^0x[0-9a-f]{64}$/.test(q) &&
-    !matches.some((r) => r.type === "Transactions")
-  )
-    matches.push({
-      type: "Transactions",
-      title: shortAddress(q),
-      subtitle: "Outside the sample · open transaction on explorer",
-      href: `${explorer}/tx/${q}`,
-      external: true,
-    });
-  const ens = /^[\w.-]+\.eth$/.test(q);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, group, provider, isOpen]);
   return (
     <>
       <button
@@ -99,7 +108,7 @@ export function Search() {
         onClick={open}
       >
         <SearchIcon size={16} />
-        <span>Search tokens, wallets…</span>
+        <span>Search anything…</span>
         <kbd>
           <Command size={11} /> K
         </kbd>
@@ -107,8 +116,42 @@ export function Search() {
       <dialog
         ref={dialog}
         className="search-dialog"
+        aria-label="Search Pools Info"
+        onClose={() => {
+          setOpen(false);
+          setQuery("");
+          setGroup(undefined);
+        }}
         onClick={(e) => {
           if (e.target === dialog.current) close();
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+          const rows = [
+            ...(dialog.current?.querySelectorAll<HTMLAnchorElement>(
+              ".search-result",
+            ) ?? []),
+          ];
+          if (
+            !rows.length ||
+            (e.target !== input.current &&
+              !rows.includes(e.target as HTMLAnchorElement))
+          )
+            return;
+          e.preventDefault();
+          const index = rows.indexOf(
+            document.activeElement as HTMLAnchorElement,
+          );
+          if (index === 0 && e.key === "ArrowUp") input.current?.focus();
+          else
+            rows[
+              index < 0
+                ? e.key === "ArrowDown"
+                  ? 0
+                  : rows.length - 1
+                : (index + (e.key === "ArrowDown" ? 1 : -1) + rows.length) %
+                  rows.length
+            ]?.focus();
         }}
       >
         <div className="search-dialog-head">
@@ -119,8 +162,18 @@ export function Search() {
             aria-label="Search tokens, wallets, creators, or transaction hashes"
             placeholder="Token, address, ENS or transaction"
             value={query}
+            maxLength={256}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                dialog.current
+                  ?.querySelector<HTMLAnchorElement>(".search-result")
+                  ?.click();
+              }
+            }}
             autoComplete="off"
+            spellCheck={false}
           />
           <button
             className="icon-button"
@@ -130,45 +183,101 @@ export function Search() {
             <X size={20} />
           </button>
         </div>
-        <div className="search-results">
+        <div className="search-categories" aria-label="Search categories">
+          {[undefined, ...searchGroups].map((g) => (
+            <button
+              key={g ?? "All"}
+              aria-pressed={group === g}
+              onClick={() => {
+                setGroup(g);
+                input.current?.focus();
+              }}
+            >
+              {g ?? "All"}
+            </button>
+          ))}
+        </div>
+        <div className="search-results" aria-busy={!current}>
           <p className="search-hint">
-            {ens
-              ? "ENS name detected. Resolution is not connected yet; enter the wallet address."
-              : "Search currently covered tokens, launch senders, audited wallets, and transactions."}
+            {data
+              ? `${data.coverage.pools} covered pools + audited activity · partial coverage`
+              : "Searching current coverage…"}
           </p>
-          {["Tokens", "Wallets", "Creators", "Transactions"].map((type) => {
-            const selected = matches.filter((r) => r.type === type).slice(0, 5);
+          {!query && (
+            <p className="search-help">
+              Try a name or a typo, paste an address, or use <code>token:</code>
+              , <code>wallet:</code>, <code>creator:</code>, <code>tx:</code>.
+            </p>
+          )}
+          <span className="sr-only" role="status">
+            {current?.error ??
+              (data
+                ? `${data.total} results in current coverage`
+                : "Searching")}
+          </span>
+          {data?.kind === "ens" && !data.entries.length && (
+            <div className="search-explainer">
+              <span className="preview-label">ENS LOOKUP</span>
+              <h3>ENS name detected</h3>
+              <p>
+                {data.message ??
+                  "No matching records in this category. Try All or paste the wallet address."}
+              </p>
+              <small>
+                ENS lookup uses Ethereum RPC. This does not establish trading
+                activity on Robinhood.
+              </small>
+            </div>
+          )}
+          {searchGroups.map((type) => {
+            const selected =
+              data?.entries.filter((r) => r.group === type) ?? [];
+            const Icon = icons[type];
             return selected.length ? (
               <section key={type}>
                 <h2>{type}</h2>
                 {selected.map((r) => (
                   <Link
                     className="search-result"
-                    key={r.href}
+                    key={r.id}
                     href={r.href}
+                    prefetch={false}
                     onClick={close}
                     target={r.external ? "_blank" : undefined}
                     rel={r.external ? "noreferrer" : undefined}
                   >
-                    <span>
-                      <strong>{r.title}</strong>
-                      <small className="mono">{r.subtitle}</small>
+                    <span className="search-type-icon">
+                      <Icon size={17} />
                     </span>
+                    <span className="search-result-copy">
+                      <strong>{r.title}</strong>
+                      <small>{r.context}</small>
+                      <small className="mono">{r.address}</small>
+                    </span>
+                    {r.external && <ArrowUpRight size={15} />}
                   </Link>
                 ))}
               </section>
             ) : null;
           })}
-          {!matches.length && !ens && (
+          {data && !data.entries.length && data.kind !== "ens" && (
             <div className="empty-state">
               <h3>No matches in current coverage</h3>
-              <p>Try a token symbol or full address.</p>
+              <p>
+                This does not mean the token or wallet does not exist. Try its
+                full address or a shorter name.
+              </p>
             </div>
+          )}
+          {current?.error && (
+            <p role="alert" className="search-help">
+              {current.error}
+            </p>
           )}
         </div>
         <div className="search-dialog-footer">
-          Addresses: 42 characters · Transaction hashes: 66 characters · Esc to
-          close
+          <span>↑ ↓ Navigate · Enter Open · Esc Close</span>
+          <span>Names allow typos. Addresses do not.</span>
         </div>
       </dialog>
     </>
