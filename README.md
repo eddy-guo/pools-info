@@ -2,7 +2,9 @@
 
 A static Next.js analytics dashboard for pools on Robinhood Chain, designed to gain a real data pipeline without rebuilding its interface.
 
-**This version uses a reproducible fictional dataset.** Its 12 tokens, 8 wallets, 1,536 trades, prices, liquidity, and creator identities are simulated. It is a working product preview, not an indexed market feed or a verified trader leaderboard. The disclosure is included on every page and downloadable card.
+**The original dashboard uses a reproducible fictional dataset.** Its 12 tokens, 8 wallets, 1,536 trades, prices, liquidity, and creator identities are simulated. It is a working product preview, not an indexed market feed or a verified trader leaderboard. The disclosure is included on every page and downloadable card.
+
+A separate **On-chain** view at `/live/` now uses real recent launches and swaps from Robinhood Chain. It includes capture time, exact block coverage, and transaction evidence. It is a bounded snapshot, not an automatically refreshing feed. See [real-data notes](docs/LIVE-DATA.md) and run `pnpm snapshot:chain` to refresh it.
 
 ## Run locally
 
@@ -68,7 +70,7 @@ The browser suite serves the export automatically on a separate port. Regenerate
 1. Push this single repository to GitHub.
 2. Import it with the Next.js preset and Root Directory `apps/web`.
 3. Enable access to shared files outside that root. Keep framework build/output detection.
-4. Use Node 22. Add `SITE_URL` at build time with the final HTTPS origin to generate correct social-preview image URLs. Until configured, local metadata uses `http://localhost:3100`.
+4. Use Node 22. Add `SITE_URL` at build time with the final HTTPS origin to generate correct social-preview image URLs. Without an override, Vercel builds use the project production domain; local metadata uses `http://localhost:3100`.
 5. Add the purchased domain in Vercel and use the DNS records that Vercel supplies.
 
 No Railway services or data-source secrets are needed for this preview. Robots metadata is deliberately `noindex` while the site contains synthetic data. Revisit that when replacing it with verified data.

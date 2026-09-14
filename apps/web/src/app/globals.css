@@ -2220,3 +2220,226 @@ main {
     font-size: 11px;
   }
 }
+
+/* On-chain markets use separate provenance and ETH-only values. */
+.chain-coverage {
+  display: flex;
+  gap: 14px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  border: 1px solid #29443c;
+  border-radius: 12px;
+  background: #12201b;
+  color: #b2ccbf;
+}
+.chain-coverage strong {
+  color: #d4eee0;
+  font-size: 13px;
+}
+.chain-coverage p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  max-width: 1000px;
+}
+.chain-status-dot {
+  flex: 0 0 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #75dca7;
+}
+.chain-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+  align-items: start;
+}
+.chain-pool-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 115px 115px;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  padding: 17px 20px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.chain-pool-row:hover,
+.chain-pool-row.selected {
+  background: #252029;
+}
+.chain-pool-row.selected {
+  box-shadow: inset 3px 0 #ff72b6;
+}
+.chain-pool-row strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+}
+.chain-pool-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 5px;
+}
+.chain-token-name {
+  min-width: 0;
+}
+.chain-token-name strong,
+.chain-token-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chain-token-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: #332635;
+  color: #ff92c6;
+  border: 1px solid #5b3b50;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+}
+.chain-detail {
+  overflow: hidden;
+}
+.chain-detail-body {
+  padding: 22px;
+}
+.chain-detail-body h3 {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+  margin: 0 0 16px;
+}
+.chain-spot {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.chain-spot small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.chain-muted {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 10px 0;
+}
+.chain-chart {
+  height: 90px;
+  margin: 18px 0;
+}
+.chain-chart svg {
+  width: 100%;
+  height: 100%;
+}
+.chain-facts {
+  margin: 18px 0;
+}
+.chain-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.chain-facts dt {
+  color: var(--muted);
+}
+.chain-facts dd {
+  margin: 0;
+}
+.chain-link {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+.chain-trades {
+  margin-top: 22px;
+}
+.chain-evidence {
+  display: flex;
+  gap: 16px;
+  margin: 28px 0 8px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
+.chain-evidence > svg {
+  flex: 0 0 20px;
+  color: #75dca7;
+}
+.chain-evidence h2 {
+  font-size: 14px;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.chain-evidence p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 7px 0;
+  max-width: 1050px;
+}
+.chain-evidence a {
+  color: #f193bd;
+}
+.stat strong.chain-block {
+  font-size: 25px;
+}
+@media (max-width: 1100px) {
+  .chain-workspace {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+  .chain-row-volume {
+    display: none;
+  }
+  .chain-pool-row {
+    grid-template-columns: 36px minmax(0, 1fr) 105px;
+    gap: 10px;
+    padding: 16px;
+  }
+}
+@media (max-width: 760px) {
+  .chain-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chain-pool-row {
+    grid-template-columns: 32px minmax(0, 1fr) 93px;
+    padding: 15px 12px;
+    gap: 10px;
+  }
+  .chain-token-icon {
+    width: 30px;
+    height: 30px;
+  }
+  .chain-pool-row strong {
+    font-size: 12px;
+  }
+  .chain-pool-row small {
+    font-size: 10px;
+  }
+  .chain-coverage {
+    padding: 16px;
+  }
+  .chain-evidence {
+    padding: 18px;
+  }
+  .chain-detail-body {
+    padding: 20px;
+  }
+}

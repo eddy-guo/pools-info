@@ -22,6 +22,7 @@ export function Shell({
   searchIndex: SearchResult[];
 }) {
   const pathname = usePathname();
+  const onChain = pathname.startsWith("/live");
   const { currency, setCurrency } = useCurrency();
   const manifest = useManifest();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -31,6 +32,7 @@ export function Shell({
   const [searchError, setSearchError] = useState("");
   const [loading, setLoading] = useState(false);
   const nav = [
+    { label: "On-chain", href: "/live/" },
     { label: "Pools", href: "/" },
     { label: "Traders", href: "/traders/" },
     { label: "Creators", href: "/creators/" },
@@ -52,14 +54,14 @@ export function Shell({
   }
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+      if (!onChain && (e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         openSearch();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [onChain]);
   const matches = query.trim()
     ? index.filter((r) =>
         `${r.title} ${r.subtitle}`
@@ -108,49 +110,64 @@ export function Shell({
           ))}
         </nav>
         <div className="header-actions">
-          <button
-            className="search-trigger"
-            onClick={openSearch}
-            aria-label="Search tokens, wallets, transactions"
-          >
-            <Search size={16} />
-            <span>Search tokens, wallets, transactions</span>
-            <kbd>
-              <Command size={11} /> K
-            </kbd>
-          </button>
+          {!onChain && (
+            <button
+              className="search-trigger"
+              onClick={openSearch}
+              aria-label="Search tokens, wallets, transactions"
+            >
+              <Search size={16} />
+              <span>Search tokens, wallets, transactions</span>
+              <kbd>
+                <Command size={11} /> K
+              </kbd>
+            </button>
+          )}
           <span className="network-badge">
             <span className="network-mark">R</span>
             <span>Robinhood</span>
           </span>
-          <button
-            className="currency-toggle"
-            onClick={() => setCurrency(currency === "ETH" ? "USD" : "ETH")}
-            aria-label={`Display currency: ${currency}. Switch to ${currency === "ETH" ? "USD" : "ETH"}`}
-          >
-            {currency}
-            <ChevronDown size={12} />
-          </button>
+          {!onChain && (
+            <button
+              className="currency-toggle"
+              onClick={() => setCurrency(currency === "ETH" ? "USD" : "ETH")}
+              aria-label={`Display currency: ${currency}. Switch to ${currency === "ETH" ? "USD" : "ETH"}`}
+            >
+              {currency}
+              <ChevronDown size={12} />
+            </button>
+          )}
         </div>
       </header>
       <div className="snapshot-banner">
         <span className="demo-tag">
-          {manifest.source === "demo" ? "DEMO SNAPSHOT" : "VERIFIED SNAPSHOT"}
+          {onChain
+            ? "ON-CHAIN DATA"
+            : manifest.source === "demo"
+              ? "DEMO SNAPSHOT"
+              : "VERIFIED SNAPSHOT"}
         </span>
         <span>
-          {manifest.source === "demo"
-            ? "Explore with simulated data. No live market activity."
-            : manifest.coverage}
+          {onChain
+            ? "Real events, bounded coverage. Demo rankings are separate."
+            : manifest.source === "demo"
+              ? "Explore with simulated data. No live market activity."
+              : manifest.coverage}
         </span>
-        <Link href="/methodology/">
-          About the data <ArrowRight size={13} />
+        <Link href={onChain ? "/methodology/" : "/live/"}>
+          {onChain ? "About the demo" : "Explore real data"}{" "}
+          <ArrowRight size={13} />
         </Link>
       </div>
       <main id="main">{children}</main>
       <footer className="footer">
         <span>Independent analytics. Not affiliated with Uniswap Labs.</span>
         <div>
-          <span>Snapshot · 14 Sep 2026, 06:00 UTC</span>
+          <span>
+            {onChain
+              ? "On-chain snapshot · coverage shown above"
+              : "Demo snapshot · 14 Sep 2026, 06:00 UTC"}
+          </span>
           <Link href="/methodology/">
             <BookOpen size={13} /> Methodology
           </Link>

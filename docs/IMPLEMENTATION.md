@@ -2,6 +2,10 @@
 
 14 September 2026. The local project is at Projects/pools-info. The original docs were moved into this repository intact.
 
+## Deployment and real-data update
+
+The private GitHub repo is connected and the initial Vercel deployment is live at https://pools-info.vercel.app. A separate `/live/` view now displays a real, explicitly bounded snapshot of instant launches and swaps. It does not reuse demo prices or rankings. See [LIVE-DATA.md](LIVE-DATA.md) for source verification, measurements, refresh commands, and remaining accounting work.
+
 ## Implemented
 
 A pnpm workspace with current stable Next.js and React, TypeScript, Tailwind, and a static export. There is no runtime API server, database, or cloud provisioning.
@@ -47,4 +51,4 @@ Holder data-source selection, auction settlement, and full backfill are not comp
 - PNG files were decoded visually and browser layouts were inspected locally.
 - Frozen-lockfile installation passes.
 
-These checks establish local demo behavior. No hosted deployment, remote CI run, or real-chain reconciliation has occurred.
+These original checks establish demo behavior. The deployment and bounded chain-data work are documented in LIVE-DATA.md.
