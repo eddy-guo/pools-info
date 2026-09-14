@@ -8,7 +8,7 @@ The private GitHub repo is connected and the initial Vercel deployment is live a
 
 ## Implemented
 
-A pnpm workspace with Next.js, React, TypeScript, and Tailwind. The initial deployment used a static export. The local extension now pre-renders the same pages in ordinary Next.js and adds two bounded runtime routes; no database or worker is required. This extension is not published until authenticated live-data validation succeeds.
+A pnpm workspace with Next.js, React, TypeScript, and Tailwind. The initial deployment used a static export. The local extension now pre-renders the same pages in ordinary Next.js and adds two bounded runtime routes; no database or worker is required. This extension is being validated on the preview/live-markets branch.
 
 The screener, pool pages, leaderboards, wallet pages, typed search, creator profiles, and performance cards use one deterministic demo snapshot. Creator profiles are the first stretch feature. The snapshot is not real chain data; the demo flag is visible throughout.
 
@@ -53,12 +53,12 @@ Holder data-source selection, auction settlement, and full backfill are not comp
 
 These original checks establish demo behavior. The deployment and bounded chain-data work are documented in LIVE-DATA.md.
 
-## Local runtime extension, awaiting provider validation
+## Runtime extension on preview branch
 
 - `/api/markets/` caches successful bounded market snapshots for 60 seconds. The browser polls while visible, supports pause/retry, and keeps the last snapshot on failure.
 - `/api/markets/[poolId]/accounting/` audits only a pool present in the current sample. Audit results have an independent cutoff and five-minute cache.
-- `packages/chain` shares collectors between the CLI and Next.js. Envio supplies bulk logs/headers when configured; RPC supplies complete receipts, deployment checks, token metadata, sender code, and balances.
+- `packages/chain` shares collectors between the CLI and Next.js. RPC supplies logs, headers, complete receipts, deployment checks, token metadata, sender code, and balances.
 - Per-pool gross realized swap PnL uses BigInt average basis and is before gas. Only supported direct router/token flows qualify; unknown-basis transfers and inventory mismatches exclude positions.
 - The public RPC hit 429 responses and time budgets on larger pools. No full-history throughput or production reliability claim is established. See LIVE-DATA.md before publishing.
 
-The runtime extension passes lint, strict typechecking, 37 unit tests, the production build, and 24 desktop/mobile Playwright tests. A frozen-lockfile install succeeds. Native HyperSync files are present in both local API route traces. Mobile refresh and audit layouts were inspected at a 390px viewport. Browser success/failure cases use controlled API fixtures; authenticated ingestion and the Vercel Linux deployment still require verification.
+The runtime extension passes lint, strict typechecking, 30 unit tests, the production build, and 24 desktop/mobile Playwright tests. A frozen-lockfile install succeeds. Mobile refresh and audit layouts were inspected at a 390px viewport. Browser success/failure cases use controlled API fixtures; The public-RPC market endpoint has now succeeded locally; Vercel preview behavior is checked separately.

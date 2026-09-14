@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@envio-dev/hypersync-client": "1.4.1",
     "@pools/core": "workspace:*",
     "viem": "^2.56.5"
   },

@@ -6,11 +6,11 @@
 
 `pnpm snapshot:chain` collects a bounded slice from Robinhood Chain mainnet (4663). It defaults to the public RPC, a 100,000-block discovery window, a 128-block lag behind the scan head, and the newest 8 instant launches. The lag is not a claim of L1 finality.
 
-Root `.env.local` is loaded by `pnpm dev`, `pnpm preview`, and `pnpm snapshot:chain`. Set `ENVIO_API_TOKEN` there to use the official HyperSync client for bulk events/headers. RPC remains responsible for state and complete receipt checks. Without the token, the CLI uses RPC for history too. Override `ROBINHOOD_RPC_URL`, `CHAIN_BLOCK_SPAN` (up to 1,000,000), and `CHAIN_POOL_LIMIT` (up to 30) in the process environment. Credentials stay outside the browser and repository. Builds consume the committed snapshot and never require a working RPC.
+Root `.env.local` is loaded by `pnpm dev`, `pnpm preview`, and `pnpm snapshot:chain`. All chain retrieval currently uses RPC. The CLI collects market data by default; set `CHAIN_INCLUDE_ACCOUNTING=1` explicitly for expensive per-pool receipt and balance audits. Override `ROBINHOOD_RPC_URL`, `CHAIN_BLOCK_SPAN` (up to 1,000,000), and `CHAIN_POOL_LIMIT` (up to 30) in the process environment. Credentials stay outside the browser and repository. Builds consume the committed snapshot and never require a working RPC.
 
 The exporter writes `data/snapshots/chain.json` atomically after all queries succeed. Raw logs, receipts, and fetched headers are retained under ignored `.data/chain/<cutoff>.json`. Preserve these files when archiving a dataset. A failed run retains the last successful snapshot.
 
-Refresh the snapshot, run `pnpm check` and `pnpm test:e2e`, then commit and push to main to deploy updated data. The deployed version remains snapshot-only. The local runtime extension adds refresh/audit APIs, but authenticated source testing is pending before publication. `/live/` reports the capture time and block coverage.
+Refresh the snapshot, run `pnpm check` and `pnpm test:e2e`, then commit and push to main to deploy updated data. The deployed version remains snapshot-only. The local runtime extension adds refresh/audit APIs, and public-RPC market refresh has now been verified locally. `/live/` reports the capture time and block coverage.
 
 ## What is established
 
@@ -44,7 +44,7 @@ The deployed data is a bounded snapshot. The local extension adds per-pool audit
 
 For real wallet rankings, collect transfers and complete inventory history, distinguish transaction senders from actual swap beneficiaries, exclude unsupported attribution and unknown basis, then reconcile multiple wallets. Native ETH gas/fees and auction entry costs need their own treatment. Holders, reserve-based liquidity, USD prices, and crowd launches remain unavailable in the real-data view.
 
-The local collector now uses Envio HyperSync for bulk history plus RPC for state reads and complete receipt checks when a token is configured. Its Robinhood endpoint is listed officially and its height endpoint responds, but authenticated queries need an API token. No paid plan has been selected. A persistent Railway worker and Postgres can be added to this same repo when continuous indexing is ready.
+Envio was initially considered after RPC rate limits, but has been removed from the current implementation. The later PEPE comparison and market-only refresh succeeded through public RPC. No paid provider has been selected. A persistent Railway worker and Postgres can be added to this same repo when continuous indexing is ready.
 
 ## Sources
 
@@ -65,16 +65,16 @@ No second backend repo is required. Add `poolsinfo.com` in Vercel's domain setti
 
 ## Runtime extension and limits
 
-The Next.js migration removes strict `output: "export"` while preserving pre-rendered pages, search, and PNG cards. Default Vercel Next.js settings and the existing `apps/web` project root remain appropriate. The native HyperSync client is a server external; its Linux optional package must be included in the Vercel build. This packaging still needs a real Vercel preview verification.
+The Next.js migration removes strict `output: "export"` while preserving pre-rendered pages, search, and PNG cards. Default Vercel Next.js settings and the existing `apps/web` project root remain appropriate. No native provider client or external API key is required.
 
 Market requests coalesce within a function instance and use the Next Data Cache for 60 seconds. Audit requests cache for five minutes and run only after the user requests a pool audit. This is request-driven refresh, not a background scheduler. It does not keep collecting while nobody visits.
 
-A scan defaults to eight recent instant launches discovered in 100,000 blocks, with at most 4,000 swaps per pool. A response over 1.8 MB fails instead of truncating history or claiming partial PnL. Bulk pages advance via the exclusive next-block cursor, check returned identities/headers and rollback guards, and compare the archive cutoff to RPC before and after scanning. The bounded collector does not replace durable reorg recovery.
+A scan defaults to eight recent instant launches discovered in 100,000 blocks, with at most 4,000 swaps per pool. A response over 1.8 MB fails instead of truncating history or claiming partial PnL. RPC log scans use bounded block chunks, validate log and block identities, and re-read the cutoff before publishing. The bounded collector does not replace durable reorg recovery.
 
 The trader audit checks every swap receipt against the fetched event, allows only the current official Universal Router and code-free transaction senders, and requires exact token flow to/from PoolManager. Token creation must be observed at launch. All token transfers from launch through the cutoff are checked, including offsetting transfers, and ledger balances are compared with `balanceOf` at the same cutoff. Any unexplained movement or unsupported route excludes that sender's PnL. Eligible rows require at least ten supported swaps.
 
 These are gross pool-execution results before gas, not wallet-wide returns or proof of the final ETH beneficiary. Smart wallets, relayers, multiple swap legs, transfers with unknown basis, auctions, and broader attribution remain unsupported. Code-free status is checked at the cutoff, not reconstructed historically.
 
-Public RPC tests of larger pools exhausted the 45-second market budget and later returned HTTP 429 even with batched calls. The deployed snapshot was preserved. Unit fixtures and browser mocks validate local failure handling; they do not establish authenticated HyperSync throughput. Create a token at https://envio.dev/app/api-tokens, save it in root `.env.local`, then measure both the market endpoint and at least one complete pool audit before publishing. No paid plan has been selected.
+Earlier concurrent and accounting-heavy probes hit time budgets and HTTP 429 responses. These were not proof that market refresh requires a bulk provider. A subsequent RPC comparison retrieved all 1,477 PEPE swaps and matched pools.xyz's 1,279 buys and 198 sells in six requests. StateView independently matched the last-swap spot price. The local market endpoint also completed an eight-pool refresh with 84 RPC requests in about 12 seconds. These are bounded measurements, not a guarantee of throughput at scale.
 
-For Vercel, add `ENVIO_API_TOKEN` to Production and Preview as a server-only secret. Keep it out of `NEXT_PUBLIC_*`, source control, screenshots, and chat. `CHAIN_REFRESH_DISABLED=1` disables runtime source requests for offline testing. A Railway worker and Postgres remain future packages in this repository.
+See [PEPE-COMPARISON.md](PEPE-COMPARISON.md) for exact cutoffs, prices, and differences from pools.xyz. No Envio or pools.xyz API is called by the application. `CHAIN_REFRESH_DISABLED=1` disables runtime source requests for offline testing. An incremental persistent worker remains preferable to repeatedly scanning growing histories, and can be added within this repo later.

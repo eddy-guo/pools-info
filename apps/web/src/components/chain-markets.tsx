@@ -207,7 +207,7 @@ export function ChainMarkets({ snapshot }: { snapshot: ChainSnapshot }) {
                 </dd>
               </div>
               <div>
-                <dt>Pool fee</dt>
+                <dt>LP fee</dt>
                 <dd>{selected.fee / 10000}%</dd>
               </div>
               <div>

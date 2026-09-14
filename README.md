@@ -4,7 +4,7 @@ A Next.js analytics dashboard for pools on Robinhood Chain, designed to gain a r
 
 **The original dashboard uses a reproducible fictional dataset.** Its 12 tokens, 8 wallets, 1,536 trades, prices, liquidity, and creator identities are simulated. It is a working product preview, not an indexed market feed or a verified trader leaderboard. The disclosure is included on every page and downloadable card.
 
-A separate **On-chain** view at `/live/` now uses real recent launches and swaps from Robinhood Chain. It includes capture time, exact block coverage, and transaction evidence. The deployed version is a bounded snapshot. The local runtime extension adds cached automatic refreshes and on-demand per-pool trader audits; authenticated provider validation is pending before that extension is published. See [real-data notes](docs/LIVE-DATA.md) and run `pnpm snapshot:chain` to refresh it.
+A separate **On-chain** view at `/live/` now uses real recent launches and swaps from Robinhood Chain. It includes capture time, exact block coverage, and transaction evidence. The deployed version is a bounded snapshot. The local runtime extension adds cached automatic refreshes and on-demand per-pool trader audits; public-RPC market refresh has been verified locally, and the extension is being validated on a preview branch. See [real-data notes](docs/LIVE-DATA.md) and run `pnpm snapshot:chain` to refresh it.
 
 ## Run locally
 
@@ -74,7 +74,7 @@ The browser suite starts production Next.js on a separate port and stubs runtime
 4. Use Node 22. Add `SITE_URL` at build time with the final HTTPS origin to generate correct social-preview image URLs. Without an override, Vercel builds use the project production domain; local metadata uses `http://localhost:3100`.
 5. Add the purchased domain in Vercel and use the DNS records that Vercel supplies.
 
-No Railway services or data-source secrets are needed for the snapshot preview. Runtime ingestion uses server-only `ENVIO_API_TOKEN` and optionally `ROBINHOOD_RPC_URL`; see [setup and validation](docs/LIVE-DATA.md). Robots metadata is deliberately `noindex` while the site contains synthetic data. Revisit that when replacing it with verified data.
+No Railway services or data-source secrets are needed for the snapshot preview. Runtime ingestion uses public Robinhood RPC, with optional server-only `ROBINHOOD_RPC_URL`; see [setup and validation](docs/LIVE-DATA.md). Robots metadata is deliberately `noindex` while the site contains synthetic data. Revisit that when replacing it with verified data.
 
 ## Deliberate omissions
 

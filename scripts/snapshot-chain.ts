@@ -5,7 +5,7 @@ async function main() {
     span: Number(process.env.CHAIN_BLOCK_SPAN ?? 100000),
     poolLimit: Number(process.env.CHAIN_POOL_LIMIT ?? 8),
     onProgress: console.log,
-    includeAccounting: true,
+    includeAccounting: process.env.CHAIN_INCLUDE_ACCOUNTING === "1",
     rpc: new Rpc(undefined, { timeoutMs: 180000, maxRequests: 10000 }),
   });
   await mkdir(".data/chain", { recursive: true });

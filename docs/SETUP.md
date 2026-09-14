@@ -29,13 +29,11 @@ Add apps/indexer and packages/db when the persistent backend is justified. These
 
 ## Eddy's actions now
 
-GitHub and the default Vercel deployment are connected. No second repository is needed.
+GitHub, Vercel, and the Namecheap custom domain are connected. No new account, key, second repository, Railway service, or database is required for the next preview.
 
-1. Create an Envio HyperSync token and put `ENVIO_API_TOKEN=...` in root `.env.local`. Do not paste it into chat. This enables the next authenticated ingestion test.
-2. After local validation succeeds, add the same server-only variable to Vercel Production and Preview and redeploy. Do not prefix it with `NEXT_PUBLIC_`.
-3. Add `poolsinfo.com` in Vercel and apply its DNS records after purchase. Set `SITE_URL=https://poolsinfo.com` once the domain works.
+Accepted direction: recent instant-launch coverage first, RPC as the baseline, average-cost realized PnL before gas with a ten-trade gate, and a Vercel preview branch without a PR. Unknown basis stays excluded regardless of user filters. The preview polls about once a minute while visible; persistent indexing and its freshness target remain later work.
 
-No Railway or database setup is required for this step. Public RPC state calls remain a potential throughput bottleneck even with bulk event retrieval; measure before choosing a paid provider.
+The pools.xyz comparison demonstrated that public RPC can retrieve the full PEPE swap history quickly. Its own public-facing API is a useful cross-check, but is not integrated as a production dependency. Envio was evaluated, then removed from the baseline pending evidence that it is needed. Report any actual integration or credential requirement to Eddy before adding it.
 
 ## What the MVP contains
 

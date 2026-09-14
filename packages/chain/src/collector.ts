@@ -18,7 +18,6 @@ import {
   type RawLog,
 } from "./events";
 import { Rpc, hex } from "./rpc";
-import { HyperSyncHistory, type Header } from "./hypersync";
 import { auditPool, type Receipt } from "./audit";
 import type { ChainMarket, ChainSnapshot, ChainTrade } from "@pools/core";
 
@@ -48,41 +47,14 @@ export async function collectSnapshot(
     throw Error("Invalid bounded scan settings");
   if (Number(await rpc.call<Hex>("eth_chainId", [])) !== 4663)
     throw Error("Wrong chain");
-  const history = process.env.ENVIO_API_TOKEN
-    ? await HyperSyncHistory.create(
-        process.env.ENVIO_API_TOKEN,
-        options.includeAccounting ? 180000 : 45000,
-      )
-    : undefined;
-  const rpcHead = Number(await rpc.call<Hex>("eth_blockNumber", []));
-  const head = history ? Math.min(rpcHead, await history.height()) : rpcHead;
+  const head = Number(await rpc.call<Hex>("eth_blockNumber", []));
   if (!Number.isSafeInteger(head) || head < 128)
     throw Error("Invalid chain head");
   // A 128-block lag reduces head churn; it does not claim L1 finality.
   const toBlock = head - 128;
   let fromBlock = Math.max(0, toBlock - span + 1);
-  type Block = Header;
+  type Block = { number: Hex; timestamp: Hex; hash: Hex };
   const blockCache = new Map<number, Block>();
-  async function logs(
-    address: string | readonly string[],
-    topics: string[],
-    from: number,
-    to: number,
-  ) {
-    if (!history) return rpc.logs(address, topics, from, to);
-    const rows = await history.logs(address, topics, from, to);
-    for (const [number, header] of history.blocks) {
-      const prior = blockCache.get(number);
-      if (
-        prior &&
-        (prior.hash.toLowerCase() !== header.hash ||
-          Number(prior.timestamp) !== Number(header.timestamp))
-      )
-        throw Error("Archive and RPC headers disagree");
-      blockCache.set(number, header);
-    }
-    return rows;
-  }
   async function block(n: number) {
     let value = blockCache.get(n);
     if (!value) {
@@ -93,7 +65,7 @@ export async function collectSnapshot(
     return value;
   }
   const cutoff = await block(toBlock);
-  await history?.verifyCutoff(toBlock, cutoff.hash);
+
   for (const address of [
     contracts.manager,
     contracts.launcher,
@@ -113,7 +85,7 @@ export async function collectSnapshot(
           l.topics[0] === toEventSelector(launchEvent) &&
           l.topics[1] === options.target!.poolId,
       )
-    : await logs(
+    : await rpc.logs(
         contracts.strategies,
         [toEventSelector(launchEvent)],
         fromBlock,
@@ -200,7 +172,7 @@ export async function collectSnapshot(
       tokenRead("decimals"),
       tokenRead("totalSupply"),
     ]);
-    const rawSwaps = await logs(
+    const rawSwaps = await rpc.logs(
       contracts.manager,
       [toEventSelector(swapEvent), launch.poolId],
       launchBlock,
@@ -208,7 +180,7 @@ export async function collectSnapshot(
     );
     evidence.swaps.push(...rawSwaps);
     const transfers = options.includeAccounting
-      ? await logs(
+      ? await rpc.logs(
           launch.token,
           [toEventSelector(transferEvent)],
           launchBlock,
@@ -392,7 +364,7 @@ export async function collectSnapshot(
   ]);
   if (recheck.hash !== cutoff.hash)
     throw Error("Chain reorganized during scan; previous snapshot retained");
-  await history?.verifyCutoff(toBlock, cutoff.hash);
+
   trades.sort((a, b) => b.block - a.block || b.logIndex - a.logIndex);
   const snapshot: ChainSnapshot = {
     schemaVersion: 1,
@@ -407,7 +379,7 @@ export async function collectSnapshot(
     markets,
     trades,
     reconciliation,
-    requests: rpc.requests + (history?.requests ?? 0),
+    requests: rpc.requests,
     durationMs: Date.now() - started,
   };
   // Keep complete responses within the Next Data Cache and function limits.
