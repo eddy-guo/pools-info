@@ -4,6 +4,8 @@ Real Robinhood Chain pool analytics in a single pnpm workspace. Next.js serves t
 
 The synthetic dataset and demo reader have been removed. The product routes remain: Explore, pool detail, trader leaderboard, wallet profile, share cards, creators and creator detail, plus typed search and methodology. These pages now use captured or refreshed chain data. **Coverage is a recent pool sample, not the full chain.** Wallet metrics and rankings are scoped to one audited pool at a time.
 
+The chart now supports Price/FDV, fixed candle intervals, pan/zoom and crosshair. A bounded live swap feed polls recent Robinhood blocks every 15 seconds, with shared server caching and pause/retry. These are real observations, not generated activity. ENS uses PublicNode Ethereum RPC; no key is required initially. See [DATA-EXPERIENCE.md](docs/DATA-EXPERIENCE.md) for the exact architecture, source additions, cache behavior and limits.
+
 The full requested product scope remains in [PRODUCT-SCOPE.md](docs/PRODUCT-SCOPE.md). Missing inputs are displayed as unavailable rather than zero. The user's supplied research documents remain in `docs/`.
 
 ## Local development
@@ -40,7 +42,7 @@ Production: https://www.poolsinfo.com. The Namecheap domain is already connected
 - `/wallet/[address]/?pool=[id]&launch=[transaction]`: public address profile, audit-scoped performance, open position, history, behaviour and card actions. `/wallet/` provides lookup.
 - `/cards/[address].png?pool=[id]&launch=[transaction]&window=All`: 1200×630 server-calculated audit card. Request parameters cannot supply PnL or rank.
 - `/creators/` and `/creators/[address]/`: launch-sender grouping, volume, median volume, 24h still-trading ratio, fee option and audited own-purchase evidence.
-- `Cmd/Ctrl+K`: covered tokens, audited wallets, launch senders and transaction hashes. Arbitrary addresses open a profile; untracked transaction hashes open the explorer. ENS is detected but resolution is not connected.
+- `Cmd/Ctrl+K`: covered tokens, audited wallets, launch senders and transaction hashes. Arbitrary addresses open a profile; untracked transaction hashes open the explorer. ENS names resolve through Ethereum public RPC and open the resulting address on Robinhood; unsupported/offchain resolvers report a limitation.
 - `/methodology/`: sources, formulas, attribution and limits. `/live/` redirects to Explore.
 
 Refreshes check about once a minute while visible. Market and audit cutoffs are independent and labeled. Linked pool URLs retain their launch transaction so bounded targeted scans can retrieve a pool after it leaves the newest-eight sample. They still have a 1,000,000-block scan ceiling.

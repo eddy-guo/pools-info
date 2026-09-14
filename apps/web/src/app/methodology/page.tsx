@@ -67,8 +67,8 @@ export default function Methodology() {
             <p>
               Volume sums the absolute ETH amount of each decoded swap. Counts
               represent swap events, so one transaction can contain multiple
-              swaps. The displayed period runs from each selected pool’s launch
-              to the cutoff; it is not labeled 24-hour volume. Buy and sell
+              swaps. Windowed volume includes only observed swaps inside the
+              selected period through the capture cutoff. Buy and sell
               directions follow token movement into or out of the pool.
             </p>
             <p>
@@ -76,6 +76,33 @@ export default function Methodology() {
               used. Token supply and metadata are read from contracts at the
               cutoff. The displayed LP fee is distinct from protocol fees and
               gas.
+            </p>
+          </section>
+          <section id="interaction">
+            <h2>Search, charts and live updates</h2>
+            <p>
+              Chart intervals group captured post-swap observations into fixed
+              candles, independently of the visible range. FDV multiplies those
+              prices by contract supply at the cutoff. Panning and trade
+              pagination use loaded data; they do not imply complete historical
+              coverage.
+            </p>
+            <p>
+              The live feed checks a recent 1,000-block window every 15 seconds
+              after the previous check completes, ending 128 blocks behind the
+              head. It displays up to 50 returned events per check, with shared
+              server caching and duplicate removal. Delays and omitted events
+              are disclosed. Its transaction-sender label is not proof of the
+              buyer, beneficiary or cost basis.
+            </p>
+            <p>
+              Search matches covered tokens and audited activity. ENS resolution
+              reads the standard Ethereum address record through PublicNode
+              Ethereum RPC, caches successful results for five minutes, and
+              opens that address on Robinhood. A resolved name does not prove
+              Robinhood activity or a chain-specific ENS record. Offchain-only
+              resolution is not enabled. No wallet authentication or account
+              data is stored.
             </p>
           </section>
           <section id="accounting">
