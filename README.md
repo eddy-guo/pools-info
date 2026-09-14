@@ -2,7 +2,7 @@
 
 Real Robinhood Chain pool analytics in a single pnpm workspace. Next.js serves the frontend and bounded RPC endpoints on Vercel. Market data comes only from Robinhood's public RPC; there is no Envio, pools.xyz API, database, or paid data feed in the application.
 
-The synthetic dataset and demo reader have been removed. The product routes remain: Explore, pool detail, trader leaderboard, wallet profile, share cards, creators and creator detail, plus typed search and methodology. These pages now use captured or refreshed chain data. **Coverage is a recent pool sample, not the full chain.** Wallet metrics and rankings are scoped to one audited pool at a time.
+The synthetic dataset and demo reader have been removed. The product routes remain: Explore, pool detail, trader leaderboard, wallet profile, share cards, creators and creator detail, plus typed search and methodology. These pages now use captured or refreshed chain data. **Coverage is a recent pool sample plus a wider verified launch catalog, not the full chain.** Wallet metrics and rankings are scoped to one audited pool at a time.
 
 The chart now supports Price/FDV, fixed candle intervals, pan/zoom and crosshair. A bounded live swap feed polls recent Robinhood blocks every 15 seconds, with shared server caching and pause/retry. These are real observations, not generated activity. ENS uses PublicNode Ethereum RPC; no key is required initially. See [DATA-EXPERIENCE.md](docs/DATA-EXPERIENCE.md) for the exact architecture, source additions, cache behavior and limits.
 
@@ -52,6 +52,9 @@ Refreshes check about once a minute while visible. Market and audit cutoffs are 
 ```sh
 pnpm snapshot:chain                            # cheap market-only snapshot
 CHAIN_INCLUDE_ACCOUNTING=1 pnpm snapshot:chain  # also audit receipts and balances
+pnpm catalog:chain                             # extend the verified launch catalog
+pnpm snapshot:pool <token-address-or-pool-id>    # capture chart/trade history
+POOL_INCLUDE_ACCOUNTING=1 pnpm snapshot:pool <token-address-or-pool-id>
 ```
 
 The CLI writes only after all verification succeeds and preserves raw evidence under ignored `.data/chain/`. Keep accounting in the committed sample to populate initial wallet data and run the offline card integration test.
@@ -60,10 +63,14 @@ The CLI writes only after all verification succeeds and preserves raw evidence u
 apps/web/           Next.js pages, shared live state, bounded APIs and OG cards
 packages/core/      Integer accounting, audit reconciliation and windowed read models
 packages/chain/     Robinhood RPC ingestion, event validation and attribution
-scripts/            Real snapshot collection
+scripts/            Real snapshot and resumable catalog collection
+data/catalog/       Verified launch metadata for wider search
+data/pools/         Captured per-pool histories for fast first loads
 data/snapshots/     Captured on-chain sample, no fictional market data
 tests/e2e/          Product flows on a production server
 docs/               Original requirements and current implementation notes
 ```
+
+The catalog currently contains 80 verified launches. PEPE has 1,477 captured swaps, so its 74 pages of history load without reconstructing history for every visitor. Catalog discovery and selected captures are run explicitly and committed; they do not update themselves in the deployment. Pool pages show their capture cutoff and support explicit refresh.
 
 A persistent worker and database can extend this same repo later. Complete wallet/global rankings, historical pool retention, holder concentration, reserve-based liquidity, compounded fees and crowd auctions remain data work, not removed product scope. See [LIVE-DATA.md](docs/LIVE-DATA.md) and [IMPLEMENTATION.md](docs/IMPLEMENTATION.md).

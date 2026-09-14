@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { poolHref, shortAddress, walletHref } from "@pools/core";
+import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
 import { Eth, Unavailable, utc } from "./live-ui";
 import { AddressLabel } from "./ui";
@@ -9,6 +10,11 @@ export function Creators({ address }: { address?: string }) {
   const senders = [
     ...new Set(s.markets.map((m) => m.launchSender.toLowerCase())),
   ].filter((a) => !address || a === address.toLowerCase());
+  const catalogPools = catalog.pools.filter(
+    (m) =>
+      (!address || m.launchSender.toLowerCase() === address.toLowerCase()) &&
+      !s.markets.some((live) => live.id === m.id),
+  );
   return (
     <div className="page">
       <div className="page-heading">
@@ -28,9 +34,10 @@ export function Creators({ address }: { address?: string }) {
         </div>
       </div>
       <p className="coverage-notice">
-        Only {s.markets.length} recent pools are covered. Active means at least
-        one observed swap in the 24 hours before the cutoff. New pools have had
-        less time to trade.
+        Trading analytics cover {s.markets.length} recent pools. The wider
+        launch catalog below contains metadata only. Active means at least one
+        observed swap in the 24 hours before the cutoff. New pools have had less
+        time to trade.
       </p>
       <div className="creator-grid">
         {senders.map((sender) => {
@@ -152,7 +159,53 @@ export function Creators({ address }: { address?: string }) {
           );
         })}
       </div>
-      {!senders.length && (
+      {!!catalogPools.length && (
+        <section className="panel live-section">
+          <div className="panel-heading">
+            <h2>Verified launch catalog</h2>
+          </div>
+          <p className="panel-footnote">
+            {catalogPools.length} additional launches · catalog captured{" "}
+            {catalog.generatedAt.replace("T", " ").slice(0, 19)} UTC. Trading
+            metrics load when you open a pool; activity and profitability are
+            not assumed.
+          </p>
+          <div className="table-scroll">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Launch sender</th>
+                  <th>Launched (UTC)</th>
+                  <th>Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catalogPools.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <Link href={poolHref(m)}>
+                        {m.name} ({m.symbol})
+                      </Link>
+                    </td>
+                    <td>
+                      <Link
+                        className="mono"
+                        href={`/creators/${m.launchSender.toLowerCase()}/`}
+                      >
+                        {shortAddress(m.launchSender)}
+                      </Link>
+                    </td>
+                    <td>{utc(m.launchedAt)}</td>
+                    <td>Verified launch · analytics on demand</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+      {!senders.length && !catalogPools.length && (
         <section className="panel empty-state">
           <h2>No launches for this address in the recent sample</h2>
           <p>This does not establish the address’s full launch history.</p>

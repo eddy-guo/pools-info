@@ -9,3 +9,5 @@ export * from "./live-analytics";
 export * from "./search";
 
 export * from "./candles";
+
+export * from "./catalog";

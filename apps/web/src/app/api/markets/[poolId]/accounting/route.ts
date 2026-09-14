@@ -1,4 +1,8 @@
-import { auditedPoolSnapshot, currentChainSnapshot } from "@/lib/chain-server";
+import {
+  auditedPoolSnapshot,
+  currentChainSnapshot,
+  capturedPoolSnapshot,
+} from "@/lib/chain-server";
 import initial from "../../../../../../../../data/snapshots/chain.json";
 
 export const runtime = "nodejs";
@@ -11,7 +15,14 @@ export async function GET(
   const { poolId } = await params;
   if (!/^0x[0-9a-f]{64}$/.test(poolId))
     return Response.json({ error: "unknown_pool" }, { status: 404 });
-  if (process.env.CHAIN_REFRESH_DISABLED === "1")
+  const suppliedLaunch = new URL(request.url).searchParams.get("launch");
+  const refresh = new URL(request.url).searchParams.get("refresh") === "1";
+  if (
+    process.env.CHAIN_REFRESH_DISABLED === "1" &&
+    (refresh ||
+      !suppliedLaunch ||
+      !capturedPoolSnapshot(poolId, suppliedLaunch)?.markets[0]?.accounting)
+  )
     return Response.json({ error: "refresh_disabled" }, { status: 503 });
   try {
     const launch = new URL(request.url).searchParams.get("launch");
@@ -26,7 +37,11 @@ export async function GET(
         { error: "outside_current_coverage" },
         { status: 404, headers: { "Cache-Control": "no-store" } },
       );
-    const result = await auditedPoolSnapshot(poolId, launchTx as `0x${string}`);
+    const result = await auditedPoolSnapshot(
+      poolId,
+      launchTx as `0x${string}`,
+      refresh,
+    );
     const { accounting, ...auditedMarket } = result.markets[0];
     return Response.json(
       {

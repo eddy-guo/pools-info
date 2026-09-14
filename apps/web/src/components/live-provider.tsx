@@ -53,7 +53,7 @@ export function LiveProvider({
     setErrors((p) => ({ ...p, [market.id]: "" }));
     try {
       const response = await fetch(
-        `/api/markets/${market.id}/accounting/?launch=${market.launchTx}`,
+        `/api/markets/${market.id}/accounting/?launch=${market.launchTx}${audits[market.id] ? "&refresh=1" : ""}`,
         {
           cache: "no-store",
           signal: AbortSignal.any([

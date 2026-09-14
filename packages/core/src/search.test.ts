@@ -45,3 +45,34 @@ test("ENS detection preserves unsupported names for a real resolver, never inven
     }),
   );
 });
+
+test("catalog-only tokens are searchable without invented trading metrics", async () => {
+  const m = snapshot.markets[0];
+  const catalog = {
+    schemaVersion: 1 as const,
+    chainId: 4663 as const,
+    generatedAt: snapshot.generatedAt,
+    toBlock: snapshot.toBlock,
+    blockHash: snapshot.blockHash,
+    ranges: [{ fromBlock: 1, toBlock: snapshot.toBlock }],
+    pools: [
+      {
+        id: "0x" + "f".repeat(64),
+        token: "0x" + "a".repeat(40),
+        name: "Archived Example",
+        symbol: "ARC",
+        launchTx: m.launchTx,
+        launchSender: m.launchSender,
+        launchBlock: 1,
+        launchedAt: 1,
+      },
+    ],
+  };
+  const r = await createLocalSearchProvider(snapshot, {}, catalog).search(
+    "archvied",
+    { signal: new AbortController().signal },
+  );
+  assert.equal(r.entries[0].title, "Archived Example (ARC)");
+  assert.match(r.entries[0].context, /details load on demand/);
+  assert.ok(r.entries[0].href.includes("launch="));
+});

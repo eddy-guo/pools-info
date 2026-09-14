@@ -16,7 +16,9 @@
     "test": "tsx --test packages/core/src/*.test.ts packages/chain/src/*.test.ts",
     "test:e2e": "playwright test",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "snapshot:chain": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-chain.ts"
+    "snapshot:chain": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-chain.ts",
+    "catalog:chain": "node --env-file-if-exists=.env.local --import tsx scripts/catalog-chain.ts",
+    "snapshot:pool": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot-pool.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

@@ -103,37 +103,68 @@ export function useWindow(fallback: LiveWindow = "All") {
 }
 export function useMarket(id?: string, launch?: string | null) {
   const { snapshot } = useLive();
+  const [attempt, setAttempt] = useState({ id, count: 0 });
   const [extra, setExtra] = useState<ChainSnapshot | null>(null);
-  const [error, setError] = useState("");
+  const [request, setRequest] = useState({ id, pending: false, error: "" });
   const known = snapshot.markets.find((m) => m.id === id);
+  const hasKnown = !!known;
+  const refreshCount = attempt.id === id ? attempt.count : 0;
   useEffect(() => {
-    if (known || !id || !launch) return;
+    if ((hasKnown && !refreshCount) || !id || !launch) return;
     const controller = new AbortController();
-    void fetch(`/api/markets/${id}/?launch=${launch}`, {
-      signal: controller.signal,
-    })
-      .then(async (r) => {
-        if (!r.ok)
+    // Defer the request state with the fetch so a cancelled effect cannot leave
+    // the new route marked as loading or display the previous route's error.
+    void Promise.resolve().then(async () => {
+      if (controller.signal.aborted) return;
+      setRequest({ id, pending: true, error: "" });
+      try {
+        const response = await fetch(
+          `/api/markets/${id}/?launch=${launch}${refreshCount ? "&refresh=1" : ""}`,
+          {
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(105000),
+            ]),
+          },
+        );
+        if (!response.ok)
           throw Error(
             "This pool could not be loaded within the current scan limits.",
           );
-        const next: ChainSnapshot = await r.json();
+        const next: ChainSnapshot = await response.json();
         if (next.markets?.[0]?.id !== id) throw Error("Invalid pool response");
-        setExtra(next);
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(e.message);
-      });
+        if (!controller.signal.aborted) {
+          setExtra(next);
+          setRequest({ id, pending: false, error: "" });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setRequest({
+            id,
+            pending: false,
+            error:
+              error instanceof Error ? error.message : "Pool refresh failed",
+          });
+      }
+    });
     return () => controller.abort();
-  }, [known, id, launch]);
+  }, [hasKnown, id, launch, refreshCount]);
   const fetched = extra?.markets.find((m) => m.id === id);
+  const newer = fetched && (!known || extra!.toBlock >= snapshot.toBlock);
+  const error = request.id === id ? request.error : "";
+  const refreshing = request.id === id && request.pending;
   return {
-    market: known ?? fetched,
-    snapshot: known ? snapshot : fetched ? extra! : snapshot,
+    market: newer ? fetched : known,
+    snapshot: newer ? extra! : snapshot,
+    refresh: () => {
+      if (!refreshing) setAttempt({ id, count: refreshCount + 1 });
+    },
+    refreshing,
     error,
     loading: !known && !fetched && !!launch && !error,
   };
 }
+
 export function PoolPicker() {
   const { snapshot, audits } = useLive();
   const [initialMarket] = useState(snapshot.markets[0]);

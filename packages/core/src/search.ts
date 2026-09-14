@@ -1,3 +1,4 @@
+import type { ChainCatalog } from "./catalog";
 import type { ChainSnapshot, PoolAudit } from "./chain-types";
 import { poolHref, walletHref } from "./live-analytics";
 import { shortAddress } from "./format";
@@ -88,6 +89,7 @@ function score(entry: SearchEntry, q: string) {
 export function createLocalSearchProvider(
   snapshot: ChainSnapshot,
   audits: Record<string, PoolAudit>,
+  catalog?: ChainCatalog,
 ): SearchProvider {
   const markets = new Map(snapshot.markets.map((m) => [m.id, m]));
   for (const a of Object.values(audits))
@@ -126,6 +128,47 @@ export function createLocalSearchProvider(
       context: "Launch sender · identity not verified",
       terms: [a],
       href: `/creators/${a}/`,
+    });
+  }
+  for (const m of catalog?.pools ?? []) {
+    add({
+      id: `token:${m.id}`,
+      group: "Tokens",
+      title: `${m.name} (${m.symbol})`,
+      address: m.token,
+      context: "Verified launch catalog · details load on demand",
+      terms: [m.name, m.symbol, m.token],
+      href: poolHref(m),
+    });
+    add({
+      id: `pool:${m.id}`,
+      group: "Tokens",
+      title: `${m.name} (${m.symbol})`,
+      address: m.id,
+      context: "Pool ID · verified launch catalog",
+      terms: [m.id],
+      href: poolHref(m),
+    });
+    const address = m.launchSender.toLowerCase();
+    add({
+      id: `creator:${address}`,
+      group: "Creators",
+      title: shortAddress(address),
+      address,
+      context: "Launch sender · verified launch catalog",
+      terms: [address],
+      href: `/creators/${address}/`,
+    });
+    entries.get(`creator:${address}`)!.terms.push(m.name, m.symbol);
+    add({
+      id: `tx:${m.launchTx.toLowerCase()}`,
+      group: "Transactions",
+      title: `Launch · ${m.symbol}`,
+      address: m.launchTx,
+      context: "Verified launch transaction · explorer ↗",
+      terms: [m.launchTx],
+      href: `${explorer}/tx/${m.launchTx}`,
+      external: true,
     });
   }
   for (const a of Object.values(audits).sort((a, b) => b.toBlock - a.toBlock)) {
@@ -196,7 +239,11 @@ export function createLocalSearchProvider(
             (!entry.id.startsWith("pool:") || q.startsWith("0x")),
         )
         .sort(
-          (a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id),
+          (a, b) =>
+            b.score - a.score ||
+            searchGroups.indexOf(a.entry.group) -
+              searchGroups.indexOf(b.entry.group) ||
+            a.entry.id.localeCompare(b.entry.id),
         );
       const result = scored.map((s) => s.entry);
       if (kind === "address") {
@@ -276,13 +323,18 @@ export function createLocalSearchProvider(
         kind,
         coverage: {
           scope: "sample",
-          pools: markets.size,
+          pools: new Set([
+            ...markets.keys(),
+            ...(catalog?.pools.map((m) => m.id) ?? []),
+          ]).size,
           fromBlock: Math.min(
             snapshot.fromBlock,
+            ...(catalog?.ranges.map((r) => r.fromBlock) ?? []),
             ...Object.values(audits).map((a) => a.market.launchBlock),
           ),
           toBlock: Math.max(
             snapshot.toBlock,
+            catalog?.toBlock ?? snapshot.toBlock,
             ...Object.values(audits).map((a) => a.toBlock),
           ),
         },

@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 import chain from "../../data/snapshots/chain.json";
+import catalog from "../../data/catalog/chain.json";
+import captured from "../../data/pools/index.json";
 import {
   poolHref,
   walletHref,
@@ -317,6 +319,7 @@ test("command search handles fuzzy names, keyboard navigation, real resolver res
     });
   });
   await page.goto("/");
+  await expect(page.locator(".search-trigger")).toBeEnabled();
   await page.keyboard.press("Control+k");
   const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
   const input = dialog.getByRole("textbox");
@@ -450,4 +453,80 @@ test("live feed deduplicates overlapping checks, retains data on failure, and pa
   await feed.getByRole("button", { name: "Resume feed" }).click();
   await expect.poll(() => count).toBe(before + 1);
   await expect(feed.locator(".stream-event")).toHaveCount(1);
+});
+
+test("catalog token search opens a verified pool link and loads its details on demand", async ({
+  page,
+}) => {
+  const entry = catalog.pools.find(
+    (p) => !chain.markets.some((m) => m.id === p.id),
+  )!;
+  const data = structuredClone(chain);
+  data.markets = [{ ...chain.markets[0], ...entry }];
+  data.trades = [];
+  let requested = false;
+  await page.route(`**/api/markets/${entry.id}/?*`, (r) => {
+    requested = true;
+    expect(r.request().url()).toContain(`launch=${entry.launchTx}`);
+    return r.fulfill({ json: data });
+  });
+  await page.goto("/");
+  await expect(page.locator(".search-trigger")).toBeEnabled();
+  await page.keyboard.press("Control+k");
+  const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
+  await dialog.getByRole("textbox").fill(entry.token);
+  const result = dialog
+    .getByRole("link", { name: new RegExp(entry.token, "i") })
+    .filter({ hasText: "details load on demand" });
+  await result.click();
+  await expect(page).toHaveURL(new RegExp(`/pool/${entry.id}/`));
+  await expect(
+    page.getByRole("heading", { name: entry.name + ".", exact: true }),
+  ).toBeVisible();
+  expect(requested).toBe(true);
+});
+
+test("captured pool history loads without RPC and survives a failed refresh", async ({
+  page,
+}) => {
+  const saved = Object.values(captured.snapshots)[0];
+  const pool = saved.markets[0];
+  let marketRequests = 0;
+  page.on("request", (r) => {
+    if (r.url().includes(`/api/markets/${pool.id}/`)) marketRequests++;
+  });
+  await page.goto(poolHref(pool));
+  await expect(
+    page.getByRole("heading", { name: pool.name + "." }),
+  ).toBeVisible();
+  await expect(page.locator(".pagination")).toContainText(
+    `${saved.trades.length} swap events`,
+  );
+  await expect(page.locator(".live-candles canvas").first()).toBeVisible();
+  const initialRequests = marketRequests;
+  for (let i = 0; i < 6; i++)
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.locator(".pagination")).toContainText(
+    `7 / ${Math.ceil(saved.trades.length / 20)}`,
+  );
+  expect(marketRequests).toBe(initialRequests);
+  await page
+    .getByRole("button", { name: "Refresh pool data", exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      "Refresh unavailable. The captured pool data remains visible.",
+    ),
+  ).toBeVisible();
+  await expect(page.locator(".pagination")).toContainText(
+    `${saved.trades.length} swap events`,
+  );
+  await expect(
+    page.getByRole("button", { name: "Refresh pool data", exact: true }),
+  ).toBeEnabled();
+  // A market-only capture must not accidentally start a network audit in offline mode.
+  const audit = await page.request.get(
+    `/api/markets/${pool.id}/accounting/?launch=${pool.launchTx}`,
+  );
+  expect(audit.status()).toBe(503);
 });

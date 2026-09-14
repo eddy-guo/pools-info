@@ -35,6 +35,7 @@ export function Search() {
   const [query, setQuery] = useState(""),
     [group, setGroup] = useState<SearchGroup>();
   const [isOpen, setOpen] = useState(false);
+  const [ready, setReady] = useState(false);
   const [result, setResult] = useState<{
     query: string;
     group?: SearchGroup;
@@ -70,7 +71,11 @@ export function Search() {
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const frame = requestAnimationFrame(() => setReady(true));
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", handler);
+    };
   }, []);
   useEffect(() => {
     if (!isOpen) return;
@@ -104,6 +109,8 @@ export function Search() {
     <>
       <button
         className="search-trigger"
+        disabled={!ready}
+        aria-keyshortcuts="Meta+K Control+K"
         aria-label="Search tokens, wallets, creators, transactions"
         onClick={open}
       >

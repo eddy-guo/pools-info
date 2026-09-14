@@ -136,7 +136,7 @@ small {
   align-items: center;
   gap: 46px;
   border-bottom: 1px solid var(--line);
-  background: rgba(16, 16, 18, 0.96);
+  background: #101012;
   position: sticky;
   top: 0;
   z-index: 30;

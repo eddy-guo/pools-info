@@ -1,7 +1,10 @@
-import { targetedMarketSnapshot } from "@/lib/chain-server";
+import {
+  targetedMarketSnapshot,
+  capturedPoolSnapshot,
+} from "@/lib/chain-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 110;
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ poolId: string }> },
@@ -14,13 +17,18 @@ export async function GET(
     !/^0x[0-9a-f]{64}$/i.test(launch)
   )
     return Response.json({ error: "invalid_launch" }, { status: 400 });
-  if (process.env.CHAIN_REFRESH_DISABLED === "1")
+  if (
+    process.env.CHAIN_REFRESH_DISABLED === "1" &&
+    (!capturedPoolSnapshot(poolId, launch) ||
+      new URL(request.url).searchParams.get("refresh") === "1")
+  )
     return Response.json({ error: "disabled" }, { status: 503 });
   try {
     return Response.json(
       await targetedMarketSnapshot(
         poolId.toLowerCase(),
         launch as `0x${string}`,
+        new URL(request.url).searchParams.get("refresh") === "1",
       ),
       { headers: { "Cache-Control": "no-store" } },
     );

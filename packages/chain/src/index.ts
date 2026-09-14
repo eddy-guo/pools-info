@@ -8,3 +8,5 @@ export {
   type RecentSwap,
   type RecentSwaps,
 } from "./recent-swaps";
+
+export { collectCatalog } from "./catalog";

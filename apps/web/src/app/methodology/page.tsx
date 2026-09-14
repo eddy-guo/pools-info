@@ -90,19 +90,22 @@ export default function Methodology() {
             <p>
               The live feed checks a recent 1,000-block window every 15 seconds
               after the previous check completes, ending 128 blocks behind the
-              head. It displays up to 50 returned events per check, with shared
-              server caching and duplicate removal. Delays and omitted events
-              are disclosed. Its transaction-sender label is not proof of the
-              buyer, beneficiary or cost basis.
+              head. It receives at most 50 events per check and displays the
+              latest 12, with shared server caching and duplicate removal.
+              Delays and omitted events are disclosed. Its transaction-sender
+              label is not proof of the buyer, beneficiary or cost basis.
             </p>
             <p>
-              Search matches covered tokens and audited activity. ENS resolution
-              reads the standard Ethereum address record through PublicNode
-              Ethereum RPC, caches successful results for five minutes, and
-              opens that address on Robinhood. A resolved name does not prove
-              Robinhood activity or a chain-specific ENS record. Offchain-only
-              resolution is not enabled. No wallet authentication or account
-              data is stored.
+              Search matches a wider verified launch catalog as well as covered
+              markets and audited activity. Catalog metadata does not establish
+              trading volume or profitability. Selected pool histories are
+              captured ahead of time for fast first loads, with their own cutoff
+              and explicit refresh. ENS resolution reads the standard Ethereum
+              address record through PublicNode Ethereum RPC, caches successful
+              results for five minutes, and opens that address on Robinhood. A
+              resolved name does not prove Robinhood activity or a
+              chain-specific ENS record. Offchain-only resolution is not
+              enabled. No wallet authentication or account data is stored.
             </p>
           </section>
           <section id="accounting">

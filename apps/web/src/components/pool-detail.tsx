@@ -25,6 +25,8 @@ export function PoolDetail({ id }: { id: string }) {
     snapshot: s,
     error,
     loading,
+    refresh,
+    refreshing,
   } = useMarket(id, params.get("launch"));
   const { audits } = useLive();
   const [tab, setTab] = useState("Trades");
@@ -33,8 +35,10 @@ export function PoolDetail({ id }: { id: string }) {
       <div className="page">
         <h1>{loading ? "Loading pool…" : "Pool outside current coverage"}</h1>
         <p>
-          {error ||
-            "Use a covered pool link to provide its verified launch transaction. This is a coverage limit, not proof that the pool does not exist."}
+          {loading
+            ? "Reading the verified launch and swap history. This pool is outside the preloaded sample, so its first load can take longer. No metrics are estimated while it loads."
+            : error ||
+              "Use a covered pool link to provide its verified launch transaction. This is a coverage limit, not proof that the pool does not exist."}
         </p>
         <Link className="button" href="/">
           Explore pools
@@ -94,6 +98,20 @@ export function PoolDetail({ id }: { id: string }) {
             );
           })}
         </div>
+      </div>
+      <div className="live-controls">
+        <button
+          className="button secondary"
+          onClick={refresh}
+          disabled={refreshing}
+        >
+          {refreshing ? "Refreshing pool…" : "Refresh pool data"}
+        </button>
+        {error && (
+          <p role="status">
+            Refresh unavailable. The captured pool data remains visible.
+          </p>
+        )}
       </div>
       <p className="page-intro-note">
         This pool’s market data is through block{" "}

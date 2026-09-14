@@ -1,16 +1,22 @@
 import {
   createLocalSearchProvider,
   type ChainSnapshot,
+  type ChainCatalog,
   type PoolAudit,
   type SearchProvider,
 } from "@pools/core";
+import catalog from "../../../../data/catalog/chain.json";
 // Static/local lookup stays instant; only a complete ENS name triggers a remote
 // read. Replace this adapter with a paginated public index as coverage grows.
 export function createSearchProvider(
   snapshot: ChainSnapshot,
   audits: Record<string, PoolAudit>,
 ): SearchProvider {
-  const local = createLocalSearchProvider(snapshot, audits);
+  const local = createLocalSearchProvider(
+    snapshot,
+    audits,
+    catalog as ChainCatalog,
+  );
   return {
     async search(query, options) {
       const result = await local.search(query, options);

@@ -11,13 +11,22 @@ export class Rpc {
   requests = 0;
   calls = 0;
   private started = Date.now();
+  private nextRequestAt = 0;
   constructor(
     private url = process.env.ROBINHOOD_RPC_URL ??
       "https://rpc.mainnet.chain.robinhood.com",
-    private limits: { timeoutMs?: number; maxRequests?: number } = {},
+    private limits: {
+      timeoutMs?: number;
+      maxRequests?: number;
+      minIntervalMs?: number;
+    } = {},
   ) {}
   private async send(body: Request | Request[]): Promise<Reply | Reply[]> {
     for (let attempt = 0; attempt < 4; attempt++) {
+      const scheduledAt = Math.max(Date.now(), this.nextRequestAt);
+      this.nextRequestAt = scheduledAt + (this.limits.minIntervalMs ?? 0);
+      const pause = scheduledAt - Date.now();
+      if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
       const remaining =
         (this.limits.timeoutMs ?? 45000) - (Date.now() - this.started);
       if (remaining <= 0 || this.requests >= (this.limits.maxRequests ?? 1500))
