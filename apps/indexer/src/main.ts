@@ -12,6 +12,7 @@ import {
   nextPool,
   rewind,
   status,
+  waitForWriter,
   type Client,
   type Stream,
 } from "@pools/db";
@@ -194,8 +195,16 @@ async function main() {
     const batch = integer("INDEXER_BATCH_BLOCKS", 1000, 1, 2000);
     const interval = integer("INDEXER_POLL_MS", 15000, 1000, 300000);
     const poolsPerCycle = integer("INDEXER_POOLS_PER_CYCLE", 2, 1, 20);
-    const locked = await acquireWriter(db);
+    // Railway briefly overlaps old and new containers during a rolling deploy.
+    // Stay alive while the old worker drains, without permitting two writers.
+    if (mode === "run")
+      console.log(JSON.stringify({ event: "waiting_for_writer" }));
+    const locked = mode === "run"
+      ? await waitForWriter(db, { signal: stop.signal })
+      : await acquireWriter(db);
+    if (stopping) return;
     if (!locked) throw Error("Another worker holds the writer lock");
+    console.log(JSON.stringify({ event: "writer_acquired" }));
     // Production migrations are an explicit command, not hidden in the worker.
     await ensureDiscovery(db, start);
     let failures = 0;

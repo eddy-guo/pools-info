@@ -93,6 +93,9 @@ instant-launch registry, and separate round-robin swap/Transfer collection per
 verified pool. It saves raw receipts/logs/headers, decoded event amounts as exact
 strings, discovered markets and per-stream checkpoints. A session-level advisory
 lock allows only one worker; batch data and progress commit in one transaction.
+During rolling deploys the new worker waits up to three minutes for the old
+worker to release that lock, then resumes the saved checkpoints. It cannot write
+while waiting. A one-shot command still fails immediately if another writer exists.
 Canonical hash mismatches rewind a stream to a retained matching batch, deleting
 orphaned records and (for discovery) affected pool streams before replaying.
 

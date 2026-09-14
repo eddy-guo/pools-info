@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
   acquireWriter,
+  waitForWriter,
   commitBatch,
   createClient,
   ensureDiscovery,
@@ -188,6 +189,107 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
       await rewind(db, await getStream(db, s.key), null);
       assert.equal((await status(db)).counts.pools, "0");
       assert.equal((await status(db)).streams.length, 1);
+    },
+  );
+});
+
+test("replacement writer waits for old release, acquires only once, and respects timeout and cancellation", async (t) => {
+  const old = createClient(url);
+  const replacement = createClient(url);
+  await old.connect();
+  await replacement.connect();
+  t.after(async () => {
+    await replacement.end();
+    await old.end();
+  });
+  const release = (client: typeof old) =>
+    client.query("SELECT pg_advisory_unlock(4663, 19002)");
+  await t.test(
+    "old deployment releases while its replacement waits",
+    async () => {
+      assert.equal(await acquireWriter(old), true);
+      let acquired = false;
+      const waiting = waitForWriter(replacement, {
+        timeoutMs: 2000,
+        pollMs: 10,
+      }).then((result) => {
+        acquired = result;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      assert.equal(acquired, false);
+      await release(old);
+      assert.equal(await waiting, true);
+      assert.equal(await acquireWriter(old), false);
+      // One unlock must release ownership completely; retrying after acquisition
+      // would recursively take the session lock and make this assertion fail.
+      await release(replacement);
+      assert.equal(await acquireWriter(old), true);
+      await release(old);
+    },
+  );
+  await t.test(
+    "deadline expiry cannot acquire later when old owner exits",
+    async () => {
+      assert.equal(await acquireWriter(old), true);
+      assert.equal(
+        await waitForWriter(replacement, { timeoutMs: 50, pollMs: 10 }),
+        false,
+      );
+      await release(old);
+      assert.equal(await acquireWriter(old), true);
+      await release(old);
+      assert.equal(await waitForWriter(replacement, { timeoutMs: 0 }), false);
+      assert.equal(await acquireWriter(old), true);
+      await release(old);
+    },
+  );
+  await t.test(
+    "cancellation interrupts polling without acquiring the lock",
+    async () => {
+      assert.equal(await acquireWriter(old), true);
+      const controller = new AbortController();
+      const waiting = waitForWriter(replacement, {
+        signal: controller.signal,
+        timeoutMs: 2000,
+        pollMs: 1000,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      controller.abort();
+      assert.equal(await waiting, false);
+      await release(old);
+      assert.equal(
+        await waitForWriter(replacement, { signal: controller.signal }),
+        false,
+      );
+      assert.equal(await acquireWriter(old), true);
+      await release(old);
+    },
+  );
+  await t.test(
+    "cancellation racing a successful acquisition releases that acquisition",
+    async () => {
+      const controller = new AbortController();
+      const original = replacement.query.bind(replacement);
+      replacement.query = (async (...args: Parameters<typeof original>) => {
+        const result = await original(...args);
+        if (
+          typeof args[0] === "string" &&
+          args[0].includes("pg_try_advisory_lock")
+        )
+          controller.abort();
+        return result;
+      }) as typeof replacement.query;
+      try {
+        assert.equal(
+          await waitForWriter(replacement, { signal: controller.signal }),
+          false,
+        );
+        assert.equal(await acquireWriter(old), true);
+        await release(old);
+      } finally {
+        replacement.query = original;
+      }
     },
   );
 });

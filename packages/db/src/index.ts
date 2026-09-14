@@ -1,6 +1,7 @@
 import pg from "pg";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export type Client = pg.Client;
 export function createClient(url = process.env.DATABASE_URL): Client {
@@ -55,6 +56,50 @@ export async function acquireWriter(db: Client) {
     "SELECT pg_try_advisory_lock(4663, 19002) AS acquired",
   );
   return result.rows[0].acquired === true;
+}
+/** Wait for a prior deployment to finish. Call on a connection that does not
+ * already hold the writer lock; after success no further acquisitions are made. */
+export async function waitForWriter(
+  db: Client,
+  {
+    signal,
+    timeoutMs = 180000,
+    pollMs = 1000,
+  }: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    pollMs?: number;
+  } = {},
+): Promise<boolean> {
+  if (
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 0 ||
+    !Number.isSafeInteger(pollMs) ||
+    pollMs < 1
+  )
+    throw Error("Invalid writer wait options");
+  const deadline = performance.now() + timeoutMs;
+  while (!signal?.aborted && performance.now() < deadline) {
+    const acquired = await acquireWriter(db);
+    if (acquired) {
+      // Cancellation can race a successful query. Release precisely the one
+      // acquisition performed here, leaving no cancelled replacement writer.
+      if (signal?.aborted || performance.now() >= deadline) {
+        await db.query("SELECT pg_advisory_unlock(4663, 19002)");
+        return false;
+      }
+      return true;
+    }
+    const remaining = deadline - performance.now();
+    if (remaining <= 0 || signal?.aborted) return false;
+    try {
+      await sleep(Math.min(pollMs, remaining), undefined, { signal });
+    } catch (error) {
+      if (signal?.aborted) return false;
+      throw error;
+    }
+  }
+  return false;
 }
 export interface Stream {
   key: string;
