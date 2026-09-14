@@ -26,7 +26,10 @@ function rpc() {
   return new Rpc(undefined, {
     timeoutMs: 120000,
     maxRequests: 300,
-    minIntervalMs: 100,
+    // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
+    // batch can exceed the free provider's throughput even over one connection.
+    minIntervalMs: 1000,
+    maxBatchSize: 5,
   });
 }
 const hex = (n: number) => `0x${n.toString(16)}`;

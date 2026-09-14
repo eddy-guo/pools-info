@@ -6,18 +6,30 @@ type Request = {
   method: string;
   params: unknown[];
 };
-type Reply = { id: number; result?: unknown; error?: { message: string } };
+type Reply = {
+  id: number;
+  result?: unknown;
+  error?: { message: string; code?: number };
+};
 class LogRangeLimit extends Error {
   constructor(readonly blocks: number) {
     super(`RPC log range limited to ${blocks} blocks`);
   }
 }
+class BatchRateLimit extends Error {
+  constructor(readonly replies: Reply[] | null) {
+    super("RPC HTTP 429");
+  }
+}
 export class Rpc {
   requests = 0;
+  // Distinct logical calls; retries reuse IDs. This is not billable provider usage.
   calls = 0;
   private started = Date.now();
   private nextRequestAt = 0;
   private logRange = 10000;
+  private batchSize = 20;
+  private throttleMs = 0;
   constructor(
     private url = process.env.ROBINHOOD_RPC_URL ??
       "https://rpc.mainnet.chain.robinhood.com",
@@ -25,12 +37,26 @@ export class Rpc {
       timeoutMs?: number;
       maxRequests?: number;
       minIntervalMs?: number;
+      maxBatchSize?: number;
     } = {},
-  ) {}
+  ) {
+    const batchSize = limits.maxBatchSize ?? 20;
+    if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 20)
+      throw Error("Invalid RPC batch size");
+    this.batchSize = batchSize;
+  }
+  private throttled() {
+    this.throttleMs = Math.max(this.throttleMs, 1000);
+    this.nextRequestAt = Math.max(
+      this.nextRequestAt,
+      Date.now() + this.throttleMs,
+    );
+  }
   private async send(body: Request | Request[]): Promise<Reply | Reply[]> {
     for (let attempt = 0; attempt < 4; attempt++) {
       const scheduledAt = Math.max(Date.now(), this.nextRequestAt);
-      this.nextRequestAt = scheduledAt + (this.limits.minIntervalMs ?? 0);
+      this.nextRequestAt =
+        scheduledAt + Math.max(this.limits.minIntervalMs ?? 0, this.throttleMs);
       const pause = scheduledAt - Date.now();
       if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
       const remaining =
@@ -69,6 +95,18 @@ export class Rpc {
           )
             throw new LogRangeLimit(blocks);
         }
+        // A batch can succeed at HTTP level while individual calls are throttled.
+        // Preserve successful replies and let batch() retry only throttled calls.
+        const replies = Array.isArray(result) ? result : result ? [result] : [];
+        if (
+          response.status === 429 ||
+          replies.some((r) => r.error?.code === 429)
+        ) {
+          this.throttled();
+          if (Array.isArray(body))
+            throw new BatchRateLimit(Array.isArray(result) ? result : null);
+          throw Error("RPC HTTP 429");
+        }
         if (!response.ok) throw Error(`RPC HTTP ${response.status}`);
         if (!result) throw Error("RPC returned invalid JSON");
         for (const row of Array.isArray(result) ? result : [result])
@@ -76,7 +114,12 @@ export class Rpc {
             throw Error("RPC returned an error or missing result");
         return result;
       } catch (error) {
-        if (error instanceof LogRangeLimit || attempt === 3) throw error;
+        if (
+          error instanceof LogRangeLimit ||
+          error instanceof BatchRateLimit ||
+          attempt === 3
+        )
+          throw error;
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
       }
     }
@@ -90,27 +133,57 @@ export class Rpc {
     return response.result as T;
   }
   async batch<T>(method: string, paramsList: unknown[][]): Promise<T[]> {
-    const values: T[] = [];
-    for (let i = 0; i < paramsList.length; i += 20) {
-      const requests = paramsList.slice(i, i + 20).map((params) => ({
-        jsonrpc: "2.0" as const,
-        id: ++this.calls,
-        method,
-        params,
-      }));
-      const response = await this.send(requests);
-      if (!Array.isArray(response) || response.length !== requests.length)
-        throw Error("Incomplete RPC batch");
+    const requests = paramsList.map((params) => ({
+      jsonrpc: "2.0" as const,
+      id: ++this.calls,
+      method,
+      params,
+    }));
+    const pending = [...requests];
+    const values = new Map<number, unknown>();
+    const attempts = new Map<number, number>();
+    while (pending.length) {
+      const chunk = pending.splice(0, this.batchSize);
+      for (const request of chunk)
+        attempts.set(request.id, (attempts.get(request.id) ?? 0) + 1);
+      let response: Reply[];
+      let limited = false;
+      try {
+        const result = await this.send(chunk);
+        if (!Array.isArray(result)) throw Error("Incomplete RPC batch");
+        response = result;
+      } catch (error) {
+        if (!(error instanceof BatchRateLimit)) throw error;
+        limited = true;
+        // Whole-request HTTP throttling supplies no usable per-item evidence.
+        response =
+          error.replies ??
+          chunk.map((r) => ({
+            id: r.id,
+            error: { code: 429, message: "Rate limited" },
+          }));
+        this.batchSize = Math.max(
+          1,
+          Math.min(5, Math.floor(this.batchSize / 2)),
+        );
+      }
+      if (response.length !== chunk.length) throw Error("Incomplete RPC batch");
       const replies = new Map(response.map((r) => [r.id, r]));
-      if (replies.size !== requests.length)
-        throw Error("Duplicate RPC batch IDs");
-      for (const request of requests) {
+      if (replies.size !== chunk.length) throw Error("Duplicate RPC batch IDs");
+      const retry: Request[] = [];
+      for (const request of chunk) {
         const reply = replies.get(request.id);
         if (!reply) throw Error("Missing RPC batch ID");
-        values.push(reply.result as T);
+        if (limited && reply.error?.code === 429) {
+          if ((attempts.get(request.id) ?? 0) >= 4) throw Error("RPC HTTP 429");
+          retry.push(request);
+        } else if (reply.error || reply.result === undefined) {
+          throw Error("RPC returned an error or missing result");
+        } else values.set(request.id, reply.result);
       }
+      pending.unshift(...retry);
     }
-    return values;
+    return requests.map((request) => values.get(request.id) as T);
   }
   async logs(
     address: string | readonly string[],

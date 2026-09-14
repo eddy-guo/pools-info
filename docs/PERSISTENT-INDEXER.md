@@ -2,23 +2,25 @@
 
 Decision: 14 September 2026. Keep one repository, the existing Vercel website,
 and add a Railway project containing Postgres and one long-running indexer.
-This is the implementation target, not a claim these services already exist.
+The Postgres service and worker are now deployed in the same Railway project.
+The website still reads its existing snapshots and RPC refresh endpoints.
 
 ## Responsibilities
 
-- `apps/web` (existing): Next.js UI and server-side read endpoints. Read indexed
-  market data through a small connection pool using a read-only database role.
-  Cache common queries. Database credentials never reach the browser.
-- `apps/indexer` (planned): background discovery, historical backfill, new swaps,
-  transfer ingestion, holder snapshots and trader accounting. Reuse the chain
-  decoders and core calculations. No public HTTP API is required initially.
-- `packages/db` (planned): versioned SQL migrations, connection handling and
-  shared query code. Separate migration, writer and web-reader permissions.
+- `apps/web` (existing): Next.js UI and server-side read endpoints. Its future
+  indexed read path must preserve private-only Postgres, for example through a
+  small Railway read service. That integration is not implemented yet.
+- `apps/indexer` (implemented foundation): background discovery and resumable
+  swap/transfer ingestion. Holder snapshots and trader accounting remain planned;
+  they will reuse the chain decoders and core calculations.
+- `packages/db` (implemented foundation): versioned SQL migrations, connection
+  handling and checkpoint queries. Separate reader permissions remain future work.
 - `packages/chain` and `packages/core` (existing): RPC access, event validation,
   exact arithmetic and accounting rules.
 - `docs` stays at the repository root.
 
-Data flow: Robinhood RPC -> indexer -> Postgres -> Next.js server -> browser.
+Current ingestion: Robinhood RPC -> indexer -> private Postgres. Planned reads:
+Postgres -> Railway read service -> Next.js server -> browser.
 Alchemy remains the configured RPC provider, not the database or indexer.
 ENS remains an Ethereum lookup separate from the Robinhood market catalog.
 
@@ -55,24 +57,27 @@ Retain the existing snapshot path during rollout with its coverage label.
 
 ## Railway setup
 
-Create one project named `pools-info`, and add PostgreSQL. Choose a region near
-the Vercel server-function region. For local migration and connection testing,
-enable Postgres public access and put its `DATABASE_PUBLIC_URL` value into the
-ignored repository-root `.env.local` under the key `DATABASE_URL`. Do not paste
-the credential into chat or commit it. The placeholder is currently commented
-out, so it does not affect existing commands.
+Use Railway's standard PostgreSQL service with its persistent volume. Keep
+Postgres and the worker in the same project, environment and region. Production
+Postgres is private-only: its public TCP proxy and `DATABASE_PUBLIC_URL` were
+removed. The official PostgreSQL image and storage settings remain unchanged.
+No custom database tuning is required for this pilot.
 
-The worker will connect to the same project's Postgres over private networking
-using `DATABASE_URL`, and receive the existing `ROBINHOOD_RPC_URL` separately.
+The worker connects to the same project's Postgres over private networking
+using `DATABASE_URL=${{Postgres.DATABASE_URL}}`, and receive the existing
+`ROBINHOOD_RPC_URL` separately.
 Build it from the repository root so shared workspace packages are available;
-use a dedicated start command for `apps/indexer` once implemented. No separate
+use the dedicated start command for `apps/indexer`. No separate
 repository is needed. Do not deploy the repository's default web command as
 the worker.
 
-Vercel will need an externally reachable Postgres connection using a dedicated
-read-only role. Set that server-side credential only when the read path is ready.
-Keep local/test writes separate from production. Before production backfill,
-configure backups and a Railway usage alert and measure RPC consumption.
+Use a separate local Postgres instance for development and tests. A private
+`postgres.railway.internal` URL cannot connect directly from a laptop. Railway's
+dashboard offers `railway connect Postgres` for an encrypted tunnel without
+public access, or `railway connect Postgres --tunnel-only` for a GUI client.
+Keep local/test writes separate from production. Do not add DATABASE_URL to
+Vercel: the database-backed website read path is a separate rollout step.
+Before expanding backfill, review backups, Railway usage and RPC consumption.
 
 References checked 14 September 2026:
 
@@ -116,7 +121,11 @@ a separate historical backfill path will be needed to expand coverage backwards.
 Optional tuning: `INDEXER_BATCH_BLOCKS=1000` (maximum 2000),
 `INDEXER_POLL_MS=15000`, `INDEXER_POOLS_PER_CYCLE=2`. These are conservative starting
 values, not a guarantee of keeping up with chain activity. Logs report HTTP and
-RPC counts separately. One slow or broken pool retains its old checkpoint.
+logical RPC counts separately; retries can increase billable provider calls.
+The worker sends at most five calls per batch, with at least one second between
+HTTP requests. Per-call rate limits inside HTTP-success responses retry only
+the throttled calls, preserving successful replies. One slow or broken pool
+retains its old checkpoint.
 
 ### Deploy the worker on Railway
 
@@ -146,9 +155,9 @@ RPC counts separately. One slow or broken pool retains its old checkpoint.
 
 The worker container contains no `.env.local`, no saved local database, no web
 app and no production credentials. Railway injects credentials at runtime.
-Migrations use the provided database role initially; before exposing database
-reads through Vercel, create the separate read-only role and size its connection
-pool. Do not add DATABASE_URL to Vercel until that read path is implemented.
+Migrations use the provided database role initially. A future Railway read
+service should use a separate read-only role and a bounded connection pool.
+Production database credentials should remain inside Railway.
 
 Railway's pre-deploy command has private-network access:
 https://docs.railway.com/deployments/pre-deploy-command
@@ -161,4 +170,7 @@ restart reads and pool/discovery reorg cleanup. A real Alchemy-backed one-shot
 collected the PEPE launch at blocks 62625935-62625944: one pool, two swaps and
 8 transfers, checked against receipts and block hashes. A second process resumed
 at 62625945-62625954 without duplicating the first batch. This is a small live
-acceptance check, not a completed historical backfill or Railway deployment.
+acceptance check, not a completed historical backfill. The hosted worker has
+also applied migrations and persisted launch discoveries and checkpoints via
+Railway's private network. Hosted event collection is verified separately from
+the deployment's online status.
