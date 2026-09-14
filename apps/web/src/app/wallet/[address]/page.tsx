@@ -1,50 +1,56 @@
 import { notFound } from "next/navigation";
-import { reader } from "@/lib/data";
 import { WalletView } from "@/components/details";
-export const dynamicParams = false;
-export async function generateStaticParams() {
-  return (await reader.wallets()).map((w) => ({ address: w.address }));
-}
-export async function generateMetadata({
-  params,
-}: {
+import { shortAddress, windows } from "@pools/core";
+type Props = {
   params: Promise<{ address: string }>;
-}) {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+export async function generateMetadata({ params, searchParams }: Props) {
   const { address } = await params;
-  const detail = await reader.wallet(address);
-  if (!detail) return { title: "Wallet not found" };
-  const title = `${detail.wallet.label} · Demo performance`;
+  const q = await searchParams;
+  const title = `${shortAddress(address)} · Wallet profile`;
   const description =
-    "Simulated seven-day trading performance. Not real wallet activity.";
+    "Real on-chain pool audit with explicit coverage. Gross swap PnL before gas; not wallet-wide returns.";
+  const pool =
+    typeof q.pool === "string" && /^0x[0-9a-f]{64}$/i.test(q.pool)
+      ? q.pool
+      : null;
+  const launch =
+    typeof q.launch === "string" && /^0x[0-9a-f]{64}$/i.test(q.launch)
+      ? q.launch
+      : null;
+  const window =
+    typeof q.window === "string" && Object.hasOwn(windows, q.window)
+      ? q.window
+      : "All";
+  const image =
+    pool && launch
+      ? `/cards/${address}.png?${new URLSearchParams({ pool, launch, window })}`
+      : undefined;
   return {
     title,
     description,
     openGraph: {
       title,
       description,
-      images: [
-        { url: `/cards/${address}.png`, width: 1200, height: 630, alt: title },
-      ],
+      ...(image
+        ? { images: [{ url: image, width: 1200, height: 630, alt: title }] }
+        : {}),
     },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      images: [`/cards/${address}.png`],
-    },
+    ...(image
+      ? {
+          twitter: {
+            card: "summary_large_image",
+            title,
+            description,
+            images: [image],
+          },
+        }
+      : {}),
   };
 }
-export default async function WalletPage({
-  params,
-}: {
-  params: Promise<{ address: string }>;
-}) {
-  const address = (await params).address;
-  const [detail, leaders] = await Promise.all([
-    reader.wallet(address),
-    reader.leaderboard("7d", 1, 100),
-  ]);
-  if (!detail) notFound();
-  const index = leaders.items.findIndex((w) => w.address === address);
-  return <WalletView detail={detail} rank={index < 0 ? null : index + 1} />;
+export default async function Page({ params }: Props) {
+  const { address } = await params;
+  if (!/^0x[0-9a-f]{40}$/i.test(address)) notFound();
+  return <WalletView address={address.toLowerCase()} />;
 }

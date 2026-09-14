@@ -20,6 +20,7 @@ export interface ChainMarket {
   sells: number;
   series: { time: number; wei: string }[];
   accounting?: {
+    executions?: import("./chain-accounting").ObservedExecution[];
     wallets: ChainWallet[];
     unattributedSwaps: number;
     transfersChecked: number;
@@ -72,4 +73,16 @@ export interface ChainSnapshot {
     matches: boolean;
     scope: string;
   } | null;
+}
+
+export interface PoolAudit {
+  poolId: string;
+  toBlock: number;
+  toTimestamp: number;
+  generatedAt: string;
+  market: ChainMarket;
+  wallets: ChainWallet[];
+  executions: import("./chain-accounting").ObservedExecution[];
+  unattributedSwaps: number;
+  transfersChecked: number;
 }

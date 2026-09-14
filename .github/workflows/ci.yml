@@ -1,4 +1,4 @@
-name: Validate static MVP
+name: Validate application
 on:
   push:
   pull_request:

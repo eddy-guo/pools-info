@@ -40,6 +40,14 @@ async function audit(poolId: string, launchTx: `0x${string}`) {
 }
 export const auditedPoolSnapshot = unstable_cache(
   audit,
-  ["chain-accounting-v1"],
+  ["chain-accounting-v2"],
   { revalidate: 300 },
+);
+
+export const targetedMarketSnapshot = unstable_cache(
+  async (poolId: string, launchTx: `0x${string}`) =>
+    (await collectSnapshot({ target: { poolId, launchTx }, poolLimit: 1 }))
+      .snapshot,
+  ["chain-target-v1"],
+  { revalidate: 60 },
 );

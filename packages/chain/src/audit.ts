@@ -183,6 +183,7 @@ export async function auditPool(args: {
     ),
   );
   return {
+    executions,
     wallets: reconcileWallets(executions, movements, balances),
     unattributedSwaps: executions.filter((e) => e.flags.length).length,
     transfersChecked: transfers.length,

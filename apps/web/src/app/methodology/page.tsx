@@ -10,174 +10,171 @@ export default function Methodology() {
             Behind the numbers<span className="title-dot">.</span>
           </h1>
           <p>
-            What we measure, what we exclude, and what this snapshot can tell
-            you.
+            Where the data comes from, what we verify, and the limits of each
+            result.
           </p>
         </div>
       </div>
       <div className="prose-layout">
         <nav className="prose-nav" aria-label="Methodology sections">
-          <a href="#coverage">01 · Data coverage</a>
-          <a href="#accounting">02 · Profit and loss</a>
-          <a href="#ranking">03 · Ranking rules</a>
-          <a href="#prices">04 · Prices and inventory</a>
-          <a href="#identity">05 · Identity and creators</a>
-          <a href="#limits">06 · What comes next</a>
+          <a href="#coverage">01 · Sources and coverage</a>
+          <a href="#prices">02 · Prices and volume</a>
+          <a href="#accounting">03 · Profit and loss</a>
+          <a href="#attribution">04 · Trader attribution</a>
+          <a href="#limits">05 · What is unavailable</a>
         </nav>
         <article className="prose">
           <section id="coverage">
-            <h2>01. This is a demo snapshot</h2>
+            <h2>01. Real events, bounded coverage</h2>
             <p>
-              <strong>
-                Every token, wallet, transaction, price, and liquidity value
-                shown here is simulated.
-              </strong>{" "}
-              This version lets you explore the product without connecting a
-              wallet, subscribing to an API, or running a backend.
+              Market data comes directly from Robinhood Chain mainnet (chain ID
+              4663) through its public RPC. We read Uniswap v4 PoolManager
+              swaps, official instant-launch strategy events, transaction
+              receipts, block headers, and token contracts. Explorer links
+              provide evidence; the explorer does not supply our market data.
             </p>
             <p>
-              The deterministic dataset contains 12 pools, 8 wallets, and 1,536
-              trades from September 7 to September 14, 2026. The cutoff is
-              September 14 at 06:00 UTC. Dates and “age” labels refer to that
-              fixed cutoff, not the current time.
+              The page initially loads a captured on-chain snapshot, then checks
+              for updates about once a minute while visible. Successful server
+              refreshes are cached for 60 seconds. When a refresh fails, the
+              last captured data remains visible with a delayed-update notice.
+              Capture time and source block always describe the displayed data.
             </p>
             <p>
-              The data is not live and does not represent activity of the
-              corresponding addresses on any chain. Explorer links are omitted
-              for simulated addresses. A later verified snapshot must record its
-              sources, block range, and reconciliation evidence.
+              By default, we discover launches in the last 100,000 blocks and
+              cover the newest eight supported instant pools. Each selected pool
+              includes swaps from its launch through the common cutoff. This is
+              a recent sample, not a chain-wide screener. The cutoff trails the
+              scan head by 128 blocks; that buffer is not a claim of L1
+              finality.
+            </p>
+            <p>
+              Collection checks deployment code, successful launch receipts,
+              PoolKey-derived pool IDs, event emitters, and block hashes. Only
+              native ETH/token pools without hooks are included. The cutoff hash
+              is checked again before publishing a snapshot.
+            </p>
+          </section>
+          <section id="prices">
+            <h2>02. Spot prices and observed volume</h2>
+            <p>
+              Prices are ETH per token, derived from the post-swap square-root
+              price and token decimals. They describe pool spot price after
+              execution, not the average execution price or a guaranteed quote
+              for a new trade. The chart follows those observations.
+            </p>
+            <p>
+              Volume sums the absolute ETH amount of each decoded swap. Counts
+              represent swap events, so one transaction can contain multiple
+              swaps. The displayed period runs from each selected pool’s launch
+              to the cutoff; it is not labeled 24-hour volume. Buy and sell
+              directions follow token movement into or out of the pool.
+            </p>
+            <p>
+              All values remain in ETH. No USD price feed or conversion rate is
+              used. Token supply and metadata are read from contracts at the
+              cutoff. The displayed LP fee is distinct from protocol fees and
+              gas.
             </p>
           </section>
           <section id="accounting">
-            <h2>02. Realized means sold</h2>
+            <h2>03. Realized means sold</h2>
             <p>
-              We use average-cost accounting for each wallet and pool. Buys add
-              tokens and ETH cost to inventory. A sale removes the proportional
-              cost of the tokens sold. The difference between proceeds and that
-              cost is realized PnL.
+              The on-demand trader audit covers one pool, with its own capture
+              block and time. It uses average-cost accounting in integer wei and
+              raw token units. Buys add inventory and cost; sells remove the
+              proportional cost of the tokens sold.
             </p>
             <div className="formula">
               Realized PnL = sale proceeds − cost basis of tokens sold
             </div>
             <p>
-              For example, buy 100 tokens for 1 ETH, then sell 40 for 0.6 ETH.
-              Their cost basis is 0.4 ETH, so realized PnL is{" "}
-              <strong>+0.2 ETH</strong>. The remaining 60 tokens retain a cost
-              basis of 0.6 ETH.
+              For example, buying 100 tokens for 1 ETH and selling 40 for 0.6
+              ETH realizes +0.2 ETH. The remaining 60 tokens retain 0.6 ETH of
+              cost. Rounding residue stays with inventory until the final sale.
             </p>
             <p>
-              <strong>Net ETH flow is different.</strong> Proceeds minus all
-              purchases in the same window includes the cost of unsold
-              inventory. We do not label that number realized profit.
+              This is gross realized swap PnL before gas. Swap fees reflected in
+              the pool’s execution amounts are not subtracted again. It does not
+              establish total wallet returns, historical USD profit, or profit
+              after every router or application-level fee.
             </p>
             <p>
-              For a 24-hour result, we carry cost basis from earlier trades in
-              the full snapshot and sum only realized sale events inside the
-              last 24 hours. All simulated wallets start with zero tracked
-              inventory. A real snapshot cannot assume zero opening inventory
-              without evidence.
-            </p>
-            <p>
-              All accounting uses integer wei and raw token units. Rounding
-              residue stays with remaining inventory and is removed on the final
-              sale. Gas is excluded. Swap fees are already reflected in the
-              simulated execution amounts; they are not subtracted again.
+              Unknown inventory or cost basis excludes a position from PnL. We
+              never treat unknown acquired tokens as free. The audit’s
+              eligibility filter requires complete supported positions with at
+              least 10 swaps in that pool’s covered history. A small sample may
+              have no eligible wallets.
             </p>
           </section>
-          <section id="ranking">
-            <h2>03. A leaderboard with boundaries</h2>
-            <ul>
-              <li>
-                Rank on realized PnL in ETH, with at least 10 buy/sell legs in
-                instant pools during the selected window.
-              </li>
-              <li>
-                Exclude crowd-launch pools from the ranked total until auction
-                entry costs can be verified.
-              </li>
-              <li>
-                A sale exceeding known inventory makes the position’s basis
-                unknown. The wallet is ineligible for ranking rather than
-                receiving zero-cost profit.
-              </li>
-              <li>
-                Win rate counts currently closed wallet-pool positions whose
-                last closure falls inside the selected window. Profitable
-                positions are wins, unprofitable positions are losses, and
-                break-even positions are omitted.
-              </li>
-              <li>
-                A position table can include crowd-pool simulated swap PnL. The
-                ranked total excludes it, so the sum of every position need not
-                equal the ranked number.
-              </li>
-            </ul>
+          <section id="performance">
+            <h2>Windowed performance and behaviour</h2>
             <p>
-              Volume is the sum of ETH amounts on buys and sells. Trade counts
-              represent swap legs, not unique transactions or humans. Rankings
-              do not establish skill or rule out wash trading.
+              Windowed realized PnL carries cost basis from the pool’s full
+              audited history, then sums only sales realized inside the selected
+              window. Net ETH instead subtracts purchases from proceeds inside
+              that window, including spending on inventory still held.
+            </p>
+            <p>
+              Realized ROI divides profit by the cost of tokens sold. A win or
+              loss is a fully closed inventory cycle; break-even cycles are
+              omitted from win rate. Average hold measures first buy to closing
+              sell for closed cycles in the window. Best sale is the largest
+              individual realized disposal, not a hypothetical peak price.
+            </p>
+            <p>
+              Open inventory is marked at the latest observed price in the same
+              audit, so its balance and price share a cutoff. Refresh the audit
+              to update that mark. Early-buy share measures supported token
+              purchase quantity in the first five blocks after launch divided by
+              supported buy quantity in the selected window.
+            </p>
+            <p>
+              The minimum-swap gate supports 10, 25 or 100. No-purchase,
+              oversold and under-60-second closed-hold filters are visible.
+              Unknown-basis and unsupported positions always remain excluded; a
+              blacklist filter is unavailable because no such source is
+              connected.
             </p>
           </section>
-          <section id="prices">
-            <h2>04. Prices are observations</h2>
+          <section id="attribution">
+            <h2>04. Addresses need evidence</h2>
             <p>
-              Charts use ETH-per-token execution prices derived from the
-              simulated swaps. The last price marks tracked inventory. The fully
-              diluted value multiplies that price by total supply.
+              A transaction sender alone is not proof of the trader. Audits
+              check complete receipts, supported router/token flows, ERC-20
+              transfers, sender contract code, and token balances at the audit
+              cutoff. Transfers are reconciled against tracked inventory.
             </p>
             <p>
-              <strong>
-                Unrealized PnL is an estimate, not guaranteed exit proceeds.
-              </strong>{" "}
-              Slippage, thin liquidity, transfers, and unknown basis can make a
-              wallet’s actual position different. “Tracked inventory” describes
-              our swap ledger, not an independently verified token balance.
+              Unsupported routes, contract senders, unmatched transfers, and
+              balance or inventory mismatches are shown as exclusions. These
+              conservative checks do not identify every bot or prove that
+              trading is organic. An address is not a verified person.
             </p>
             <p>
-              The USD toggle applies one simulated ETH/USD rate of $2,356.80 to
-              ETH-denominated values. It is a display conversion, not historical
-              dollar PnL.
-            </p>
-            <p>
-              Holder distribution is deliberately unavailable. ERC-20 balances
-              need independent enrichment, and protocol-held tokens must be
-              excluded when calculating adjusted concentration.
-            </p>
-          </section>
-          <section id="identity">
-            <h2>05. Addresses, not assumptions</h2>
-            <p>
-              Wallet names such as quietcapital are demo labels, not ENS names
-              or verified identities. Creator pages group the simulated pool
-              creation relationships; they are not endorsements or risk scores.
-            </p>
-            <p>
-              When real indexing is added, transaction senders will need
-              qualification. A direct EOA’s transaction sender is useful
-              evidence, but relayers, smart wallets, and bundlers can represent
-              someone else. Unsupported attribution must be flagged.
+              The launch sender is labeled as such. The launch event’s final
+              position recipient can be a fee-splitting contract and must not
+              automatically be labeled the creator.
             </p>
           </section>
           <section id="limits">
-            <h2>06. What comes next</h2>
+            <h2>05. Coverage before rankings</h2>
             <p>
-              The site reads through a shared analytics interface. A bounded
-              real snapshot can replace this dataset, followed by a durable
-              indexer and database without rebuilding the screens.
+              Wallet profiles and share cards use one audited pool at a time.
+              Creator pages group covered launches by transaction sender. Global
+              trader rankings, complete wallet histories, holder concentration,
+              reserve-based liquidity, USD metrics, and crowd-auction accounting
+              still need verified inputs and sufficient history.
             </p>
             <p>
-              Real indexing must verify contract deployments and ABIs, swap
-              signs, decimals, event uniqueness, and canonical block history. A
-              wallet reconciliation is the gate before publishing actual ranked
-              performance.
-            </p>
-            <p>
-              Broader history, live updates, verified holders, and auction
-              analytics depend on that data work. This preview does not claim
-              those capabilities.
+              Refreshes are bounded RPC scans, not a persistent indexer. Busy
+              pools or provider limits can prevent an audit from completing. A
+              failed refresh keeps the last successful result instead of
+              publishing partial totals. A durable worker can extend history
+              later while reusing the ingestion and accounting code.
             </p>
             <Link className="button" href="/">
-              Back to pools
+              Back to markets
             </Link>
           </section>
         </article>

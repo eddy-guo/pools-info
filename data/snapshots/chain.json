@@ -1,1820 +1,2613 @@
 {
   "schemaVersion": 1,
   "chainId": 4663,
-  "generatedAt": "2026-09-14T07:21:14.999Z",
-  "fromBlock": 62526262,
-  "toBlock": 62626261,
-  "fromTimestamp": 1789360311,
-  "toTimestamp": 1789370452,
-  "blockHash": "0x42fe997be1d449b9656b6b013d0796705c5e23f4737f06d3e220764e16c5e763",
-  "discoveredLaunches": 41,
+  "generatedAt": "2026-09-14T08:29:14.594Z",
+  "fromBlock": 62566407,
+  "toBlock": 62666406,
+  "fromTimestamp": 1789364384,
+  "toTimestamp": 1789374525,
+  "blockHash": "0x7fcad7ebc447bf5411ddc6212cb0a5677da66369abd5a603d4d2723bc150f236",
+  "discoveredLaunches": 58,
   "markets": [
     {
-      "id": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "token": "0x4636E0604cD1D0f638A6512C1c32E1CD25E2af02",
-      "name": "Pepe in Hood",
-      "symbol": "PEPE",
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+              "txHash": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046",
+              "logIndex": 17,
+              "block": 62666150,
+              "timestamp": 1789374499,
+              "side": "buy",
+              "ethWei": "100000000000000000",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046:17",
+              "trader": "0x5fb7681920d0024b7315c5fc6f1a00f427ca64a9"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046:0x12"
+          },
+          {
+            "trade": {
+              "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+              "txHash": "0x5fb79bdb3e4698a912682092f6cd1c6590292334ec9742cd44dd934eef8ada5d",
+              "logIndex": 48,
+              "block": 62666153,
+              "timestamp": 1789374499,
+              "side": "buy",
+              "ethWei": "1998018000000",
+              "tokenRaw": "735190148467345283831",
+              "id": "0x5fb79bdb3e4698a912682092f6cd1c6590292334ec9742cd44dd934eef8ada5d:48",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+              "txHash": "0xf3e174fff241be4eb05f07f74167cd3f07ec2d3195494abe5567fd7a15e4f93b",
+              "logIndex": 16,
+              "block": 62666155,
+              "timestamp": 1789374499,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1484342050573208892715459",
+              "id": "0xf3e174fff241be4eb05f07f74167cd3f07ec2d3195494abe5567fd7a15e4f93b:16",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xf3e174fff241be4eb05f07f74167cd3f07ec2d3195494abe5567fd7a15e4f93b:0x11"
+          },
+          {
+            "trade": {
+              "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+              "txHash": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a",
+              "logIndex": 0,
+              "block": 62666193,
+              "timestamp": 1789374503,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1099213793051809337852333",
+              "id": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a:0",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a:0x1"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "4040218429817412",
+            "realizedWei": "0",
+            "inventoryRaw": "1484342050573208892715459",
+            "balanceRaw": "1484342050573208892715459",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xf3e174fff241be4eb05f07f74167cd3f07ec2d3195494abe5567fd7a15e4f93b"
+          },
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "3000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "1099213793051809337852333",
+            "balanceRaw": "1099213793051809337852333",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a"
+          },
+          {
+            "address": "0x5fb7681920d0024b7315c5fc6f1a00f427ca64a9",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "100000000000000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "38259813678309277871387687",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1998018000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x5fb79bdb3e4698a912682092f6cd1c6590292334ec9742cd44dd934eef8ada5d"
+          }
+        ],
+        "unattributedSwaps": 2,
+        "transfersChecked": 10
+      },
+      "id": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+      "token": "0x199157Bf8Fc3b85aF2A40E7BBe718893a9B56Fd0",
+      "name": "MonkiiLabs",
+      "symbol": "MONKI",
       "decimals": 18,
       "supply": "1000000000000000000000000000",
-      "launchBlock": 62625935,
-      "launchedAt": 1789370419,
-      "launchTx": "0x565e5ccbf58a5979d635c074f355fd0e88c23bf2c4ed12e271a66a10c06f4ec1",
-      "launchSender": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "launchBlock": 62666150,
+      "launchedAt": 1789374499,
+      "launchTx": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046",
+      "launchSender": "0x5fb7681920d0024b7315c5fc6f1a00f427ca64a9",
       "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
       "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
       "creatorFees": true,
       "fee": 2500,
-      "priceWei": "5964868871",
-      "volumeWei": "1363341998618000000",
-      "swaps": 21,
-      "buys": 21,
-      "sells": 0,
-      "series": [
-        {
-          "time": 1789370419,
-          "wei": "5472850805"
-        },
-        {
-          "time": 1789370419,
-          "wei": "5472856696"
-        },
-        {
-          "time": 1789370421,
-          "wei": "5481702405"
-        },
-        {
-          "time": 1789370421,
-          "wei": "5487603513"
-        },
-        {
-          "time": 1789370429,
-          "wei": "5576501079"
-        },
-        {
-          "time": 1789370429,
-          "wei": "5591088876"
-        },
-        {
-          "time": 1789370431,
-          "wei": "5608679060"
-        },
-        {
-          "time": 1789370435,
-          "wei": "5623308856"
-        },
-        {
-          "time": 1789370436,
-          "wei": "5641069304"
-        },
-        {
-          "time": 1789370436,
-          "wei": "5658138486"
-        },
-        {
-          "time": 1789370438,
-          "wei": "5673132683"
-        },
-        {
-          "time": 1789370438,
-          "wei": "5763514530"
-        },
-        {
-          "time": 1789370440,
-          "wei": "5778344760"
-        },
-        {
-          "time": 1789370441,
-          "wei": "5781373678"
-        },
-        {
-          "time": 1789370443,
-          "wei": "5796226852"
-        },
-        {
-          "time": 1789370444,
-          "wei": "5810491678"
-        },
-        {
-          "time": 1789370446,
-          "wei": "5827510956"
-        },
-        {
-          "time": 1789370448,
-          "wei": "5843945973"
-        },
-        {
-          "time": 1789370449,
-          "wei": "5935673054"
-        },
-        {
-          "time": 1789370451,
-          "wei": "5951645049"
-        },
-        {
-          "time": 1789370452,
-          "wei": "5964868871"
-        }
-      ]
-    },
-    {
-      "id": "0x1935e7d2c4a70923572d641ad234a3add64341615306266f595c44e6f5a8c059",
-      "token": "0x377E4D76278Ec4c10A826235F2EeC2c23677B804",
-      "name": "The Human Truce",
-      "symbol": "HUMANTRUCE",
-      "decimals": 18,
-      "supply": "1000000000000000000000000000",
-      "launchBlock": 62625868,
-      "launchedAt": 1789370412,
-      "launchTx": "0x7747b1284e5a08126e715855f891deb84bef3bc125f160a79fabbd35d890564b",
-      "launchSender": "0x0535986b0ebc36b65edb2be458bae0d72f9d5c60",
-      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
-      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
-      "creatorFees": true,
-      "fee": 2500,
-      "priceWei": "2719375588",
-      "volumeWei": "104086311542361207",
+      "priceWei": "2725520267",
+      "volumeWei": "107042216447817412",
       "swaps": 4,
       "buys": 4,
       "sells": 0,
       "series": [
         {
-          "time": 1789370412,
+          "time": 1789374499,
           "wei": "2710892461"
         },
         {
-          "time": 1789370413,
-          "wei": "2710896608"
-        },
-        {
-          "time": 1789370416,
-          "wei": "2717123278"
-        },
-        {
-          "time": 1789370429,
-          "wei": "2719375588"
-        }
-      ]
-    },
-    {
-      "id": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "token": "0x0171d8040a91e2BAf058d476CB24f94fABc8BF1e",
-      "name": "Alpha Origin",
-      "symbol": "AO",
-      "decimals": 18,
-      "supply": "1000000000000000000000000000",
-      "launchBlock": 62623912,
-      "launchedAt": 1789370214,
-      "launchTx": "0x2dd14ae3a84f636259e556552ad4dff0a2b970605e1bb6d7c978b91fcc698aaf",
-      "launchSender": "0xa3149785c87b0d66b8bf2e232e4f64a05def70a3",
-      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
-      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
-      "creatorFees": true,
-      "fee": 2500,
-      "priceWei": "2513501629",
-      "volumeWei": "202709628115805717",
-      "swaps": 5,
-      "buys": 3,
-      "sells": 2,
-      "series": [
-        {
-          "time": 1789370214,
-          "wei": "2710892461"
-        },
-        {
-          "time": 1789370215,
+          "time": 1789374499,
           "wei": "2710896606"
         },
         {
-          "time": 1789370217,
-          "wei": "2717123277"
+          "time": 1789374499,
+          "wei": "2719283977"
         },
         {
-          "time": 1789370264,
-          "wei": "2653495538"
-        },
-        {
-          "time": 1789370315,
-          "wei": "2513501629"
+          "time": 1789374503,
+          "wei": "2725520267"
         }
       ]
     },
     {
-      "id": "0x90b7dcbed9b37bd8acda74fdac15c111a87422be40831c5504f14d088f4d7727",
-      "token": "0x0A32487577951CF7C8C7BcaEB53dAe31dEE3D18F",
-      "name": "Crypto Cat",
-      "symbol": "CRYPTO",
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0x99c31219f113098c870c8bfea4a8964ae66e6be5fb075acd24b0a71724b7e5db",
+              "logIndex": 17,
+              "block": 62664982,
+              "timestamp": 1789374379,
+              "side": "buy",
+              "ethWei": "150000000000000000",
+              "tokenRaw": "56312468263708970479173469",
+              "id": "0x99c31219f113098c870c8bfea4a8964ae66e6be5fb075acd24b0a71724b7e5db:17",
+              "trader": "0x6be2b00f8d2be9ae591da0e4c04f432eebf3b3c1"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x99c31219f113098c870c8bfea4a8964ae66e6be5fb075acd24b0a71724b7e5db:0x12"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0xe3722251dcd2869b694158c54d3fc79a3008a9a151d927d6c1f74f0fa7dec493",
+              "logIndex": 20,
+              "block": 62664985,
+              "timestamp": 1789374379,
+              "side": "buy",
+              "ethWei": "1999350000000",
+              "tokenRaw": "708320845517653048027",
+              "id": "0xe3722251dcd2869b694158c54d3fc79a3008a9a151d927d6c1f74f0fa7dec493:20",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0x03aa4ec288a5b3297dcada14c8a195bb703816648b2ca7ae0614faff31b37c44",
+              "logIndex": 10,
+              "block": 62664987,
+              "timestamp": 1789374380,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1429181851145314373973280",
+              "id": "0x03aa4ec288a5b3297dcada14c8a195bb703816648b2ca7ae0614faff31b37c44:10",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0x03aa4ec288a5b3297dcada14c8a195bb703816648b2ca7ae0614faff31b37c44:0xb"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0xbdd8dbb9479de42dd994c8094e2d305e16a4dc422e090d46b6f98ff423a28d90",
+              "logIndex": 158,
+              "block": 62665008,
+              "timestamp": 1789374382,
+              "side": "buy",
+              "ethWei": "2000000000000000",
+              "tokenRaw": "705876873529348686213657",
+              "id": "0xbdd8dbb9479de42dd994c8094e2d305e16a4dc422e090d46b6f98ff423a28d90:158",
+              "trader": "0x55fcda0fb9e44920755fc019e6e1ea7f396c016d"
+            },
+            "flags": [],
+            "matchedTransfer": "0xbdd8dbb9479de42dd994c8094e2d305e16a4dc422e090d46b6f98ff423a28d90:0x9f"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0x103cff04467eb9050ca50d3b77b75e2798ad594fe6c6c92f5dc4d0511e0f8745",
+              "logIndex": 3,
+              "block": 62665018,
+              "timestamp": 1789374383,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1056834550756275836678309",
+              "id": "0x103cff04467eb9050ca50d3b77b75e2798ad594fe6c6c92f5dc4d0511e0f8745:3",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0x103cff04467eb9050ca50d3b77b75e2798ad594fe6c6c92f5dc4d0511e0f8745:0x4"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0xcab66b6d712e34e52223c5f0cc043d8c25444fa8ef16ab2ed619a904c85aa76f",
+              "logIndex": 30,
+              "block": 62665567,
+              "timestamp": 1789374439,
+              "side": "buy",
+              "ethWei": "990000000000000",
+              "tokenRaw": "348234957106615666662587",
+              "id": "0xcab66b6d712e34e52223c5f0cc043d8c25444fa8ef16ab2ed619a904c85aa76f:30",
+              "trader": "0x85c618143a7a672e2d37014cb976e018ea096a39"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0xcab66b6d712e34e52223c5f0cc043d8c25444fa8ef16ab2ed619a904c85aa76f:0x1f"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0xa7ddbd67dd631c407ac6e097be1715223531812762f6ffd9be1ebbb8f4935e65",
+              "logIndex": 43,
+              "block": 62665914,
+              "timestamp": 1789374475,
+              "side": "sell",
+              "ethWei": "46944973728373365",
+              "tokenRaw": "16893740479112691143752040",
+              "id": "0xa7ddbd67dd631c407ac6e097be1715223531812762f6ffd9be1ebbb8f4935e65:43",
+              "trader": "0x6be2b00f8d2be9ae591da0e4c04f432eebf3b3c1"
+            },
+            "flags": [],
+            "matchedTransfer": "0xa7ddbd67dd631c407ac6e097be1715223531812762f6ffd9be1ebbb8f4935e65:0x2c"
+          },
+          {
+            "trade": {
+              "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+              "txHash": "0x6522fcb2cfc1aa3fbeae9fc517caab642b1d209a84a2b502304f9db878252267",
+              "logIndex": 0,
+              "block": 62666256,
+              "timestamp": 1789374509,
+              "side": "sell",
+              "ethWei": "31890134155718340",
+              "tokenRaw": "11825618335378883800626428",
+              "id": "0x6522fcb2cfc1aa3fbeae9fc517caab642b1d209a84a2b502304f9db878252267:0",
+              "trader": "0x6be2b00f8d2be9ae591da0e4c04f432eebf3b3c1"
+            },
+            "flags": [],
+            "matchedTransfer": "0x6522fcb2cfc1aa3fbeae9fc517caab642b1d209a84a2b502304f9db878252267:0x1"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "4040218429817412",
+            "realizedWei": "0",
+            "inventoryRaw": "1429181851145314373973280",
+            "balanceRaw": "1429181851145314373973280",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x03aa4ec288a5b3297dcada14c8a195bb703816648b2ca7ae0614faff31b37c44"
+          },
+          {
+            "address": "0x55fcda0fb9e44920755fc019e6e1ea7f396c016d",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "2000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "705876873529348686213657",
+            "balanceRaw": "705876873529348686213657",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xbdd8dbb9479de42dd994c8094e2d305e16a4dc422e090d46b6f98ff423a28d90"
+          },
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "3000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "1056834550756275836678309",
+            "balanceRaw": "1056834550756275836678309",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x103cff04467eb9050ca50d3b77b75e2798ad594fe6c6c92f5dc4d0511e0f8745"
+          },
+          {
+            "address": "0x6be2b00f8d2be9ae591da0e4c04f432eebf3b3c1",
+            "swaps": 3,
+            "buys": 1,
+            "sells": 2,
+            "volumeWei": "228835107884091705",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "27593109449217395534795001",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis",
+              "inventory_mismatch"
+            ],
+            "evidenceTx": "0x6522fcb2cfc1aa3fbeae9fc517caab642b1d209a84a2b502304f9db878252267"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1999350000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0xe3722251dcd2869b694158c54d3fc79a3008a9a151d927d6c1f74f0fa7dec493"
+          },
+          {
+            "address": "0x85c618143a7a672e2d37014cb976e018ea096a39",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "990000000000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "348234957106615666662587",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0xcab66b6d712e34e52223c5f0cc043d8c25444fa8ef16ab2ed619a904c85aa76f"
+          }
+        ],
+        "unattributedSwaps": 3,
+        "transfersChecked": 14
+      },
+      "id": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "token": "0x766E63f1e55183B9CC06ffd5e673060164d941fE",
+      "name": "Longfolio",
+      "symbol": "FOLIO",
       "decimals": 18,
       "supply": "1000000000000000000000000000",
-      "launchBlock": 62623676,
-      "launchedAt": 1789370190,
-      "launchTx": "0x00d14a83daec16e465d2dc399390726f8dbdb25ebf1af12a39946ba4746b9b4c",
-      "launchSender": "0xb7f268d4a3722de33f641c3b1e989a39a813c2ef",
+      "launchBlock": 62664982,
+      "launchedAt": 1789374379,
+      "launchTx": "0x99c31219f113098c870c8bfea4a8964ae66e6be5fb075acd24b0a71724b7e5db",
+      "launchSender": "0x6be2b00f8d2be9ae591da0e4c04f432eebf3b3c1",
       "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
       "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
       "creatorFees": true,
       "fee": 2500,
-      "priceWei": "2507428212",
-      "volumeWei": "1998834000000",
-      "swaps": 1,
-      "buys": 1,
-      "sells": 0,
+      "priceWei": "2671621812",
+      "volumeWei": "238867325663909117",
+      "swaps": 8,
+      "buys": 6,
+      "sells": 2,
       "series": [
         {
-          "time": 1789370191,
-          "wei": "2507428212"
+          "time": 1789374379,
+          "wei": "2815602760"
+        },
+        {
+          "time": 1789374379,
+          "wei": "2815606987"
+        },
+        {
+          "time": 1789374380,
+          "wei": "2824154683"
+        },
+        {
+          "time": 1789374382,
+          "wei": "2828390781"
+        },
+        {
+          "time": 1789374383,
+          "wei": "2834750880"
+        },
+        {
+          "time": 1789374439,
+          "wei": "2836851280"
+        },
+        {
+          "time": 1789374475,
+          "wei": "2737862867"
+        },
+        {
+          "time": 1789374509,
+          "wei": "2671621812"
         }
       ]
     },
     {
-      "id": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "token": "0x32f0BBD2dCd4DA44ca2F267C262CF8F126563332",
-      "name": "Chaintag",
-      "symbol": "CHAINTAG",
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0xb5e4f65607420ffff393dec10c21068d678cdd68b5d2529ab5774a812987b661",
+              "logIndex": 24,
+              "block": 62664831,
+              "timestamp": 1789374364,
+              "side": "buy",
+              "ethWei": "100000000000000000",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0xb5e4f65607420ffff393dec10c21068d678cdd68b5d2529ab5774a812987b661:24",
+              "trader": "0x78f3b984d5b31c0de4a0c386e00125260197f3a7"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0xb5e4f65607420ffff393dec10c21068d678cdd68b5d2529ab5774a812987b661:0x19"
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x789f7761b2651c860f9a7eeb3d2e472b6a4ba934705e02334f02bf28bcd6cf60",
+              "logIndex": 0,
+              "block": 62664834,
+              "timestamp": 1789374364,
+              "side": "buy",
+              "ethWei": "1998770000000",
+              "tokenRaw": "735466853966924991316",
+              "id": "0x789f7761b2651c860f9a7eeb3d2e472b6a4ba934705e02334f02bf28bcd6cf60:0",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x55f475c26641309a0d91c28a508e1ed0ad172b21098c927fac9e217ed4fbeb25",
+              "logIndex": 3,
+              "block": 62664836,
+              "timestamp": 1789374364,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1484342049719737309657544",
+              "id": "0x55f475c26641309a0d91c28a508e1ed0ad172b21098c927fac9e217ed4fbeb25:3",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0x55f475c26641309a0d91c28a508e1ed0ad172b21098c927fac9e217ed4fbeb25:0x4"
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x688216916f806ab4c0bccc93bdb885f6dbb2aabfbf3bbf8f52b45cfddc813171",
+              "logIndex": 58,
+              "block": 62664866,
+              "timestamp": 1789374367,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1099213792420629568809980",
+              "id": "0x688216916f806ab4c0bccc93bdb885f6dbb2aabfbf3bbf8f52b45cfddc813171:58",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0x688216916f806ab4c0bccc93bdb885f6dbb2aabfbf3bbf8f52b45cfddc813171:0x3b"
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x2c6dbcb37b1b91b4ac1d42f0c5178bbd742ccc5b3131af6d62db4e928464d7bd",
+              "logIndex": 2,
+              "block": 62665060,
+              "timestamp": 1789374387,
+              "side": "buy",
+              "ethWei": "9900000000000000",
+              "tokenRaw": "3609617699159082576047737",
+              "id": "0x2c6dbcb37b1b91b4ac1d42f0c5178bbd742ccc5b3131af6d62db4e928464d7bd:2",
+              "trader": "0x7529a2b280bb50c66ffc25ba2ce01cef90d5f983"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x2c6dbcb37b1b91b4ac1d42f0c5178bbd742ccc5b3131af6d62db4e928464d7bd:0x3"
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x6ba605643f232c795b64f297e0d164da8c602a26ede3d2f501115ee8ba79b733",
+              "logIndex": 32,
+              "block": 62665103,
+              "timestamp": 1789374391,
+              "side": "sell",
+              "ethWei": "9850654553094844",
+              "tokenRaw": "3609617699159082576047737",
+              "id": "0x6ba605643f232c795b64f297e0d164da8c602a26ede3d2f501115ee8ba79b733:32",
+              "trader": "0x7529a2b280bb50c66ffc25ba2ce01cef90d5f983"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x6ba605643f232c795b64f297e0d164da8c602a26ede3d2f501115ee8ba79b733:0x1f"
+          },
+          {
+            "trade": {
+              "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+              "txHash": "0x79a81bd5b36c4a4f20254df06a4d2e1fc486d74883eacd64bd997203d00282f9",
+              "logIndex": 7,
+              "block": 62665337,
+              "timestamp": 1789374415,
+              "side": "sell",
+              "ethWei": "100038652511987362",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0x79a81bd5b36c4a4f20254df06a4d2e1fc486d74883eacd64bd997203d00282f9:7",
+              "trader": "0x78f3b984d5b31c0de4a0c386e00125260197f3a7"
+            },
+            "flags": [],
+            "matchedTransfer": "0x79a81bd5b36c4a4f20254df06a4d2e1fc486d74883eacd64bd997203d00282f9:0x8"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "4040218429817412",
+            "realizedWei": "0",
+            "inventoryRaw": "1484342049719737309657544",
+            "balanceRaw": "1484342049719737309657544",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x55f475c26641309a0d91c28a508e1ed0ad172b21098c927fac9e217ed4fbeb25"
+          },
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "3000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "1099213792420629568809980",
+            "balanceRaw": "1099213792420629568809980",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x688216916f806ab4c0bccc93bdb885f6dbb2aabfbf3bbf8f52b45cfddc813171"
+          },
+          {
+            "address": "0x78f3b984d5b31c0de4a0c386e00125260197f3a7",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "200038652511987362",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis"
+            ],
+            "evidenceTx": "0x79a81bd5b36c4a4f20254df06a4d2e1fc486d74883eacd64bd997203d00282f9"
+          },
+          {
+            "address": "0x7529a2b280bb50c66ffc25ba2ce01cef90d5f983",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "19750654553094844",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x6ba605643f232c795b64f297e0d164da8c602a26ede3d2f501115ee8ba79b733"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1998770000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x789f7761b2651c860f9a7eeb3d2e472b6a4ba934705e02334f02bf28bcd6cf60"
+          }
+        ],
+        "unattributedSwaps": 4,
+        "transfersChecked": 15
+      },
+      "id": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "token": "0x2573F502b9EC2Cc4e9E54E9688cBbeB2ef6CecC3",
+      "name": "MonkiiLabs",
+      "symbol": "MONKIILABS",
       "decimals": 18,
       "supply": "1000000000000000000000000000",
-      "launchBlock": 62622006,
-      "launchedAt": 1789370020,
-      "launchTx": "0xb42e508a79c824fd2ec83ff72733159c9c5e1013c123c6a56ced1b6ce5024722",
-      "launchSender": "0x95be894afe4342de68d8a368d6586d6a498b9f67",
+      "launchBlock": 62664831,
+      "launchedAt": 1789374364,
+      "launchTx": "0xb5e4f65607420ffff393dec10c21068d678cdd68b5d2529ab5774a812987b661",
+      "launchSender": "0x78f3b984d5b31c0de4a0c386e00125260197f3a7",
       "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
       "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
       "creatorFees": true,
       "fee": 2500,
-      "priceWei": "2528922783",
-      "volumeWei": "210472158608063429",
+      "priceWei": "2520963561",
+      "volumeWei": "226831524264899618",
+      "swaps": 7,
+      "buys": 5,
+      "sells": 2,
+      "series": [
+        {
+          "time": 1789374364,
+          "wei": "2710892461"
+        },
+        {
+          "time": 1789374364,
+          "wei": "2710896607"
+        },
+        {
+          "time": 1789374364,
+          "wei": "2719283978"
+        },
+        {
+          "time": 1789374367,
+          "wei": "2725520268"
+        },
+        {
+          "time": 1789374387,
+          "wei": "2746150704"
+        },
+        {
+          "time": 1789374391,
+          "wei": "2725571554"
+        },
+        {
+          "time": 1789374415,
+          "wei": "2520963561"
+        }
+      ]
+    },
+    {
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0xe7ecb2049a59c86215b512080503d86f23c7c904bb9aef547b71113c122165ba",
+              "logIndex": 113,
+              "block": 62663447,
+              "timestamp": 1789374222,
+              "side": "buy",
+              "ethWei": "100000000000000000",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0xe7ecb2049a59c86215b512080503d86f23c7c904bb9aef547b71113c122165ba:113",
+              "trader": "0x7a0a8667f9142413946ac9eac98f13fb9d899912"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0xe7ecb2049a59c86215b512080503d86f23c7c904bb9aef547b71113c122165ba:0x72"
+          },
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0xd67f661ceb46ab8bdcbfe7d218990d1ce23c6875e0eed49edd2e2b5d3c99fd01",
+              "logIndex": 0,
+              "block": 62663451,
+              "timestamp": 1789374223,
+              "side": "buy",
+              "ethWei": "1998958000000",
+              "tokenRaw": "735536030341795039459",
+              "id": "0xd67f661ceb46ab8bdcbfe7d218990d1ce23c6875e0eed49edd2e2b5d3c99fd01:0",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0xc612998c1bca333e151b7456a5ad3ae477c05f574b897994acad5ff5e52dec10",
+              "logIndex": 19,
+              "block": 62663452,
+              "timestamp": 1789374223,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1484342049506369414008081",
+              "id": "0xc612998c1bca333e151b7456a5ad3ae477c05f574b897994acad5ff5e52dec10:19",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xc612998c1bca333e151b7456a5ad3ae477c05f574b897994acad5ff5e52dec10:0x14"
+          },
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0x7a6d4fbb6f964eccdcde211b91c9001bebcaa464df6693550870ac4197545ed9",
+              "logIndex": 18,
+              "block": 62663487,
+              "timestamp": 1789374226,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1099213792262834626634336",
+              "id": "0x7a6d4fbb6f964eccdcde211b91c9001bebcaa464df6693550870ac4197545ed9:18",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0x7a6d4fbb6f964eccdcde211b91c9001bebcaa464df6693550870ac4197545ed9:0x13"
+          },
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0x5504c51f1ee29a7612f46752eb94289833e91937f7911f73eae44911ece8ab24",
+              "logIndex": 125,
+              "block": 62663995,
+              "timestamp": 1789374278,
+              "side": "sell",
+              "ethWei": "100036806160044577",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0x5504c51f1ee29a7612f46752eb94289833e91937f7911f73eae44911ece8ab24:125",
+              "trader": "0x7a0a8667f9142413946ac9eac98f13fb9d899912"
+            },
+            "flags": [],
+            "matchedTransfer": "0x5504c51f1ee29a7612f46752eb94289833e91937f7911f73eae44911ece8ab24:0x7e"
+          },
+          {
+            "trade": {
+              "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+              "txHash": "0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9",
+              "logIndex": 104,
+              "block": 62665819,
+              "timestamp": 1789374465,
+              "side": "sell",
+              "ethWei": "3725527979344077",
+              "tokenRaw": "1484342049506369414008081",
+              "id": "0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9:104",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9:0x69"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "3000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "1099213792262834626634336",
+            "balanceRaw": "1099213792262834626634336",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x7a6d4fbb6f964eccdcde211b91c9001bebcaa464df6693550870ac4197545ed9"
+          },
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "7765746409161489",
+            "realizedWei": "-314690450473335",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9"
+          },
+          {
+            "address": "0x7a0a8667f9142413946ac9eac98f13fb9d899912",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "200036806160044577",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis"
+            ],
+            "evidenceTx": "0x5504c51f1ee29a7612f46752eb94289833e91937f7911f73eae44911ece8ab24"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1998958000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0xd67f661ceb46ab8bdcbfe7d218990d1ce23c6875e0eed49edd2e2b5d3c99fd01"
+          }
+        ],
+        "unattributedSwaps": 2,
+        "transfersChecked": 14
+      },
+      "id": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "token": "0x6AC1E998F403F9cEfd0351dE8b5FF7b1e8959a13",
+      "name": "f",
+      "symbol": "F",
+      "decimals": 18,
+      "supply": "1000000000000000000000000000",
+      "launchBlock": 62663447,
+      "launchedAt": 1789374222,
+      "launchTx": "0xe7ecb2049a59c86215b512080503d86f23c7c904bb9aef547b71113c122165ba",
+      "launchSender": "0x7a0a8667f9142413946ac9eac98f13fb9d899912",
+      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
+      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
+      "creatorFees": true,
+      "fee": 2500,
+      "priceWei": "2513452398",
+      "volumeWei": "210804551527206066",
       "swaps": 6,
       "buys": 4,
       "sells": 2,
       "series": [
         {
-          "time": 1789370020,
+          "time": 1789374222,
           "wei": "2710892461"
         },
         {
-          "time": 1789370020,
-          "wei": "2710896607"
+          "time": 1789374223,
+          "wei": "2710896608"
         },
         {
-          "time": 1789370022,
-          "wei": "2717123278"
+          "time": 1789374223,
+          "wei": "2719283979"
         },
         {
-          "time": 1789370072,
-          "wei": "2653495539"
+          "time": 1789374226,
+          "wei": "2725520269"
         },
         {
-          "time": 1789370122,
-          "wei": "2513447847"
+          "time": 1789374278,
+          "wei": "2520917941"
         },
         {
-          "time": 1789370138,
-          "wei": "2528922783"
+          "time": 1789374465,
+          "wei": "2513452398"
         }
       ]
     },
     {
-      "id": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "token": "0x9021fDe7e87088EFC62826Be3EBe2C1c8E226F3C",
-      "name": "Multi Parlay",
-      "symbol": "PARIAY",
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+              "txHash": "0x54b560f608a8c38779cfbfffb8f8a1c116ad967893bf35c04f305ba2037dd388",
+              "logIndex": 105,
+              "block": 62662828,
+              "timestamp": 1789374161,
+              "side": "buy",
+              "ethWei": "1998678000000",
+              "tokenRaw": "795110655853759676475",
+              "id": "0x54b560f608a8c38779cfbfffb8f8a1c116ad967893bf35c04f305ba2037dd388:105",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+              "txHash": "0xd4c788c70bf3ba5cada11ff55a5534e44cdc0c00df0729e3e28c44ae875ddc72",
+              "logIndex": 8,
+              "block": 62665017,
+              "timestamp": 1789374383,
+              "side": "buy",
+              "ethWei": "7919000000000000",
+              "tokenRaw": "3140427140801259598805151",
+              "id": "0xd4c788c70bf3ba5cada11ff55a5534e44cdc0c00df0729e3e28c44ae875ddc72:8",
+              "trader": "0x95b987bc63c17b97e473806d3f35a7b45b0080b2"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+              "txHash": "0xf80db6555b671a6568b70ccb14ac11728a98451dc087f8730140449b8a326970",
+              "logIndex": 36,
+              "block": 62665567,
+              "timestamp": 1789374439,
+              "side": "sell",
+              "ethWei": "7879516356415708",
+              "tokenRaw": "3140427140801259598805151",
+              "id": "0xf80db6555b671a6568b70ccb14ac11728a98451dc087f8730140449b8a326970:36",
+              "trader": "0x95b987bc63c17b97e473806d3f35a7b45b0080b2"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x95b987bc63c17b97e473806d3f35a7b45b0080b2",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "15798516356415708",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "unmatched_transfer",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0xf80db6555b671a6568b70ccb14ac11728a98451dc087f8730140449b8a326970"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1998678000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x54b560f608a8c38779cfbfffb8f8a1c116ad967893bf35c04f305ba2037dd388"
+          }
+        ],
+        "unattributedSwaps": 3,
+        "transfersChecked": 11
+      },
+      "id": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+      "token": "0x295394c31d3E113590f9405Cb9B0553c58a47C8a",
+      "name": "PASHA",
+      "symbol": "PASHA",
       "decimals": 18,
       "supply": "1000000000000000000000000000",
-      "launchBlock": 62619766,
-      "launchedAt": 1789369794,
-      "launchTx": "0xebebf2aec323ac57265c1824ce86f5e940ff8dda7530b0c94a1a9210d8dd46c9",
-      "launchSender": "0x290100cd0c098d0628b7a27f899c076169987e36",
+      "launchBlock": 62662824,
+      "launchedAt": 1789374161,
+      "launchTx": "0xb7ceee104d1507a26d9e9c30ba3d0b4b237ff05dee8809aefac09c5b3b1f0c0a",
+      "launchSender": "0x95b987bc63c17b97e473806d3f35a7b45b0080b2",
       "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
       "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
       "creatorFees": true,
       "fee": 2500,
-      "priceWei": "2508079406",
-      "volumeWei": "268700119476819272",
-      "swaps": 10,
-      "buys": 5,
+      "priceWei": "2507467584",
+      "volumeWei": "15800515034415708",
+      "swaps": 3,
+      "buys": 2,
+      "sells": 1,
+      "series": [
+        {
+          "time": 1789374161,
+          "wei": "2507428212"
+        },
+        {
+          "time": 1789374383,
+          "wei": "2523251514"
+        },
+        {
+          "time": 1789374439,
+          "wei": "2507467584"
+        }
+      ]
+    },
+    {
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0x5c64f95d2c0a55a57f9a10a09e0f58fe1ac44a826bfb9f85eab2a7514a5cad99",
+              "logIndex": 61,
+              "block": 62661898,
+              "timestamp": 1789374067,
+              "side": "buy",
+              "ethWei": "100000000000000000",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0x5c64f95d2c0a55a57f9a10a09e0f58fe1ac44a826bfb9f85eab2a7514a5cad99:61",
+              "trader": "0xe97400fb30ffb3e7d9e150c6de374a6c64b7b9e0"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x5c64f95d2c0a55a57f9a10a09e0f58fe1ac44a826bfb9f85eab2a7514a5cad99:0x3e"
+          },
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0x4cae4876db63d669ab4e352da453f5fa06b828cc9c785ff9a1274636046e0c5f",
+              "logIndex": 0,
+              "block": 62661901,
+              "timestamp": 1789374067,
+              "side": "buy",
+              "ethWei": "1999968000000",
+              "tokenRaw": "735907669376830807594",
+              "id": "0x4cae4876db63d669ab4e352da453f5fa06b828cc9c785ff9a1274636046e0c5f:0",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0x88b3f6c90084e9a1290c29a9d039330e5d9d3ecba72712560d2a794bf4b028d3",
+              "logIndex": 20,
+              "block": 62661903,
+              "timestamp": 1789374067,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1484342048360084443487289",
+              "id": "0x88b3f6c90084e9a1290c29a9d039330e5d9d3ecba72712560d2a794bf4b028d3:20",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0x88b3f6c90084e9a1290c29a9d039330e5d9d3ecba72712560d2a794bf4b028d3:0x15"
+          },
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0xac765002d1df1928c8092f5a52b16d578212533ff1b989d70ac474d6a5cc2dad",
+              "logIndex": 0,
+              "block": 62661944,
+              "timestamp": 1789374071,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1099213791415106480421258",
+              "id": "0xac765002d1df1928c8092f5a52b16d578212533ff1b989d70ac474d6a5cc2dad:0",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0xac765002d1df1928c8092f5a52b16d578212533ff1b989d70ac474d6a5cc2dad:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0xe7431b13defa89dde1a6c07aba9f1bea8bb15b7c0ae8586ed6e0df2cdaa31c3e",
+              "logIndex": 1,
+              "block": 62662595,
+              "timestamp": 1789374137,
+              "side": "sell",
+              "ethWei": "100036806235674809",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0xe7431b13defa89dde1a6c07aba9f1bea8bb15b7c0ae8586ed6e0df2cdaa31c3e:1",
+              "trader": "0xe97400fb30ffb3e7d9e150c6de374a6c64b7b9e0"
+            },
+            "flags": [],
+            "matchedTransfer": "0xe7431b13defa89dde1a6c07aba9f1bea8bb15b7c0ae8586ed6e0df2cdaa31c3e:0x2"
+          },
+          {
+            "trade": {
+              "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+              "txHash": "0xad8ff0c16e6206bf08a1725085a7ec13432f21d355b926459201c62e5f15e2ef",
+              "logIndex": 38,
+              "block": 62664285,
+              "timestamp": 1789374308,
+              "side": "sell",
+              "ethWei": "3727016576759064",
+              "tokenRaw": "1484342048360084443487289",
+              "id": "0xad8ff0c16e6206bf08a1725085a7ec13432f21d355b926459201c62e5f15e2ef:38",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xad8ff0c16e6206bf08a1725085a7ec13432f21d355b926459201c62e5f15e2ef:0x27"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "3000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "1099213791415106480421258",
+            "balanceRaw": "1099213791415106480421258",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xac765002d1df1928c8092f5a52b16d578212533ff1b989d70ac474d6a5cc2dad"
+          },
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "7767235006576476",
+            "realizedWei": "-313201853058348",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xad8ff0c16e6206bf08a1725085a7ec13432f21d355b926459201c62e5f15e2ef"
+          },
+          {
+            "address": "0xe97400fb30ffb3e7d9e150c6de374a6c64b7b9e0",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "200036806235674809",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis"
+            ],
+            "evidenceTx": "0xe7431b13defa89dde1a6c07aba9f1bea8bb15b7c0ae8586ed6e0df2cdaa31c3e"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1999968000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x4cae4876db63d669ab4e352da453f5fa06b828cc9c785ff9a1274636046e0c5f"
+          }
+        ],
+        "unattributedSwaps": 2,
+        "transfersChecked": 14
+      },
+      "id": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "token": "0xc8eF70536705920C156DB473b181FCCC920BB1FA",
+      "name": "Darwin Gödel Machine",
+      "symbol": "DARWIN",
+      "decimals": 18,
+      "supply": "1000000000000000000000000000",
+      "launchBlock": 62661898,
+      "launchedAt": 1789374067,
+      "launchTx": "0x5c64f95d2c0a55a57f9a10a09e0f58fe1ac44a826bfb9f85eab2a7514a5cad99",
+      "launchSender": "0xe97400fb30ffb3e7d9e150c6de374a6c64b7b9e0",
+      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
+      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
+      "creatorFees": true,
+      "fee": 2500,
+      "priceWei": "2513449419",
+      "volumeWei": "210806041210251285",
+      "swaps": 6,
+      "buys": 4,
+      "sells": 2,
+      "series": [
+        {
+          "time": 1789374067,
+          "wei": "2710892461"
+        },
+        {
+          "time": 1789374067,
+          "wei": "2710896610"
+        },
+        {
+          "time": 1789374067,
+          "wei": "2719283981"
+        },
+        {
+          "time": 1789374071,
+          "wei": "2725520271"
+        },
+        {
+          "time": 1789374137,
+          "wei": "2520917943"
+        },
+        {
+          "time": 1789374308,
+          "wei": "2513449419"
+        }
+      ]
+    },
+    {
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0xc8427445dd63f8a1f8f919efd88372a9f2e906aa3df1eaef4749cb935c7d80e7",
+              "logIndex": 27,
+              "block": 62660518,
+              "timestamp": 1789373926,
+              "side": "buy",
+              "ethWei": "100000000000000000",
+              "tokenRaw": "38259813678309277871387687",
+              "id": "0xc8427445dd63f8a1f8f919efd88372a9f2e906aa3df1eaef4749cb935c7d80e7:27",
+              "trader": "0xe1b33ca2fbdfce36f29872e42e800929bb8643ca"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0xc8427445dd63f8a1f8f919efd88372a9f2e906aa3df1eaef4749cb935c7d80e7:0x1c"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x6ddf198918d8455d45c545b2f388d596a79672d809b2a0810023b54229e8ff67",
+              "logIndex": 1,
+              "block": 62660521,
+              "timestamp": 1789373927,
+              "side": "buy",
+              "ethWei": "1999512000000",
+              "tokenRaw": "735739879871939332253",
+              "id": "0x6ddf198918d8455d45c545b2f388d596a79672d809b2a0810023b54229e8ff67:1",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x811b5fdaa3870cb962ae556aae8041a9d0b86c605bc3916d64a10591643bc3dd",
+              "logIndex": 0,
+              "block": 62660523,
+              "timestamp": 1789373927,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1484342048877615083478795",
+              "id": "0x811b5fdaa3870cb962ae556aae8041a9d0b86c605bc3916d64a10591643bc3dd:0",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0x811b5fdaa3870cb962ae556aae8041a9d0b86c605bc3916d64a10591643bc3dd:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x1b9a5df20502cf071082789ac6d2fecd4fbe160b09cf2da21b33a2297853d70b",
+              "logIndex": 0,
+              "block": 62660568,
+              "timestamp": 1789373931,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1099213791797843148293060",
+              "id": "0x1b9a5df20502cf071082789ac6d2fecd4fbe160b09cf2da21b33a2297853d70b:0",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0x1b9a5df20502cf071082789ac6d2fecd4fbe160b09cf2da21b33a2297853d70b:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x9182f64f175d308f33eeb2a8f38289113d1587fdf1d44f6e8b311bbf1e09f586",
+              "logIndex": 2,
+              "block": 62661013,
+              "timestamp": 1789373976,
+              "side": "sell",
+              "ethWei": "30837065110537297",
+              "tokenRaw": "11477944103492783361416306",
+              "id": "0x9182f64f175d308f33eeb2a8f38289113d1587fdf1d44f6e8b311bbf1e09f586:2",
+              "trader": "0xe1b33ca2fbdfce36f29872e42e800929bb8643ca"
+            },
+            "flags": [],
+            "matchedTransfer": "0x9182f64f175d308f33eeb2a8f38289113d1587fdf1d44f6e8b311bbf1e09f586:0x3"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x0f350900ac7d96baa6cd38368d0fcf3aaa636981c86495e2187a73f5836f0f6f",
+              "logIndex": 0,
+              "block": 62661061,
+              "timestamp": 1789373981,
+              "side": "sell",
+              "ethWei": "69199741090991585",
+              "tokenRaw": "26781869574816494509971381",
+              "id": "0x0f350900ac7d96baa6cd38368d0fcf3aaa636981c86495e2187a73f5836f0f6f:0",
+              "trader": "0xe1b33ca2fbdfce36f29872e42e800929bb8643ca"
+            },
+            "flags": [],
+            "matchedTransfer": "0x0f350900ac7d96baa6cd38368d0fcf3aaa636981c86495e2187a73f5836f0f6f:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0xacac0ca496cfaf1ccf17f3d3acdf95c62952f11502bed3e23e14ad369875ba58",
+              "logIndex": 14,
+              "block": 62661122,
+              "timestamp": 1789373987,
+              "side": "buy",
+              "ethWei": "2000000000000000",
+              "tokenRaw": "790750932176480466887024",
+              "id": "0xacac0ca496cfaf1ccf17f3d3acdf95c62952f11502bed3e23e14ad369875ba58:14",
+              "trader": "0x7aa26373f9b9621203b5d6d9920d1b4c72d065d1"
+            },
+            "flags": [],
+            "matchedTransfer": "0xacac0ca496cfaf1ccf17f3d3acdf95c62952f11502bed3e23e14ad369875ba58:0xf"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x3aaaba019616cd455d1aa3fd7ca55f8dbb28f568da8b8496309e4b41e0570866",
+              "logIndex": 30,
+              "block": 62661190,
+              "timestamp": 1789373994,
+              "side": "buy",
+              "ethWei": "1984479525127016",
+              "tokenRaw": "783376115433131326078823",
+              "id": "0x3aaaba019616cd455d1aa3fd7ca55f8dbb28f568da8b8496309e4b41e0570866:30",
+              "trader": "0xa39ad244b50f0a8a3bba427ca4db8be1b81edec2"
+            },
+            "flags": [],
+            "matchedTransfer": "0x3aaaba019616cd455d1aa3fd7ca55f8dbb28f568da8b8496309e4b41e0570866:0x1f"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0x0f10aeaa19b39eb068727cf4df8adcc61b429385c15c3fcb4291284f7499fccf",
+              "logIndex": 4,
+              "block": 62661493,
+              "timestamp": 1789374025,
+              "side": "sell",
+              "ethWei": "1972600384435882",
+              "tokenRaw": "782592739317698109898752",
+              "id": "0x0f10aeaa19b39eb068727cf4df8adcc61b429385c15c3fcb4291284f7499fccf:4",
+              "trader": "0xa39ad244b50f0a8a3bba427ca4db8be1b81edec2"
+            },
+            "flags": [],
+            "matchedTransfer": "0x0f10aeaa19b39eb068727cf4df8adcc61b429385c15c3fcb4291284f7499fccf:0x5"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0xe5d342e641b6d5cce10b5c6e5151f224468a2a16ec388f7dd5d915c556d5d761",
+              "logIndex": 0,
+              "block": 62662886,
+              "timestamp": 1789374167,
+              "side": "sell",
+              "ethWei": "3732949856034513",
+              "tokenRaw": "1484342048877615083478795",
+              "id": "0xe5d342e641b6d5cce10b5c6e5151f224468a2a16ec388f7dd5d915c556d5d761:0",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xe5d342e641b6d5cce10b5c6e5151f224468a2a16ec388f7dd5d915c556d5d761:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+              "txHash": "0xe0a39b3fd5240e768813043699543cf019eb269aa33aa7cfbd64d8ef32f0aa45",
+              "logIndex": 5,
+              "block": 62666281,
+              "timestamp": 1789374512,
+              "side": "sell",
+              "ethWei": "2756164295261208",
+              "tokenRaw": "1099213791797843148293060",
+              "id": "0xe0a39b3fd5240e768813043699543cf019eb269aa33aa7cfbd64d8ef32f0aa45:5",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0xe0a39b3fd5240e768813043699543cf019eb269aa33aa7cfbd64d8ef32f0aa45:0x6"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x7aa26373f9b9621203b5d6d9920d1b4c72d065d1",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "2000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "790750932176480466887024",
+            "balanceRaw": "790750932176480466887024",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xacac0ca496cfaf1ccf17f3d3acdf95c62952f11502bed3e23e14ad369875ba58"
+          },
+          {
+            "address": "0xa39ad244b50f0a8a3bba427ca4db8be1b81edec2",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "3957079909562898",
+            "realizedWei": "-9894661166006",
+            "inventoryRaw": "783376115433216180071",
+            "balanceRaw": "783376115433216180071",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x0f10aeaa19b39eb068727cf4df8adcc61b429385c15c3fcb4291284f7499fccf"
+          },
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "5756164295261208",
+            "realizedWei": "-243835704738792",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xe0a39b3fd5240e768813043699543cf019eb269aa33aa7cfbd64d8ef32f0aa45"
+          },
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "7773168285851925",
+            "realizedWei": "-307268573782899",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xe5d342e641b6d5cce10b5c6e5151f224468a2a16ec388f7dd5d915c556d5d761"
+          },
+          {
+            "address": "0xe1b33ca2fbdfce36f29872e42e800929bb8643ca",
+            "swaps": 3,
+            "buys": 1,
+            "sells": 2,
+            "volumeWei": "200036806201528882",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis"
+            ],
+            "evidenceTx": "0x0f350900ac7d96baa6cd38368d0fcf3aaa636981c86495e2187a73f5836f0f6f"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1999512000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x6ddf198918d8455d45c545b2f388d596a79672d809b2a0810023b54229e8ff67"
+          }
+        ],
+        "unattributedSwaps": 2,
+        "transfersChecked": 19
+      },
+      "id": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "token": "0xff08bE8f41816392E85d0552D0d1e5354981AcDd",
+      "name": "thicc",
+      "symbol": "THICC",
+      "decimals": 18,
+      "supply": "1000000000000000000000000000",
+      "launchBlock": 62660518,
+      "launchedAt": 1789373926,
+      "launchTx": "0xc8427445dd63f8a1f8f919efd88372a9f2e906aa3df1eaef4749cb935c7d80e7",
+      "launchSender": "0xe1b33ca2fbdfce36f29872e42e800929bb8643ca",
+      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
+      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
+      "creatorFees": true,
+      "fee": 2500,
+      "priceWei": "2511927464",
+      "volumeWei": "219525218204204913",
+      "swaps": 11,
+      "buys": 6,
       "sells": 5,
       "series": [
         {
-          "time": 1789369794,
+          "time": 1789373926,
           "wei": "2710892461"
         },
         {
-          "time": 1789369794,
+          "time": 1789373927,
           "wei": "2710896609"
         },
         {
-          "time": 1789369798,
-          "wei": "2717123279"
+          "time": 1789373927,
+          "wei": "2719283980"
         },
         {
-          "time": 1789369845,
-          "wei": "2653495540"
+          "time": 1789373931,
+          "wei": "2725520270"
         },
         {
-          "time": 1789369895,
-          "wei": "2513447848"
+          "time": 1789373976,
+          "wei": "2661599091"
         },
         {
-          "time": 1789369929,
-          "wei": "2573120510"
+          "time": 1789373981,
+          "wei": "2520917942"
         },
         {
-          "time": 1789369957,
-          "wei": "2577123979"
+          "time": 1789373987,
+          "wei": "2524920251"
         },
         {
-          "time": 1789369983,
-          "wei": "2573130507"
+          "time": 1789373994,
+          "wei": "2528894639"
         },
         {
-          "time": 1789370075,
-          "wei": "2513604084"
+          "time": 1789374025,
+          "wei": "2524934135"
         },
         {
-          "time": 1789370379,
-          "wei": "2508079406"
+          "time": 1789374167,
+          "wei": "2517447770"
+        },
+        {
+          "time": 1789374512,
+          "wei": "2511927464"
         }
       ]
     },
     {
-      "id": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "token": "0x8cEe379c1C153E335841bA24eCA179dC0394DE09",
-      "name": "Superbet",
-      "symbol": "SUPERBET",
+      "accounting": {
+        "executions": [
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x0bed4f2c0fe7feffdc39e6b2668fade71a7925738fdf67d0740e038097bcb1ed",
+              "logIndex": 94,
+              "block": 62659765,
+              "timestamp": 1789373850,
+              "side": "buy",
+              "ethWei": "150000000000000000",
+              "tokenRaw": "56312468263708970479173469",
+              "id": "0x0bed4f2c0fe7feffdc39e6b2668fade71a7925738fdf67d0740e038097bcb1ed:94",
+              "trader": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x0bed4f2c0fe7feffdc39e6b2668fade71a7925738fdf67d0740e038097bcb1ed:0x5f"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x1f7b1b177a50834314c7842b925309bb12ad8075ffefd514c74fb74c9ef878c9",
+              "logIndex": 21,
+              "block": 62659768,
+              "timestamp": 1789373850,
+              "side": "buy",
+              "ethWei": "1999420000000",
+              "tokenRaw": "708345644788400500103",
+              "id": "0x1f7b1b177a50834314c7842b925309bb12ad8075ffefd514c74fb74c9ef878c9:21",
+              "trader": "0xe71a69f434a719cd5afa411568b69716aab3b84a"
+            },
+            "flags": [
+              "token_flow_mismatch"
+            ],
+            "matchedTransfer": null
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0xb56258e243bc57dbeab453dfc32a30356cf78ccf1483a898a56fea19840f2583",
+              "logIndex": 0,
+              "block": 62659771,
+              "timestamp": 1789373850,
+              "side": "buy",
+              "ethWei": "4040218429817412",
+              "tokenRaw": "1429181851070255937624486",
+              "id": "0xb56258e243bc57dbeab453dfc32a30356cf78ccf1483a898a56fea19840f2583:0",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0xb56258e243bc57dbeab453dfc32a30356cf78ccf1483a898a56fea19840f2583:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x530d31b01d86a00e7c435c0c8a4ef8f2048820ec73041f899df405f5f46c3805",
+              "logIndex": 32,
+              "block": 62659777,
+              "timestamp": 1789373851,
+              "side": "buy",
+              "ethWei": "2000000000000000",
+              "tokenRaw": "705876873492319085021936",
+              "id": "0x530d31b01d86a00e7c435c0c8a4ef8f2048820ec73041f899df405f5f46c3805:32",
+              "trader": "0x55fcda0fb9e44920755fc019e6e1ea7f396c016d"
+            },
+            "flags": [],
+            "matchedTransfer": "0x530d31b01d86a00e7c435c0c8a4ef8f2048820ec73041f899df405f5f46c3805:0x21"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x82b53acf4c0a1a3560d0a39b077163422aeef1aae7f80d7129d629f2cc746c79",
+              "logIndex": 6,
+              "block": 62659781,
+              "timestamp": 1789373851,
+              "side": "buy",
+              "ethWei": "3000000000000000",
+              "tokenRaw": "1056834550700887220152661",
+              "id": "0x82b53acf4c0a1a3560d0a39b077163422aeef1aae7f80d7129d629f2cc746c79:6",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0x82b53acf4c0a1a3560d0a39b077163422aeef1aae7f80d7129d629f2cc746c79:0x7"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x5fd705f9f82be0ac1598acc6dbc5d62adfd477b6b40a2f9391943278d56ab9a4",
+              "logIndex": 7,
+              "block": 62659950,
+              "timestamp": 1789373868,
+              "side": "buy",
+              "ethWei": "990000000000000",
+              "tokenRaw": "348095714660991162243020",
+              "id": "0x5fd705f9f82be0ac1598acc6dbc5d62adfd477b6b40a2f9391943278d56ab9a4:7",
+              "trader": "0xcffdf925ed62d1c87152c9bac754d4b0936264d3"
+            },
+            "flags": [
+              "unsupported_route"
+            ],
+            "matchedTransfer": "0x5fd705f9f82be0ac1598acc6dbc5d62adfd477b6b40a2f9391943278d56ab9a4:0x8"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0xfee151890b41774592a49efc5480a4eb832fb68eea5000b7cb2cda194005245c",
+              "logIndex": 52,
+              "block": 62660318,
+              "timestamp": 1789373906,
+              "side": "sell",
+              "ethWei": "46944959947425834",
+              "tokenRaw": "16893740479112691143752040",
+              "id": "0xfee151890b41774592a49efc5480a4eb832fb68eea5000b7cb2cda194005245c:52",
+              "trader": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553"
+            },
+            "flags": [],
+            "matchedTransfer": "0xfee151890b41774592a49efc5480a4eb832fb68eea5000b7cb2cda194005245c:0x35"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0xac50b35c932ec72bc549372f9e0b35c44120247f449b2ac38c5ef76f9841cd1a",
+              "logIndex": 4,
+              "block": 62660666,
+              "timestamp": 1789373941,
+              "side": "sell",
+              "ethWei": "31890124933785598",
+              "tokenRaw": "11825618335378883800626428",
+              "id": "0xac50b35c932ec72bc549372f9e0b35c44120247f449b2ac38c5ef76f9841cd1a:4",
+              "trader": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553"
+            },
+            "flags": [],
+            "matchedTransfer": "0xac50b35c932ec72bc549372f9e0b35c44120247f449b2ac38c5ef76f9841cd1a:0x5"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x9c5906edd7dc910f49197bb901c381f20010229fa602f1a278acb7760a97bc75",
+              "logIndex": 4,
+              "block": 62661007,
+              "timestamp": 1789373976,
+              "side": "sell",
+              "ethWei": "21865098259298535",
+              "tokenRaw": "8277932834765218660438500",
+              "id": "0x9c5906edd7dc910f49197bb901c381f20010229fa602f1a278acb7760a97bc75:4",
+              "trader": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553"
+            },
+            "flags": [],
+            "matchedTransfer": "0x9c5906edd7dc910f49197bb901c381f20010229fa602f1a278acb7760a97bc75:0x5"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0xcc52582e1ce75a241aa67dc5d347d4a90eb0a422719d19dd1b9d8b5c8c6cbf88",
+              "logIndex": 19,
+              "block": 62661355,
+              "timestamp": 1789374011,
+              "side": "sell",
+              "ethWei": "49609664460882974",
+              "tokenRaw": "19315176614452176874356501",
+              "id": "0xcc52582e1ce75a241aa67dc5d347d4a90eb0a422719d19dd1b9d8b5c8c6cbf88:19",
+              "trader": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553"
+            },
+            "flags": [],
+            "matchedTransfer": "0xcc52582e1ce75a241aa67dc5d347d4a90eb0a422719d19dd1b9d8b5c8c6cbf88:0x14"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0x4322cbd902e62a040dcce4f704ac135a04db1570a6c47173ebf8f0379439e0fa",
+              "logIndex": 0,
+              "block": 62662138,
+              "timestamp": 1789374091,
+              "side": "sell",
+              "ethWei": "3594652383241237",
+              "tokenRaw": "1429181851070255937624486",
+              "id": "0x4322cbd902e62a040dcce4f704ac135a04db1570a6c47173ebf8f0379439e0fa:0",
+              "trader": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac"
+            },
+            "flags": [],
+            "matchedTransfer": "0x4322cbd902e62a040dcce4f704ac135a04db1570a6c47173ebf8f0379439e0fa:0x1"
+          },
+          {
+            "trade": {
+              "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+              "txHash": "0xb2f40b2956752bb3abf9896dc24e93317d563e83eb49b5c3d89c4390d3ff5c4d",
+              "logIndex": 35,
+              "block": 62665501,
+              "timestamp": 1789374432,
+              "side": "sell",
+              "ethWei": "2651534094424654",
+              "tokenRaw": "1056834550700887220152661",
+              "id": "0xb2f40b2956752bb3abf9896dc24e93317d563e83eb49b5c3d89c4390d3ff5c4d:35",
+              "trader": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8"
+            },
+            "flags": [],
+            "matchedTransfer": "0xb2f40b2956752bb3abf9896dc24e93317d563e83eb49b5c3d89c4390d3ff5c4d:0x24"
+          }
+        ],
+        "wallets": [
+          {
+            "address": "0x55fcda0fb9e44920755fc019e6e1ea7f396c016d",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "2000000000000000",
+            "realizedWei": "0",
+            "inventoryRaw": "705876873492319085021936",
+            "balanceRaw": "705876873492319085021936",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x530d31b01d86a00e7c435c0c8a4ef8f2048820ec73041f899df405f5f46c3805"
+          },
+          {
+            "address": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "5651534094424654",
+            "realizedWei": "-348465905575346",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0xb2f40b2956752bb3abf9896dc24e93317d563e83eb49b5c3d89c4390d3ff5c4d"
+          },
+          {
+            "address": "0x2f21a9983166e3aa3111c27c8e04b9228953fbac",
+            "swaps": 2,
+            "buys": 1,
+            "sells": 1,
+            "volumeWei": "7634870813058649",
+            "realizedWei": "-445566046576175",
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [],
+            "evidenceTx": "0x4322cbd902e62a040dcce4f704ac135a04db1570a6c47173ebf8f0379439e0fa"
+          },
+          {
+            "address": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553",
+            "swaps": 5,
+            "buys": 1,
+            "sells": 4,
+            "volumeWei": "300309847601392941",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "unknown_basis"
+            ],
+            "evidenceTx": "0xcc52582e1ce75a241aa67dc5d347d4a90eb0a422719d19dd1b9d8b5c8c6cbf88"
+          },
+          {
+            "address": "0xe71a69f434a719cd5afa411568b69716aab3b84a",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "1999420000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "0",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "token_flow_mismatch",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x1f7b1b177a50834314c7842b925309bb12ad8075ffefd514c74fb74c9ef878c9"
+          },
+          {
+            "address": "0xcffdf925ed62d1c87152c9bac754d4b0936264d3",
+            "swaps": 1,
+            "buys": 1,
+            "sells": 0,
+            "volumeWei": "990000000000000",
+            "realizedWei": null,
+            "inventoryRaw": "0",
+            "balanceRaw": "348095714660991162243020",
+            "balanceMatches": true,
+            "eligible": false,
+            "flags": [
+              "unsupported_route",
+              "unmatched_transfer",
+              "no_supported_swaps"
+            ],
+            "evidenceTx": "0x5fd705f9f82be0ac1598acc6dbc5d62adfd477b6b40a2f9391943278d56ab9a4"
+          }
+        ],
+        "unattributedSwaps": 3,
+        "transfersChecked": 18
+      },
+      "id": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "token": "0x256F7ae964f8BCb0f722Dd52BCC0C2dB8Ff05fF3",
+      "name": "Seymour Cash",
+      "symbol": "SEYMOUR",
       "decimals": 18,
       "supply": "1000000000000000000000000000",
-      "launchBlock": 62617723,
-      "launchedAt": 1789369586,
-      "launchTx": "0x82f4839ae4033059c563031cc44fb57dafcec525e4b4c9b5eeabb6bff47b55ae",
-      "launchSender": "0xbc75f90d8dce861750f555d6219342a49d6fe097",
+      "launchBlock": 62659765,
+      "launchedAt": 1789373850,
+      "launchTx": "0x0bed4f2c0fe7feffdc39e6b2668fade71a7925738fdf67d0740e038097bcb1ed",
+      "launchSender": "0xf4f7e6531cc1bd1ae4f78efed0c7240156f0d553",
       "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
       "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
       "creatorFees": true,
       "fee": 2500,
-      "priceWei": "2507977289",
-      "volumeWei": "205469974375052886",
-      "swaps": 6,
-      "buys": 3,
-      "sells": 3,
+      "priceWei": "2513579413",
+      "volumeWei": "316588251928876244",
+      "swaps": 12,
+      "buys": 6,
+      "sells": 6,
       "series": [
         {
-          "time": 1789369586,
-          "wei": "2710892461"
+          "time": 1789373850,
+          "wei": "2815602760"
         },
         {
-          "time": 1789369586,
-          "wei": "2710896607"
+          "time": 1789373850,
+          "wei": "2815606987"
         },
         {
-          "time": 1789369590,
-          "wei": "2717123277"
+          "time": 1789373850,
+          "wei": "2824154683"
         },
         {
-          "time": 1789369644,
-          "wei": "2653495538"
+          "time": 1789373851,
+          "wei": "2828390781"
         },
         {
-          "time": 1789369695,
-          "wei": "2513501629"
+          "time": 1789373851,
+          "wei": "2834750880"
         },
         {
-          "time": 1789370171,
-          "wei": "2507977289"
-        }
-      ]
-    },
-    {
-      "id": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "token": "0x497977Aa9372152eb1F45b22D10c49d373dB58d9",
-      "name": "Rob Track Record",
-      "symbol": "PNL",
-      "decimals": 18,
-      "supply": "1000000000000000000000000000",
-      "launchBlock": 62616656,
-      "launchedAt": 1789369478,
-      "launchTx": "0x8a11814af3a5ec8415e8ae7591e206521627f04d394597182329d5137dc0c344",
-      "launchSender": "0x6263c23158c5092f1b6ef466f18cd9c9bbde087c",
-      "positionRecipient": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
-      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
-      "creatorFees": true,
-      "fee": 2500,
-      "priceWei": "2521425728",
-      "volumeWei": "5819981865271242159",
-      "swaps": 62,
-      "buys": 31,
-      "sells": 31,
-      "series": [
-        {
-          "time": 1789369478,
-          "wei": "5039672696"
-        },
-        {
-          "time": 1789369478,
-          "wei": "5039678351"
-        },
-        {
-          "time": 1789369482,
-          "wei": "5048166918"
-        },
-        {
-          "time": 1789369528,
-          "wei": "4367832122"
-        },
-        {
-          "time": 1789369529,
-          "wei": "4361016818"
-        },
-        {
-          "time": 1789369533,
-          "wei": "4607045924"
-        },
-        {
-          "time": 1789369533,
-          "wei": "4856441526"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5112231086"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5400244593"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5680449105"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5692466486"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5968427017"
-        },
-        {
-          "time": 1789369533,
-          "wei": "5980621848"
-        },
-        {
-          "time": 1789369533,
-          "wei": "6270507426"
-        },
-        {
-          "time": 1789369533,
-          "wei": "6551064394"
-        },
-        {
-          "time": 1789369533,
-          "wei": "6838260993"
-        },
-        {
-          "time": 1789369533,
-          "wei": "7138045395"
-        },
-        {
-          "time": 1789369534,
-          "wei": "7430598917"
-        },
-        {
-          "time": 1789369534,
-          "wei": "7746116717"
-        },
-        {
-          "time": 1789369534,
-          "wei": "8069052421"
-        },
-        {
-          "time": 1789369534,
-          "wei": "8076162103"
-        },
-        {
-          "time": 1789369534,
-          "wei": "8395873048"
-        },
-        {
-          "time": 1789369534,
-          "wei": "8719257027"
-        },
-        {
-          "time": 1789369534,
-          "wei": "8726699056"
-        },
-        {
-          "time": 1789369534,
-          "wei": "9093373287"
-        },
-        {
-          "time": 1789369534,
-          "wei": "9438808112"
-        },
-        {
-          "time": 1789369534,
-          "wei": "9809799752"
-        },
-        {
-          "time": 1789369534,
-          "wei": "10202167464"
-        },
-        {
-          "time": 1789369535,
-          "wei": "10594139146"
-        },
-        {
-          "time": 1789369535,
-          "wei": "10618586532"
-        },
-        {
-          "time": 1789369536,
-          "wei": "10601559555"
-        },
-        {
-          "time": 1789369561,
-          "wei": "8775824178"
-        },
-        {
-          "time": 1789369562,
-          "wei": "8783215626"
-        },
-        {
-          "time": 1789369579,
-          "wei": "8764867353"
-        },
-        {
-          "time": 1789369580,
-          "wei": "8767928936"
-        },
-        {
-          "time": 1789369582,
-          "wei": "4736770409"
-        },
-        {
-          "time": 1789369582,
-          "wei": "4481036563"
-        },
-        {
-          "time": 1789369582,
-          "wei": "4271125497"
-        },
-        {
-          "time": 1789369582,
-          "wei": "4103569860"
-        },
-        {
-          "time": 1789369582,
-          "wei": "4110756565"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3938046850"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3756022616"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3588561009"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3478902426"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3383387342"
-        },
-        {
-          "time": 1789369582,
-          "wei": "3285016684"
-        },
-        {
-          "time": 1789369583,
-          "wei": "3174511500"
-        },
-        {
-          "time": 1789369583,
-          "wei": "3094270698"
-        },
-        {
-          "time": 1789369583,
-          "wei": "3020878633"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2932495269"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2859477396"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2855216135"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2794155670"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2793607301"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2736720690"
-        },
-        {
-          "time": 1789369583,
-          "wei": "2676746377"
+          "time": 1789373868,
+          "wei": "2836850440"
         },
         {
-          "time": 1789369583,
-          "wei": "2624131083"
+          "time": 1789373906,
+          "wei": "2737862070"
         },
         {
-          "time": 1789369583,
-          "wei": "2575340811"
+          "time": 1789373941,
+          "wei": "2671621045"
         },
         {
-          "time": 1789369583,
-          "wei": "2525072864"
+          "time": 1789373976,
+          "wei": "2626672399"
         },
         {
-          "time": 1789369589,
-          "wei": "2523938285"
+          "time": 1789374011,
+          "wei": "2526102669"
         },
         {
-          "time": 1789369662,
-          "wei": "2522577019"
+          "time": 1789374091,
+          "wei": "2518891790"
         },
         {
-          "time": 1789370148,
-          "wei": "2521425728"
+          "time": 1789374432,
+          "wei": "2513579413"
         }
       ]
     }
   ],
   "trades": [
     {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0xaa4665b6ebae16f4c8a2ca2e91167675951bfeb6f68e1d2ffd441c8fef0f6672",
-      "logIndex": 36,
-      "block": 62626256,
-      "timestamp": 1789370452,
-      "side": "buy",
-      "ethWei": "4300000000000000",
-      "tokenRaw": "719883796432958644962269"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x325aa689a6c0c78195363759b0c041d42c8bfd68a28d7f14e71bca012be80ef5",
-      "logIndex": 7,
-      "block": 62626249,
-      "timestamp": 1789370451,
-      "side": "buy",
-      "ethWei": "5200000000000000",
-      "tokenRaw": "872695529226642666596610"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x8e56996a5815bc39d626cf3b3b2cdd97768723c5e25c4a9ebc08c794b005bccf",
-      "logIndex": 3,
-      "block": 62626228,
-      "timestamp": 1789370449,
-      "side": "buy",
-      "ethWei": "30000000000000000",
-      "tokenRaw": "5080963525181634542612939"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x132d869b75a50b31671340279becccb60b8e610d0e0633d300372a40d4a81457",
-      "logIndex": 36,
-      "block": 62626218,
-      "timestamp": 1789370448,
-      "side": "buy",
-      "ethWei": "5400000000000000",
-      "tokenRaw": "923021928210944569455964"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0xfdf2daae0dc41a4bbe8f2868bfa06fba866a8e831102ab53c108799a16cf2303",
-      "logIndex": 8,
-      "block": 62626200,
-      "timestamp": 1789370446,
-      "side": "buy",
-      "ethWei": "5600000000000000",
-      "tokenRaw": "959959564941247892275870"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x55bf8000b39ea5155c286201eb08be6e34f1f6242f5d95e29f7f8ca7e7b42a9f",
-      "logIndex": 0,
-      "block": 62626183,
-      "timestamp": 1789370444,
-      "side": "buy",
-      "ethWei": "4700000000000000",
-      "tokenRaw": "807851681468143148951532"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x1509dd12cc3da42d1d04a735db3bf0c9a31549cf7452c377e3eeee445012cd15",
-      "logIndex": 19,
-      "block": 62626167,
-      "timestamp": 1789370443,
-      "side": "buy",
-      "ethWei": "4900000000000000",
-      "tokenRaw": "844346634571782452087117"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x638d18a7152c8c5bdf839ed2611b90ddb27fa0e9182b5f619fc5716106049946",
-      "logIndex": 19,
-      "block": 62626156,
-      "timestamp": 1789370441,
-      "side": "buy",
-      "ethWei": "1000000000000000",
-      "tokenRaw": "172582064093364489118663"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x7b9066488a7e4da6112cf5b9535c1613d85c7eb687caf74c08589c8d3eba9466",
-      "logIndex": 19,
-      "block": 62626142,
-      "timestamp": 1789370440,
-      "side": "buy",
-      "ethWei": "4900000000000000",
-      "tokenRaw": "846961293094877519033944"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x6471ff48304ee4a6bf8ba1e2748d783b542d74024175ef78bf96a591dfbdc770",
-      "logIndex": 0,
-      "block": 62626125,
-      "timestamp": 1789370438,
-      "side": "buy",
-      "ethWei": "30000000000000000",
-      "tokenRaw": "5233340499343877144427783"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x00380d0095f5bd6601b3cb075086fc7b2bae733828820bc05583a52471ffa1d0",
-      "logIndex": 0,
-      "block": 62626119,
-      "timestamp": 1789370438,
-      "side": "buy",
-      "ethWei": "5000000000000000",
-      "tokenRaw": "880308006338015362029435"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0xfc58ded1e1d0a26daf5ded351aab8629b3e21eaf61d60e7cbbb01879747f6516",
-      "logIndex": 4,
-      "block": 62626100,
-      "timestamp": 1789370436,
-      "side": "buy",
-      "ethWei": "5700000000000000",
-      "tokenRaw": "1006399137498417295273898"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0xada8b2d6a79490cbbeeb069e6ce316803845a481a75b5b1f3080f791c0032b9f",
-      "logIndex": 1,
-      "block": 62626100,
-      "timestamp": 1789370436,
-      "side": "buy",
-      "ethWei": "5940000000000000",
-      "tokenRaw": "1052016770047079667791562"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x76949b093f1402fb9f054f6df8b47d5bc0281db1901792bdab14b3523a48be4a",
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0xe0a39b3fd5240e768813043699543cf019eb269aa33aa7cfbd64d8ef32f0aa45",
       "logIndex": 5,
-      "block": 62626088,
-      "timestamp": 1789370435,
-      "side": "buy",
-      "ethWei": "4900000000000000",
-      "tokenRaw": "870327529245087235026360"
+      "block": 62666281,
+      "timestamp": 1789374512,
+      "side": "sell",
+      "ethWei": "2756164295261208",
+      "tokenRaw": "1099213791797843148293060"
     },
     {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x8fe5d1ca663ccd2cbad617aeb0b3c3ad9979856109f2ad35ae2e17c795fd70e5",
-      "logIndex": 13,
-      "block": 62626057,
-      "timestamp": 1789370431,
-      "side": "buy",
-      "ethWei": "5900000000000000",
-      "tokenRaw": "1050960572041896942608881"
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0x6522fcb2cfc1aa3fbeae9fc517caab642b1d209a84a2b502304f9db878252267",
+      "logIndex": 0,
+      "block": 62666256,
+      "timestamp": 1789374509,
+      "side": "sell",
+      "ethWei": "31890134155718340",
+      "tokenRaw": "11825618335378883800626428"
     },
     {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x90013b707ec917f70f5c82e00fb17143dd7f77edcf6266f400721e658a92866c",
-      "logIndex": 60,
-      "block": 62626038,
-      "timestamp": 1789370429,
-      "side": "buy",
-      "ethWei": "4900000000000000",
-      "tokenRaw": "875346281380930486546244"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0xf0218a7c8fbb66bea2cc08b87806704f03ee8449d5801c1fbe7bba3cfc33a53c",
-      "logIndex": 23,
-      "block": 62626034,
-      "timestamp": 1789370429,
-      "side": "buy",
-      "ethWei": "30000000000000000",
-      "tokenRaw": "5409559488200004932427054"
-    },
-    {
-      "poolId": "0x1935e7d2c4a70923572d641ad234a3add64341615306266f595c44e6f5a8c059",
-      "txHash": "0x2522ba2514cdbb2dbb98126120c8084bf6680cab5ccbb5be9e6957cb7e7cef81",
-      "logIndex": 11,
-      "block": 62626034,
-      "timestamp": 1789370429,
-      "side": "buy",
-      "ethWei": "1084312524361207",
-      "tokenRaw": "397903820899315241108953"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x24f2fcac9934815c18bc16dfead1ba541229aee36f607f4731154e856efa9b74",
-      "logIndex": 77,
-      "block": 62625958,
-      "timestamp": 1789370421,
-      "side": "buy",
-      "ethWei": "2000000000000000",
-      "tokenRaw": "363742301193236200504559"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x9aa86f10f21c4c79e27bd4f867081b66710c0157ccd92e3e0e46c3126bf79aa8",
-      "logIndex": 9,
-      "block": 62625955,
-      "timestamp": 1789370421,
+      "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+      "txHash": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a",
+      "logIndex": 0,
+      "block": 62666193,
+      "timestamp": 1789374503,
       "side": "buy",
       "ethWei": "3000000000000000",
-      "tokenRaw": "546348045192348340270636"
+      "tokenRaw": "1099213793051809337852333"
     },
     {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x80a6c94d5f9ae589dc23488552f6901db4494c3e84e3bf9e569caf245ccee49a",
-      "logIndex": 20,
-      "block": 62625939,
-      "timestamp": 1789370419,
-      "side": "buy",
-      "ethWei": "1998618000000",
-      "tokenRaw": "364274571495649809094"
-    },
-    {
-      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
-      "txHash": "0x565e5ccbf58a5979d635c074f355fd0e88c23bf2c4ed12e271a66a10c06f4ec1",
-      "logIndex": 22,
-      "block": 62625935,
-      "timestamp": 1789370419,
-      "side": "buy",
-      "ethWei": "1200000000000000000",
-      "tokenRaw": "323127140376354563172064621"
-    },
-    {
-      "poolId": "0x1935e7d2c4a70923572d641ad234a3add64341615306266f595c44e6f5a8c059",
-      "txHash": "0xf1432c44f54bc14ced75d1958eef68a49610e63b8524499715253bb6a0d9a825",
-      "logIndex": 0,
-      "block": 62625906,
-      "timestamp": 1789370416,
-      "side": "buy",
-      "ethWei": "3000000000000000",
-      "tokenRaw": "1102612750501595369868225"
-    },
-    {
-      "poolId": "0x1935e7d2c4a70923572d641ad234a3add64341615306266f595c44e6f5a8c059",
-      "txHash": "0x9447d57d2d9851f97f093b0f2522b61c94ae5f29cedfe40b9585306d88f45962",
-      "logIndex": 15,
-      "block": 62625872,
-      "timestamp": 1789370413,
-      "side": "buy",
-      "ethWei": "1999018000000",
-      "tokenRaw": "735558107908240832351"
-    },
-    {
-      "poolId": "0x1935e7d2c4a70923572d641ad234a3add64341615306266f595c44e6f5a8c059",
-      "txHash": "0x7747b1284e5a08126e715855f891deb84bef3bc125f160a79fabbd35d890564b",
-      "logIndex": 23,
-      "block": 62625868,
-      "timestamp": 1789370412,
-      "side": "buy",
-      "ethWei": "100000000000000000",
-      "tokenRaw": "38259813678309277871387687"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x7949ab9480344fb2cdb2b0923b5ec3d0cafe0d5792566fe614fc606d5e583a33",
-      "logIndex": 32,
-      "block": 62625543,
-      "timestamp": 1789370379,
-      "side": "sell",
-      "ethWei": "2760458610693453",
-      "tokenRaw": "1102612750251999035770109"
-    },
-    {
-      "poolId": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "txHash": "0x16d830c72a6bd3b6599af5f2a71dfaf9e0fd93fbf78aeea4ddb4dc2deb266595",
-      "logIndex": 0,
-      "block": 62624902,
-      "timestamp": 1789370315,
-      "side": "sell",
-      "ethWei": "68965010873882966",
-      "tokenRaw": "26781869574816494509971381"
-    },
-    {
-      "poolId": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "txHash": "0x25abdb54ede988b37fef64f6216afdce27b5f000c069bc0cc48b6f7df2604433",
-      "logIndex": 6,
-      "block": 62624399,
-      "timestamp": 1789370264,
-      "side": "sell",
-      "ethWei": "30742618959922751",
-      "tokenRaw": "11477944103492783361416306"
-    },
-    {
-      "poolId": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "txHash": "0x0213094f35663d1340cc603f98a03f5e5cb327563778542ddf1d8dbfaa4be5d2",
-      "logIndex": 13,
-      "block": 62623937,
-      "timestamp": 1789370217,
-      "side": "buy",
-      "ethWei": "3000000000000000",
-      "tokenRaw": "1102612751122213282047115"
-    },
-    {
-      "poolId": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "txHash": "0xc24ce68b20e75a6c63ba69f3ff85fea5fa9f582e39c0921b5c6f8579a3c2ee06",
-      "logIndex": 0,
-      "block": 62623916,
-      "timestamp": 1789370215,
-      "side": "buy",
-      "ethWei": "1998282000000",
-      "tokenRaw": "735287289759769062852"
-    },
-    {
-      "poolId": "0x031ae0a6c4f80ded956f3adc7cabe9ef5d3a6fcbb59f0201c8e3ad8ec4863249",
-      "txHash": "0x2dd14ae3a84f636259e556552ad4dff0a2b970605e1bb6d7c978b91fcc698aaf",
-      "logIndex": 57,
-      "block": 62623912,
-      "timestamp": 1789370214,
-      "side": "buy",
-      "ethWei": "100000000000000000",
-      "tokenRaw": "38259813678309277871387687"
-    },
-    {
-      "poolId": "0x90b7dcbed9b37bd8acda74fdac15c111a87422be40831c5504f14d088f4d7727",
-      "txHash": "0x705c0ed741df4a46d2985bbe4475a480cb33a0cf8ff732629c2f48cf133ee68d",
-      "logIndex": 6,
-      "block": 62623679,
-      "timestamp": 1789370191,
-      "side": "buy",
-      "ethWei": "1998834000000",
-      "tokenRaw": "795172715456998488063"
-    },
-    {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0x5fede0e992cc78a653974f109580f81e3e9c876a59e0c48da9ee91a09c53495e",
-      "logIndex": 0,
-      "block": 62623483,
-      "timestamp": 1789370171,
-      "side": "sell",
-      "ethWei": "2760346158220406",
-      "tokenRaw": "1102612751042949581277689"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xf9332a7076006a7db88217df7d2bc44214db81ca63a7283e8b5d68bf06a29760",
-      "logIndex": 11,
-      "block": 62623260,
-      "timestamp": 1789370148,
-      "side": "sell",
-      "ethWei": "575125494412137",
-      "tokenRaw": "228706317032435697522928"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0xa155763750e3eb2693b2c16897a3520ad92b45577cc4ef8e63306de63c4016fd",
-      "logIndex": 38,
-      "block": 62623161,
-      "timestamp": 1789370138,
-      "side": "buy",
-      "ethWei": "7735671045078179",
-      "tokenRaw": "3060611276053507415638368"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0xdff253c0101a422ae76b1fc5ab239a5bae830cbc56474699576ae09fa3278840",
-      "logIndex": 0,
-      "block": 62623010,
-      "timestamp": 1789370122,
-      "side": "sell",
-      "ethWei": "68991869805289677",
-      "tokenRaw": "26781869574816494509971381"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x5a4de6462004a3a0ab4fcfa05b0cd63541cbb080e1abca7c23cea996bcd0ad70",
-      "logIndex": 56,
-      "block": 62622547,
-      "timestamp": 1789370075,
-      "side": "sell",
-      "ethWei": "29552661482417754",
-      "tokenRaw": "11649421282996257543059192"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0xd332db3383ff1138a99f9756d1878847e87f9f660ac8f99665402c76146f935a",
-      "logIndex": 46,
-      "block": 62622514,
-      "timestamp": 1789370072,
-      "side": "sell",
-      "ethWei": "30742618971695573",
-      "tokenRaw": "11477944103492783361416306"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0x88bb3aa01f19b3bd41deeb8ad618a3db401ee23dd5b43d489144350ec5061c3c",
-      "logIndex": 6,
-      "block": 62622028,
-      "timestamp": 1789370022,
-      "side": "buy",
-      "ethWei": "3000000000000000",
-      "tokenRaw": "1102612750697224929085454"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0x7d5e53d52b6546f698877b82f200f605e0da1bc3f6c2736d34ca02d9307172ed",
-      "logIndex": 52,
-      "block": 62622009,
-      "timestamp": 1789370020,
-      "side": "buy",
-      "ethWei": "1998786000000",
-      "tokenRaw": "735472741317978148798"
-    },
-    {
-      "poolId": "0x0bf8fbae2992a46cd513822440bc2854f5722854b22f2748a60c71d1b4b58754",
-      "txHash": "0xb42e508a79c824fd2ec83ff72733159c9c5e1013c123c6a56ced1b6ce5024722",
-      "logIndex": 23,
-      "block": 62622006,
-      "timestamp": 1789370020,
-      "side": "buy",
-      "ethWei": "100000000000000000",
-      "tokenRaw": "38259813678309277871387687"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0xa715b3abdf810378d77ddff66e607de8892d107fd897d6c09e82f114aa5b5294",
-      "logIndex": 0,
-      "block": 62621646,
-      "timestamp": 1789369983,
-      "side": "sell",
-      "ethWei": "1970313233440927",
-      "tokenRaw": "767050234421282442456164"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0xe61042b4deb6d3308e5f5db05c9104095da6f22c5b35f189f9435bacc376b7cb",
-      "logIndex": 19,
-      "block": 62621371,
-      "timestamp": 1789369957,
-      "side": "buy",
-      "ethWei": "1980198019801980",
-      "tokenRaw": "767050234421282442456164"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x771f3a223a6e8618c40b07d89a03496c504d7d2de4d7990bbc88e23d258e7b58",
-      "logIndex": 30,
-      "block": 62621103,
-      "timestamp": 1789369929,
-      "side": "buy",
-      "ethWei": "29700000000000000",
-      "tokenRaw": "11649421282996257543059192"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x574c15d0138ccf8cb15b3da84fe00ddca1556feff791b442d18f7729d4286b5e",
-      "logIndex": 29,
-      "block": 62620769,
-      "timestamp": 1789369895,
-      "side": "sell",
-      "ethWei": "68991869832436152",
-      "tokenRaw": "26781869574816494509971381"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x178b6c4cc4e5e6211237535bbf094a0dcab837361ca719024e54714552654ea1",
-      "logIndex": 30,
-      "block": 62620276,
-      "timestamp": 1789369845,
-      "side": "sell",
-      "ethWei": "30742618984029006",
-      "tokenRaw": "11477944103492783361416306"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0x76d58675967977a234b4ca8c505c3bf884fc6212cc30c88d2f5cec6c7f72f80c",
-      "logIndex": 3,
-      "block": 62619809,
-      "timestamp": 1789369798,
-      "side": "buy",
-      "ethWei": "3000000000000000",
-      "tokenRaw": "1102612750251999035770109"
-    },
-    {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0xdd7858f8664629a9a5e3bf6d0017c50ba2fc8d73119759d39cbcf07ead55b175",
+      "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+      "txHash": "0xf3e174fff241be4eb05f07f74167cd3f07ec2d3195494abe5567fd7a15e4f93b",
       "logIndex": 16,
-      "block": 62619771,
-      "timestamp": 1789369794,
+      "block": 62666155,
+      "timestamp": 1789374499,
       "side": "buy",
-      "ethWei": "1999314000000",
-      "tokenRaw": "735667023902691909066"
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1484342050573208892715459"
     },
     {
-      "poolId": "0x23c2be036a4d6a9d13472990155ea9f3bab32aa0479e7b2f231bb3e45bfebad4",
-      "txHash": "0xebebf2aec323ac57265c1824ce86f5e940ff8dda7530b0c94a1a9210d8dd46c9",
+      "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+      "txHash": "0x5fb79bdb3e4698a912682092f6cd1c6590292334ec9742cd44dd934eef8ada5d",
+      "logIndex": 48,
+      "block": 62666153,
+      "timestamp": 1789374499,
+      "side": "buy",
+      "ethWei": "1998018000000",
+      "tokenRaw": "735190148467345283831"
+    },
+    {
+      "poolId": "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c",
+      "txHash": "0x3fb6d2473e3313c21c3a4f66694e18e67ff563698d605331f1a68dfe57c2f046",
       "logIndex": 17,
-      "block": 62619766,
-      "timestamp": 1789369794,
+      "block": 62666150,
+      "timestamp": 1789374499,
       "side": "buy",
       "ethWei": "100000000000000000",
       "tokenRaw": "38259813678309277871387687"
     },
     {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0xe46ad0645c3c05624a187a87a99b2ff65e0e0294b5d22b5e0c0ce4ee88a9229d",
-      "logIndex": 0,
-      "block": 62618794,
-      "timestamp": 1789369695,
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0xa7ddbd67dd631c407ac6e097be1715223531812762f6ffd9be1ebbb8f4935e65",
+      "logIndex": 43,
+      "block": 62665914,
+      "timestamp": 1789374475,
       "side": "sell",
-      "ethWei": "68965010878714005",
+      "ethWei": "46944973728373365",
+      "tokenRaw": "16893740479112691143752040"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9",
+      "logIndex": 104,
+      "block": 62665819,
+      "timestamp": 1789374465,
+      "side": "sell",
+      "ethWei": "3725527979344077",
+      "tokenRaw": "1484342049506369414008081"
+    },
+    {
+      "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+      "txHash": "0xf80db6555b671a6568b70ccb14ac11728a98451dc087f8730140449b8a326970",
+      "logIndex": 36,
+      "block": 62665567,
+      "timestamp": 1789374439,
+      "side": "sell",
+      "ethWei": "7879516356415708",
+      "tokenRaw": "3140427140801259598805151"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0xcab66b6d712e34e52223c5f0cc043d8c25444fa8ef16ab2ed619a904c85aa76f",
+      "logIndex": 30,
+      "block": 62665567,
+      "timestamp": 1789374439,
+      "side": "buy",
+      "ethWei": "990000000000000",
+      "tokenRaw": "348234957106615666662587"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0xb2f40b2956752bb3abf9896dc24e93317d563e83eb49b5c3d89c4390d3ff5c4d",
+      "logIndex": 35,
+      "block": 62665501,
+      "timestamp": 1789374432,
+      "side": "sell",
+      "ethWei": "2651534094424654",
+      "tokenRaw": "1056834550700887220152661"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x79a81bd5b36c4a4f20254df06a4d2e1fc486d74883eacd64bd997203d00282f9",
+      "logIndex": 7,
+      "block": 62665337,
+      "timestamp": 1789374415,
+      "side": "sell",
+      "ethWei": "100038652511987362",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x6ba605643f232c795b64f297e0d164da8c602a26ede3d2f501115ee8ba79b733",
+      "logIndex": 32,
+      "block": 62665103,
+      "timestamp": 1789374391,
+      "side": "sell",
+      "ethWei": "9850654553094844",
+      "tokenRaw": "3609617699159082576047737"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x2c6dbcb37b1b91b4ac1d42f0c5178bbd742ccc5b3131af6d62db4e928464d7bd",
+      "logIndex": 2,
+      "block": 62665060,
+      "timestamp": 1789374387,
+      "side": "buy",
+      "ethWei": "9900000000000000",
+      "tokenRaw": "3609617699159082576047737"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0x103cff04467eb9050ca50d3b77b75e2798ad594fe6c6c92f5dc4d0511e0f8745",
+      "logIndex": 3,
+      "block": 62665018,
+      "timestamp": 1789374383,
+      "side": "buy",
+      "ethWei": "3000000000000000",
+      "tokenRaw": "1056834550756275836678309"
+    },
+    {
+      "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+      "txHash": "0xd4c788c70bf3ba5cada11ff55a5534e44cdc0c00df0729e3e28c44ae875ddc72",
+      "logIndex": 8,
+      "block": 62665017,
+      "timestamp": 1789374383,
+      "side": "buy",
+      "ethWei": "7919000000000000",
+      "tokenRaw": "3140427140801259598805151"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0xbdd8dbb9479de42dd994c8094e2d305e16a4dc422e090d46b6f98ff423a28d90",
+      "logIndex": 158,
+      "block": 62665008,
+      "timestamp": 1789374382,
+      "side": "buy",
+      "ethWei": "2000000000000000",
+      "tokenRaw": "705876873529348686213657"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0x03aa4ec288a5b3297dcada14c8a195bb703816648b2ca7ae0614faff31b37c44",
+      "logIndex": 10,
+      "block": 62664987,
+      "timestamp": 1789374380,
+      "side": "buy",
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1429181851145314373973280"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0xe3722251dcd2869b694158c54d3fc79a3008a9a151d927d6c1f74f0fa7dec493",
+      "logIndex": 20,
+      "block": 62664985,
+      "timestamp": 1789374379,
+      "side": "buy",
+      "ethWei": "1999350000000",
+      "tokenRaw": "708320845517653048027"
+    },
+    {
+      "poolId": "0xa3ea1f3bd81a3e77f113666b6a031aca26d366505912809b736331a206c7cfee",
+      "txHash": "0x99c31219f113098c870c8bfea4a8964ae66e6be5fb075acd24b0a71724b7e5db",
+      "logIndex": 17,
+      "block": 62664982,
+      "timestamp": 1789374379,
+      "side": "buy",
+      "ethWei": "150000000000000000",
+      "tokenRaw": "56312468263708970479173469"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x688216916f806ab4c0bccc93bdb885f6dbb2aabfbf3bbf8f52b45cfddc813171",
+      "logIndex": 58,
+      "block": 62664866,
+      "timestamp": 1789374367,
+      "side": "buy",
+      "ethWei": "3000000000000000",
+      "tokenRaw": "1099213792420629568809980"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x55f475c26641309a0d91c28a508e1ed0ad172b21098c927fac9e217ed4fbeb25",
+      "logIndex": 3,
+      "block": 62664836,
+      "timestamp": 1789374364,
+      "side": "buy",
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1484342049719737309657544"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0x789f7761b2651c860f9a7eeb3d2e472b6a4ba934705e02334f02bf28bcd6cf60",
+      "logIndex": 0,
+      "block": 62664834,
+      "timestamp": 1789374364,
+      "side": "buy",
+      "ethWei": "1998770000000",
+      "tokenRaw": "735466853966924991316"
+    },
+    {
+      "poolId": "0x0401b1e3ecf1cfbe46b6fd04ce0fdf2de0d89e77a1dad51cb9445f4c1aacee57",
+      "txHash": "0xb5e4f65607420ffff393dec10c21068d678cdd68b5d2529ab5774a812987b661",
+      "logIndex": 24,
+      "block": 62664831,
+      "timestamp": 1789374364,
+      "side": "buy",
+      "ethWei": "100000000000000000",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0xad8ff0c16e6206bf08a1725085a7ec13432f21d355b926459201c62e5f15e2ef",
+      "logIndex": 38,
+      "block": 62664285,
+      "timestamp": 1789374308,
+      "side": "sell",
+      "ethWei": "3727016576759064",
+      "tokenRaw": "1484342048360084443487289"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0x5504c51f1ee29a7612f46752eb94289833e91937f7911f73eae44911ece8ab24",
+      "logIndex": 125,
+      "block": 62663995,
+      "timestamp": 1789374278,
+      "side": "sell",
+      "ethWei": "100036806160044577",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0x7a6d4fbb6f964eccdcde211b91c9001bebcaa464df6693550870ac4197545ed9",
+      "logIndex": 18,
+      "block": 62663487,
+      "timestamp": 1789374226,
+      "side": "buy",
+      "ethWei": "3000000000000000",
+      "tokenRaw": "1099213792262834626634336"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0xc612998c1bca333e151b7456a5ad3ae477c05f574b897994acad5ff5e52dec10",
+      "logIndex": 19,
+      "block": 62663452,
+      "timestamp": 1789374223,
+      "side": "buy",
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1484342049506369414008081"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0xd67f661ceb46ab8bdcbfe7d218990d1ce23c6875e0eed49edd2e2b5d3c99fd01",
+      "logIndex": 0,
+      "block": 62663451,
+      "timestamp": 1789374223,
+      "side": "buy",
+      "ethWei": "1998958000000",
+      "tokenRaw": "735536030341795039459"
+    },
+    {
+      "poolId": "0x35389cc5e51f68806825c28910fba270a2fc26ca6b682992ebbc1473204f6705",
+      "txHash": "0xe7ecb2049a59c86215b512080503d86f23c7c904bb9aef547b71113c122165ba",
+      "logIndex": 113,
+      "block": 62663447,
+      "timestamp": 1789374222,
+      "side": "buy",
+      "ethWei": "100000000000000000",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0xe5d342e641b6d5cce10b5c6e5151f224468a2a16ec388f7dd5d915c556d5d761",
+      "logIndex": 0,
+      "block": 62662886,
+      "timestamp": 1789374167,
+      "side": "sell",
+      "ethWei": "3732949856034513",
+      "tokenRaw": "1484342048877615083478795"
+    },
+    {
+      "poolId": "0xf8d52bc31c91a54e37d450611611c7bfd0b49f4840d31976f428d5691c31389b",
+      "txHash": "0x54b560f608a8c38779cfbfffb8f8a1c116ad967893bf35c04f305ba2037dd388",
+      "logIndex": 105,
+      "block": 62662828,
+      "timestamp": 1789374161,
+      "side": "buy",
+      "ethWei": "1998678000000",
+      "tokenRaw": "795110655853759676475"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0xe7431b13defa89dde1a6c07aba9f1bea8bb15b7c0ae8586ed6e0df2cdaa31c3e",
+      "logIndex": 1,
+      "block": 62662595,
+      "timestamp": 1789374137,
+      "side": "sell",
+      "ethWei": "100036806235674809",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x4322cbd902e62a040dcce4f704ac135a04db1570a6c47173ebf8f0379439e0fa",
+      "logIndex": 0,
+      "block": 62662138,
+      "timestamp": 1789374091,
+      "side": "sell",
+      "ethWei": "3594652383241237",
+      "tokenRaw": "1429181851070255937624486"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0xac765002d1df1928c8092f5a52b16d578212533ff1b989d70ac474d6a5cc2dad",
+      "logIndex": 0,
+      "block": 62661944,
+      "timestamp": 1789374071,
+      "side": "buy",
+      "ethWei": "3000000000000000",
+      "tokenRaw": "1099213791415106480421258"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0x88b3f6c90084e9a1290c29a9d039330e5d9d3ecba72712560d2a794bf4b028d3",
+      "logIndex": 20,
+      "block": 62661903,
+      "timestamp": 1789374067,
+      "side": "buy",
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1484342048360084443487289"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0x4cae4876db63d669ab4e352da453f5fa06b828cc9c785ff9a1274636046e0c5f",
+      "logIndex": 0,
+      "block": 62661901,
+      "timestamp": 1789374067,
+      "side": "buy",
+      "ethWei": "1999968000000",
+      "tokenRaw": "735907669376830807594"
+    },
+    {
+      "poolId": "0x5fe8b2adb887219b09b24ce13ae696f6b5615939b6f1d90152572b13a7216025",
+      "txHash": "0x5c64f95d2c0a55a57f9a10a09e0f58fe1ac44a826bfb9f85eab2a7514a5cad99",
+      "logIndex": 61,
+      "block": 62661898,
+      "timestamp": 1789374067,
+      "side": "buy",
+      "ethWei": "100000000000000000",
+      "tokenRaw": "38259813678309277871387687"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x0f10aeaa19b39eb068727cf4df8adcc61b429385c15c3fcb4291284f7499fccf",
+      "logIndex": 4,
+      "block": 62661493,
+      "timestamp": 1789374025,
+      "side": "sell",
+      "ethWei": "1972600384435882",
+      "tokenRaw": "782592739317698109898752"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0xcc52582e1ce75a241aa67dc5d347d4a90eb0a422719d19dd1b9d8b5c8c6cbf88",
+      "logIndex": 19,
+      "block": 62661355,
+      "timestamp": 1789374011,
+      "side": "sell",
+      "ethWei": "49609664460882974",
+      "tokenRaw": "19315176614452176874356501"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x3aaaba019616cd455d1aa3fd7ca55f8dbb28f568da8b8496309e4b41e0570866",
+      "logIndex": 30,
+      "block": 62661190,
+      "timestamp": 1789373994,
+      "side": "buy",
+      "ethWei": "1984479525127016",
+      "tokenRaw": "783376115433131326078823"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0xacac0ca496cfaf1ccf17f3d3acdf95c62952f11502bed3e23e14ad369875ba58",
+      "logIndex": 14,
+      "block": 62661122,
+      "timestamp": 1789373987,
+      "side": "buy",
+      "ethWei": "2000000000000000",
+      "tokenRaw": "790750932176480466887024"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x0f350900ac7d96baa6cd38368d0fcf3aaa636981c86495e2187a73f5836f0f6f",
+      "logIndex": 0,
+      "block": 62661061,
+      "timestamp": 1789373981,
+      "side": "sell",
+      "ethWei": "69199741090991585",
       "tokenRaw": "26781869574816494509971381"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xbd411cf26254de4837de540b3acd5dce69c36762b3955bb9308970976e8e2412",
-      "logIndex": 21,
-      "block": 62618468,
-      "timestamp": 1789369662,
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x9182f64f175d308f33eeb2a8f38289113d1587fdf1d44f6e8b311bbf1e09f586",
+      "logIndex": 2,
+      "block": 62661013,
+      "timestamp": 1789373976,
       "side": "sell",
-      "ethWei": "679849567341559",
-      "tokenRaw": "270108553948097284208809"
-    },
-    {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0x9df8ba81c41b41442a0c2aaa85c3f1066032cbebb99324b6917a4cdd9385c9b8",
-      "logIndex": 3,
-      "block": 62618292,
-      "timestamp": 1789369644,
-      "side": "sell",
-      "ethWei": "30742618962118475",
+      "ethWei": "30837065110537297",
       "tokenRaw": "11477944103492783361416306"
     },
     {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0x1ed1a78e3a27ad779fe3ca7c5f50eee2e28113ce763802a6f9a761350b622b36",
-      "logIndex": 25,
-      "block": 62617766,
-      "timestamp": 1789369590,
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x9c5906edd7dc910f49197bb901c381f20010229fa602f1a278acb7760a97bc75",
+      "logIndex": 4,
+      "block": 62661007,
+      "timestamp": 1789373976,
+      "side": "sell",
+      "ethWei": "21865098259298535",
+      "tokenRaw": "8277932834765218660438500"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0xac50b35c932ec72bc549372f9e0b35c44120247f449b2ac38c5ef76f9841cd1a",
+      "logIndex": 4,
+      "block": 62660666,
+      "timestamp": 1789373941,
+      "side": "sell",
+      "ethWei": "31890124933785598",
+      "tokenRaw": "11825618335378883800626428"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x1b9a5df20502cf071082789ac6d2fecd4fbe160b09cf2da21b33a2297853d70b",
+      "logIndex": 0,
+      "block": 62660568,
+      "timestamp": 1789373931,
       "side": "buy",
       "ethWei": "3000000000000000",
-      "tokenRaw": "1102612751042949581277689"
+      "tokenRaw": "1099213791797843148293060"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x26539ff332ca0694c655382a495d77360829b41a3d6e3a832656dfc5b9dc79f4",
-      "logIndex": 46,
-      "block": 62617757,
-      "timestamp": 1789369589,
-      "side": "sell",
-      "ethWei": "566495667699651",
-      "tokenRaw": "224961068140204588315101"
-    },
-    {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0xd460512261db5a946e92cf425ce6d6524bf8055fddd1918c4545c34865990031",
-      "logIndex": 13,
-      "block": 62617726,
-      "timestamp": 1789369586,
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x811b5fdaa3870cb962ae556aae8041a9d0b86c605bc3916d64a10591643bc3dd",
+      "logIndex": 0,
+      "block": 62660523,
+      "timestamp": 1789373927,
       "side": "buy",
-      "ethWei": "1998376000000",
-      "tokenRaw": "735321877947218246625"
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1484342048877615083478795"
     },
     {
-      "poolId": "0x2a830bdcb45aee57a8b15576bdb22f0cea2a0c687a9fd7a405150e55bb03946f",
-      "txHash": "0x82f4839ae4033059c563031cc44fb57dafcec525e4b4c9b5eeabb6bff47b55ae",
-      "logIndex": 17,
-      "block": 62617723,
-      "timestamp": 1789369586,
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0x6ddf198918d8455d45c545b2f388d596a79672d809b2a0810023b54229e8ff67",
+      "logIndex": 1,
+      "block": 62660521,
+      "timestamp": 1789373927,
+      "side": "buy",
+      "ethWei": "1999512000000",
+      "tokenRaw": "735739879871939332253"
+    },
+    {
+      "poolId": "0xe2b198c3afebaba318f73159d14fc92a9387e9ee5784393565221394d9201bda",
+      "txHash": "0xc8427445dd63f8a1f8f919efd88372a9f2e906aa3df1eaef4749cb935c7d80e7",
+      "logIndex": 27,
+      "block": 62660518,
+      "timestamp": 1789373926,
       "side": "buy",
       "ethWei": "100000000000000000",
       "tokenRaw": "38259813678309277871387687"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xcdb968acf75ef24b26e6105fecca87c55994b646e796f07ffac36fad1cd5f1c4",
-      "logIndex": 27,
-      "block": 62617698,
-      "timestamp": 1789369583,
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0xfee151890b41774592a49efc5480a4eb832fb68eea5000b7cb2cda194005245c",
+      "logIndex": 52,
+      "block": 62660318,
+      "timestamp": 1789373906,
       "side": "sell",
-      "ethWei": "24972330970385298",
-      "tokenRaw": "9817295544068716458654595"
+      "ethWei": "46944959947425834",
+      "tokenRaw": "16893740479112691143752040"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x3d584b7f3c1a4749c95a182a1253d0d63f037961347249f4815f70f5a9bffe1b",
-      "logIndex": 21,
-      "block": 62617698,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "24006218550748290",
-      "tokenRaw": "9257649482424978971629226"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x655312a49074592183e4e301d2ea01cd205a23b07081013bf88b47536ea79656",
-      "logIndex": 35,
-      "block": 62617697,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "25639456880262797",
-      "tokenRaw": "9698387722006855853110158"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x22fd16d484412fe17bbebad929099292d4fbf0aae32ca977b9cecb7f9ed1d3bb",
-      "logIndex": 24,
-      "block": 62617697,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "28920084233333876",
-      "tokenRaw": "10711931815175667751318306"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x703f3feb9da86666965d2be3cef377dc59cd4ed00686db92dad26125808f4d71",
-      "logIndex": 44,
-      "block": 62617695,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "27139742205020816",
-      "tokenRaw": "9839995442833861574845188"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x622a453093306a17d960d5da0e5aa338e2f026968b998fd59bf45801cc5e6724",
-      "logIndex": 41,
-      "block": 62617695,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "260267024543788",
-      "tokenRaw": "93389546187014654757672"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x46fd9754715f8ffccbb9512cea2e8267229ddcd9f390ae0dc98a055c636d1eda",
-      "logIndex": 1,
-      "block": 62617695,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "28822505230975432",
-      "tokenRaw": "10229962188898659530983480"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xe232a9b795635661eabb06524bbe033f5014c102e7358305aa6020e149901e23",
-      "logIndex": 60,
-      "block": 62617694,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "1999894338217962",
-      "tokenRaw": "701667429969280443741646"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x8d5dbb877cf78e7d38f488b5e08bb292c425653ab26604b21bce1406153651ca",
-      "logIndex": 58,
-      "block": 62617694,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "34040028024101433",
-      "tokenRaw": "11784604462603278576545464"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xf2a6133436605dbac6f9e44e9d6b95f705d1d71734c898248c08622e8d080816",
-      "logIndex": 14,
-      "block": 62617694,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "40641175896169485",
-      "tokenRaw": "13688884589492875814002774"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xe454d0cbebc235b34261a901b838e600ef709436e6789784527a3ddec3d85097",
-      "logIndex": 12,
-      "block": 62617693,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "33298046105532252",
-      "tokenRaw": "10918426500357642105734871"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x710be07847abd00b8b4aca75b1e8a36696a8de9fe07c8d9276dc460f352886e3",
-      "logIndex": 1,
-      "block": 62617693,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "35956542322298692",
-      "tokenRaw": "11501312746527633028590222"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x389826037d106c15a360709f3dbb147f00b48c61e334557f3391822556dfbe4f",
-      "logIndex": 26,
-      "block": 62617691,
-      "timestamp": 1789369583,
-      "side": "sell",
-      "ethWei": "48782437817192667",
-      "tokenRaw": "15144095965965151996550631"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x428f8f05fcd2807599c31831b476389a7becba4f15e98247991d6219af417e8d",
-      "logIndex": 43,
-      "block": 62617690,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "42739731581241113",
-      "tokenRaw": "12852104141350265918028557"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x1e45553effa8a1e3e2f3db928a37cb6f1d59c2f866e188d041631ec38fef3162",
-      "logIndex": 14,
-      "block": 62617690,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "40908476985414712",
-      "tokenRaw": "11953729460108757692665560"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x3ef373f124ca95c43325c4a50c7580cbc70f272493a8467ec89c5dca9035de1e",
-      "logIndex": 48,
-      "block": 62617689,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "46279565150431468",
-      "tokenRaw": "13130917541499458185884058"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xaa86b9780eb7400d34bd7e0dc41c35716c44b8314147f3fb1387e3f10f449ce5",
-      "logIndex": 5,
-      "block": 62617689,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "69330646109091539",
-      "tokenRaw": "18931632996659822880807040"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x624fbc20b8b64f134773f1370544e6d89286b7d692119b4850e97a038b938682",
-      "logIndex": 34,
-      "block": 62617688,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "73628661481763138",
-      "tokenRaw": "19192407776372726040252045"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x8e6eafe4950790ccca192ff099a0673e34a66070129161e5e5a28b123e73091c",
-      "logIndex": 31,
-      "block": 62617688,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "68303264755675361",
-      "tokenRaw": "17018733569119068915230060"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xf854c0fd9653948f91529225393014ff7689eb447b61b34269eb0610519732c7",
-      "logIndex": 26,
-      "block": 62617688,
-      "timestamp": 1789369582,
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x5fd705f9f82be0ac1598acc6dbc5d62adfd477b6b40a2f9391943278d56ab9a4",
+      "logIndex": 7,
+      "block": 62659950,
+      "timestamp": 1789373868,
       "side": "buy",
-      "ethWei": "2820306680987109",
-      "tokenRaw": "684963524779896914083307"
+      "ethWei": "990000000000000",
+      "tokenRaw": "348095714660991162243020"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x1d71139c8869b9cc00e42cd1ec3a96c7059fe6118d03fa31a599f36e90da8b8c",
-      "logIndex": 45,
-      "block": 62617687,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "64832860902415007",
-      "tokenRaw": "15524949640016695103510967"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x78904ca70f836370743790e05949bb29aa32439dd6f060b6969bf4ca729d94f5",
-      "logIndex": 12,
-      "block": 62617686,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "79452544905095173",
-      "tokenRaw": "18206836746814270485929076"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xf46d9b4077f254c52a7667058d9dafd94b1d7b638fa6a3a292a099316ce97ef6",
-      "logIndex": 34,
-      "block": 62617684,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "94322460181463756",
-      "tokenRaw": "20524463046274897032579222"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xfabb373bbe33aa30de90b9b795c167b21a858d3e3ab416bfc8cb4c166b71950f",
-      "logIndex": 22,
-      "block": 62617684,
-      "timestamp": 1789369582,
-      "side": "sell",
-      "ethWei": "1242491855652329682",
-      "tokenRaw": "193281802980994502104213494"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x3d0dee37c43d6b379b55fd6d162ccba6a5beeded1d22eb0db8b3b3dbec380e59",
-      "logIndex": 14,
-      "block": 62617671,
-      "timestamp": 1789369580,
-      "side": "buy",
-      "ethWei": "820741786426572",
-      "tokenRaw": "93389546187014654757672"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xb6aacfd373752ea1c0c8962bfecb1e49308112aa2757dbe78322eebc39187f0f",
-      "logIndex": 35,
-      "block": 62617657,
-      "timestamp": 1789369579,
-      "side": "sell",
-      "ethWei": "4904326129169498",
-      "tokenRaw": "560359825822034294527153"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x025872b21fa82035c1b9e003559537b7b97197fa4782aafcdc2c5f73d168ad23",
-      "logIndex": 10,
-      "block": 62617475,
-      "timestamp": 1789369562,
-      "side": "buy",
-      "ethWei": "1980000000000000",
-      "tokenRaw": "224961068140204588315101"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x72a2461324c24698e84f2e472fd99802a89b1b1775596fc89363932501060d0c",
-      "logIndex": 1,
-      "block": 62617463,
-      "timestamp": 1789369561,
-      "side": "sell",
-      "ethWei": "464914098894081822",
-      "tokenRaw": "48320450745248625526053373"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xed9d7b3f2c2e05f860b5f500fc546d85625bc83347bfeac41b90f4e121f41cbe",
-      "logIndex": 17,
-      "block": 62617224,
-      "timestamp": 1789369536,
-      "side": "sell",
-      "ethWei": "4138684647282020",
-      "tokenRaw": "391049016247057367926918"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x92244cb0a2a3c65197fc23e827f5771dd8dfb0d2ecd38143fa1a53b504803075",
-      "logIndex": 20,
-      "block": 62617206,
-      "timestamp": 1789369535,
-      "side": "buy",
-      "ethWei": "5958271364876632",
-      "tokenRaw": "560359825822034294527153"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xcaae9ff0e2b5849a257dd17a8257f5382663ae518d38e43395fb38a5724b2322",
-      "logIndex": 11,
-      "block": 62617206,
-      "timestamp": 1789369535,
-      "side": "buy",
-      "ethWei": "96486574751577358",
-      "tokenRaw": "9257649482424978971629226"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x8b8652d812aae94e065576d04f5b7ba48a2e1e5b0d42b5101f099aa4be961383",
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x82b53acf4c0a1a3560d0a39b077163422aeef1aae7f80d7129d629f2cc746c79",
       "logIndex": 6,
-      "block": 62617205,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "98458962724519956",
-      "tokenRaw": "9817295544068716458654595"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x100d182a76dfe315b298e65e2896a4a0fad509df41b58c7e82072c67b8676bf7",
-      "logIndex": 0,
-      "block": 62617204,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "94922822340793772",
-      "tokenRaw": "9839995442833861574845188"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x2a406845dd677c4fb035dae642234fd27451bcaee493941e1a2551af0cdcf685",
-      "logIndex": 38,
-      "block": 62617203,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "90075716689133092",
-      "tokenRaw": "9698387722006855853110158"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x1e853d1fea966d668de47efbf59d8203599938d3fb3f3e06d5eb97d7cf04f3d8",
-      "logIndex": 0,
-      "block": 62617202,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "97506745233007822",
-      "tokenRaw": "10918426500357642105734871"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x8a3394ea37c91afa7d27beb05d4954bec5bd5ed11a31a8cf503c41a747ba2b15",
-      "logIndex": 4,
-      "block": 62617201,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "2000000000000000",
-      "tokenRaw": "228706317032435697522928"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xda006ff146f702f01c70125e8c82f35e75aa508f129461eedd3a7621101efb85",
-      "logIndex": 0,
-      "block": 62617201,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "87747306809270843",
-      "tokenRaw": "10229962188898659530983480"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xb0ae03c821b1c36765362cd04a8b68962244866fab9bd8ff0eb6223dbdbefff8",
-      "logIndex": 4,
-      "block": 62617200,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "88428109534242637",
-      "tokenRaw": "10711931815175667751318306"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xbdfd980cc953fca5eed78332612953ded7cb6221f26e2833c32516876bb19571",
-      "logIndex": 2,
-      "block": 62617200,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "1986160434095224",
-      "tokenRaw": "245421975904116231480139"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x3340e0de994fa23e8d11665417752ffc336cd9315c936465bce2c16958249748",
-      "logIndex": 7,
-      "block": 62617199,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "91156532233268097",
-      "tokenRaw": "11501312746527633028590222"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x35f22d9961504037465fb61b06a76c37f97c90247d9ca308cd855ef2aa75e693",
-      "logIndex": 7,
-      "block": 62617198,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "90916863853406243",
-      "tokenRaw": "11953729460108757692665560"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x2f0269e362998457c140e7f76a91d31f6c230de4239046f09595f7d4b171beb6",
-      "logIndex": 8,
-      "block": 62617197,
-      "timestamp": 1789369534,
-      "side": "buy",
-      "ethWei": "86040647283832782",
-      "tokenRaw": "11784604462603278576545464"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x6c7e9a83f8e675734611190b30ecd36e80e0a875244eb492bc07a1dc6a4d7b6e",
-      "logIndex": 0,
-      "block": 62617196,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "90016851912006357",
-      "tokenRaw": "12852104141350265918028557"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xd6e774860abe4286284f586cb8f0da10c6385df562f3853e8a8efaa3bbca4096",
-      "logIndex": 7,
-      "block": 62617195,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "88107106737112997",
-      "tokenRaw": "13130917541499458185884058"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xbf0ac5b35eb54e2c91ba03ebd5c223d42a33057e2869adec2307a9098bf7207a",
-      "logIndex": 67,
-      "block": 62617194,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "87955385234155161",
-      "tokenRaw": "13688884589492875814002774"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x18cc1861accf3048f794a1c67c6d96002502e91e8894b34a33f5a5450064616c",
-      "logIndex": 15,
-      "block": 62617193,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "92972597262052133",
-      "tokenRaw": "15144095965965151996550631"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x053238c593d396173bafeab405763bbd3b5f36be0a9f55032e5b89bbc1ea52c0",
-      "logIndex": 11,
-      "block": 62617193,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "3960000000000000",
-      "tokenRaw": "661157570195154652135727"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xc10bae25b5c73758c07dbebcfcca7af808f6495a78f1068f934280eed9149d65",
-      "logIndex": 4,
-      "block": 62617192,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "90718838414338826",
-      "tokenRaw": "15524949640016695103510967"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x83757a9e0772c98e72bf1f7159efa8c0db8871be0f4ef4827da3f0c6f4665da5",
-      "logIndex": 2,
-      "block": 62617192,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "4000000000000000",
-      "tokenRaw": "701667429969280443741646"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x02f4b01a8b01d92adc935cda708fd1194959ded85a4b2696b15e244ff009ec6b",
-      "logIndex": 1,
-      "block": 62617191,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "94495774077550714",
-      "tokenRaw": "17018733569119068915230060"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xe80c9eae4fff8ba8ad78b08fd5a7626e7cd07e8fd328ec761f0b1b1e4a9576d8",
-      "logIndex": 0,
-      "block": 62617190,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "99721115099259142",
-      "tokenRaw": "18931632996659822880807040"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x28f63f502f414eefd4cccf652eda2c12d7378ec185cc9e924e71db75304c716f",
-      "logIndex": 2,
-      "block": 62617189,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "90946484062440133",
-      "tokenRaw": "18206836746814270485929076"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x0d9ec0ac5412750515454c9bb409d28fe03e66850897660bfcfbb0a0e8c1a815",
-      "logIndex": 0,
-      "block": 62617188,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "91009538217502831",
-      "tokenRaw": "19192407776372726040252045"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x794358d808270a264cc38aa5a8f7f0093b79073cf150b5a9b2b253230e74b4c6",
-      "logIndex": 25,
-      "block": 62617187,
-      "timestamp": 1789369533,
-      "side": "buy",
-      "ethWei": "92228267651345259",
-      "tokenRaw": "20524463046274897032579222"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x58850c35be2cf7f0195bac118ad0a252a3a402f1d17ef6ba0c366cf14ab19d55",
-      "logIndex": 0,
-      "block": 62617148,
-      "timestamp": 1789369529,
-      "side": "sell",
-      "ethWei": "2582888450373727",
-      "tokenRaw": "593288453441815780385735"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x9611c7c2ac7cec3e0d5b6592fc2faa10cf1fe1e09328b86b02a3e060462af6b8",
-      "logIndex": 22,
-      "block": 62617142,
-      "timestamp": 1789369528,
-      "side": "sell",
-      "ethWei": "248411879339976316",
-      "tokenRaw": "53034641061858247528595165"
-    },
-    {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x9d808a5da0bea1796b248fe7dac794ba739963bc6f77814ab3a3ddf21c6d4d89",
-      "logIndex": 0,
-      "block": 62616702,
-      "timestamp": 1789369482,
+      "block": 62659781,
+      "timestamp": 1789373851,
       "side": "buy",
       "ethWei": "3000000000000000",
-      "tokenRaw": "593288453441815780385735"
+      "tokenRaw": "1056834550700887220152661"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0xc68dc59e4f642fa4c960ae72a0e275187a3cb013482f65193f03d855b4c46899",
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x530d31b01d86a00e7c435c0c8a4ef8f2048820ec73041f899df405f5f46c3805",
+      "logIndex": 32,
+      "block": 62659777,
+      "timestamp": 1789373851,
+      "side": "buy",
+      "ethWei": "2000000000000000",
+      "tokenRaw": "705876873492319085021936"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0xb56258e243bc57dbeab453dfc32a30356cf78ccf1483a898a56fea19840f2583",
       "logIndex": 0,
-      "block": 62616660,
-      "timestamp": 1789369478,
+      "block": 62659771,
+      "timestamp": 1789373850,
       "side": "buy",
-      "ethWei": "1999390000000",
-      "tokenRaw": "395738081860738018152"
+      "ethWei": "4040218429817412",
+      "tokenRaw": "1429181851070255937624486"
     },
     {
-      "poolId": "0xdea82fda62ac2909a02aaaa485636f3827d071825d7962c104d17f28362a0646",
-      "txHash": "0x8a11814af3a5ec8415e8ae7591e206521627f04d394597182329d5137dc0c344",
-      "logIndex": 36,
-      "block": 62616656,
-      "timestamp": 1789369478,
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x1f7b1b177a50834314c7842b925309bb12ad8075ffefd514c74fb74c9ef878c9",
+      "logIndex": 21,
+      "block": 62659768,
+      "timestamp": 1789373850,
       "side": "buy",
-      "ethWei": "1050000000000000000",
-      "tokenRaw": "294636894788101375158862032"
+      "ethWei": "1999420000000",
+      "tokenRaw": "708345644788400500103"
+    },
+    {
+      "poolId": "0xbc3473a3215a31c9c2bcc27167829d68de054d0c05c6aa26a2c7822f50947563",
+      "txHash": "0x0bed4f2c0fe7feffdc39e6b2668fade71a7925738fdf67d0740e038097bcb1ed",
+      "logIndex": 94,
+      "block": 62659765,
+      "timestamp": 1789373850,
+      "side": "buy",
+      "ethWei": "150000000000000000",
+      "tokenRaw": "56312468263708970479173469"
     }
   ],
   "reconciliation": {
-    "txHash": "0xaa4665b6ebae16f4c8a2ca2e91167675951bfeb6f68e1d2ffd441c8fef0f6672",
-    "wallet": "0x9d2b089083fbabb2e4554f950adc4693f4f83c64",
-    "token": "0x4636E0604cD1D0f638A6512C1c32E1CD25E2af02",
-    "swapTokenDelta": "719883796432958644962269",
-    "transferTokenDelta": "719883796432958644962269",
+    "txHash": "0xaf980f45b40b238ae430db5af02dd4600c9fc728a04495c55c425020814ec31a",
+    "wallet": "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8",
+    "token": "0x199157Bf8Fc3b85aF2A40E7BBe718893a9B56Fd0",
+    "swapTokenDelta": "1099213793051809337852333",
+    "transferTokenDelta": "1099213793051809337852333",
     "matches": true,
     "scope": "Net token transfers to transaction sender versus all swap legs in this pool in one receipt. No PnL or all-time inventory claim."
   },
-  "requests": 174,
-  "durationMs": 8965
+  "requests": 115,
+  "durationMs": 15957
 }

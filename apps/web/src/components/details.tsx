@@ -1,491 +1,329 @@
 "use client";
-import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  Download,
-  Info,
-  Share2,
-  Shield,
-  Users,
-  X,
-} from "lucide-react";
-import {
+  walletMetrics,
+  walletHref,
   shortAddress,
-  since,
-  sumWei,
-  type PoolDetail,
-  type WalletDetail,
-  type Window,
+  poolHref,
+  type LiveWindow,
 } from "@pools/core";
+import { useLive } from "./live-provider";
+import { AddressLabel, Chart } from "./ui";
 import {
-  AddressLabel,
-  Avatar,
-  Change,
-  Chart,
-  ModeBadge,
-  Money,
-  PeriodTabs,
-  TokenIcon,
-  TradeTable,
-  WatchButton,
-} from "./ui";
-import { LeaderTable } from "./traders";
-import { useManifest, useQuery } from "./state";
-
-export function PoolView({ detail }: { detail: PoolDetail }) {
-  const { pool, trades, traders } = detail;
-  const manifest = useManifest();
-  const { params, set } = useQuery();
-  const window: Window = params.get("window") === "24h" ? "24h" : "7d";
-  const points = pool.series.filter(
-    (p) => p.time >= manifest.to - (window === "24h" ? 86400 : 604800),
+  AuditAction,
+  Eth,
+  PoolPicker,
+  Stat,
+  Trades,
+  Unavailable,
+  WindowTabs,
+  useSelectedMarket,
+  useWindow,
+  utc,
+} from "./live-ui";
+export function WalletView({ address }: { address: string }) {
+  const { market, error, loading } = useSelectedMarket(),
+    { audits } = useLive(),
+    { window: period, setWindow } = useWindow();
+  const a = market ? audits[market.id] : undefined,
+    m = a ? walletMetrics(a, address, period) : null;
+  const [card, setCard] = useState(false),
+    [copy, setCopy] = useState("");
+  const cardParams = new URLSearchParams(
+    market ? { pool: market.id, launch: market.launchTx, window: period } : {},
   );
-  return (
-    <div className="page">
-      <div className="breadcrumb">
-        <Link href="/">Pools</Link>
-        <ChevronRight size={12} />
-        <span>{pool.name}</span>
-      </div>
-      <div className="detail-heading">
-        <div className="detail-identity">
-          <TokenIcon pool={pool} size="large" />
-          <div>
-            <h1>
-              {pool.name}
-              <small>{pool.symbol}</small>
-              <ModeBadge mode={pool.mode} />
-            </h1>
-            <AddressLabel address={pool.token} />
-          </div>
-        </div>
-        <div className="detail-actions">
-          <WatchButton id={pool.id} />
-          <Link
-            className="button secondary"
-            href={`/creators/#${pool.creator}`}
-          >
-            View creator <ArrowRight size={14} />
-          </Link>
-        </div>
-      </div>
-      <div className="detail-grid">
-        <div className="detail-main">
-          <section className="panel">
-            <div className="detail-stats">
-              <div className="detail-stat">
-                <span>Fully diluted value</span>
-                <strong>
-                  <Money wei={pool.fdvWei} />
-                </strong>
-              </div>
-              <div className="detail-stat">
-                <span>{window.toUpperCase()} volume</span>
-                <strong>
-                  <Money wei={pool.stats[window].volumeWei} />
-                </strong>
-              </div>
-              <div className="detail-stat">
-                <span>Liquidity</span>
-                <strong>
-                  <Money wei={pool.liquidityWei} />
-                </strong>
-              </div>
-              <div className="detail-stat">
-                <span>{window.toUpperCase()} change</span>
-                <strong>
-                  <Change value={pool.stats[window].change} />
-                </strong>
-              </div>
-            </div>
-            <div className="panel-heading">
-              <h2>
-                {pool.symbol} / ETH <span className="badge">Price history</span>
-              </h2>
-              <PeriodTabs value={window} onChange={(w) => set({ window: w })} />
-            </div>
-            <Chart points={points} />
-            <div className="panel-footnote">
-              Price observations from simulated swaps. Hover or use arrow keys
-              to inspect.
-            </div>
-          </section>
-          <TradeTable trades={trades} pools={[pool]} showPool={false} />
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Traders in this pool</h2>
-              <span className="subtle-badge">7D</span>
-            </div>
-            {pool.mode === "crowd" ? (
-              <div className="holder-unavailable">
-                <Info size={20} />
-                <h3>Crowd trades are not ranked</h3>
-                <p>
-                  Auction entry costs need separate verification. This pool’s
-                  trading activity is visible above, but it is excluded from
-                  realized PnL rankings.
-                </p>
-              </div>
-            ) : (
-              <LeaderTable rows={traders} />
-            )}
-          </section>
-        </div>
-        <aside className="market-sidebar">
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Pool overview</h2>
-              <Shield size={15} className="muted" />
-            </div>
-            <div className="facts">
-              <div className="fact-row">
-                <span>Network</span>
-                <span>Robinhood Chain</span>
-              </div>
-              <div className="fact-row">
-                <span>Launch</span>
-                <ModeBadge mode={pool.mode} />
-              </div>
-              <div className="fact-row">
-                <span>Created</span>
-                <span>
-                  {since(pool.createdAt, manifest.to)} before snapshot
-                </span>
-              </div>
-              <div className="fact-row">
-                <span>Total supply</span>
-                <span>1,000,000,000</span>
-              </div>
-              <div className="fact-row">
-                <span>LP fee</span>
-                <span>0.25%</span>
-              </div>
-              <div className="fact-row">
-                <span>Creator</span>
-                <Link
-                  className="wallet-link mono"
-                  href={`/wallet/${pool.creator}/`}
-                >
-                  {shortAddress(pool.creator)}
-                </Link>
-              </div>
-              <div className="fact-row">
-                <span>Pool ID</span>
-                <AddressLabel address={pool.id} />
-              </div>
-              <div className="fact-row">
-                <span>Traders ({window})</span>
-                <span>{pool.stats[window].traders}</span>
-              </div>
-            </div>
-            <p className="pool-description">
-              {pool.description} All token details on this page are part of the
-              demo dataset.
-            </p>
-          </section>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Holder distribution</h2>
-              <Users size={15} className="muted" />
-            </div>
-            <div className="holder-unavailable">
-              <h3>Holder data isn’t in this snapshot</h3>
-              <p>
-                We won’t infer holders from swaps. Verified balances and
-                protocol-adjusted concentration will appear when a reliable
-                source is connected.
-              </p>
-            </div>
-          </section>
-        </aside>
-      </div>
-    </div>
-  );
-}
-function ShareCard({ detail }: { detail: WalletDetail }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState("");
-  const path = `/cards/${detail.wallet.address}.png`;
-  async function downloadCard() {
+  const cardUrl = `/cards/${address}.png?${cardParams}`;
+  function shareUrl() {
+    return new URL(
+      `${walletHref(address, market)}${market ? "&" : "?"}window=${period}`,
+      window.location.origin,
+    ).href;
+  }
+  async function copyLink() {
     try {
-      const response = await fetch(path);
-      if (!response.ok) throw new Error("Card unavailable");
-      const url = URL.createObjectURL(await response.blob());
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${detail.wallet.label}-demo-pnl.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      await navigator.clipboard.writeText(shareUrl());
+      setCopy("Link copied");
     } catch {
-      setError("The card could not be downloaded. Please try again.");
+      setCopy("Copy unavailable - use the address bar");
     }
   }
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(
-        `${location.origin}/wallet/${detail.wallet.address}/`,
-      );
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError("Clipboard unavailable. Copy the address from your browser.");
-    }
-  }
-  return (
-    <>
-      <button className="button" onClick={() => dialog.current?.showModal()}>
-        <Share2 size={14} /> Share performance
-      </button>
-      <dialog
-        className="share-dialog"
-        ref={dialog}
-        onClick={(e) => {
-          if (e.target === dialog.current) dialog.current.close();
-        }}
-      >
-        <Image
-          src={path}
-          width={1200}
-          height={630}
-          alt={`${detail.wallet.label} simulated seven-day performance card`}
-          unoptimized
-        />
-        <div className="share-actions">
-          <a
-            className="button"
-            href={path}
-            download={`${detail.wallet.label}-demo-pnl.png`}
-            onClick={(event) => {
-              event.preventDefault();
-              void downloadCard();
-            }}
-          >
-            <Download size={14} /> Download PNG
-          </a>
-          <button className="button secondary" onClick={copy}>
-            {copied ? "Link copied" : "Copy profile link"}
-          </button>
-          <button
-            className="icon-button"
-            aria-label="Close share card"
-            onClick={() => dialog.current?.close()}
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <p className="share-caption" role="status">
-          {error ||
-            "Demo label and snapshot date are included in the image. Hosted link previews work after deployment."}
-        </p>
-      </dialog>
-    </>
-  );
-}
-export function WalletView({
-  detail,
-  rank,
-}: {
-  detail: WalletDetail;
-  rank: number | null;
-}) {
-  const { params, set } = useQuery();
-  const window: Window = params.get("window") === "24h" ? "24h" : "7d";
-  const summary = detail.summary[window];
-  const manifest = useManifest();
-  const from = manifest.to - (window === "24h" ? 86400 : 604800);
-  const baseline = BigInt(
-    detail.pnlSeries.filter((p) => p.time < from).at(-1)?.wei ?? "0",
-  );
-  const series = [
-    { time: from, wei: "0" },
-    ...detail.pnlSeries
-      .filter((p) => p.time >= from)
-      .map((p) => ({ ...p, wei: (BigInt(p.wei) - baseline).toString() })),
-    { time: manifest.to, wei: summary.realizedWei },
-  ];
-  const positionTab = params.get("positions") ?? "all";
-  const positions = detail.positions.filter(
-    (p) =>
-      positionTab === "all" ||
-      (positionTab === "open" ? p.quantity !== "0" : p.quantity === "0"),
-  );
-  const pools = detail.positions.map((p) => p.pool);
+  const pct = (n: number | null | undefined) =>
+    n === null || n === undefined ? <Unavailable /> : `${n.toFixed(1)}%`;
   return (
     <div className="page">
-      <div className="breadcrumb">
-        <Link href="/traders/">Traders</Link>
-        <ChevronRight size={12} />
-        <span>{detail.wallet.label}</span>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">WALLET PROFILE / VERIFIED COVERAGE</div>
+          <h1>
+            {shortAddress(address)}
+            <span className="title-dot">.</span>
+          </h1>
+          <AddressLabel address={address} full />
+          <p>
+            Any address, no account. Metrics below cover one audited pool; they
+            are not wallet-wide totals.
+          </p>
+        </div>
+        <Link className="button secondary" href="/wallet/">
+          Look up another wallet
+        </Link>
       </div>
-      <div className="detail-heading">
-        <div className="detail-identity">
-          <Avatar address={detail.wallet.address} color={detail.wallet.color} />
-          <div>
-            <h1>
-              {detail.wallet.label}
-              <span className="badge">Demo label</span>
-              {rank !== null && <span className="rank-medal">7D #{rank}</span>}
-            </h1>
-            <AddressLabel address={detail.wallet.address} />
-          </div>
+      <section className="panel">
+        <div className="live-controls">
+          <PoolPicker />
+          <WindowTabs value={period} onChange={setWindow} />
         </div>
-        <div className="detail-actions">
-          <ShareCard detail={detail} />
-        </div>
-      </div>
-      <div className="stats-grid">
-        <div className="stat">
-          <span>
-            Realized PnL{" "}
-            <span className="subtle-badge">{window.toUpperCase()}</span>
-          </span>
-          <strong>
-            <Money wei={summary.realizedWei} signed />
-          </strong>
-          <small>Instant pools · gas excluded</small>
-        </div>
-        <div className="stat">
-          <span>Win rate</span>
-          <strong>
-            {summary.winRate === null
-              ? "N/A"
-              : `${summary.winRate.toFixed(0)}%`}
-          </strong>
-          <small>
-            {summary.wins} wins / {summary.losses} losses · closed positions
-          </small>
-        </div>
-        <div className="stat">
-          <span>Trade volume</span>
-          <strong>
-            <Money wei={summary.volumeWei} />
-          </strong>
-          <small>All pools, buys + sells</small>
-        </div>
-        <div className="stat">
-          <span>Tracked inventory value</span>
-          <strong>
-            <Money wei={sumWei(detail.positions.map((p) => p.valueWei))} />
-          </strong>
-          <small>Swap-derived inventory, not wallet balance</small>
-        </div>
-      </div>
-      <section className="panel" style={{ marginBottom: 24 }}>
-        <div className="panel-heading">
-          <h2>
-            Cumulative realized PnL{" "}
-            <span className="subtle-badge">{window.toUpperCase()}</span>
-          </h2>
-          <PeriodTabs value={window} onChange={(w) => set({ window: w })} />
-        </div>
-        <Chart key={window} points={series} profit label="Cumulative PnL" />
-        <div className="panel-footnote">
-          Realized gains in the selected period, with cost basis carried from
-          earlier trades. Values remain unchanged between sales.
-        </div>
-      </section>
-      <section className="panel" style={{ marginBottom: 24 }}>
-        <div className="table-toolbar">
-          <div className="table-tabs">
-            {["all", "open", "closed"].map((t) => (
-              <button
-                key={t}
-                className={positionTab === t ? "active" : ""}
-                onClick={() => set({ positions: t === "all" ? null : t })}
-              >
-                {t === "all"
-                  ? "All positions"
-                  : t === "open"
-                    ? "Open positions"
-                    : "Closed positions"}
-              </button>
-            ))}
-          </div>
-          <span className="count">{positions.length}</span>
-        </div>
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Token</th>
-                <th>Status</th>
-                <th>Realized PnL (7D)</th>
-                <th>Unrealized</th>
-                <th>Remaining basis</th>
-                <th>Buys / sells</th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => (
-                <tr key={p.poolId}>
-                  <td>
-                    <Link className="token-cell" href={`/pool/${p.poolId}/`}>
-                      <TokenIcon pool={p.pool} />
-                      <span>
-                        <strong>{p.pool.name}</strong>
-                        <small className="cell-sub">{p.pool.symbol}</small>
-                      </span>
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="badge">
-                      {p.quantity === "0" ? "Closed" : "Open"}
-                    </span>
-                    {p.pool.mode === "crowd" && (
-                      <small className="cell-sub">Crowd · unranked</small>
-                    )}
-                  </td>
-                  <td>
-                    {p.realizedWei === null ? (
-                      <span className="muted">Unknown basis</span>
-                    ) : (
-                      <Money wei={p.realizedWei} signed />
-                    )}
-                  </td>
-                  <td>
-                    {p.unrealizedWei === null ? (
-                      "Unavailable"
-                    ) : (
-                      <Money wei={p.unrealizedWei} signed />
-                    )}
-                  </td>
-                  <td>
-                    <Money wei={p.costWei} />
-                  </td>
-                  <td className="muted">
-                    {p.buys} / {p.sells}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {positions.length === 0 && (
-          <div className="empty-state">
-            <h3>No {positionTab} positions</h3>
-            <p>Try another position filter.</p>
-          </div>
+        {market ? (
+          <AuditAction market={market} />
+        ) : (
+          <p className="panel-footnote">
+            {loading
+              ? "Loading linked pool…"
+              : error || "Pool outside coverage"}
+          </p>
         )}
       </section>
-      <TradeTable trades={detail.trades} pools={pools} />
-      <div className="page-intro-note">
-        <Info size={14} />
-        <span>
-          Position PnL uses the full snapshot; the ranked total excludes crowd
-          pools. Unrealized values use snapshot prices and may not be
-          realizable. <Link href="/methodology/">Coverage and methodology</Link>
-        </span>
+      <div className="stats-grid live-eight-stats">
+        <Stat label="Realized PnL" note="Selected window · before gas">
+          <Eth wei={m?.realizedWei} signed />
+        </Stat>
+        <Stat
+          label="Unrealized PnL"
+          note="Inventory at audit cutoff · spot mark"
+        >
+          <Eth wei={m?.unrealizedWei} signed />
+        </Stat>
+        <Stat label="Realized ROI" note="Profit / disposed cost basis">
+          {pct(m?.roi)}
+        </Stat>
+        <Stat label="Win rate" note="Closed inventory cycles">
+          {pct(m?.winRate)}
+        </Stat>
+        <Stat label="Observed swaps">
+          {m ? m.trades.length : <Unavailable />}
+        </Stat>
+        <Stat label="Observed volume">
+          <Eth wei={m?.volumeWei} />
+        </Stat>
+        <Stat label="Avg closed hold" note="First buy to closing sell">
+          {m?.avgHold === null || m?.avgHold === undefined ? (
+            <Unavailable />
+          ) : (
+            `${Math.round(m.avgHold)}s`
+          )}
+        </Stat>
+        <Stat label="Best realized sale">
+          <Eth wei={m?.bestWei} signed />
+        </Stat>
       </div>
-      <Link className="button secondary" href="/traders/">
-        <ArrowLeft size={14} /> Back to traders
-      </Link>
+      {!a ? (
+        <div className="panel empty-state">
+          <h2>Audit this pool to load the wallet’s data</h2>
+          <p>
+            No PnL is assumed before receipts, transfers and inventory are
+            checked.
+          </p>
+        </div>
+      ) : !m ? (
+        <div className="panel empty-state">
+          <h2>No attributed swaps for this address in this pool</h2>
+          <p>
+            This is not a zero balance or a statement about activity elsewhere
+            on the chain.
+          </p>
+        </div>
+      ) : (
+        <>
+          {!m.complete && (
+            <div className="coverage-notice">
+              <strong>Incomplete accounting: PnL is unavailable.</strong>
+              <p>
+                {m.row.flags.join(", ")}. Raw observed swaps remain visible for
+                inspection.
+              </p>
+            </div>
+          )}
+          <div className="workspace-grid">
+            <div>
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Cumulative realized PnL · {period}</h2>
+                </div>
+                {m.complete ? (
+                  <Chart
+                    points={m.curve}
+                    label="Cumulative realized PnL"
+                    profit
+                  />
+                ) : (
+                  <div className="empty-state">
+                    Cannot chart profit with unknown basis.
+                  </div>
+                )}
+              </section>
+              <section className="panel live-section">
+                <div className="panel-heading">
+                  <h2>Open position · {a.market.symbol}</h2>
+                </div>
+                {m.complete &&
+                m.position &&
+                BigInt(m.position.quantity) > 0n ? (
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Token</th>
+                          <th>Inventory</th>
+                          <th>Cost</th>
+                          <th>Spot value</th>
+                          <th>Unrealized</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>
+                            <Link href={poolHref(a.market)}>
+                              {a.market.symbol}
+                            </Link>
+                          </td>
+                          <td>
+                            {new Intl.NumberFormat("en-US", {
+                              maximumSignificantDigits: 7,
+                            }).format(
+                              Number(m.position.quantity) /
+                                10 ** a.market.decimals,
+                            )}
+                          </td>
+                          <td>
+                            <Eth wei={m.position.costWei} />
+                          </td>
+                          <td>
+                            <Eth wei={m.valueWei} />
+                          </td>
+                          <td>
+                            <Eth wei={m.unrealizedWei} signed />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="panel-footnote">
+                    {m.complete
+                      ? "No open inventory in this audited pool."
+                      : "Position value is withheld because cost or inventory is incomplete."}
+                  </p>
+                )}
+                <p className="panel-footnote">
+                  Marked at the audit’s latest observed pool price, through{" "}
+                  {utc(a.toTimestamp)}. Spot value is not guaranteed exit
+                  proceeds.
+                </p>
+              </section>
+              <section className="panel live-section">
+                <div className="panel-heading">
+                  <h2>Observed trade history</h2>
+                </div>
+                <Trades
+                  trades={m.trades.map((e) => e.trade).reverse()}
+                  markets={[a.market]}
+                />
+              </section>
+            </div>
+            <aside className="market-sidebar">
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Behaviour</h2>
+                </div>
+                <dl className="live-facts">
+                  <div>
+                    <dt>First 5 blocks share</dt>
+                    <dd>{pct(m.earlyBuyShare)}</dd>
+                  </div>
+                  <div>
+                    <dt>Closed holds under 60s</dt>
+                    <dd>{pct(m.fastHoldShare)}</dd>
+                  </div>
+                  <div>
+                    <dt>Crowd entries</dt>
+                    <dd>
+                      <Unavailable reason="Auction coverage is not collected" />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Record</dt>
+                    <dd>
+                      {m.complete ? (
+                        `${m.wins}W / ${m.losses}L`
+                      ) : (
+                        <Unavailable />
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="panel-footnote">
+                  Early share is the fraction of this wallet’s supported buy
+                  quantity acquired in the first five blocks after launch.
+                  Same-block activity alone does not establish bundling.
+                </p>
+              </section>
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>PnL share card</h2>
+                </div>
+                <p className="panel-footnote">
+                  1200 × 630 PNG. Includes this pool, window, audit cutoff and
+                  before-gas qualification. The server calculates card values
+                  from RPC audit data.
+                </p>
+                <div className="live-share-actions">
+                  <button className="button" onClick={() => setCard(true)}>
+                    Generate share card
+                  </button>
+                  <button className="button secondary" onClick={copyLink}>
+                    Copy link
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      window.open(
+                        `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl())}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      )
+                    }
+                  >
+                    Post on X
+                  </button>
+                </div>
+                {copy && (
+                  <p role="status" className="panel-footnote">
+                    {copy}
+                  </p>
+                )}
+                {card && (
+                  <>
+                    <a
+                      className="leader-link"
+                      href={cardUrl}
+                      download={`${address}-${period}.png`}
+                    >
+                      Download PNG ↗
+                    </a>
+                    <p className="panel-footnote">
+                      <a href={cardUrl} target="_blank" rel="noreferrer">
+                        Open card preview
+                      </a>
+                    </p>
+                  </>
+                )}
+              </section>
+            </aside>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+export const walletWindows: LiveWindow[] = ["24h", "7d", "30d", "All"];

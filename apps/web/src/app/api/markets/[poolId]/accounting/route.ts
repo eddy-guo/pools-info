@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ poolId: string }> },
 ) {
   const { poolId } = await params;
@@ -14,24 +14,28 @@ export async function GET(
   if (process.env.CHAIN_REFRESH_DISABLED === "1")
     return Response.json({ error: "refresh_disabled" }, { status: 503 });
   try {
-    const current = await currentChainSnapshot().catch(() => initial);
+    const launch = new URL(request.url).searchParams.get("launch");
+    const current = launch
+      ? initial
+      : await currentChainSnapshot().catch(() => initial);
     const market = current.markets.find((p) => p.id === poolId);
-    if (!market)
+    const launchTx =
+      launch && /^0x[0-9a-f]{64}$/i.test(launch) ? launch : market?.launchTx;
+    if (!launchTx)
       return Response.json(
         { error: "outside_current_coverage" },
         { status: 404, headers: { "Cache-Control": "no-store" } },
       );
-    const result = await auditedPoolSnapshot(
-      poolId,
-      market.launchTx as `0x${string}`,
-    );
+    const result = await auditedPoolSnapshot(poolId, launchTx as `0x${string}`);
+    const { accounting, ...auditedMarket } = result.markets[0];
     return Response.json(
       {
         poolId,
         toBlock: result.toBlock,
         toTimestamp: result.toTimestamp,
         generatedAt: result.generatedAt,
-        ...result.markets[0].accounting,
+        market: auditedMarket,
+        ...accounting,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

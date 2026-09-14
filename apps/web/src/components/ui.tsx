@@ -1,9 +1,6 @@
 "use client";
-import Link from "next/link";
 import { useId, useState } from "react";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -15,21 +12,16 @@ import {
 import {
   compact,
   displayEth,
-  formatMoney,
   shortAddress,
-  since,
-  type PoolRow,
   type PricePoint,
-  type Trade,
-  type Window,
 } from "@pools/core";
-import { useCurrency, useManifest, useQuery, useWatchlist } from "./state";
+import { useWatchlist } from "./state";
 
 export function TokenIcon({
   pool,
   size = "normal",
 }: {
-  pool: Pick<PoolRow, "color" | "mark" | "name">;
+  pool: { color: string; mark: string; name: string };
   size?: "normal" | "large" | "small";
 }) {
   return (
@@ -128,12 +120,11 @@ export function AddressLabel({
   address: string;
   full?: boolean;
 }) {
-  const manifest = useManifest();
   return (
     <span className="address-label">
       <span className="mono">{full ? address : shortAddress(address)}</span>
       <CopyButton value={address} />
-      {manifest.source === "verified" && (
+      {
         <a
           aria-label="Open address on explorer"
           href={`https://robinhoodchain.blockscout.com/address/${address}`}
@@ -142,7 +133,7 @@ export function AddressLabel({
         >
           <ExternalLink size={14} />
         </a>
-      )}
+      }
     </span>
   );
 }
@@ -155,24 +146,25 @@ export function Money({
   signed?: boolean;
   className?: string;
 }) {
-  const { currency } = useCurrency();
-  const manifest = useManifest();
   return (
     <span
       className={`number ${signed ? (BigInt(wei) >= 0n ? "positive" : "negative") : ""} ${className}`}
       title={`${wei} wei`}
     >
-      {formatMoney(wei, currency, manifest.ethUsd, signed)}
+      {signed && BigInt(wei) > 0n ? "+" : ""}
+      {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
+        displayEth(wei),
+      )}{" "}
+      ETH
     </span>
   );
 }
 export function Price({ wei }: { wei: string }) {
-  const { currency } = useCurrency();
-  const { ethUsd } = useManifest();
-  const value = displayEth(wei) * (currency === "USD" ? Number(ethUsd) : 1);
-  const prefix = currency === "USD" ? "$" : "";
+  const currency = "ETH";
+  const value = displayEth(wei);
+  const prefix = "";
   if (value > 0 && value < 0.0001) {
-    const str = value.toFixed(16).split(".")[1];
+    const str = BigInt(wei).toString().padStart(18, "0");
     const zeros = str.match(/^0+/)?.[0].length ?? 0;
     return (
       <span
@@ -201,7 +193,7 @@ export function Change({ value }: { value: number }) {
     </span>
   );
 }
-export function ModeBadge({ mode }: { mode: PoolRow["mode"] }) {
+export function ModeBadge({ mode }: { mode: "instant" | "crowd" }) {
   return (
     <span className={`badge ${mode === "crowd" ? "lavender" : ""}`}>
       {mode === "crowd" ? "Crowd" : "Instant"}
@@ -226,8 +218,8 @@ export function PeriodTabs({
   value,
   onChange,
 }: {
-  value: Window;
-  onChange: (value: Window) => void;
+  value: "24h" | "7d";
+  onChange: (value: "24h" | "7d") => void;
 }) {
   return (
     <div className="segmented" aria-label="Time period">
@@ -381,8 +373,6 @@ export function Chart({
 }) {
   const gradient = useId().replace(/:/g, "");
   const [hover, setHover] = useState<number | null>(null);
-  const { currency } = useCurrency();
-  const manifest = useManifest();
   const g = geometry(points, 820, 230, 8, profit);
   const index =
     hover === null ? points.length - 1 : Math.min(hover, points.length - 1);
@@ -509,9 +499,7 @@ export function Chart({
         </svg>
         <div className="chart-axis">
           {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
-            <span key={i}>
-              {compact(v * (currency === "USD" ? Number(manifest.ethUsd) : 1))}
-            </span>
+            <span key={i}>{compact(v)}</span>
           ))}
         </div>
       </div>
@@ -526,145 +514,6 @@ export function Chart({
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-export function TradeTable({
-  trades,
-  pools,
-  showPool = true,
-}: {
-  trades: Trade[];
-  pools: PoolRow[];
-  showPool?: boolean;
-}) {
-  const { params, set } = useQuery();
-  const manifest = useManifest();
-  const side = params.get("side") ?? "all";
-  const tx = params.get("tx");
-  const filtered = trades.filter(
-    (t) => (side === "all" || t.side === side) && (!tx || t.txHash === tx),
-  );
-  const page = Math.max(
-    1,
-    Math.min(
-      Math.ceil(filtered.length / 12) || 1,
-      Number(params.get("tradePage")) || 1,
-    ),
-  );
-  return (
-    <div id="trades" className="panel">
-      <div className="panel-heading">
-        <h2>
-          Transactions <span className="count">{filtered.length}</span>
-        </h2>
-        <div className="segmented">
-          {["all", "buy", "sell"].map((s) => (
-            <button
-              key={s}
-              className={side === s ? "selected" : ""}
-              onClick={() =>
-                set({ side: s === "all" ? null : s, tradePage: null })
-              }
-            >
-              {s === "all" ? "All" : s === "buy" ? "Buys" : "Sells"}
-            </button>
-          ))}
-        </div>
-      </div>
-      {tx && (
-        <div className="inline-notice">
-          Showing one transaction.{" "}
-          <button onClick={() => set({ tx: null, tradePage: null })}>
-            Show all
-          </button>
-        </div>
-      )}
-      <div className="table-scroll">
-        <table className="data-table trades-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              {showPool && <th>Token</th>}
-              <th>Amount</th>
-              <th>Trader</th>
-              <th>Transaction</th>
-              <th title="Time before snapshot cutoff">Age at snapshot</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice((page - 1) * 12, page * 12).map((t) => {
-              const pool = pools.find((p) => p.id === t.poolId)!;
-              return (
-                <tr key={t.id}>
-                  <td>
-                    <span
-                      className={`trade-side ${t.side === "buy" ? "positive" : "negative"}`}
-                    >
-                      {t.side === "buy" ? (
-                        <ArrowDownLeft size={14} />
-                      ) : (
-                        <ArrowUpRight size={14} />
-                      )}
-                      {t.side === "buy" ? "Buy" : "Sell"}
-                    </span>
-                  </td>
-                  {showPool && (
-                    <td>
-                      <Link className="token-cell" href={`/pool/${pool.id}/`}>
-                        <TokenIcon pool={pool} size="small" />
-                        <strong>{pool.symbol}</strong>
-                      </Link>
-                    </td>
-                  )}
-                  <td>
-                    <Money wei={t.ethWei} />
-                    <small className="cell-sub">
-                      {compact(Number(t.tokenRaw) / 10 ** pool.decimals)}{" "}
-                      {pool.symbol}
-                    </small>
-                  </td>
-                  <td>
-                    <Link
-                      className="wallet-link mono"
-                      href={`/wallet/${t.trader}/`}
-                    >
-                      {shortAddress(t.trader)}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="address-label">
-                      <span className="mono">{shortAddress(t.txHash)}</span>
-                      <CopyButton
-                        value={t.txHash}
-                        label="Copy transaction hash"
-                      />
-                    </span>
-                  </td>
-                  <td
-                    className="muted"
-                    title={new Date(t.timestamp * 1000).toISOString()}
-                  >
-                    {since(t.timestamp, manifest.to)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {!filtered.length && (
-        <EmptyState
-          title="No transactions"
-          description="No trades match this filter in the snapshot."
-        />
-      )}
-      <Pagination
-        total={filtered.length}
-        page={page}
-        pageSize={12}
-        onChange={(p) => set({ tradePage: String(p) })}
-      />
     </div>
   );
 }

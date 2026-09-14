@@ -10,7 +10,7 @@ Root `.env.local` is loaded by `pnpm dev`, `pnpm preview`, and `pnpm snapshot:ch
 
 The exporter writes `data/snapshots/chain.json` atomically after all queries succeed. Raw logs, receipts, and fetched headers are retained under ignored `.data/chain/<cutoff>.json`. Preserve these files when archiving a dataset. A failed run retains the last successful snapshot.
 
-Refresh the snapshot, run `pnpm check` and `pnpm test:e2e`, then commit and push to main to deploy updated data. The deployed version remains snapshot-only. The local runtime extension adds refresh/audit APIs, and public-RPC market refresh has now been verified locally. `/live/` reports the capture time and block coverage.
+Refresh the snapshot, run `pnpm check` and `pnpm test:e2e`, then commit and push to main to deploy updated data. The application includes runtime refresh/audit APIs. Explore at `/` reports capture time and coverage; `/live/` is a compatibility redirect.
 
 ## What is established
 
@@ -40,7 +40,7 @@ An earlier 12-pool attempt used sequential block reads and was stopped while res
 
 ## What remains
 
-The deployed data is a bounded snapshot. The local extension adds per-pool audits and cached refreshes; it still does not provide continuous indexing, complete chain coverage, or a verified global trader leaderboard. The existing Pools/Traders/Creators views still use the separate synthetic snapshot.
+The app now uses real data across its product routes. Per-pool audits and cached refreshes still do not provide continuous indexing, complete chain coverage, or a verified global trader leaderboard. The synthetic dataset has been removed; missing inputs remain unavailable.
 
 For real wallet rankings, collect transfers and complete inventory history, distinguish transaction senders from actual swap beneficiaries, exclude unsupported attribution and unknown basis, then reconcile multiple wallets. Native ETH gas/fees and auction entry costs need their own treatment. Holders, reserve-based liquidity, USD prices, and crowd launches remain unavailable in the real-data view.
 
@@ -61,13 +61,13 @@ Envio was initially considered after RPC rate limits, but has been removed from 
 
 The private GitHub repository is `eddy-guo/pools-info`. Main deploys to the Vercel project `pools-info`, with the Next.js preset and `apps/web` root. The default deployment succeeded and the public site was checked at https://pools-info.vercel.app.
 
-No second backend repo is required. Add `poolsinfo.com` in Vercel's domain settings after purchase and apply the records shown there. Metadata uses `SITE_URL` if set, otherwise Vercel's production-domain environment variable; local development falls back to localhost.
+No second backend repo is required. The `poolsinfo.com` domain is connected through Namecheap and Vercel. Use the DNS records shown there. Metadata uses `SITE_URL` if set, otherwise https://www.poolsinfo.com.
 
 ## Runtime extension and limits
 
-The Next.js migration removes strict `output: "export"` while preserving pre-rendered pages, search, and PNG cards. Default Vercel Next.js settings and the existing `apps/web` project root remain appropriate. No native provider client or external API key is required.
+The Next.js migration removes strict `output: "export"` while preserving pre-rendered index pages and adding dynamic detail routes and audit PNG cards. Default Vercel Next.js settings and the existing `apps/web` project root remain appropriate. No native provider client or external API key is required.
 
-Market requests coalesce within a function instance and use the Next Data Cache for 60 seconds. Audit requests cache for five minutes and run only after the user requests a pool audit. This is request-driven refresh, not a background scheduler. It does not keep collecting while nobody visits.
+Market requests coalesce within a function instance and use the Next Data Cache for 60 seconds. Audit requests cache for five minutes and run when an audit or scoped share card is requested. This is request-driven refresh, not a background scheduler. It does not keep collecting while nobody visits.
 
 A scan defaults to eight recent instant launches discovered in 100,000 blocks, with at most 4,000 swaps per pool. A response over 1.8 MB fails instead of truncating history or claiming partial PnL. RPC log scans use bounded block chunks, validate log and block identities, and re-read the cutoff before publishing. The bounded collector does not replace durable reorg recovery.
 
@@ -78,3 +78,16 @@ These are gross pool-execution results before gas, not wallet-wide returns or pr
 Earlier concurrent and accounting-heavy probes hit time budgets and HTTP 429 responses. These were not proof that market refresh requires a bulk provider. A subsequent RPC comparison retrieved all 1,477 PEPE swaps and matched pools.xyz's 1,279 buys and 198 sells in six requests. StateView independently matched the last-swap spot price. The local market endpoint also completed an eight-pool refresh with 84 RPC requests in about 12 seconds. These are bounded measurements, not a guarantee of throughput at scale.
 
 See [PEPE-COMPARISON.md](PEPE-COMPARISON.md) for exact cutoffs, prices, and differences from pools.xyz. No Envio or pools.xyz API is called by the application. `CHAIN_REFRESH_DISABLED=1` disables runtime source requests for offline testing. An incremental persistent worker remains preferable to repeatedly scanning growing histories, and can be added within this repo later.
+
+
+## Real product-route verification
+
+The 08:29:14 UTC capture at block 62,666,406 contains 8 pools and 57 swaps with receipt/balance audits. Collection took 16 seconds and 115 RPC HTTP requests. Raw evidence is retained locally under `.data/chain/62666406.json`.
+
+An independent fresh-RPC check decoded the signed native-ETH words from two receipts for wallet `0x2f21a9983166e3aa3111c27c8e04b9228953fbac` in token F:
+
+- Buy [0xc612…ec10](https://robinhoodchain.blockscout.com/tx/0xc612998c1bca333e151b7456a5ad3ae477c05f574b897994acad5ff5e52dec10): -4,040,218,429,817,412 wei.
+- Sell [0xee8c…e0b9](https://robinhoodchain.blockscout.com/tx/0xee8c41104c35cf5865b0782f5e0c8223efbfbc19e907f9db0612bc491e96e0b9): +3,725,527,979,344,077 wei.
+- Full closure: -314,690,450,473,335 wei, or -0.000314690450473335 ETH before gas. This matches the wallet page and fresh server-generated PNG. Two swaps do not satisfy the ranking minimum.
+
+The local market API also returned HTTP 200 with a fresh 08:35:34 UTC snapshot at block 62,670,182; 84 requests and 14.4 seconds. A real RPC-backed card rendered at 1200×630, and desktop/mobile pages were inspected. Lint, strict types, 29 unit tests, production build, frozen install, and 12 desktop/mobile production-browser checks pass. Direct pool-chart hydration is covered after fixing an SVG title mismatch.

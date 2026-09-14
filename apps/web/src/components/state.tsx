@@ -1,27 +1,5 @@
 "use client";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useSyncExternalStore,
-} from "react";
-import type { Manifest } from "@pools/core";
-
-const ManifestContext = createContext<Manifest | null>(null);
-export function DataProvider({
-  manifest,
-  children,
-}: {
-  manifest: Manifest;
-  children: React.ReactNode;
-}) {
-  return <ManifestContext value={manifest}>{children}</ManifestContext>;
-}
-export function useManifest() {
-  const value = useContext(ManifestContext);
-  if (!value) throw new Error("Missing data provider");
-  return value;
-}
+import { useCallback, useSyncExternalStore } from "react";
 const subscribe = (callback: () => void) => {
   window.addEventListener("popstate", callback);
   return () => window.removeEventListener("popstate", callback);
@@ -64,18 +42,6 @@ function writeLocal(key: string, value: string) {
     /* Storage may be unavailable in private browsers. */
   }
   window.dispatchEvent(new Event("pools-preferences"));
-}
-export function useCurrency() {
-  const value = useSyncExternalStore(
-    subscribePrefs,
-    () => readLocal("pools:currency"),
-    () => "ETH",
-  );
-  return {
-    currency: value === "USD" ? ("USD" as const) : ("ETH" as const),
-    setCurrency: (currency: "ETH" | "USD") =>
-      writeLocal("pools:currency", currency),
-  };
 }
 export function useWatchlist() {
   const value = useSyncExternalStore(
