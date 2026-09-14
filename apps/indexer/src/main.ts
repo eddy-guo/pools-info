@@ -31,6 +31,9 @@ function rpc() {
     // batch can exceed the free provider's throughput even over one connection.
     minIntervalMs: 1000,
     maxBatchSize: 5,
+    // The current provider plan permits ten blocks per eth_getLogs request.
+    // Start at that known limit instead of issuing a rejected probe every batch.
+    logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
   });
 }
 const hex = (n: number) => `0x${n.toString(16)}`;
@@ -278,7 +281,7 @@ function safeError(e: unknown) {
   // Return our own descriptions, never arbitrary provider, SQL or fetch text.
   const message = e instanceof Error ? e.message : "";
   if (
-    /^Invalid INDEXER_(START_BLOCK|BATCH_BLOCKS|POLL_MS|POOLS_PER_CYCLE)$/.test(
+    /^Invalid INDEXER_(START_BLOCK|BATCH_BLOCKS|POLL_MS|POOLS_PER_CYCLE|LOG_RANGE_BLOCKS)$/.test(
       message,
     )
   )

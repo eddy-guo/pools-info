@@ -38,12 +38,21 @@ export class Rpc {
       maxRequests?: number;
       minIntervalMs?: number;
       maxBatchSize?: number;
+      logRangeBlocks?: number;
     } = {},
   ) {
     const batchSize = limits.maxBatchSize ?? 20;
     if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 20)
       throw Error("Invalid RPC batch size");
     this.batchSize = batchSize;
+    const logRangeBlocks = limits.logRangeBlocks ?? 10000;
+    if (
+      !Number.isSafeInteger(logRangeBlocks) ||
+      logRangeBlocks < 1 ||
+      logRangeBlocks > 10000
+    )
+      throw Error("Invalid RPC log range");
+    this.logRange = logRangeBlocks;
   }
   private throttled() {
     this.throttleMs = Math.max(this.throttleMs, 1000);

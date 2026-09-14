@@ -235,3 +235,47 @@ test("throttled partial batches still obey the total request budget", async () =
     await endpoint.close();
   }
 });
+
+test("configured log ranges avoid rejected probes and cover every requested block", async () => {
+  const endpoint = await rangeLimitedServer();
+  try {
+    const rpc = new Rpc(endpoint.url, { logRangeBlocks: 10 });
+    assert.deepEqual(await rpc.logs("0x123", [], 100, 124), []);
+    assert.deepEqual(endpoint.accepted, [
+      [100, 109],
+      [110, 119],
+      [120, 124],
+    ]);
+    assert.equal(endpoint.rejected(), 0);
+    assert.equal(rpc.requests, 1);
+    assert.equal(rpc.calls, 3);
+    // A fresh collector must start with the configured range as well.
+    await new Rpc(endpoint.url, { logRangeBlocks: 10 }).logs(
+      "0x123",
+      [],
+      125,
+      139,
+    );
+    assert.deepEqual(endpoint.accepted.slice(3), [
+      [125, 134],
+      [135, 139],
+    ]);
+    assert.equal(endpoint.rejected(), 0);
+  } finally {
+    await endpoint.close();
+  }
+});
+
+test("invalid configured log ranges fail before any provider request", () => {
+  for (const logRangeBlocks of [0, -1, 1.5, 10001, NaN, Infinity])
+    assert.throws(
+      () => new Rpc("http://127.0.0.1:1", { logRangeBlocks }),
+      /Invalid RPC log range/,
+    );
+  assert.doesNotThrow(
+    () => new Rpc("http://127.0.0.1:1", { logRangeBlocks: 1 }),
+  );
+  assert.doesNotThrow(
+    () => new Rpc("http://127.0.0.1:1", { logRangeBlocks: 10000 }),
+  );
+});

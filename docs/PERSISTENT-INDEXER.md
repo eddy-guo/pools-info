@@ -130,6 +130,13 @@ HTTP requests. Per-call rate limits inside HTTP-success responses retry only
 the throttled calls, preserving successful replies. One slow or broken pool
 retains its old checkpoint.
 
+`INDEXER_LOG_RANGE_BLOCKS=10` initializes the known Alchemy free-plan log range,
+avoiding a rejected oversized probe each time a batch creates a new RPC client.
+This is separate from `INDEXER_BATCH_BLOCKS`: a 1,000-block indexing batch still
+collects all its log ranges before committing. Adjust this provider limit only
+after verifying the configured endpoint's allowance; the adapter can still
+learn a smaller advertised limit. It does not increase throughput or quota.
+
 ### Deploy the worker on Railway
 
 1. In the existing project, add a GitHub service from `eddy-guo/pools-info`,
