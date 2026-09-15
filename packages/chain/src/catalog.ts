@@ -10,6 +10,13 @@ import { mergeCatalog, type ChainCatalog, type CatalogPool } from "@pools/core";
 import { contracts, decodeLaunch, launchEvent } from "./events";
 import { Rpc, hex } from "./rpc";
 import type { Receipt } from "./audit";
+import {
+  decodeTokenMetadata,
+  tokenMetadataFactory,
+  tokenMetadataTopic,
+  type TokenMetadata,
+  type TokenMetadataIssue,
+} from "./token-metadata";
 export interface CatalogRange {
   fromBlock: number;
   toBlock: number;
@@ -27,10 +34,10 @@ export async function collectCatalog(
       !Number.isSafeInteger(range.toBlock) ||
       range.fromBlock < 0 ||
       range.toBlock < range.fromBlock ||
-      range.toBlock - range.fromBlock >= 2000)
+      range.toBlock - range.fromBlock >= 10000)
   )
     throw Error(
-      "Explicit catalog range must be at most 2000 blocks with no previous catalog",
+      "Explicit catalog range must be at most 10000 blocks with no previous catalog",
     );
   if (Number(await rpc.call<Hex>("eth_chainId", [])) !== 4663)
     throw Error("Wrong chain");
@@ -61,19 +68,32 @@ export async function collectCatalog(
   const fromBlock =
     range?.fromBlock ??
     Math.max(toBlock - 99999, previous ? previous.toBlock - 128 : 0);
-  const logs = await rpc.logs(
-    contracts.strategies,
-    [toEventSelector(launchEvent)],
+  const launchTopic = toEventSelector(launchEvent);
+  const discoveryLogs = await rpc.logs(
+    [...contracts.strategies, tokenMetadataFactory],
+    [[launchTopic, tokenMetadataTopic]],
     fromBlock,
     toBlock,
+  );
+  if (discoveryLogs.length > 10000)
+    throw Error(
+      "Catalog batch exceeds 10000 discovery logs; split the scan before publishing",
+    );
+  // An address OR and a topic OR are a cross product, not paired alternatives.
+  // Match both before decoding; factory-only tokens cannot become Pools pools.
+  const logs = discoveryLogs.filter(
+    (l) =>
+      getInstantDeployment(l.address) &&
+      l.topics[0]?.toLowerCase() === launchTopic,
   );
   if (logs.length > 250)
     throw Error(
       "Catalog batch exceeds 250 launches; split the scan before publishing",
     );
   if (
-    logs.some(
+    discoveryLogs.some(
       (l) =>
+        l.removed ||
         !Number.isSafeInteger(Number(l.blockNumber)) ||
         Number(l.blockNumber) < fromBlock ||
         Number(l.blockNumber) > toBlock,
@@ -133,6 +153,70 @@ export async function collectCatalog(
     )
       throw Error("Unverified catalog launch");
   }
+  // Only launched tokens are enriched. Unrelated factory/CCA transactions do
+  // not trigger receipt requests or enter the Instant catalog.
+  const tokenMetadataLogs = discoveryLogs.filter(
+    (l) =>
+      l.address.toLowerCase() === tokenMetadataFactory &&
+      l.topics[0]?.toLowerCase() === tokenMetadataTopic &&
+      receiptMap.has(l.transactionHash),
+  );
+  const tokenMetadataIssues: {
+    transactionHash: string;
+    logIndex: string;
+    reason: TokenMetadataIssue | "unmatched_token" | "ambiguous_metadata";
+  }[] = [];
+  const matchingMetadata = new Map<string, TokenMetadata | null>();
+  const launchIdentities = new Set(
+    decoded.map(
+      (d, i) => `${logs[i].transactionHash}:${d.token.toLowerCase()}`,
+    ),
+  );
+  for (const l of tokenMetadataLogs) {
+    const r = receiptMap.get(l.transactionHash)!;
+    if (
+      r.status !== "0x1" ||
+      r.blockHash !== l.blockHash ||
+      blocks.get(Number(l.blockNumber))?.hash !== l.blockHash ||
+      !r.logs.some(
+        (e) =>
+          !e.removed &&
+          e.transactionHash === l.transactionHash &&
+          e.blockHash === l.blockHash &&
+          e.blockNumber === l.blockNumber &&
+          e.address.toLowerCase() === tokenMetadataFactory &&
+          e.logIndex === l.logIndex &&
+          e.data === l.data &&
+          e.topics.join() === l.topics.join(),
+      )
+    )
+      throw Error("Unverified catalog token metadata");
+    const { metadata, issues } = decodeTokenMetadata(l);
+    for (const reason of issues)
+      tokenMetadataIssues.push({
+        transactionHash: l.transactionHash,
+        logIndex: l.logIndex,
+        reason,
+      });
+    if (!metadata) continue;
+    const key = `${l.transactionHash}:${metadata.token}`;
+    if (!launchIdentities.has(key)) {
+      tokenMetadataIssues.push({
+        transactionHash: l.transactionHash,
+        logIndex: l.logIndex,
+        reason: "unmatched_token",
+      });
+      continue;
+    }
+    if (matchingMetadata.has(key)) {
+      matchingMetadata.set(key, null);
+      tokenMetadataIssues.push({
+        transactionHash: l.transactionHash,
+        logIndex: l.logIndex,
+        reason: "ambiguous_metadata",
+      });
+    } else matchingMetadata.set(key, metadata);
+  }
   const fields = ["name", "symbol"] as const;
   const metadata = await rpc.batch<Hex>(
     "eth_call",
@@ -147,6 +231,11 @@ export async function collectCatalog(
     ),
   );
   const pools: CatalogPool[] = decoded.map((d, i) => ({
+    ...presentationMetadata(
+      matchingMetadata.get(
+        `${logs[i].transactionHash}:${d.token.toLowerCase()}`,
+      ),
+    ),
     id: d.poolId,
     token: d.token,
     name: String(
@@ -189,7 +278,19 @@ export async function collectCatalog(
     );
   return {
     catalog,
-    evidence: { logs, receipts, headers },
+    evidence: {
+      logs,
+      receipts,
+      headers,
+      tokenMetadataLogs,
+      tokenMetadataIssues,
+    },
     requests: rpc.requests,
   };
+}
+
+function presentationMetadata(metadata: TokenMetadata | null | undefined) {
+  if (!metadata) return {};
+  const { token: _token, ...fields } = metadata;
+  return fields;
 }

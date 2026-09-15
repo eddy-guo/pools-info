@@ -6,6 +6,7 @@ import { contracts, swapEvent, transferEvent, type RawLog } from "./events";
 import { Rpc, hex } from "./rpc";
 import { collectCatalog } from "./catalog";
 import { collectPoolEventGroup } from "./pool-event-group";
+import { tokenMetadataFactory } from "./token-metadata";
 
 const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
 const token = "0x1111111111111111111111111111111111111111";
@@ -211,14 +212,17 @@ test("catalog explicit ranges do not silently scan or merge a larger historical 
   assert.equal(catalog.toBlock, 1501);
   assert.equal(calls[0].from, 1500);
   assert.equal(calls[0].to, 1501);
-  assert.deepEqual(calls[0].address, contracts.strategies);
+  assert.deepEqual(calls[0].address, [
+    ...contracts.strategies,
+    tokenMetadataFactory,
+  ]);
   await assert.rejects(
     collectCatalog(catalog, rpc, { fromBlock: 1500, toBlock: 1501 }),
     /no previous catalog/,
   );
   await assert.rejects(
-    collectCatalog(undefined, rpc, { fromBlock: 0, toBlock: 2000 }),
-    /2000 blocks/,
+    collectCatalog(undefined, rpc, { fromBlock: 0, toBlock: 10000 }),
+    /10000 blocks/,
   );
   await assert.rejects(
     collectCatalog(undefined, rpc, { fromBlock: 1873, toBlock: 1873 }),

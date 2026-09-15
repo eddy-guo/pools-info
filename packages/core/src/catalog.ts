@@ -7,6 +7,10 @@ export interface CatalogPool {
   launchSender: string;
   launchBlock: number;
   launchedAt: number;
+  /** Creator-supplied presentation claims from a verified factory event. */
+  imageUrl?: string;
+  description?: string;
+  externalUrl?: string;
 }
 export interface ChainCatalog {
   schemaVersion: 1;

@@ -14,6 +14,7 @@ import {
 import { contracts, decodeLaunch, launchEvent, type RawLog } from "./events";
 import { collectCatalog } from "./catalog";
 import { Rpc, hex } from "./rpc";
+import { tokenMetadataFactory } from "./token-metadata";
 const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
 const zero = `0x${"0".repeat(40)}` as const;
 const keyTypes = [
@@ -139,7 +140,7 @@ function mock(wrongHistoricalLauncher = false) {
         ? (hex(height + 128) as T)
         : (header as T);
   rpc.logs = async (address) => {
-    assert.deepEqual(address, contracts.strategies);
+    assert.deepEqual(address, [...contracts.strategies, tokenMetadataFactory]);
     return logs;
   };
   rpc.batch = async <T>(method: string, params: unknown[][]) =>

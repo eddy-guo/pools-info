@@ -12,6 +12,15 @@ export {
 
 export { collectCatalog } from "./catalog";
 export {
+  decodeTokenMetadata,
+  tokenMetadataEvent,
+  tokenMetadataFactory,
+  tokenMetadataTopic,
+  tokenMetadataLimits,
+  type TokenMetadata,
+  type TokenMetadataIssue,
+} from "./token-metadata";
+export {
   verifyLaunchCandidate,
   type LaunchCandidate,
 } from "./launch-candidate";
