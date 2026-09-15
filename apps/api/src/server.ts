@@ -52,7 +52,9 @@ export function createApi(
       }
       // A rewound recent window must disappear on the very next poll.
       const cacheable =
-        request.route !== "ready" && request.route !== "live-trades";
+        request.route !== "ready" &&
+        request.route !== "live-trades" &&
+        request.route !== "following";
       const hit = cache.get(request.cacheKey);
       if (cacheable && hit && hit.expires > now()) {
         res.setHeader("X-Data-Cache", "HIT");

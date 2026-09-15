@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { parseFollowingWallets } from "@pools/core";
 import type {
   AnalyticsExploreOptions,
   AnalyticsLeaderboardOptions,
@@ -30,6 +31,7 @@ export type Route =
   | "profile"
   | "search"
   | "feed"
+  | "following"
   | "live-trades";
 export interface ReadRequest {
   route: Route;
@@ -38,6 +40,7 @@ export interface ReadRequest {
   poolId: string | null;
   pools: string[];
   wallet: string | null;
+  wallets: string[];
   scope: string;
   cursor: string[] | null;
   cacheKey: string;
@@ -71,6 +74,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/trades") route = "trades";
   else if (url.pathname === "/v1/live-trades") route = "live-trades";
   else if (url.pathname === "/v1/feed") route = "feed";
+  else if (url.pathname === "/v1/following") route = "following";
   else if (url.pathname === "/v1/explore") route = "explore";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
   else if (url.pathname === "/v1/search") route = "search";
@@ -85,32 +89,47 @@ export function parseRequest(input: string): ReadRequest {
     wallet = activity[1].toLowerCase();
   } else throw new RequestError(404, "not_found");
   const allowed =
-    route === "explore"
-      ? ["q", "window", "sort", "direction", "view", "ids", "limit", "offset"]
-      : route === "leaderboard"
-        ? ["window", "minTrades", "metric", "offset", "limit"]
-        : route === "profile" || route === "pool"
-          ? ["window"]
-          : route === "search"
-            ? ["q", "group"]
-            : route === "pools"
-              ? ["q", "limit", "cursor"]
-              : route === "live-trades"
-                ? ["poolId"]
-                : route === "trades"
-                  ? ["poolId", "limit", "cursor"]
-                  : route === "wallet"
-                    ? ["limit", "cursor"]
-                    : route === "feed"
-                      ? ["pools"]
-                      : [];
+    route === "following"
+      ? ["wallets", "limit"]
+      : route === "explore"
+        ? ["q", "window", "sort", "direction", "view", "ids", "limit", "offset"]
+        : route === "leaderboard"
+          ? ["window", "minTrades", "metric", "offset", "limit"]
+          : route === "profile" || route === "pool"
+            ? ["window"]
+            : route === "search"
+              ? ["q", "group"]
+              : route === "pools"
+                ? ["q", "limit", "cursor"]
+                : route === "live-trades"
+                  ? ["poolId"]
+                  : route === "trades"
+                    ? ["poolId", "limit", "cursor"]
+                    : route === "wallet"
+                      ? ["limit", "cursor"]
+                      : route === "feed"
+                        ? ["pools"]
+                        : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
   }
-  const rawLimit = url.searchParams.get("limit") ?? "25";
-  if (!/^\d{1,3}$/.test(rawLimit) || +rawLimit < 1 || +rawLimit > 100)
+  const rawLimit =
+    url.searchParams.get("limit") ?? (route === "following" ? "50" : "25");
+  if (
+    !/^\d{1,3}$/.test(rawLimit) ||
+    +rawLimit < 1 ||
+    +rawLimit > (route === "following" ? 50 : 100)
+  )
     throw new RequestError(400, "invalid_limit");
+  let wallets: string[] = [];
+  if (route === "following") {
+    try {
+      wallets = parseFollowingWallets(url.searchParams.get("wallets"));
+    } catch {
+      throw new RequestError(400, "invalid_wallets");
+    }
+  }
   const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
   if (q.length > 100 || /[\x00-\x1f\x7f]/.test(q))
     throw new RequestError(400, "invalid_search");
@@ -198,6 +217,7 @@ export function parseRequest(input: string): ReadRequest {
         route,
         poolId,
         wallet,
+        wallets,
         q,
         pools,
         explore,
@@ -250,6 +270,7 @@ export function parseRequest(input: string): ReadRequest {
     poolId,
     pools,
     wallet,
+    wallets,
     scope,
     cursor,
     cacheKey: JSON.stringify([scope, +rawLimit, cursor]),

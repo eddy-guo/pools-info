@@ -7,6 +7,7 @@ export * from "./chain-accounting";
 export * from "./live-analytics";
 
 export * from "./search";
+export * from "./following";
 
 export * from "./candles";
 
