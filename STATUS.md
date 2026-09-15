@@ -37,8 +37,14 @@ Validation of the merged code: `pnpm check` passed; the real local Postgres
 suite passed **85/85, zero skips**; the complete desktop/mobile browser suite
 passed **90/90, no retries**. The identical code parent `b1f3173` also passed full
 GitHub CI **34958739524**, including both container builds and smoke checks.
-Task 2 measurement and Task 3 implementation have not yet started under this
-revised sequence. No full-history Phase B activation is authorized by a merge.
+Task 2 is reported in `docs/PHASE-B-PREFLIGHT.md`: the saved 100-block
+registry-subset sample contains swaps in 60 blocks (60%). At that sample rate,
+block receipts alone imply 486M CU for the original full span or 145M CU for
+14 days at 10 blocks/sec; the complete collector shape implies 1.65B / 493M CU.
+These are density scenarios, not approved budgets or representative forecasts.
+The retained sample was recounted without new RPC or DB calls. No backfill
+was activated. Task 3 implementation is next. No full-history Phase B
+activation is authorized by a merge.
 
 
 ## Operational update: 10:21 UTC - 22,439 pools and measured Phase B costs

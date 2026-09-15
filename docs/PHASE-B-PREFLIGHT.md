@@ -1,8 +1,78 @@
 # Phase B workload preflight
 
-Status: measurement in progress, September 15, 2026. Phase A remains active.
-The broad worker is disabled and isolated from main. These probes made no
-database writes, cursor changes or production configuration changes.
+Status: Task 2 measurement report, September 15, 2026. Broad code is merged into
+main after Task 1 consolidation, but no broad historical sweep is enabled.
+These probes made no database writes, cursor changes or production changes.
+
+## Registry-pool block fraction: 60 of 100 blocks
+
+Recounted the retained read-only sample from **10:32:08 UTC**, range
+**29,024,569 through 29,024,668 inclusive**. This sample already resolved the
+registry subset before consolidation; reporting it now avoids spending RPC
+again merely to reproduce it. Evidence is versioned in
+[evidence/phase-b-registry-density-2026-09-15.json](evidence/phase-b-registry-density-2026-09-15.json).
+
+- All v4 observations: 221 swaps, 76 distinct blocks, 70 pool IDs.
+- Verified-catalog subset: **123 swaps in 60 distinct blocks, across 24 pools**.
+- Requested fraction: **60 / 100 = 60%**. Transactions and swaps are not the
+  denominator. Every selected log is at or after its saved pool launch block.
+- Discovery v2 cutoffs before/after the registry reads were 29,907,168 and
+  29,937,168, both beyond the sample. The cutoff block hash was rechecked.
+- Membership came from the public verified catalog, not one atomic SQL registry
+  snapshot. This is a narrow historical sample, not a representative estimate
+  of the entire history or recent activity. Do not turn 60% into a universal
+  density claim.
+
+### Implied CU under this sample's density
+
+Use the user's original **40,528,588-block** full-history planning span.
+For 14 days, explicitly assume **10 blocks/sec**, giving **12,096,000 blocks**;
+an exact timestamp-derived trailing boundary has not been measured.
+Block receipts cost 20 billable CU per selected block, so density contributes
+`blocks * 0.60 * 20`. Log scans at 1,000 blocks cost `ceil(blocks/1000) * 60`.
+
+| Scope | Block receipts only | Logs plus block receipts | Full collector sample shape |
+| --- | ---: | ---: | ---: |
+| Original full-history span | 486,343,056 CU | 488,774,796 CU | about 1,652,755,819 CU |
+| Trailing 14 days at 10 blocks/sec | 145,152,000 CU | 145,877,760 CU | 493,274,880 CU |
+
+The first two columns are **components**, not complete indexing budgets.
+The final column scales the actual 100-block collector sample below, including
+its headers and unit refresh frequency. Larger batches can amortize boundary
+checks/log queries and repeated token-unit reads; different eras can change
+all densities. It excludes retries, collection failures, commit checkpoint work,
+and the continuing recent/analytics workers. It is a scenario, not a quote or
+an approved historical run. Even the log-plus-receipt component is materially
+larger than Phase A's discovery budget under the measured 60% density.
+
+### Actual collector probe, still no writes
+
+The same 100 blocks were passed through the merged collector at 10:35:12 UTC
+using optional **block receipt mode**, with 24 catalog identities. It completed
+in 23.051 seconds, used 47 HTTP requests / 189 logical calls, and observed no
+429s. It retained 123 selected receipts, 76 headers and 24 dated token units.
+
+| Method | Calls | Billable CU/call | Subtotal |
+| --- | ---: | ---: | ---: |
+| eth_chainId | 1 | 0 | 0 |
+| eth_blockNumber | 1 | 10 | 10 |
+| eth_getLogs | 1 | 60 | 60 |
+| eth_getBlockByNumber | 78 | 20 | 1,560 |
+| eth_getBlockReceipts | 60 | 20 | 1,200 |
+| eth_call | 48 | 26 | 1,248 |
+| Total | 189 | | **4,078 CU** |
+
+The current collector verifies headers for **all observed v4 log blocks**, not
+just registered blocks. Therefore selected-block density is the receipt-cost
+multiplier, but **is not the sole multiplier on total Phase B cost** in this
+implementation. No canonical header checks were removed for this measurement.
+Transaction receipt mode remains the default; substituting its 123 receipt
+calls would add 1,260 CU to this particular sample (5,338 CU total).
+
+Serialized group bytes: **1,607,812**; SHA-256:
+`b01544bf782d1612bbca9946a697f0e4217ca91a9c8a08193a4b3125f0291234`.
+This validates collection of that sample, not a persistence transaction or
+an atomic registry-membership commit. No competing writer was run.
 
 ## Initial measured density
 
@@ -57,7 +127,8 @@ existing receipt/log/hash checks. Bound response bytes and receipt counts,
 reject missing or duplicate selected receipts, and test equivalence with the
 existing per-transaction path. Unrelated receipts may be discarded after
 bounded validation; existing canonical evidence must not be dropped.
-This optimization is not implemented or enabled yet.
+This optimization is implemented in merged commit `5b3e6ad` and covered by
+receipt-equivalence tests. It is optional and not enabled in production.
 
 ## Next activation evidence
 
