@@ -64,7 +64,9 @@ export function PoolDetail({ id }: { id: string }) {
   const usePublished =
     publishedMarket &&
     (!loadedMarket?.accounting?.executions ||
-      publication!.snapshot.toBlock >= loadedSnapshot.toBlock);
+      // useMarket already prefers its refreshed response at the same cutoff.
+      // A matching publication must not replace that response with old data.
+      publication!.snapshot.toBlock > loadedSnapshot.toBlock);
   const m = usePublished ? publishedMarket : loadedMarket;
   const s = usePublished ? publication!.snapshot : loadedSnapshot;
   const [tab, setTab] = useState("Top traders");
