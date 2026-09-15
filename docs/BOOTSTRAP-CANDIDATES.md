@@ -79,3 +79,21 @@ This can prioritize prominent missing pools without first completing the full la
 scan. It does not replace versioned exhaustive discovery. The public endpoint has
 not been established as a supported third-party API contract; the saved hints allow
 verification without putting an undocumented API in the production request path.
+
+## Additional verified import cases
+
+Two more saved candidates were verified through the CLI on 2026-09-15, each in
+41 RPC calls. Full public chain evidence is committed under
+`data/registry/candidate-proofs/<pool-id>.json`; no RPC URL or browser session
+material is included. These are verification-time snapshots and must be canonically
+revalidated before import, not trusted indefinitely.
+
+- CHARTY: pool `0x037ccba86d253cc20cf7db69f90efedc2d2087d95715a69d994ad8381d860f72`, launch block 62805658.
+- Maxi: pool `0x4c98e53cdaf264aea36ea794898982509651a75bd2fd75121eccec3ec15e20c1`, launch block 55314563.
+
+Before verification, exact-token production queries returned HTTP 200 with total 1
+for CHARTY (the first case) and total 0 for the second case. Use the first to test
+identity-preserving overlap with an existing pool, and the second to test creating
+a missing historical launch. Neither verification changed production data or advanced
+any discovery cursor. These observations prove two launch cases only, not complete
+catalog coverage or financial history.
