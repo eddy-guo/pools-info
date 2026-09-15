@@ -1069,6 +1069,78 @@ test("command search extends instant local matches with saved-only tokens and wa
   await expect(page).toHaveURL(new RegExp(indexed.id));
 });
 
+test("ENS creator search reaches saved-only creators and opens their profile", async ({
+  page,
+}) => {
+  const creator = `0x${"a9".repeat(20)}`;
+  const queries: string[] = [];
+  const model = buildAnalyticsModel(
+    [{ ...market, launchSender: creator as Address }],
+    [],
+  );
+  await page.route("**/api/ens/?**", (r) =>
+    r.fulfill({ json: { name: "indexed.eth", address: creator } }),
+  );
+  await page.route("**/api/product/search?**", async (r) => {
+    const q = new URL(r.request().url()).searchParams.get("q")!;
+    queries.push(q);
+    await r.fulfill({ json: await searchAnalytics(model, q) });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Search tokens, wallets, creators, transactions",
+    })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("creator:indexed.eth");
+  const link = dialog.locator(`a[href="/creators/${creator}/"]`);
+  await expect(link).toBeVisible();
+  await expect.poll(() => queries).toContain(`creator:${creator}`);
+  await expect(link).not.toContainText("creator status not verified");
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`/creators/${creator}/`));
+});
+
+test("ENS wallet fallback stays usable while saved search is slow or unavailable", async ({
+  page,
+}) => {
+  const address = `0x${"a9".repeat(20)}`;
+  let pending = false;
+  let release: () => void = () => {};
+  await page.route("**/api/ens/?**", (r) =>
+    r.fulfill({ json: { name: "indexed.eth", address } }),
+  );
+  await page.route("**/api/product/search?**", async (r) => {
+    if (
+      new URL(r.request().url()).searchParams.get("q") === `wallet:${address}`
+    ) {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+        pending = true;
+      });
+    }
+    await r.fulfill({ status: 503, json: { error: "Unavailable" } });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", {
+      name: "Search tokens, wallets, creators, transactions",
+    })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox").fill("indexed.eth");
+  const link = dialog.getByRole("link", { name: /indexed.eth/ });
+  await expect(link).toBeVisible();
+  await expect.poll(() => pending).toBe(true);
+  await expect(dialog.getByRole("link")).toHaveCount(1);
+  release();
+  await expect(dialog.getByText(/Saved search is unavailable/)).toBeVisible();
+  await expect(link).toHaveAttribute("href", walletHref(address));
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`/wallet/${address}/`));
+});
+
 test("saved pool details show reconciled holders and label infrastructure separately", async ({
   page,
 }) => {

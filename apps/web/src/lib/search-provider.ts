@@ -7,26 +7,35 @@ import {
   type SearchResponse,
 } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
+type SearchResult = SearchResponse & {
+  indexNotice?: string;
+  resolvedEns?: { name: string; address: string };
+};
+type ExtendedSearchProvider = SearchProvider & {
+  extend(
+    query: string,
+    options: Parameters<SearchProvider["search"]>[1],
+    base: SearchResult,
+  ): Promise<SearchResult>;
+};
 // Local lookup appears first. Saved catalog search extends it asynchronously;
 // complete ENS names use the separate Ethereum resolver.
 export function createSearchProvider(
   snapshot: ChainSnapshot,
   audits: Record<string, PoolAudit>,
-): SearchProvider & {
-  extend(
-    query: string,
-    options: Parameters<SearchProvider["search"]>[1],
-    base: SearchResponse,
-  ): Promise<SearchResponse & { indexNotice?: string }>;
-} {
+): ExtendedSearchProvider {
   const local = createLocalSearchProvider(
     snapshot,
     audits,
     catalog as ChainCatalog,
   );
-  return {
+  const provider: ExtendedSearchProvider = {
     async extend(query, options, base) {
-      if (base.kind === "ens") return base;
+      if (base.kind === "ens") {
+        if (!base.resolvedEns) return base;
+        const prefix = /^(token|wallet|creator|tx):/i.exec(query.trim())?.[0];
+        query = `${prefix || (options.group ? "" : "wallet:")}${base.resolvedEns.address}`;
+      }
       const prefixes = {
         Tokens: "token",
         Wallets: "wallet",
@@ -96,7 +105,15 @@ export function createSearchProvider(
         });
         return {
           ...base,
-          entries,
+          entries: base.resolvedEns
+            ? entries.map((e) => ({
+                ...e,
+                title: e.group === "Wallets" ? base.resolvedEns!.name : e.title,
+                context: e.context.startsWith("Ethereum ENS address · ")
+                  ? e.context
+                  : `Ethereum ENS address · ${e.context}`,
+              }))
+            : entries,
           total: entries.length,
           coverage: remote.coverage,
           indexNotice:
@@ -146,7 +163,14 @@ export function createSearchProvider(
           title: e.group === "Wallets" ? data.name! : e.title,
           context: `Ethereum ENS address · ${e.context}`,
         }));
-      return { ...resolved, entries, total: entries.length, kind: "ens" };
+      return {
+        ...resolved,
+        entries,
+        total: entries.length,
+        kind: "ens",
+        resolvedEns: { name: data.name, address: data.address },
+      };
     },
   };
+  return provider;
 }
