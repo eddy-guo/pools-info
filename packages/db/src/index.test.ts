@@ -338,6 +338,7 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
       "005_accounting_rows.sql",
       "006_catalog_search.sql",
       "007_launch_sources.sql",
+      "008_discovery_metadata.sql",
     ],
   );
   const readIndexes = await db.query(

@@ -187,6 +187,10 @@ export interface PoolRecord {
   launchTx: string;
   launchSender: string;
   launchedAt: number;
+  /** Creator-supplied text from verified factory logs. Never safe to hotlink. */
+  imageUrl?: string;
+  description?: string;
+  externalUrl?: string;
 }
 export interface EventRecord {
   txHash: string;
@@ -407,7 +411,7 @@ async function commitBatchInTransaction(
     if (p.launchBlock < batch.from || p.launchBlock > batch.to)
       throw Error("Launch outside batch");
     const inserted = await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -419,6 +423,9 @@ async function commitBatchInTransaction(
         p.launchedAt,
         expected.key,
         batch.to,
+        p.imageUrl ?? null,
+        p.description ?? null,
+        p.externalUrl ?? null,
       ],
     );
     if (inserted.rowCount) {
@@ -441,6 +448,18 @@ async function commitBatchInTransaction(
         Number(identity.launched_at) !== p.launchedAt
       )
         throw Error("Conflicting launch identity");
+      for (const [column, value] of [
+        ["image_url", p.imageUrl],
+        ["description", p.description],
+        ["external_url", p.externalUrl],
+      ] as const) {
+        if (
+          value !== undefined &&
+          identity[column] !== null &&
+          identity[column] !== value
+        )
+          throw Error("Conflicting launch metadata");
+      }
       // Matching observations add provenance, never restart a pool's history.
       const history = await getStream(db, "pool:" + p.id.toLowerCase());
       if (
@@ -451,8 +470,15 @@ async function commitBatchInTransaction(
         throw Error("Invalid existing pool stream");
     }
     await db.query(
-      "INSERT INTO pool_launch_sources(chain_id,pool_id,stream_key,batch_end) VALUES (4663,$1,$2,$3) ON CONFLICT (chain_id,pool_id,stream_key,batch_end) DO NOTHING",
-      [p.id.toLowerCase(), expected.key, batch.to],
+      "INSERT INTO pool_launch_sources(chain_id,pool_id,stream_key,batch_end,image_url,description,external_url) VALUES (4663,$1,$2,$3,$4,$5,$6) ON CONFLICT (chain_id,pool_id,stream_key,batch_end) DO NOTHING",
+      [
+        p.id.toLowerCase(),
+        expected.key,
+        batch.to,
+        p.imageUrl ?? null,
+        p.description ?? null,
+        p.externalUrl ?? null,
+      ],
     );
   }
   // Parameterized bulk insert preserves exact amounts in JSON as decimal strings.
@@ -544,6 +570,7 @@ export async function status(db: Client) {
   );
   return { counts: counts.rows[0], streams: s.rows, streamLimit: 100 };
 }
+export { ensureDiscoveryV2, discoveryV2Identity } from "./discovery";
 export {
   ensureRecentStreams,
   recentStream,

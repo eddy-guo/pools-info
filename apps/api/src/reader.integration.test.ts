@@ -100,10 +100,23 @@ test(
         parseRequest("/v1/pools?limit=1"),
       )) as any;
       assert.equal(first.items[0].poolId, word(2));
+      assert.equal(first.items[0].imageUrl, null);
+      await db.query(
+        "UPDATE pool_launch_sources SET image_url=$2,description=$3,external_url=$4 WHERE pool_id=$1",
+        [
+          word(1),
+          "ipfs://bafyfixture/token.png",
+          "Verified factory description",
+          "https://example.com/token",
+        ],
+      );
       const second = (await reader.read(
         parseRequest("/v1/pools?limit=1&cursor=" + first.nextCursor),
       )) as any;
       assert.equal(second.items[0].poolId, word(1));
+      assert.equal(second.items[0].imageUrl, "ipfs://bafyfixture/token.png");
+      assert.equal(second.items[0].description, "Verified factory description");
+      assert.equal(second.items[0].externalUrl, "https://example.com/token");
       assert.equal(second.nextCursor, null);
       const literal = (await reader.read(
         parseRequest("/v1/pools?q=_%"),
