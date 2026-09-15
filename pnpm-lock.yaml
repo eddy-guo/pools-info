@@ -146,6 +146,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@pools/chain':
+        specifier: workspace:*
+        version: link:../chain
       pg:
         specifier: ^8.16.3
         version: 8.23.0
