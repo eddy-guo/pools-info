@@ -1,3 +1,4 @@
+import { rpcPacing } from "./rpc-pacing";
 import { gunzipSync } from "node:zlib";
 import { readFile, stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -19,9 +20,7 @@ function rpc() {
   return new Rpc(undefined, {
     timeoutMs: 300000,
     maxRequests: 500,
-    minIntervalMs: 1000,
-    // Leave room for historical and recent collection on the shared account.
-    maxBatchSize: 2,
+    ...rpcPacing(),
     logRangeBlocks: range,
   });
 }

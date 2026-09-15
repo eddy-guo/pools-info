@@ -1,3 +1,4 @@
+import { rpcPacing } from "./rpc-pacing";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Rpc } from "@pools/chain";
 import { createClient, migrate } from "@pools/db";
@@ -60,8 +61,7 @@ async function main() {
       const rpc = new Rpc(process.env.ROBINHOOD_RPC_URL, {
         timeoutMs: 120000,
         maxRequests: 300,
-        minIntervalMs: 1000,
-        maxBatchSize: 2,
+        ...rpcPacing(),
         logRangeBlocks,
       });
       const started = performance.now();
