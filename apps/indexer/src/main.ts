@@ -4,6 +4,7 @@ import {
   reconcileStream as reconcile,
 } from "./checkpoints";
 import { alignedPoolEnd, runPoolGroup } from "./pool-group-worker";
+import { PoolBatchBudget } from "./pool-budget";
 import { setTimeout as sleep } from "node:timers/promises";
 import { withLogRpc } from "./log-rpc";
 import { safeError, errorDetails } from "./errors";
@@ -211,6 +212,19 @@ async function main() {
       Number.MAX_SAFE_INTEGER,
     );
     const batch = integer("INDEXER_BATCH_BLOCKS", 1000, 1, 2000);
+    const poolBudget = new PoolBatchBudget(batch);
+    const budgetOptions = (keys: string[]) => ({
+      signal: stop.signal,
+      onReduce: (previousBatchBlocks: number, nextBatchBlocks: number) =>
+        console.log(
+          JSON.stringify({
+            event: "pool_batch_reduced",
+            streams: keys,
+            previousBatchBlocks,
+            nextBatchBlocks,
+          }),
+        ),
+    });
     const interval = integer("INDEXER_POLL_MS", 15000, 1000, 300000);
     const poolsPerCycle = integer("INDEXER_POOLS_PER_CYCLE", 2, 1, 20);
     // Railway briefly overlaps old and new containers during a rolling deploy.
@@ -266,7 +280,20 @@ async function main() {
         if (stopping) break;
         if (group.length > 1) {
           try {
-            await runPoolGroup(db, group, rpc(), batch, stop.signal);
+            const keys = group.map((p) => p.key);
+            await poolBudget.run(
+              keys,
+              async (size) => {
+                const current = await Promise.all(
+                  group.map(async (p) => ({
+                    ...(await getStream(db, p.key)),
+                    token: p.token,
+                  })),
+                );
+                return runPoolGroup(db, current, rpc(), size, stop.signal);
+              },
+              budgetOptions(keys),
+            );
             continue;
           } catch (error) {
             console.error(
@@ -283,11 +310,11 @@ async function main() {
         for (const pool of group) {
           if (stopping) break;
           try {
-            await runBatch(
-              db,
-              await getStream(db, pool.key),
-              batch,
-              pool.token,
+            await poolBudget.run(
+              [pool.key],
+              async (size) =>
+                runBatch(db, await getStream(db, pool.key), size, pool.token),
+              budgetOptions([pool.key]),
             );
           } catch (error) {
             failed = true;

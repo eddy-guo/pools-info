@@ -19,6 +19,7 @@ import {
   getStream,
 } from "@pools/db";
 import { alignedPoolEnd, runPoolGroup } from "./pool-group-worker";
+import { PoolBatchBudget } from "./pool-budget";
 
 test("alignment shortens only the current batch, preserving every unprocessed block", () => {
   assert.equal(alignedPoolEnd(12, 10, 100), 19);
@@ -198,5 +199,43 @@ test(
     );
     for (const p of group)
       assert.equal((await getStream(db, p.key)).cursor, 29);
+    // A deterministic collection budget must leave both saved cursors intact,
+    // then retry the same start with a smaller, fully validated range.
+    const budget = new PoolBatchBudget(10);
+    const sizes: number[] = [];
+    const run = () =>
+      budget.run(
+        group.map((p) => p.key),
+        async (size) => {
+          sizes.push(size);
+          const current = await nextPoolGroup(db, 2);
+          const limited = provider().rpc;
+          if (size > 5) {
+            limited.logs = async () => {
+              throw Error(
+                "Collection budget exceeded after 122 HTTP requests and 291 RPC calls",
+              );
+            };
+            try {
+              return await runPoolGroup(db, current, limited, size);
+            } finally {
+              for (const p of current)
+                assert.equal((await getStream(db, p.key)).cursor, 29);
+            }
+          }
+          return runPoolGroup(db, current, limited, size);
+        },
+      );
+    assert.equal((await run()).advanced, 5);
+    for (const p of group)
+      assert.equal((await getStream(db, p.key)).cursor, 34);
+    assert.equal((await run()).advanced, 5);
+    for (const p of group)
+      assert.equal((await getStream(db, p.key)).cursor, 39);
+    assert.deepEqual(sizes, [10, 5, 5]);
+    assert.equal(
+      (await db.query("SELECT count(*) AS n FROM indexed_events")).rows[0].n,
+      "4",
+    );
   },
 );
