@@ -44,6 +44,8 @@ pnpm dev
 
 Open http://127.0.0.1:3100. `.env.local` is ignored; `.env.example` documents settings. The frontend can use the deployed API without direct database access. Local database tests must use a separate test database.
 
+`pnpm dev` and `pnpm preview` load the optional repository-root `.env.local` before starting Next.js, including `INDEXER_API_URL`. Existing shell environment values take precedence. Use `pnpm build` before `pnpm preview`; both servers use port 3100.
+
 ```sh
 pnpm check
 TEST_DATABASE_URL=postgresql://localhost/pools_test pnpm test:db

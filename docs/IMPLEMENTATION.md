@@ -58,7 +58,8 @@ Robinhood market ingestion. Envio is not used.
 
 ## Development and release workflow
 
-`pnpm dev` serves port 3100. Production builds and Playwright use port 3101.
+`pnpm dev` and `pnpm preview` serve port 3100 and load the optional root
+`.env.local` through `scripts/web.mjs`. Playwright uses port 3101.
 `pnpm check` runs lint, strict typechecks, accounting/ingestion/read tests and the
 production build. `TEST_DATABASE_URL=... pnpm test:db` runs isolated Postgres
 integration tests, while `pnpm test:e2e` checks desktop and mobile product flows.
