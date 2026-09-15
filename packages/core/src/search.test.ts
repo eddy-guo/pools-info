@@ -1,9 +1,73 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import captured from "../../../data/snapshots/chain.json";
-import { createLocalSearchProvider } from "./search";
+import {
+  createLocalSearchProvider,
+  searchEntryIdentity,
+  type SearchEntry,
+} from "./search";
 import type { ChainSnapshot } from "./chain-types";
 const snapshot = captured as ChainSnapshot;
+
+test("search identity ignores view parameters and address case while preserving groups and distinct pools", () => {
+  const address = `0x${"a1".repeat(20)}`;
+  const entry: SearchEntry = {
+    id: "local",
+    group: "Wallets",
+    title: "Wallet",
+    context: "",
+    terms: [],
+    address,
+    href: `/wallet/${address}/`,
+  };
+  assert.equal(
+    searchEntryIdentity(entry),
+    searchEntryIdentity({
+      ...entry,
+      id: "remote",
+      address: address.toUpperCase(),
+      href: `/wallet/${address}/?window=All`,
+    }),
+  );
+  assert.notEqual(
+    searchEntryIdentity(entry),
+    searchEntryIdentity({
+      ...entry,
+      group: "Creators",
+      href: `/creators/${address}/`,
+    }),
+  );
+  const pool = {
+    ...entry,
+    group: "Tokens" as const,
+    href: `/pool/0x${"1".repeat(64)}/?launch=old`,
+  };
+  assert.equal(
+    searchEntryIdentity(pool),
+    searchEntryIdentity({
+      ...pool,
+      href: `/pool/0x${"1".repeat(64)}/?window=24h`,
+    }),
+  );
+  assert.notEqual(
+    searchEntryIdentity(pool),
+    searchEntryIdentity({ ...pool, href: `/pool/0x${"2".repeat(64)}/` }),
+  );
+  const tx = {
+    ...entry,
+    group: "Transactions" as const,
+    address: `0x${"ab".repeat(32)}`,
+    href: "https://robinhoodchain.blockscout.com/tx/one",
+  };
+  assert.equal(
+    searchEntryIdentity(tx),
+    searchEntryIdentity({
+      ...tx,
+      address: tx.address.toUpperCase(),
+      href: `${tx.href}?view=logs`,
+    }),
+  );
+});
 const lookup = (q: string) =>
   createLocalSearchProvider(snapshot, {}).search(q, {
     signal: new AbortController().signal,

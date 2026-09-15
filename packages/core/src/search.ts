@@ -39,6 +39,24 @@ export interface SearchProvider {
     options: { group?: SearchGroup; signal: AbortSignal },
   ): Promise<SearchResponse>;
 }
+
+/** Query strings select a view, not a different wallet, creator or pool. Keep
+ * groups separate and distinguish multiple pools trading the same token. */
+export function searchEntryIdentity(entry: SearchEntry): string {
+  const address = entry.address.toLowerCase();
+  if (
+    ((entry.group === "Wallets" || entry.group === "Creators") &&
+      /^0x[0-9a-f]{40}$/.test(address)) ||
+    (entry.group === "Transactions" && /^0x[0-9a-f]{64}$/.test(address))
+  )
+    return `${entry.group}:${address}`;
+  if (entry.group === "Tokens") {
+    const pool = /^\/pool\/(0x[0-9a-f]{64})(?:\/|\?|#|$)/i.exec(entry.href);
+    if (pool) return `Tokens:pool:${pool[1].toLowerCase()}`;
+  }
+  return `${entry.group}:${entry.href}`;
+}
+
 const explorer = "https://robinhoodchain.blockscout.com";
 const normalize = (s: string) =>
   s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
@@ -306,7 +324,7 @@ export function createLocalSearchProvider(
         });
       const seen = new Set<string>();
       const unique = result.filter((e) => {
-        const key = `${e.group}:${e.href}`;
+        const key = searchEntryIdentity(e);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;

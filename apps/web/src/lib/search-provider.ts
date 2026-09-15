@@ -1,5 +1,7 @@
 import {
   createLocalSearchProvider,
+  searchEntryIdentity,
+  walletHref,
   type ChainSnapshot,
   type ChainCatalog,
   type PoolAudit,
@@ -94,7 +96,7 @@ export function createSearchProvider(
             verified.has(e.address.toLowerCase())
           )
             continue;
-          const key = `${e.group}:${e.href}`;
+          const key = searchEntryIdentity(e);
           if (!merged.has(key)) merged.set(key, e);
         }
         const counts = new Map<string, number>();
@@ -109,6 +111,7 @@ export function createSearchProvider(
             ? entries.map((e) => ({
                 ...e,
                 title: e.group === "Wallets" ? base.resolvedEns!.name : e.title,
+                href: e.group === "Wallets" ? walletHref(e.address) : e.href,
                 context: e.context.startsWith("Ethereum ENS address · ")
                   ? e.context
                   : `Ethereum ENS address · ${e.context}`,
@@ -161,6 +164,7 @@ export function createSearchProvider(
         .map((e) => ({
           ...e,
           title: e.group === "Wallets" ? data.name! : e.title,
+          href: e.group === "Wallets" ? walletHref(e.address) : e.href,
           context: `Ethereum ENS address · ${e.context}`,
         }));
       return {
