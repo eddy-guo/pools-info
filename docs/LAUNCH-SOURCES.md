@@ -33,15 +33,46 @@ writer acquisition confirmed in production logs on 2026-09-15 at 03:33-03:34 UTC
 All five serving endpoints returned HTTP 200 afterward. No candidate import was
 performed, and this rollout does not resolve the existing live-feed lag.
 
+## Atomic candidate commit
+
+`candidateStreamKey(registryRevision, poolId)` names a distinct finite source.
+`commitCandidateBatch(db, registryRevision, batch)` atomically creates that source
+and commits one verified pool with its evidence. It accepts at most 32 blocks, an
+exactly matching retry, and another registry revision observing the same launch.
+It rejects changed saved bounds, conflicting replays, or conflicting launch identity.
+A failure rolls back the new stream too. It never advances `discovery:v1`.
+
+Callers must hold the normal writer lock and freshly verify chain evidence. Given
+`proof = await verifyLaunchCandidate(candidate, rpc)`, the batch shape is:
+
+```ts
+await commitCandidateBatch(db, proof.registryRevision, {
+  from: proof.fromBlock,
+  to: proof.toBlock,
+  hash: proof.catalog.blockHash,
+  evidence: proof.evidence,
+  pools: [proof.pool],
+});
+```
+
+This is a persistence boundary, not a chain verifier. Stored JSON alone is not
+sufficient authorization to publish. The worker must check/reconcile saved source
+hashes and invalidate stale observations; canonical checks belong in that caller.
+Candidate sources are finite: do not pass them to the continuous `runBatch` loop,
+which would otherwise extend discovery beyond the verified candidate window.
+
+All 34 local Postgres checks passed, including candidate creation, source rollback
+on conflict, bounded retry, duplicate-source history preservation, unchanged broad
+discovery cursor and source reattachment after rewind.
+
 ## Remaining import work
 
 This change does not import candidates, create a new discovery stream, reset
 `discovery:v1`, or establish full historical coverage. `ensureDiscovery` and the
 worker still schedule only the original continuous discovery stream.
 
-The candidate importer must revalidate chain evidence, insert a distinct bounded
-source stream and its exact verified batch transactionally, and reconcile that
-source against canonical hashes thereafter. Do not advance a broad cursor across
+The candidate worker must revalidate chain evidence, call the atomic commit entry
+point above, and reconcile that source against canonical hashes thereafter. Do not advance a broad cursor across
 gaps between candidate windows. The existing pool workers can then backfill the
 new pool's events from its launch block; launch discovery alone supplies no PnL.
 

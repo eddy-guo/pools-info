@@ -224,6 +224,60 @@ export async function commitBatch(
   }
 }
 
+export function candidateStreamKey(registryRevision: string, poolId: string) {
+  if (
+    !/^[a-z0-9-]{1,80}$/.test(registryRevision) ||
+    !/^0x[0-9a-f]{64}$/i.test(poolId)
+  )
+    throw Error("Invalid candidate identity");
+  return `candidate:${registryRevision}:${poolId.toLowerCase()}`;
+}
+
+/** Persist one already-verified candidate's exact range, not intervening history.
+ * Caller must hold the normal writer lock and freshly verify canonical evidence.
+ * This database boundary does not perform chain verification or schedule rechecks.
+ */
+export async function commitCandidateBatch(
+  db: Client,
+  registryRevision: string,
+  batch: Batch,
+): Promise<{ changed: boolean; stream: Stream }> {
+  if (
+    batch.pools?.length !== 1 ||
+    batch.token ||
+    batch.events?.length ||
+    !Number.isSafeInteger(batch.from) ||
+    !Number.isSafeInteger(batch.to) ||
+    batch.from < 0 ||
+    batch.to < batch.from ||
+    batch.to - batch.from >= 32
+  )
+    throw Error("Invalid candidate batch");
+  const key = candidateStreamKey(registryRevision, batch.pools[0].id);
+  await db.query("BEGIN");
+  try {
+    await db.query(
+      "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block) VALUES (4663,$1,'discovery',$2) ON CONFLICT (chain_id,stream_key) DO NOTHING",
+      [key, batch.from],
+    );
+    const current = await getStream(db, key);
+    if (
+      current.kind !== "discovery" ||
+      current.poolId !== null ||
+      current.start !== batch.from ||
+      (current.cursor !== null && current.cursor !== batch.to)
+    )
+      throw Error("Candidate range differs from saved source");
+    const changed = await commitBatchInTransaction(db, current, batch);
+    const saved = await getStream(db, key);
+    await db.query("COMMIT");
+    return { changed, stream: saved };
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+}
+
 /** Save a complete shared-range pool group in one transaction. All per-pool
  * evidence, events and contiguous cursors succeed together or none advance.
  * Discovery remains separate; this does not assert global market coverage. */

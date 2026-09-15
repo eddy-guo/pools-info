@@ -6,6 +6,8 @@ import {
   acquireWriter,
   waitForWriter,
   commitBatch,
+  commitCandidateBatch,
+  candidateStreamKey,
   commitPoolGroup,
   createClient,
   ensureDiscovery,
@@ -33,6 +35,88 @@ const pool = {
   launchSender: token,
   launchedAt: 100,
 };
+test("candidate batches create bounded sources atomically without advancing broad discovery", async (t) => {
+  const db = createClient(url);
+  await db.connect();
+  const schema = "candidate_commit_" + randomUUID().replaceAll("-", "");
+  await db.query(`CREATE SCHEMA "${schema}"`);
+  await db.query(`SET search_path TO "${schema}"`);
+  t.after(async () => {
+    await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+    await db.end();
+  });
+  await migrate(db);
+  const broad = await ensureDiscovery(db, 1000);
+  const batch: Batch = {
+    from: 10,
+    to: 19,
+    hash: hash(19),
+    evidence: { verified: "fixture" },
+    pools: [pool],
+  };
+  const first = await commitCandidateBatch(db, "registry-v1", batch);
+  assert.equal(first.changed, true);
+  assert.equal(first.stream.start, 10);
+  assert.equal(first.stream.cursor, 19);
+  assert.deepEqual(await getStream(db, broad.key), broad);
+  assert.equal(
+    (await commitCandidateBatch(db, "registry-v1", batch)).changed,
+    false,
+  );
+  await commitBatch(db, await getStream(db, "pool:" + pool.id), {
+    from: 10,
+    to: 19,
+    hash: hash(19),
+    token,
+    evidence: {},
+    events: [],
+  });
+  const history = await getStream(db, "pool:" + pool.id);
+  assert.equal(
+    (await commitCandidateBatch(db, "registry-v2", batch)).changed,
+    true,
+  );
+  assert.deepEqual(await getStream(db, "pool:" + pool.id), history);
+  await assert.rejects(
+    commitCandidateBatch(db, "conflict", {
+      ...batch,
+      pools: [{ ...pool, launchTx: hash(999) }],
+    }),
+    /Conflicting launch identity/,
+  );
+  await assert.rejects(
+    getStream(db, candidateStreamKey("conflict", pool.id)),
+    /Stream not found/,
+  );
+  for (const invalid of [
+    { ...batch, to: 42 },
+    { ...batch, pools: [] },
+    { ...batch, from: 9 },
+  ])
+    await assert.rejects(
+      commitCandidateBatch(db, "registry-v1", invalid),
+      /Invalid candidate batch|differs/,
+    );
+  await assert.rejects(
+    commitCandidateBatch(db, "bad/revision", batch),
+    /Invalid candidate identity/,
+  );
+  await assert.rejects(
+    commitCandidateBatch(db, "registry-v1", { ...batch, hash: hash(20) }),
+    /Conflicting replay/,
+  );
+  assert.deepEqual(await getStream(db, "pool:" + pool.id), history);
+  const sources = await db.query(
+    "SELECT count(*)::int AS n FROM pool_launch_sources",
+  );
+  assert.equal(sources.rows[0].n, 2);
+  await rewind(db, await getStream(db, first.stream.key), null);
+  assert.equal(
+    (await commitCandidateBatch(db, "registry-v1", batch)).changed,
+    true,
+  );
+  assert.deepEqual(await getStream(db, "pool:" + pool.id), history);
+});
 test("overlapping launch sources preserve history and reject identity conflicts", async (t) => {
   for (const removeOriginalFirst of [true, false]) {
     await t.test(`rewind original first: ${removeOriginalFirst}`, async (t) => {
