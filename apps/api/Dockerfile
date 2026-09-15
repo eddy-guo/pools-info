@@ -7,7 +7,9 @@ COPY packages/core/package.json packages/core/package.json
 RUN pnpm install --filter @pools/api... --frozen-lockfile
 COPY apps/api apps/api
 COPY packages/core packages/core
-RUN pnpm --filter @pools/api typecheck
+# Repository checks include integration tests and their fixture dependencies.
+# This read-only service image contains only API/core production dependencies.
+RUN pnpm --filter @pools/api exec tsc --project tsconfig.runtime.json
 WORKDIR /app/apps/api
 USER node
 CMD ["node", "--import", "tsx", "src/main.ts"]
