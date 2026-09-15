@@ -1,4 +1,5 @@
 import { rpcPacing } from "./rpc-pacing";
+import { DiscoveryScheduler } from "./discovery-worker";
 import {
   canonicalHeader as header,
   reconcileStream as reconcile,
@@ -8,12 +9,12 @@ import { PoolBatchBudget } from "./pool-budget";
 import { setTimeout as sleep } from "node:timers/promises";
 import { withLogRpc } from "./log-rpc";
 import { safeError, errorDetails } from "./errors";
-import { collectCatalog, collectPoolEvents, Rpc } from "@pools/chain";
+import { collectPoolEvents, Rpc } from "@pools/chain";
 import {
   acquireWriter,
   commitBatch,
   createClient,
-  ensureDiscovery,
+  discoveryV2Identity,
   getStream,
   markAttempt,
   migrate,
@@ -37,8 +38,8 @@ function rpc() {
     // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
     // batch can exceed the free provider's throughput even over one connection.
     ...rpcPacing(),
-    // The current provider plan permits ten blocks per eth_getLogs request.
-    // Start at that known limit instead of issuing a rejected probe every batch.
+    // Configure only a provider range verified by scripts/check-rpc-range.ts.
+    // Conservative defaults remain safe for an unconfigured free endpoint.
     logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
   };
   const state = new Rpc(undefined, limits);
@@ -70,10 +71,7 @@ async function runBatch(
     if (!Number.isSafeInteger(head) || head < 128)
       throw Error("Invalid chain head");
     const from = s.cursor === null ? s.start : s.cursor + 1;
-    const to =
-      s.kind === "pool"
-        ? alignedPoolEnd(from, batchSize, head - 128)
-        : Math.min(head - 128, from + batchSize - 1);
+    const to = alignedPoolEnd(from, batchSize, head - 128);
     if (from > to) return;
     stage = "mark_attempt";
     await markAttempt(db, s.key);
@@ -82,83 +80,51 @@ async function runBatch(
     const first = await header(client, from);
     if (s.hash && first.parentHash !== s.hash)
       throw Error("Checkpoint parent changed");
-    if (s.kind === "discovery") {
-      stage = "discovery_collect";
-      const result = await collectCatalog(undefined, client, {
-        fromBlock: from,
-        toBlock: to,
-      });
-      stage = "discovery_boundary_check";
-      if (
-        (await header(client, from)).hash !== first.hash ||
-        (await header(client, to)).hash !== result.catalog.blockHash
-      )
-        throw Error("Discovery boundary changed");
-      stage = "discovery_commit";
-      await commitBatch(db, s, {
+    if (!token || !s.poolId) throw Error("Missing pool identity");
+    stage = "pool_collect";
+    const result = await collectPoolEvents(
+      { poolId: s.poolId, token, fromBlock: from, toBlock: to },
+      client,
+    );
+    stage = "pool_boundary_check";
+    if (
+      result.fromBlockParentHash !== first.parentHash ||
+      (await header(client, from)).hash !== first.hash ||
+      (await header(client, to)).hash !== result.blockHash
+    )
+      throw Error("Pool boundary changed");
+    stage = "pool_commit";
+    await commitBatch(db, s, {
+      from,
+      to,
+      hash: result.blockHash,
+      token,
+      evidence: result.evidence,
+      events: [
+        ...result.swaps.map((e) => ({
+          ...e,
+          kind: "swap" as const,
+          payload: e,
+        })),
+        ...result.transfers.map((e) => ({
+          ...e,
+          kind: "transfer" as const,
+          payload: e,
+        })),
+      ],
+    });
+    console.log(
+      JSON.stringify({
+        event: "indexed",
+        pool: s.poolId,
         from,
         to,
-        hash: result.catalog.blockHash,
-        evidence: result.evidence,
-        pools: result.catalog.pools,
-      });
-      console.log(
-        JSON.stringify({
-          event: "discovered",
-          from,
-          to,
-          pools: result.catalog.pools.length,
-          httpRequests: client.requests,
-          rpcCalls: client.calls,
-        }),
-      );
-    } else {
-      if (!token || !s.poolId) throw Error("Missing pool identity");
-      stage = "pool_collect";
-      const result = await collectPoolEvents(
-        { poolId: s.poolId, token, fromBlock: from, toBlock: to },
-        client,
-      );
-      stage = "pool_boundary_check";
-      if (
-        result.fromBlockParentHash !== first.parentHash ||
-        (await header(client, from)).hash !== first.hash ||
-        (await header(client, to)).hash !== result.blockHash
-      )
-        throw Error("Pool boundary changed");
-      stage = "pool_commit";
-      await commitBatch(db, s, {
-        from,
-        to,
-        hash: result.blockHash,
-        token,
-        evidence: result.evidence,
-        events: [
-          ...result.swaps.map((e) => ({
-            ...e,
-            kind: "swap" as const,
-            payload: e,
-          })),
-          ...result.transfers.map((e) => ({
-            ...e,
-            kind: "transfer" as const,
-            payload: e,
-          })),
-        ],
-      });
-      console.log(
-        JSON.stringify({
-          event: "indexed",
-          pool: s.poolId,
-          from,
-          to,
-          swaps: result.swaps.length,
-          transfers: result.transfers.length,
-          httpRequests: client.requests,
-          rpcCalls: client.calls,
-        }),
-      );
-    }
+        swaps: result.swaps.length,
+        transfers: result.transfers.length,
+        httpRequests: client.requests,
+        rpcCalls: client.calls,
+      }),
+    );
   } catch (e) {
     console.error(
       JSON.stringify({
@@ -205,12 +171,7 @@ async function main() {
     }
     if (!process.env.ROBINHOOD_RPC_URL)
       throw Error("ROBINHOOD_RPC_URL is required for the persistent worker");
-    const start = integer(
-      "INDEXER_START_BLOCK",
-      -1,
-      0,
-      Number.MAX_SAFE_INTEGER,
-    );
+    const discovery = new DiscoveryScheduler();
     const batch = integer("INDEXER_BATCH_BLOCKS", 1000, 1, 2000);
     const poolBudget = new PoolBatchBudget(batch);
     const budgetOptions = (keys: string[]) => ({
@@ -238,14 +199,39 @@ async function main() {
     if (stopping) return;
     if (!locked) throw Error("Another worker holds the writer lock");
     console.log(JSON.stringify({ event: "writer_acquired" }));
-    // Production migrations are an explicit command, not hidden in the worker.
-    await ensureDiscovery(db, start);
+    // Activation requires explicit approval of the historical scan. No stream
+    // setup or v1 fallback happens while disabled; deep pool work continues.
+    if (!discovery.enabled)
+      console.log(JSON.stringify({ event: "discovery_v2_disabled" }));
     let failures = 0;
     while (!stopping) {
       let cycleError: unknown;
       let failed = false;
+      let discoveryBehind = false;
       try {
-        await runBatch(db, await getStream(db, "discovery:v1"), batch);
+        const discovered = await discovery.run(db, rpc, {
+          signal: stop.signal,
+          onReduce: (previousBatchBlocks, nextBatchBlocks) =>
+            console.log(
+              JSON.stringify({
+                event: "discovery_batch_reduced",
+                stream: discoveryV2Identity.key,
+                previousBatchBlocks,
+                nextBatchBlocks,
+              }),
+            ),
+        });
+        discoveryBehind =
+          !!discovered && discovered.advanced > 0 && discovered.behind;
+        if (discovered && discovered.advanced > 0)
+          console.log(
+            JSON.stringify({
+              event: "discovered",
+              stream: discoveryV2Identity.key,
+              registryRevision: discoveryV2Identity.registryRevision,
+              ...discovered,
+            }),
+          );
       } catch (e) {
         failed = true;
         cycleError = e;
@@ -343,6 +329,9 @@ async function main() {
       if (stopping) break;
       if (failed && (mode === "once" || failures >= 5)) throw cycleError;
       if (mode === "once") break;
+      // RPC pacing limits catch-up throughput; an extra poll delay serves no
+      // purpose while v2 has history to collect. Deep pools still run each cycle.
+      if (discoveryBehind && !failed) continue;
       await sleep(Math.min(300000, interval * 2 ** failures), undefined, {
         signal: stop.signal,
       }).catch((e) => {
