@@ -5,6 +5,7 @@ import { collectPoolEvents } from "./pool-events";
 import { contracts, swapEvent, transferEvent, type RawLog } from "./events";
 import { Rpc, hex } from "./rpc";
 import { collectCatalog } from "./catalog";
+import { collectPoolEventGroup } from "./pool-event-group";
 
 const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
 const token = "0x1111111111111111111111111111111111111111";
@@ -148,7 +149,7 @@ test("persistent batch rejects out-of-scope events even if RPC ignores filters",
   await assert.rejects(
     collectPoolEvents(
       range,
-      fake({ transfers: [{ ...transfer(), address: sender }] }).rpc,
+      fake({ transfers: [{ ...transfer(), address: sender as Hex }] }).rpc,
     ),
     /source or range/,
   );
@@ -231,4 +232,100 @@ test("catalog explicit ranges do not silently scan or merge a larger historical 
     ),
     /Cutoff changed/,
   );
+});
+
+test("grouped range preserves per-pool evidence and shares routed transaction receipts", async () => {
+  const second = { poolId: word(5), token: sender };
+  const secondSwap = {
+    ...swap(),
+    topics: [toEventSelector(swapEvent), second.poolId, word(4)] as [
+      Hex,
+      ...Hex[],
+    ],
+    logIndex: "0x2" as Hex,
+  };
+  const secondTransfer: RawLog = {
+    ...transfer(),
+    address: sender,
+    logIndex: "0x3" as Hex,
+  };
+  const swaps = [swap(), secondSwap],
+    transfers = [transfer(), secondTransfer];
+  const { rpc, calls } = fake({ swaps, transfers });
+  const batch = rpc.batch.bind(rpc);
+  const batches: { method: string; count: number }[] = [];
+  rpc.batch = async <T>(method: string, params: unknown[][]) => {
+    batches.push({ method, count: params.length });
+    return batch<T>(method, params);
+  };
+  const actual = await collectPoolEventGroup(
+    { ...range, pools: [{ poolId, token }, second] },
+    rpc,
+  );
+  const expected = [];
+  for (const pool of [{ poolId, token }, second]) {
+    const single = fake({ swaps, transfers }).rpc;
+    single.logs = async (address) =>
+      address === contracts.manager
+        ? swaps.filter((l) => l.topics[1] === pool.poolId)
+        : transfers.filter((l) => l.address === pool.token);
+    expected.push(await collectPoolEvents({ ...range, ...pool }, single));
+  }
+  assert.deepEqual(actual, expected);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].topics, [
+    toEventSelector(swapEvent),
+    [poolId, second.poolId],
+  ]);
+  assert.deepEqual(calls[1].address, [token, sender]);
+  assert.deepEqual(batches, [
+    { method: "eth_getBlockByNumber", count: 3 },
+    { method: "eth_getTransactionReceipt", count: 1 },
+  ]);
+});
+
+test("200 quiet pools use two log queries and retain complete empty-range boundaries", async () => {
+  const pools = Array.from({ length: 200 }, (_, i) => ({
+    poolId: word(i + 1),
+    token: `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  }));
+  const { rpc, calls } = fake({ swaps: [], transfers: [] });
+  const actual = await collectPoolEventGroup({ ...range, pools }, rpc);
+  assert.equal(actual.length, 200);
+  assert.equal(calls.length, 2);
+  for (const result of actual) {
+    assert.equal(result.fromBlockParentHash, word(1498));
+    assert.equal(result.blockHash, word(1501));
+    assert.equal(result.swaps.length + result.transfers.length, 0);
+  }
+});
+
+test("grouped range rejects foreign or duplicate logs, bad receipts and a changed shared cutoff", async () => {
+  const group = { ...range, pools: [{ poolId, token }] };
+  for (const options of [
+    { swaps: [{ ...swap(), address: token as Hex }] },
+    { transfers: [{ ...transfer(), address: sender as Hex }] },
+    { swaps: [swap(), swap()] },
+    { swaps: [{ ...swap(), removed: true }] },
+    { swaps: [{ ...swap(), blockNumber: hex(1498) }] },
+    { receiptMismatch: true },
+    { reorg: true },
+  ])
+    await assert.rejects(collectPoolEventGroup(group, fake(options).rpc));
+  for (const pools of [
+    [],
+    [group.pools[0], group.pools[0]],
+    [{ poolId: "invalid", token }],
+  ])
+    await assert.rejects(
+      collectPoolEventGroup({ ...group, pools }, fake().rpc),
+      /Invalid/,
+    );
+  await assert.rejects(
+    collectPoolEventGroup(group, fake({ chain: 1 }).rpc),
+    /Wrong chain/,
+  );
+  const rpc = fake().rpc;
+  rpc.batch = async <T>() => [] as T[];
+  await assert.rejects(collectPoolEventGroup(group, rpc), /Incomplete/);
 });

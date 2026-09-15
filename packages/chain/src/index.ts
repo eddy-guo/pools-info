@@ -1,4 +1,5 @@
 export { collectSnapshot } from "./collector";
+export { collectPoolEventGroup } from "./pool-event-group";
 export { Rpc } from "./rpc";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
