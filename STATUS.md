@@ -1,5 +1,45 @@
 # Status — 15 Sep 2026, 08:40 UTC
 
+## Operational update: 09:11 UTC - Phase A resumed with revised estimate approved
+
+**The user approved resuming discovery with the corrected roughly 7.8M CU
+estimate, plus ongoing recent/deep/analytics usage. The earlier budget gate is
+cleared.** Railway `INDEXER_DISCOVERY_V2_ENABLED` is back to **1**. Active
+indexer deployment `246355c8-4a9f-49e9-a8ae-5006d78e96dd` runs commit `b641930`.
+The four other requested values remain 1000/1000/250/10.
+
+Independent Luna samples at 09:09:41 and 09:10:46 showed v2 advancing
+24,694,668 -> 24,964,668, about **4,183 blocks/sec** in a sparse interval.
+The latter exact counts were **625 indexed pools**, **324 v2 pools** and
+**192 factory images**. V1 stayed at **62,923,934**, timestamp 07:26:44.328 UTC.
+The original 410 baseline was a blended recent/historical catalog count, not
+this exact table count. Recent lag reached **3,837 blocks** at 09:09:46.
+
+Alchemy's refreshed account-wide total at about 09:11 was **4,111,218 CU**,
+versus 2,188,684 at initial startup. It includes all three workers. The earlier
+2.4M estimate counted log queries only; the corrected model includes metadata
+reads, receipts, headers and checkpoint checks. See `docs/PHASE-A-RUN.md`.
+No retry loop was established. New code logs every detected 429 and stops all
+workers cleanly after sustained throttling, without automatic failure restart.
+
+The user requested Astra coordination with Sol/Luna workers. Reuse these tasks:
+
+- Sol, `Verify Phase A discovery correctness`: `01a0a453-d8d3-71b1-bc60-0a0d86a4c31e`.
+- Luna, `Verify Phase A progress metrics`: `01a0a454-161b-7931-bd37-68cebdf6186b`.
+
+The existing heartbeat is now **Pools Info coordination**, active every
+**15 minutes**, id `phase-a-discovery-progress`. It checks worker progress,
+verifies evidence, and assigns bounded follow-ups. The coordinator retains
+production changes and integration. Current priority remains Phase A completion,
+then Phase B global swap persistence, then product work. No competing writer.
+
+Commits `25a8dc4` and `b641930` are pushed and CI `34949572780` passed all checks.
+The API exposes exact counts and the operational scheduling/stop changes are
+live. UI work remains safely stashed at
+`f56d87fb7c83fcdf0bffbd1c16458ed7f3adee2f`.
+
+---
+
 Freshest document in the repo. Read before `PLAN.md` / `HANDOFF.md` / `DESIGN-DELTA.md`.
 
 ---

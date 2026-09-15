@@ -3,6 +3,90 @@
 Read root `STATUS.md` first for the user's priorities and 08:34 UTC baseline.
 The user explicitly approved historical discovery on September 15, 2026.
 
+## Current state: resumed with explicit approval
+
+The user answered **Resume with the revised estimate** after the budget pause.
+The estimate is roughly **7.8M CU for discovery**, plus existing workers.
+Do not treat the previous 2.4M figure or pending-approval language as current.
+Railway's reviewed resume diff was exactly v2 flag **0 -> 1**. Active deployment
+`246355c8-4a9f-49e9-a8ae-5006d78e96dd` uses `b641930`. Discovery catch-up now
+runs without deep pool work between batches; recent and analytics continue.
+
+Luna independently sampled the API at 09:09:41.553 and 09:10:46.108 UTC:
+
+| Metric | First sample | Second sample |
+| --- | ---: | ---: |
+| v2 cursor | 24,694,668 | 24,964,668 |
+| exact indexed pools | 624 | 625 |
+| pools carrying v2 evidence | 323 | 324 |
+| pools with factory images | 191 | 192 |
+| v1/v2 source overlap | 0 | 0 |
+
+That is 270,000 blocks / 64.555 seconds, about **4,183 blocks/sec** in a sparse
+interval. V1 remained at 62,923,934 with its original saved timestamp. Recent
+lag was **3,837 blocks** at 09:09:46; most swaps were still unregistered
+(2512 / 3039 in that batch), so do not credit registry expansion for the lag
+improvement yet. The wider log ranges and pacing preceded broad registry coverage.
+
+The refreshed Alchemy total at about 09:11 was **4,111,218 CU**; the displayed
+peak remained 1,467 / 10,000 CU/s. This is an account-wide total, not a per-worker
+meter. Compare subsequent reports against this observation and the initial
+2,188,684 baseline with the other workers' work disclosed.
+
+Coordination now runs every **15 minutes**, per the user's latest request.
+The Astra coordinator reuses Sol task `01a0a453-d8d3-71b1-bc60-0a0d86a4c31e`
+for technical review/implementation and Luna task
+`01a0a454-161b-7931-bd37-68cebdf6186b` for bounded status sampling. Public
+API samples cannot establish 429 counts or provider spend. Root retains
+Railway/Alchemy changes and verifies worker results before integration.
+
+## Budget pause history (cleared by the approval above)
+
+The scan initially ran successfully and was paused under the user's explicit
+instruction to stop if CU consumption materially exceeds the 2.4M estimate.
+The blocker was the incomplete estimate, not evidence of a retry loop.
+
+Alchemy usage rose from 2,188,684 to **3,146,960 CU** around 08:55 UTC, a
+**958,276 CU** account-wide delta. Its September 15 method chart showed roughly
+39% receipts, 37% headers, 10% getLogs, 8% eth_call and 6% getCode. This includes
+all three workers and is not a discovery-only meter. The displayed peak was
+1,467 / 10,000 CU/s. The one-hour error filter returned no errors when checked.
+
+The current collector's no-retry Phase A model for 52,404 launches is:
+
+| Work | Approximate CU |
+| --- | ---: |
+| 40,529 log requests at the approved 1000-block range | 2,431,740 |
+| Two name/symbol eth_call reads per launch | 2,725,008 |
+| Fixed checkpoint/head reads over about 4053 atomic batches | 567,400 |
+| One separate receipt and block header per launch | Up to 2,096,160 |
+| Illustrative discovery total | **7,820,308** |
+
+Shared launch transactions/blocks reduce variable evidence reads; launch
+count, splitting, retries, reorgs and head growth change the total. This excludes
+recent, deep and analytics work. Rates are from Alchemy's official
+[compute-unit table](https://www.alchemy.com/docs/reference/compute-unit-costs):
+getLogs 60, eth_call 26, receipts/headers 20, blockNumber 10. Batches are billed
+per constituent call. The name/symbol calls alone already exceed the original
+2.4M figure. `INDEXER_LOG_RPC_URL` was inspected without exposing credentials:
+it references `${{indexer.ROBINHOOD_RPC_URL}}`, not a separate free log provider.
+
+Railway's reviewed abort diff was exactly `INDEXER_DISCOVERY_V2_ENABLED: 1 -> 0`.
+The redeploy was accepted at 08:59 and is `e7654b27-4a24-4d6c-9141-d970c1d09574`.
+It uses commit `b641930`. At **09:03:18 UTC** its runtime logs confirmed
+`logRangeBlocks:1000`, `minIntervalMs:250`, `maxBatchSize:10`, writer ownership,
+and **`discovery_v2_disabled`**. The API at09:03:50 reported v2 frozen at
+**24,284,668** and exact counts: **547 total,145 with factory images,301 v1,
+246 v2,0 overlap**. The new recent worker reported lag **12,295** at09:03:45.
+The CI run
+34949572780 is green, including both Docker builds and runtime smoke checks.
+
+**Flag-off pauses only discovery.** Existing recent and analytics workers stay
+enabled, and deep collection resumes when v2 is disabled. Do not call this a
+whole-service spending stop. Product work remains paused under STATUS.md.
+The saved v1 cursor remains 62,923,934. At08:59:23 v2 was24,034,668. The final paused metrics above supersede that sample.
+The user subsequently approved resumption; see the current-state section above.
+
 ## Activation
 
 - Railway project: `zestful-fulfillment`, `51279532-d7a4-491e-92db-e30997ed9223`.
@@ -88,7 +172,9 @@ future request.
 
 ## Monitoring and abort
 
-The thread heartbeat `phase-a-discovery-progress` is active every 30 minutes.
+The heartbeat `phase-a-discovery-progress` is active as **Pools Info coordination**
+every 15 minutes. Preserve the explicit approved runtime configuration; never
+assume editing local `.env.local` changes Railway.
 Report exact indexed count, factory-image count, v2 cursor and interval speed,
 all-worker 429 evidence, recent lag and source identity conflicts. Refresh
 Alchemy usage partway through and compare its delta with actual work rather
