@@ -1,6 +1,11 @@
 import { ImageResponse } from "next/og";
 import { walletCaptureLabel, readCardWallet } from "@/lib/product-card";
-import { shortAddress, windows, type LiveWindow } from "@pools/core";
+import {
+  shortAddress,
+  visualTheme,
+  windows,
+  type LiveWindow,
+} from "@pools/core";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -49,8 +54,8 @@ export async function GET(
           justifyContent: "space-between",
           width: "100%",
           height: "100%",
-          background: "#0B0B0E",
-          color: "#F2F2F5",
+          background: visualTheme.panelInset,
+          color: visualTheme.text,
           padding: "50px 64px",
           fontFamily: "sans-serif",
         }}
@@ -66,14 +71,14 @@ export async function GET(
             <span style={{ fontSize: 30, fontWeight: 600 }}>
               {shortAddress(address).replace("…", "...")}
             </span>
-            <span style={{ fontSize: 17, color: "#8A8A94" }}>
+            <span style={{ fontSize: 17, color: visualTheme.muted }}>
               Pools traders / {window === "All" ? "All observed" : window} /
               Robinhood Chain
             </span>
           </div>
           <div style={{ display: "flex", fontSize: 32, fontWeight: 600 }}>
-            pools<span style={{ color: "#8A8A94" }}>info</span>
-            <span style={{ color: "#4DE1C1" }}>.</span>
+            pools<span style={{ color: visualTheme.muted }}>info</span>
+            <span style={{ color: visualTheme.accent }}>.</span>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
@@ -85,10 +90,10 @@ export async function GET(
               marginBottom: 15,
             }}
           >
-            <span style={{ color: "#8A8A94", fontSize: 18 }}>
+            <span style={{ color: visualTheme.muted, fontSize: 18 }}>
               REALIZED SWAP PNL
             </span>
-            <span style={{ color: "#4DE1C1", fontSize: 17 }}>
+            <span style={{ color: visualTheme.accent, fontSize: 17 }}>
               {rank
                 ? `#${rank} ${global ? "across" : "in"} ${scope}`
                 : `Unranked · ${scope}`}
@@ -102,17 +107,17 @@ export async function GET(
               letterSpacing: -3,
               color:
                 m.realizedWei === null || BigInt(m.realizedWei) === 0n
-                  ? "#F2F2F5"
+                  ? visualTheme.text
                   : BigInt(m.realizedWei) > 0n
-                    ? "#3FD68C"
-                    : "#FF6169",
+                    ? visualTheme.up
+                    : visualTheme.down,
             }}
           >
             {money(m.realizedWei)}
           </div>
           <div style={{ display: "flex", gap: 60, marginTop: 25 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <span style={{ color: "#8A8A94", fontSize: 17 }}>
+              <span style={{ color: visualTheme.muted, fontSize: 17 }}>
                 Realized ROI
               </span>
               <span
@@ -120,10 +125,10 @@ export async function GET(
                   fontSize: 27,
                   color:
                     m.roi === null || m.roi === 0
-                      ? "#F2F2F5"
+                      ? visualTheme.text
                       : m.roi > 0
-                        ? "#3FD68C"
-                        : "#FF6169",
+                        ? visualTheme.up
+                        : visualTheme.down,
                 }}
               >
                 {m.roi === null
@@ -132,13 +137,15 @@ export async function GET(
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <span style={{ color: "#8A8A94", fontSize: 17 }}>Record</span>
+              <span style={{ color: visualTheme.muted, fontSize: 17 }}>
+                Record
+              </span>
               <span style={{ fontSize: 27 }}>
                 {m.realizedWei !== null ? `${m.wins}W / ${m.losses}L` : "N/A"}
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <span style={{ color: "#8A8A94", fontSize: 17 }}>
+              <span style={{ color: visualTheme.muted, fontSize: 17 }}>
                 Best realized sale
               </span>
               <span
@@ -146,10 +153,10 @@ export async function GET(
                   fontSize: 27,
                   color:
                     m.bestWei === null || BigInt(m.bestWei) === 0n
-                      ? "#F2F2F5"
+                      ? visualTheme.text
                       : BigInt(m.bestWei) > 0n
-                        ? "#3FD68C"
-                        : "#FF6169",
+                        ? visualTheme.up
+                        : visualTheme.down,
                 }}
               >
                 {money(m.bestWei)}
@@ -162,9 +169,9 @@ export async function GET(
             display: "flex",
             flexDirection: "column",
             gap: 9,
-            borderTop: "1px solid #26262E",
+            borderTop: `1px solid ${visualTheme.lineRaised}`,
             paddingTop: 19,
-            color: "#8A8A94",
+            color: visualTheme.muted,
             fontSize: 15,
           }}
         >

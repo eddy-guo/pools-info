@@ -24,6 +24,14 @@ Visual assessment at matching 1440 x 1000 viewport:
 
 The comparison used the existing real preloaded dataset with live chain refresh disabled, so missing live-feed content is a data-environment difference, not a theme regression. The isolated first step is ready for assessment before continuing with component-level changes.
 
+## Shared palette follow-up
+
+`packages/core/src/visual-theme.ts` is now the color source for the browser theme, lightweight-charts, server-rendered PnL images, and default wallet avatars. The approved pink accent is shared; gains and losses retain independent green/red tokens. Volume-bar opacity derives from those same semantic colors.
+
+The generated `apps/web/src/app/visual-theme.css` contains the palette portion of `@theme`; `globals.css` imports it and keeps the existing type/radius declarations and legacy aliases. To change colors, edit the TypeScript source and run `pnpm exec tsx scripts/sync-visual-theme.ts`. Never hand-edit the generated file. `pnpm exec tsx scripts/sync-visual-theme.ts --check` detects stale output, and the normal unit suite checks the CSS artifact against the shared values and prevents private hex palettes returning to the three renderers.
+
+This follow-up changes the avatar/card accent to pink and centralizes existing chart colors. It does not change chart behavior, financial calculations, component spacing, or table density. Text-ramp application and component-level contrast/weight/radius work remain separate.
+
 ---
 
 Extracted from `~/Downloads/Poolsinfo Design System/poolsinfo.html` and compared against `apps/web/src/app/globals.css` + components, 15 Sep 2026.

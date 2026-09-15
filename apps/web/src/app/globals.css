@@ -1,42 +1,7 @@
 @import "tailwindcss";
+@import "./visual-theme.css";
 
 @theme static {
-  /* Surfaces, from the approved design export. */
-  --color-bg: #08080a;
-  --color-panel: #0e0e11;
-  --color-panel-raised: #101014;
-  --color-panel-hover: #121216;
-  --color-surface-3: #131317;
-  --color-surface-4: #17171c;
-  --color-surface-5: #1c1c22;
-  --color-surface-6: #1e1e25;
-
-  /* Lines, from subtle to prominent. */
-  --color-line: #1a1a1f;
-  --color-line-strong: #22222a;
-  --color-line-hover: #33333d;
-  --color-line-raised: #26262e;
-  --color-line-active: #2a2a33;
-  --color-line-bright: #3a3a44;
-
-  /* Five-step text hierarchy. */
-  --color-text: #f2f2f5;
-  --color-text-2: #b4b4be;
-  --color-text-3: #9a9aa4;
-  --color-muted: #8a8a94;
-  --color-faint: #7a7a85;
-
-  /* Accent and financial semantics remain separate. */
-  --color-accent: #fc72ff;
-  --color-accent-deep: #45184f;
-  --color-up: #3fd68c;
-  --color-up-soft: #7fd9a6;
-  --color-up-bg: #06120d;
-  --color-down: #ff6169;
-  --color-warn: #e0b45c;
-  --color-warn-bright: #ffc94d;
-  --color-warn-bg: #4a3a16;
-
   --font-sans: var(--font-geist), "Helvetica Neue", Helvetica, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --text-2xs: 9px;

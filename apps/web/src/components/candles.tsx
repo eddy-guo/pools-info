@@ -15,6 +15,7 @@ import {
   buildCandles,
   candleIntervals,
   candleValue,
+  visualTheme,
   type ChainMarket,
   type ChainSnapshot,
 } from "@pools/core";
@@ -74,25 +75,25 @@ export function Candles({
     const chart = createChart(container.current, {
       autoSize: true,
       layout: {
-        background: { type: ColorType.Solid, color: "#0E0E11" },
-        textColor: "#8A8A94",
+        background: { type: ColorType.Solid, color: visualTheme.panel },
+        textColor: visualTheme.muted,
         fontFamily: "Geist, system-ui",
         fontSize: 11,
         attributionLogo: true,
         panes: {
-          separatorColor: "#1A1A1F",
-          separatorHoverColor: "#33333D",
+          separatorColor: visualTheme.line,
+          separatorHoverColor: visualTheme.lineHover,
           enableResize: true,
         },
       },
       grid: {
-        vertLines: { color: "#17171C" },
-        horzLines: { color: "#17171C" },
+        vertLines: { color: visualTheme.surface4 },
+        horzLines: { color: visualTheme.surface4 },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#1A1A1F" },
+      rightPriceScale: { borderColor: visualTheme.line },
       timeScale: {
-        borderColor: "#1A1A1F",
+        borderColor: visualTheme.line,
         timeVisible: true,
         secondsVisible: true,
       },
@@ -104,10 +105,10 @@ export function Candles({
       handleScroll: { vertTouchDrag: false },
     });
     const price = chart.addSeries(CandlestickSeries, {
-      upColor: "#3FD68C",
-      downColor: "#FF6169",
-      wickUpColor: "#3FD68C",
-      wickDownColor: "#FF6169",
+      upColor: visualTheme.up,
+      downColor: visualTheme.down,
+      wickUpColor: visualTheme.up,
+      wickDownColor: visualTheme.down,
       borderVisible: false,
       priceFormat: {
         type: "custom",
@@ -152,7 +153,8 @@ export function Candles({
       bars.map((b) => ({
         time: b.time as UTCTimestamp,
         value: Number(b.volume) / 1e18,
-        color: b.close >= b.open ? "#3FD68C55" : "#FF616955",
+        color:
+          b.close >= b.open ? visualTheme.upVolume : visualTheme.downVolume,
       })),
     );
     a.chart.applyOptions({ timeScale: { secondsVisible: interval === "1s" } });

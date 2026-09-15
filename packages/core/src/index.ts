@@ -16,3 +16,4 @@ export * from "./holders";
 export * from "./analytics-types";
 export * from "./analytics";
 export * from "./live-feed-types";
+export * from "./visual-theme";

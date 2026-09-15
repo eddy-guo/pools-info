@@ -13,6 +13,7 @@ import {
   compact,
   displayEth,
   shortAddress,
+  visualTheme,
   type PricePoint,
 } from "@pools/core";
 import { useWatchlist } from "./state";
@@ -36,7 +37,7 @@ export function TokenIcon({
 }
 export function Avatar({
   address,
-  color = "#4DE1C1",
+  color = visualTheme.accent,
   small = false,
 }: {
   address: string;
