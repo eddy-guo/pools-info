@@ -1,0 +1,2054 @@
+{
+  "schemaVersion": 1,
+  "chainId": 4663,
+  "sourcePage": "https://pools.xyz/",
+  "procedure": "curve.listLaunches",
+  "sorts": [
+    "trending",
+    "volume",
+    "fdv"
+  ],
+  "capturedAt": "2026-09-15T02:50:29.615Z",
+  "verified": false,
+  "exhaustive": false,
+  "note": "Untrusted discovery hints only. Each launch must pass the appropriate on-chain verifier before entering the product catalog. CCA is not verified by the Instant collector. No API metrics are imported.",
+  "candidates": [
+    {
+      "poolId": "0x01013d81311e54e01372fdd948bee3cc83baa29e5ef32ff4ceab3f2ffd53467c",
+      "token": "0xa89d6006aa58a8d06103e07480a40fe642be5b87",
+      "creator": "0x7e0a8bd826086e774aa848c37e211c24b1d270bd",
+      "createdAt": "2026-09-14T11:03:15.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x012f815f77ac3691959549acaf0bef23d2e8f2d372531a991dbfe16ead589eb7",
+      "token": "0x68e3be6252d97c71b109f1fdb5e4a5b284b7d96d",
+      "creator": "0xc15eaa9a11f533eee9f6d00c3704303bcc9c4863",
+      "createdAt": "2026-08-27T16:58:36.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x037ccba86d253cc20cf7db69f90efedc2d2087d95715a69d994ad8381d860f72",
+      "token": "0x6b3ac984180ba16e77fcfc9619ec34e7d7e92a67",
+      "creator": "0xd1e94158608e7c25106f5d353bfd45c5a495e066",
+      "createdAt": "2026-09-14T12:24:08.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x0416043923ec3c403f630917317168eeaf4216b12133af8e7ddf0e4776b6a302",
+      "token": "0x18137ac93ea911f3ac7e1ef14ca3c65188c0dc25",
+      "creator": "0xf02bd4c231f1d45ae23120ca349c07bdec2e4a28",
+      "createdAt": "2026-09-09T02:05:44.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x04e6573d923e3b56bece9b517d729240a6683e2249683f6820c925c3ae149026",
+      "token": "0xb480aa907f5ca5364daa47508f06d248411f28be",
+      "creator": "0xd8f5af47e37c633b0daca566e375638311c7f42b",
+      "createdAt": "2026-09-14T09:04:31.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x06195268756e0deab12103559e8a8181a1fe199e59710d8584a0f5659d4889fa",
+      "token": "0x616bcd920e1e1f354750bbaf2fb3b3fa3b4aae16",
+      "creator": "0xbb3dce4688f152e6468ec3645a65440ba7bb3538",
+      "createdAt": "2026-08-09T05:48:35.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x066df1548d4dbb0469a4b515f2a20d1bdd1509cf40bde1609b68c99a5c3337b9",
+      "token": "0x0308818140d5a43cda5c8eafd039c2e52c29b15c",
+      "creator": "0x6a1f2bd636853d1b8f766683edd85fad89f9130f",
+      "createdAt": "2026-09-10T09:54:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x076c7b3819fcfb8674375a177371a69e4cab4cf7269ae426bd752e9e2608ff3d",
+      "token": "0xbe7657a17c80d01ec7a561c127a487eef5913ffe",
+      "creator": "0xc8f228001817751a672d03938ee0ffa07d147caf",
+      "createdAt": "2026-09-14T12:36:30.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x079dd44256a62dda9dfd8d738921dbe044c57f338fe102ec03c809dda49771c1",
+      "token": "0x0f68bee9880a41cdf9713c24358ffdb4756d53c2",
+      "creator": "0xe19537029b8013dc37c55d509b0a5038c7c5ce58",
+      "createdAt": "2026-08-03T19:29:45.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x0a121e54689f658c693b0b9dd9ff0fd81036c0392867dac07548e93108aab11a",
+      "token": "0x1329bf1943321fb91af1d7c10afd4c8d51dabee7",
+      "creator": "0x9e24ae305c2f05575e86f2f03ddda24f6dda8cef",
+      "createdAt": "2026-09-14T03:11:35.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0a2941e1817b7ca07f37390e198394fb698f5474016a037a937dafc21a19ca1d",
+      "token": "0x3949be638cbb4c48b6e724781aade2493dc2d830",
+      "creator": "0x6f3040db65de60adcbb2b256e767ae65af7dd735",
+      "createdAt": "2026-09-14T16:50:51.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0a5e60d5b087d069ac5a94e43849465772a224de4770ff1b0f0676e7cab52e2c",
+      "token": "0x25671721f0841810e814503915b070c17f935f50",
+      "creator": "0x46e741dfeb9724a7b96bdd4c858e4c97c2e77ca0",
+      "createdAt": "2026-09-14T11:14:16.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0aa7c53c115f44ac3afd7a46194f227b2fbc898399b4f49042911fcf4d53be88",
+      "token": "0xafc59741b4c7f03ce76ef44f4493624bfbf4d025",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T04:21:07.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0ade89f9b3134dd532f45d09ea05bd0eaaedf9951303fcfda7f97f114319eb02",
+      "token": "0xfbca6edd66aaf0ef4f8076ccff954e82980f8a26",
+      "creator": "0xc454aa78e0eb3a1aa9174b5b258ad2b74495e7d1",
+      "createdAt": "2026-09-10T23:29:29.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x0b1f0d2bccfd928f1c8050479c9c5659185018b9ef298219e95cff17b13effc7",
+      "token": "0xe2a4373646cc38d88534758ca4298a177e93e675",
+      "creator": "0xe9e441d988e9b3e60bd40f8a99d9769e8c6edcd5",
+      "createdAt": "2026-09-14T13:56:46.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0c05159bcf8231ab7ff3d28ebe1f7a56a11c4324c4f451bcff56f4bd4a6cd80d",
+      "token": "0x3d394e634fdd93b68afbaa602d88fba51f9df960",
+      "creator": "0xaeb81e8ecb83217442248d7408d689412d1595ad",
+      "createdAt": "2026-09-14T03:36:42.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0ed0dcad9ee8088a7fedc5f25e83117c22091fce6318a5e6bad1a0d8010fe69a",
+      "token": "0x028f2ccf2548d8fb3cd3551bed816035d00648e9",
+      "creator": "0xcbd72ea62a6898d218ab0788485e22a03f9a24a3",
+      "createdAt": "2026-09-14T12:53:24.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x0f7d9685fe6a8a7b098f454137b872676f3c2bc39f3da08f1f0afbc306547fef",
+      "token": "0x95f3f3d621f8e540b0e634f841555d2c8d14d921",
+      "creator": "0x1342f0040fa2d92fc20aef89abf77fa781d8bfe7",
+      "createdAt": "2026-08-14T06:18:26.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x10430b97fcff35a7967cd8226934fdbfc6285414c24e9838378b3598e462edf0",
+      "token": "0xcd45e9d812f2052df1f320e442c2336489e167b9",
+      "creator": "0x534e5816332a8f02e3103a8c6de810a544ce1845",
+      "createdAt": "2026-08-17T05:45:54.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x113cd50b1a416e34e649dce89a333cc09066b817c7a6f7a8f29abe9ba7f9a801",
+      "token": "0x9b09c435bc5da088722be47e97989fb1e3ed4eb9",
+      "creator": "0x18a4486c2e8a27b726f8af24e2e77858d454e556",
+      "createdAt": "2026-08-06T21:08:03.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x13957ddbe1741ee2e92530e1012d6e929aa6d0e1e53ee2c8192e5e0b1258dd32",
+      "token": "0xd0766908d6a733c942cbeb120def19c3b223cc97",
+      "creator": "0xa5f945a1184745b5ce665c0f180c0339b83fe19b",
+      "createdAt": "2026-09-14T22:36:15.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x15a3cccd6dd23ee602ed3416d6596c6ae6ddc955088e3fb72d4a60113b380818",
+      "token": "0x83a1172cb638ac66d3515b153d82c69178b1e3f5",
+      "creator": "0x912d972c2687b8a473f58a24333c6d31477f88a0",
+      "createdAt": "2026-09-14T13:54:30.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x197cbed112ba96898f323f8ae71fe8de568c9d0efd1a5a62e93c727b16860896",
+      "token": "0x49c62047965eafd1c0e09c4747242e9d3cbd6eb8",
+      "creator": "0xb2b8f2826e7496b732c9f0f8f4c10c1424e7fef8",
+      "createdAt": "2026-08-07T16:28:00.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x19d0e724aaaa9cd96717ee0578c1d8ad01d5ba9aaafd19aa554a6d7ae3fe096f",
+      "token": "0x8dcb5663bc2149e001a0776585ad59a144da1b2f",
+      "creator": "0xc1a2f762f67af72fd05e79afa23f8358a4d7dbaf",
+      "createdAt": "2026-08-31T17:06:47.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x1b4338a687cdaa97133af423c978edcfb69ac6b86caf2998b0f89ce38f0d4058",
+      "token": "0xa5f3cb043f3639147fc84d790a949af73e79eb35",
+      "creator": "0xaeeaf26d3214edda2cd1ddee693d7accb20496f1",
+      "createdAt": "2026-08-05T15:41:26.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x1c823231ea60f1e77a55404f76359b322c6c69ac01f43305cb84c66fd1d6a19f",
+      "token": "0xfa6dec42e2c649a66f0e264d2dee9303a3c9c20e",
+      "creator": "0xc222624e3da4e98dc6fdf5703b9e7d7253b24eda",
+      "createdAt": "2026-08-06T17:12:53.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x1d1251aa32f159e2c0de0a31acfadbb02633c4baf32b3626a44323afd743eb89",
+      "token": "0x1205104faa5c91c8efb8ae42d414f80db51f65e7",
+      "creator": "0x420dc8840d4b05f4ad21e92d50d63752b64102f2",
+      "createdAt": "2026-07-30T19:33:17.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x200fd5f58291333560c8191237d5192bb5c66154e04b3fc35c590c1c4dadafc4",
+      "token": "0xd40cc7c09869ba402d5ca322839bb150a36827f0",
+      "creator": "0x899720baa52df75c47a0c440cf5bf7818d796c4f",
+      "createdAt": "2026-08-06T18:48:23.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x202ddfbe1f48c8bf8228ebcbc1f72cc4473e734f99a5b1acd82e5d29bea05a2c",
+      "token": "0xb8b848d9e4e4d737bc8ff297c6c9e960dd04b51c",
+      "creator": "0xca61b8db42fa71b37ea41266cbaa041d73aef23a",
+      "createdAt": "2026-09-15T02:18:31.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x2038ba5fa69ab02c102b5edebcb52d93d48da834e2cb36763d366031b6f9fe33",
+      "token": "0x6a78e38ab34bb6719f8f17975df40d138b6b0c3c",
+      "creator": "0xe039d797c7c10db962088b4ea611beb612a7f9ac",
+      "createdAt": "2026-09-14T15:39:11.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x2298581723a827709a1e834f6d2fa5f236d2a410469e76b6e31ae0f836319188",
+      "token": "0xd858d967dfbb6b6eaf027b417f26d9af11e19da7",
+      "creator": "0xca787cab3dff21ce47c78f4fd984423e8e62a277",
+      "createdAt": "2026-08-06T01:29:40.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x2664d2b68383c9493e77c7db3de077d457c857d516f7f2c31d8c89ec9e7f0c07",
+      "token": "0x5fc007bbee55939c8c154e034e475f4f2eed63b9",
+      "creator": "0xcfb92a6575667677e51b3c6db2f57744045c4268",
+      "createdAt": "2026-09-14T02:08:51.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x271cdd715fd5e3baf1dc625a9f512209a5914f20da66631e49f1494f3b9af329",
+      "token": "0xe23fe37902e18f8914fa16004141900345347ec1",
+      "creator": "0x2093a15175c4a3eeb0688c71da69aa7030533eb0",
+      "createdAt": "2026-08-18T06:29:18.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x289f8843f9ebc22072ef06df3d7b869cccecc9a19d0b30be966bb9280d2b981b",
+      "token": "0x3444566dd391d44e8e133bc77aab800e5eb6dabc",
+      "creator": "0x394a3557bc5aa8805821572c8b743589149b3641",
+      "createdAt": "2026-09-14T09:13:22.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x29fee27239d2d523f9d85e48e08ed6853c3e466b5588f137dadc0adef91bde3e",
+      "token": "0x412ea005e001abe0dc8520a9aae38265a796b9b9",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T05:27:34.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x2c110f355d0e5d08af0319d5c7570c80d4a84d274803cf529f65e602e7c210bc",
+      "token": "0xd6c173cb3ff0c523d4eb8cf9d455e48d76b41c24",
+      "creator": "0xc688e7c31dca1ed75ac6728dfd896c25537b7cc0",
+      "createdAt": "2026-09-14T03:02:57.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x2c7fc87f56dafe6017ed76c1440cb8f5d06984442f6e1c9d8b9993914cd3b938",
+      "token": "0x1f693760133e6d6635ab31efca289040e547ee73",
+      "creator": "0xd2564b6a5ee3ee51d0f08e1f5c3c5315a4f99dcc",
+      "createdAt": "2026-07-30T20:08:00.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x2ec498ba54fed59e527a274ca0b1076e5e83c687e5ad829f51360325966a3823",
+      "token": "0x081a5be88932e22fd9dbd394ccccd3dea0b488db",
+      "creator": "0x0dc34119cdc7a7d5496d293eb8600ab29bea0999",
+      "createdAt": "2026-09-14T12:14:05.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x3011346634f7522be30391fa7ee9af4d39d6c8052ad68b15ce13fc2b4cc14ba1",
+      "token": "0xeaba83c6fd99983dc21dc38b5aa85d413e7a9396",
+      "creator": "0x55d2fb0455a1b78d315485ee1716ee02e4b9411a",
+      "createdAt": "2026-09-14T10:27:00.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x351499985bf14d099ac9f504c6d88585996cd8adb8ecf5c60db68e599599549f",
+      "token": "0x8c1986e00875ab564414d6f9f67e8ed5bbabbfc6",
+      "creator": "0xe9cbc1abbc53ef6e03e66fa13775d78bc1a3b302",
+      "createdAt": "2026-09-14T02:50:32.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x358bbf775b3ab172b9fedb18bf5719a02b13a3af2979b3d1c22763ff698f8941",
+      "token": "0x1003ebf9ee3c44685ff38927c3fdd9a0de9310f6",
+      "creator": "0x47444dcc704c0cfcb72bc5c4586117d9690bac0f",
+      "createdAt": "2026-09-03T15:43:44.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x3877fc9cedf347b5d281608108737870280834e11b867979a004cb13205fdf7e",
+      "token": "0xad9e5fb798d12663911388a8d25eba21d6141401",
+      "creator": "0x25e907ca9082195cb56adad5713393b95b3b87b3",
+      "createdAt": "2026-08-05T23:30:21.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x38798d55dafe55ab2521eca75b197b577d177da9990d950f45ecc8b59c5b0472",
+      "token": "0x5ae8d07763d74ca5bd22f8a5b26c6d953e61dfe2",
+      "creator": "0x08717c843f55ef7c68876a7df936d29816084b26",
+      "createdAt": "2026-08-06T15:57:53.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x38bb6781597fe7d237d0b9bbdc7fcd7f6a15b21270ec2eb69bb4548b6a1027c8",
+      "token": "0xc4e9d0b80b1af6bd35dc97ce6f5654840061707f",
+      "creator": "0xb863ce17c8d36250a51cd915e3bb53f4e989fff2",
+      "createdAt": "2026-09-15T01:48:37.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x3a117ae2a37220cfc45c600621d50e1483d6d4a89af767fb346b4bf7b87b6f32",
+      "token": "0x723076e6e585aa1ea846c898b78736ef0ef9e556",
+      "creator": "0xa5f945a1184745b5ce665c0f180c0339b83fe19b",
+      "createdAt": "2026-09-14T21:57:29.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x3cdb33deae4d92982587ec7b71a8013001abce1551f5ac5d90339aab30d45432",
+      "token": "0x73ad8b271bc8425eb48f5194528da1a29d085d5a",
+      "creator": "0xa3e7c61112ea9afeb08adae93df527c1ab08a93b",
+      "createdAt": "2026-09-14T08:03:37.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x3cfc5f5fab417d8de1639894a2c58a8c962bf730e84e660b26a5ae041c78f4d2",
+      "token": "0xcbff131991915e3ab3bc4113ff7f5af6ce7cf985",
+      "creator": "0x7dbe0fd2eea81bc492e84cbba024bd1f97f2a463",
+      "createdAt": "2026-09-13T14:47:33.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x3eb13a6dec00e734dc4ffbe7228bf99ccee29bf157b07f27839f09f8c2569c45",
+      "token": "0x2ecefd2aa7c548a63dc08ace7ff3d10da9e88109",
+      "creator": "0x2681a7d476e00ea50843ffb66e8cfae3ebbb9825",
+      "createdAt": "2026-08-05T22:55:01.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x40b1c925ec5b65a7836bd89f2eab9cd45e700c349efe41563bf3741c4fa93ab0",
+      "token": "0x3b71d08b2230af3e8ef435b04ec22dcdc93f7c6e",
+      "creator": "0x627647c481c004425056ef609b477bfe3cce9354",
+      "createdAt": "2026-09-14T15:38:21.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x40fbd0aa80f448957916b8d86a90a4550eaa9b3e8b6a193be70d4f766fb5e1a8",
+      "token": "0x5f1e75de3574efd828539b4551b2d67bd12d8653",
+      "creator": "0xc7b278d89fcef75b6035412db7d07d673730f496",
+      "createdAt": "2026-09-14T12:24:46.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x41892e3a17ac9adf7dcac52438bfb0a7b0bd4d31d242610b172d1886116d07f7",
+      "token": "0xd3d5be6558f84e628ee091b511df92b4e461a53b",
+      "creator": "0xe1791eaa76b28d064b141a792124db0adf7618b1",
+      "createdAt": "2026-08-05T04:02:35.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x420014a9d78bdc70eedf247dc69afdf910c1018bf263f866bf631cd31137fd5e",
+      "token": "0xc26e815246b767ba4ea238d625a9ba936efa7796",
+      "creator": "0x91e758bea19c65a7fbfd10d78810d38456945908",
+      "createdAt": "2026-07-30T17:03:00.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x42e54688fd48967baeb1ec2b0ace4900c63b76cefca85e502c08b0c25835dd46",
+      "token": "0xc05e636d6afa5119befef318341837d02bf2098a",
+      "creator": "0x3a55331731bda255758598765c4881ab22df1e6b",
+      "createdAt": "2026-09-14T12:11:41.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x455b8742bb117dec1888fc1d5032ed2559bb666d04d76fac651f74c6bdcd85ea",
+      "token": "0xe1c46b2ef0b18815291f7ba687f250157c9413c0",
+      "creator": "0x40fc80924290aa16da596f974f84376633e266ff",
+      "createdAt": "2026-09-14T21:27:04.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x462320c6d4cbb25608f4b3e21958775aa62d57a34e1586985a0bd9fe6a02de55",
+      "token": "0xbae9346cb6c12df12114c9edfbac00e3543a2ef9",
+      "creator": "0xc88094b97c779bc8b4a34773e595eeadd6c5a86e",
+      "createdAt": "2026-08-14T09:45:57.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x477102c106a4ce70b6530a49fa6733cb556208ae3de50af0e729920d6ccae832",
+      "token": "0x8c63b6adfb469bbd0cd5d6ee64f73407f15f4c6c",
+      "creator": "0xd3bd1883fbb1357984f25d21a77f8c67d4c84786",
+      "createdAt": "2026-08-09T01:53:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x48450989bd1e0c2415b60e734eba5f9940a9f1e7da0df300cb63345217e5e51f",
+      "token": "0x44872a444038f5fe9cf9b9d9ed45f14e765bbe46",
+      "creator": "0x46e741dfeb9724a7b96bdd4c858e4c97c2e77ca0",
+      "createdAt": "2026-09-14T11:09:02.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x48771db217dea66aec7985e24d48e1d11d20118172372d83722ba0d02beaa35c",
+      "token": "0xbca2f7789815d7cf627a60e85f615532efb3be96",
+      "creator": "0xd8b19df1a3292b79073e9124f4a88b37d0008c27",
+      "createdAt": "2026-07-30T17:14:48.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x4a2a5172960ea7903adbeea763d2a19760feb06b5b6e9360b3bbb3c1d710e6e7",
+      "token": "0x3f025ede176376da4aeb9b66c36a97e570aa6d29",
+      "creator": "0x3a8f8bbe08edda941247ca1457c52ef94c2b2847",
+      "createdAt": "2026-09-15T02:42:52.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x4a78135d993ddd923a81c6fac81999279be0c85294dbba9b8791e976ad6473c4",
+      "token": "0xecc77e7e8f3bd8eba2e84c5c507b3ec57cff93ec",
+      "creator": "0xe2fa493707b6ae57434cf0643ccd49bc48aca632",
+      "createdAt": "2026-09-14T05:27:27.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x4b26036b21f8646d588fcb11e45c2c4935821da93369639646d733b9a2749e11",
+      "token": "0xc0f62a98f3818bba8deaaf15ebdba1b73f99a02b",
+      "creator": "0x7fc163143960950cf20371460ead315c76626831",
+      "createdAt": "2026-08-02T18:01:45.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x4b404dbc4663e577af9db6b9b0140a9bcfdf1b847b3223d4c4e97b42c9c1bb00",
+      "token": "0x3da5c482781c60d69ade9e1efd5c9cbb87100d4a",
+      "creator": "0xbf9263a6d555261abc9cb4a33004fd1a96c67501",
+      "createdAt": "2026-09-15T00:34:09.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x4c98e53cdaf264aea36ea794898982509651a75bd2fd75121eccec3ec15e20c1",
+      "token": "0x7581ec9347669477711d146e0e43bddda474f415",
+      "creator": "0x21271c7bf46d37c4a8c6f8e0e7e1e3d71f1fd49d",
+      "createdAt": "2026-09-05T17:53:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x4db4a31a68c1bfe852c398b66be47a98232873294930537554a2610299a31b8d",
+      "token": "0xe08d0ffa3f1e4da75b59bbfbb741c487a3d92dca",
+      "creator": "0x37379033390ae074a3689356eb394c7bda35c3e8",
+      "createdAt": "2026-08-08T15:00:09.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x512d5c4b47596ebbfee2fa7ec399a9c6597e9d98986d64d163641f2fcc2156f5",
+      "token": "0xbcc948e70f1d5dcdc8986147257bf4b6c40105f1",
+      "creator": "0x2f38a1b4195c16f0edf9b2e08f42fbf9c91712ec",
+      "createdAt": "2026-08-05T17:15:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x51654f8b1f8ba9b81fbe26410fcb181ffb4ef8da2ed55538a90edfb32524517a",
+      "token": "0xed33dc5ee8fca7c3b3fce4ed0ec7e157de3dc427",
+      "creator": "0x810a9b60905d81b5d782ac87f43c82513cba5069",
+      "createdAt": "2026-09-14T11:49:25.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x5355ac0447f814ed38873322bc1572d0bf9cd3a8823870d4c99abb77c7327f58",
+      "token": "0x94dd416af6fad63675015f71b0542baf9d056230",
+      "creator": "0x3012f89c46f6878bb111fd4f18649c38f114a61a",
+      "createdAt": "2026-09-15T02:45:28.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x53c3d4d8edfceffeffb0fbb9ca62e75c2e13607b08b1e272a651ba8eb094836f",
+      "token": "0x22b8672004b038cab50c1acfaa187c9ed4a55fe5",
+      "creator": "0xe5cf73f96f57d56d6e44bd82d8af95727a2fab04",
+      "createdAt": "2026-07-31T20:44:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x553fbc396ef48de29b8152ab20ffb5d712e2ed135692dce0f33922574848d0e5",
+      "token": "0x308691f69ab7a822c5b2007267f536f4125e93c9",
+      "creator": "0x6cb84ac768aaeb75e8b7c43eb7c591c7ad7ab22a",
+      "createdAt": "2026-09-06T15:02:06.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x55fc0e96a45ee4a5c972ab742bbc590a9e3ae1f8b0d6abececa0c47a6c366ce4",
+      "token": "0xe2c24a2394415ea928653f27c74684c95057b13b",
+      "creator": "0xa20b82ca95b84814e120e4a5baa08746e44ec7a4",
+      "createdAt": "2026-08-06T16:37:54.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x5679ad24fb114dea80978f70f455f105e17dae68a2b90814cc7cbbc819da5aab",
+      "token": "0xd3af6612119362d31d7a6c93ad5e6d01443c855d",
+      "creator": "0x47a98a1db1fcb0c8f644e39d9ab3f2a03d6ed6b8",
+      "createdAt": "2026-08-08T01:33:15.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x57210a17c7116990f590d033ee309f4b72ca44100e767d2ad91c284444bd36fd",
+      "token": "0xb851cebcbcf1dc5f07d9f0a8276cae8d953b3713",
+      "creator": "0x6eb883644596a1b01d7261c52d1202a7a4dd7a35",
+      "createdAt": "2026-08-14T16:38:30.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x57296bbb888e68dda1c1fe6cd3b802e121132299b0e97445ad20f2038366f4bc",
+      "token": "0xb358766827d7c704d3c52a57b5cf181d1b0ffc6c",
+      "creator": "0xe19537029b8013dc37c55d509b0a5038c7c5ce58",
+      "createdAt": "2026-07-30T20:38:32.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x57fca9bd5553c5889e70b67bb8b2d952f2319a3c94d21d1243791402384a7f25",
+      "token": "0xc8670fa05b95c1f3e2405d978d7a14bdb889e3a1",
+      "creator": "0xceefaa43325c6eb02f058188a301ca1fac6aa7f5",
+      "createdAt": "2026-09-14T16:36:24.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x590dcb6a87828bf688b48089a62239b693378f1fb64d2286e6a399ed8c005fdf",
+      "token": "0x18e674231a58c239dc7daedcffe15ec3a24cff5c",
+      "creator": "0x5a52d4b820ae7f02880d270562950918acb14aa2",
+      "createdAt": "2026-08-06T04:20:57.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x591dd0c8c1a5f01452e6bc6daf82dcf93993a83193006bb91cfe0b569d47ab5d",
+      "token": "0x25507640371c8d53f282ee248d0f5007749af63e",
+      "creator": "0xf548e1e109efc5bc8b3495ec86515b259204c9a5",
+      "createdAt": "2026-08-07T19:26:47.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x594ca9d42d2f7c6815ffd1048a03db510d3aab0b295bac921a7d8463b7cda2e3",
+      "token": "0xd917d33ea30d5c1080c91424431aa0376e349b24",
+      "creator": "0x1f451a134eb8a013a5d3fda3e89ddfccbecbaec1",
+      "createdAt": "2026-09-14T09:42:11.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x59b49dc7fffc03fbc46c37feb700366cfa27d11b35c007a6eaa79adb321477a4",
+      "token": "0xdc29db7d4396ed738710a5373a30afc197e7268a",
+      "creator": "0x55e1d60c15174e9e06d7e125169933feace1de46",
+      "createdAt": "2026-08-05T17:48:22.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x5a037e9a54571e921002c5d9ad9727d0327ab3f3fbdc40753402acc05c2c7cfc",
+      "token": "0xe2f3e1e4baacf879b42e1e5ee0f1bc3c19c27be0",
+      "creator": "0x7eaf232fff53499fd3ead3c93924671b149e4837",
+      "createdAt": "2026-08-05T17:43:02.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x5cbc8eafb3434ed64770939a44c77da55312394b4a4dcb264c1f7dc4ed71bbf9",
+      "token": "0xc74af3880cb9801e608ab20991ef87631cbbec2c",
+      "creator": "0x68d1a4f5b0fe50072b5b887b68787cd06d25f129",
+      "createdAt": "2026-08-08T14:41:14.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x5d9ecc81b51624f038ed4138124562a68352bd3792b2cc2ba09e92ff44711c33",
+      "token": "0xd043692ff505831cf5f74661025daa3940980712",
+      "creator": "0x6baaaf2082816d59c712b7061ec2209f337cecba",
+      "createdAt": "2026-08-19T19:23:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x6050c4366818a8ef1a38c6c97165a12a888613e3805195f6890169dc34907444",
+      "token": "0x3c74375240b423923bc469b8cf57d1e496501c31",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T11:42:25.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x60b533f4ccf1eb76510d40d2719de6218c31c0fd27855ce84218927c5480500f",
+      "token": "0xe9d9518fb64d571f4670f8307d9c502eb524dd40",
+      "creator": "0xf570f45f598fd48af83fabd692629a2cafe899ec",
+      "createdAt": "2026-07-30T20:11:41.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x6295f8631f83c0de13392d3da41634658dc7125f21dbb7fa444cd6ee9f3486fd",
+      "token": "0xb9f89a5a075cc280362c5167c5e95723bb2c8cad",
+      "creator": "0x0053bc8f80e2014e38d240b91127115d7d70cff9",
+      "createdAt": "2026-08-04T19:15:04.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x656ac6798a3a659668ec2e55efe9a93cbd9e7402bb6df59bd1e8db022d34c6c8",
+      "token": "0x4ebeb5a8d78623ede63b7ee79ce6f4834b56723b",
+      "creator": "0x87b39320e8927df89ef89423a8692ed69cfac825",
+      "createdAt": "2026-08-10T20:32:45.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x69017e9ac028433d6b25c8a0c02ac7f0f8e41b255405fe4d0f6c41ae2ab0ff21",
+      "token": "0x4318cd7837b95289508afadf4fd4b7a56ffad456",
+      "creator": "0x18a4486c2e8a27b726f8af24e2e77858d454e556",
+      "createdAt": "2026-08-30T15:03:45.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x6a8c5b6ce086155bd9c46caa0954cda8360025e21d33c576c3e00260fe788ee2",
+      "token": "0x21ed792de0ebfa85c2f55ff45b2241c576727f7b",
+      "creator": "0x4c27c9f67169e90fd03f9baa45c29acb888c052d",
+      "createdAt": "2026-08-07T23:16:00.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x6f94809cb727988453e7fd1e02aaf76dd6d729f847be8721172f83d477d58be3",
+      "token": "0x49ae2b07541943879fd17f72965de24ee066357b",
+      "creator": "0x089fce8be711cabc806d69b1d0d5aebd52a06455",
+      "createdAt": "2026-08-06T04:05:11.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x717b78506afa0e3c2723ef2512591a5a8e190480295c04185e820be3ea289882",
+      "token": "0xbda2f6bfbab68a4bdab56dbdf2521809ef9ed7b8",
+      "creator": "0x76a350d680abccedcf5cf279e721e19ccff4cf79",
+      "createdAt": "2026-08-07T21:27:49.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x724c52d22bdea025fc0c1097eb6be51a45ef25ba894710e6b5be036f18e93a27",
+      "token": "0xe37e4a8b3d14274a3fde3d841de65e83e2a943ac",
+      "creator": "0x18a4486c2e8a27b726f8af24e2e77858d454e556",
+      "createdAt": "2026-08-11T11:41:22.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x7299d022673b0528edbc690b56a8daa53d472f4b716967a0afaedc48c9f2e6c7",
+      "token": "0x990449386e98bbe2f0844374a257739aed2c7802",
+      "creator": "0x300cb777724f14c93db5fbb18feab6ead8cab96a",
+      "createdAt": "2026-09-13T15:09:29.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7316c497c0958f4214ffefa145507c628d76e2cf3afac418053eabda51a30ace",
+      "token": "0x47589a5e18991a0cf680f3e333029a2972c935e8",
+      "creator": "0x44c60d2d989d42ee83674b1994bf6e2f2db8f26c",
+      "createdAt": "2026-09-14T23:44:17.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7429defc201d597a26b4a9535f1911a421d9e2dc11818677cb80d5cea76c2970",
+      "token": "0x2559fbefe9d24903f45d37debab0660c26f41ec4",
+      "creator": "0x6e1d17c2016e8631439c4837d96a41d754636d39",
+      "createdAt": "2026-09-14T11:45:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x74ee62b71c421720db1018db50845cf7d5d633bd16f2c7b77fb06dbb18144f30",
+      "token": "0xb0135a83e8dce12e3d652e491621b6860a320c1c",
+      "creator": "0x01c98b0c7b472411161d1f5e5b30811790888d93",
+      "createdAt": "2026-09-15T01:14:12.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x767cdbcdfa957c38af2dcee8fbc4a15a8436b06b2a28855ea738b1d4c6393fc5",
+      "token": "0xd554e75f85cb1fcb5b6640b55779d566ac60de9f",
+      "creator": "0xf77011e5c66815fafed85b8b19e85e45611ed7a5",
+      "createdAt": "2026-08-05T19:31:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x791e25d6dadea7f9589b056dcd26650db7b0ee4e2671b6a68100e1eb83d1c885",
+      "token": "0xcc6ce478243f4147c1a42ab858fe21e3e56a32dc",
+      "creator": "0x1db6ad3344f1ae0a495b28b031b80cddd99f2fd0",
+      "createdAt": "2026-08-13T19:02:24.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x7a0621ae93a52d047787f202a7554aeec133b0d3e6f3621d2c4cdd42cdfefbec",
+      "token": "0x411df3fd3f9b9d7801c61ea693e2d2ba0b5866c4",
+      "creator": "0xb70abaff36713cd9a70be916f7a4a210dd768348",
+      "createdAt": "2026-09-14T23:27:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7b593102fc57c7ad21848a429c8f41a4686000df87e5cee689fb1a4ed9f9caf6",
+      "token": "0x0f925b4bfa5d4372b73681a6acb38f5e29db12ae",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T02:38:10.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7b78f7f6cea6ce8c16ba2196cc3f99cf4992123fe235629cd55b13e8b225d234",
+      "token": "0x9338f732cfed81ec029c4cb95e2fbcab9c637544",
+      "creator": "0x9bc5c91454d38262a256af27c558ea10acc0e02a",
+      "createdAt": "2026-08-06T02:43:01.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x7c6ff9fb16b8233a28c9a47511210604cae26f4ca3fe2313dddaebb80721a202",
+      "token": "0x86ea9babe39b6712faf6860a7e2153f4b269beb1",
+      "creator": "0xbc1173db54ac93819fa0cfae715719579b4acfa3",
+      "createdAt": "2026-08-06T07:24:48.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x7c937497e9c34c9e79a37a59bfcf9df70303c208c533d5a190dd4759ea7af9ec",
+      "token": "0xdf964f908343efc37b532a8737c4fa14e9936982",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T09:04:00.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7dcbfd32232efd1264c37111342f259879b0e93e98e67bee25b9b0bf0b39dae9",
+      "token": "0x4d1b733fe63b4edec67f719ae4ede79bf0f252e9",
+      "creator": "0x9fa51a020a722e2be87a3e3bb12c5994f039702f",
+      "createdAt": "2026-09-14T08:35:08.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x7efa94135b2900961be40d025ecbca82b4309ad2cfcc05185855c8dcec5b73d1",
+      "token": "0xcd1fc623c597c201238686e19985a653238e36aa",
+      "creator": "0x6bb933af35e32893a7ffd2d5e932f022b063a412",
+      "createdAt": "2026-08-05T18:54:39.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x7f684f065921a0162f9f361f84c1bd1e93f95d9e92f37823e6bd246e514130b8",
+      "token": "0x08948d9f8df64c6aefedcba3ad2cdf430da3383f",
+      "creator": "0x7a527e057f5c11c8a8b1370f6d4edb3ca6c2c85d",
+      "createdAt": "2026-09-15T02:01:02.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x808b31568b83ad25c44172d6c8611b72a034c3ee2712416291b60f08c2603290",
+      "token": "0xc3a220648569972f1c101956032ea8f220767547",
+      "creator": "0xa60e892ab5fbf4754e3052b7643e48a1bd6b3065",
+      "createdAt": "2026-08-05T16:53:45.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x84fb0e7d17bd5d697bc7774449a980375b34748710104c5c094864b7626a417e",
+      "token": "0xeb4850399c6b2e1feacd75f4ea7c7058953d6437",
+      "creator": "0xca61b8db42fa71b37ea41266cbaa041d73aef23a",
+      "createdAt": "2026-09-15T02:37:40.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x850d66c1b3f813751f799e503b9d7078190f34bbe42218713e9835e27e150d00",
+      "token": "0x13205d09801def1562ace68d97a3e18fd70170c6",
+      "creator": "0x55d2fb0455a1b78d315485ee1716ee02e4b9411a",
+      "createdAt": "2026-09-14T11:07:44.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x8554fed8c88b55498764fa8224718b5bf2a5f9fb9dbdd3460a02fd97b4f9d1a7",
+      "token": "0x1280536362b2e64fb08c6e859ff8cc3339a29bbf",
+      "creator": "0xcf3ab76f2fbcd80b6927125baf754df70d099c25",
+      "createdAt": "2026-08-03T16:18:54.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x856d616ab2f1014cd86ed619517e9b86fdbcdbea153619cc05dc44fe1ccba7fa",
+      "token": "0x9e645c8e4c1cae6acb11c547bd1407645e940a32",
+      "creator": "0x5d0833015f97f05aabe1c2cfd7859e30bc2c0471",
+      "createdAt": "2026-09-14T09:17:46.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x8651e656738064177752a395dbde2b2a9e3fc469edc2a9212e6060c0990bb7eb",
+      "token": "0xb9972ca7188e511174947e3936a5315ac7073277",
+      "creator": "0x240b7e8fcfdb38c94c0b8733a4a50f28a4c99fa8",
+      "createdAt": "2026-08-17T16:52:13.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x87361c2a7bd25b3ac87f98e1019a1170d64859cf7c1545dc6c008459000c0890",
+      "token": "0x8031a70628207ed93d7037ea6b1444912993c715",
+      "creator": "0xf97dd5c5739e93a128c6018afad14a19b9ff1000",
+      "createdAt": "2026-08-08T07:36:01.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x88fbd9768ccf1bf77d6946afa1b2f3ce79e02a4566ca8a3d5ba78ab04e8ef27f",
+      "token": "0x385b36ff682ab4c76e7c37a66b96aabc466471d5",
+      "creator": "0xbe4eba417999c7269c6d631eaef82ad3f2bcdd9e",
+      "createdAt": "2026-07-30T16:41:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x8dcd5d8c4be2e924a6de70f732fae00e115a24719f9b8524aab998d7a69af9f9",
+      "token": "0xc5eaaae05837f0899ae5ede1ea4b87219f5d6a13",
+      "creator": "0x55d2fb0455a1b78d315485ee1716ee02e4b9411a",
+      "createdAt": "2026-09-14T09:36:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x8e71331fbfadc2a9e2795fee58ee66747fea2bcfd5222c86fcbd6d8d8c9a782e",
+      "token": "0xb3adc540b924622de0ed121a2b81335e94d4df1c",
+      "creator": "0xdae7c03252ab4098036bc92371ee38527725e6e3",
+      "createdAt": "2026-08-05T17:28:29.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x902e5f7158a6fd3b877d59437c521fef680359893e3916cb3bf708cb0bdc4c0f",
+      "token": "0x4a5f4504a0945d973c29aeae077887122ea218af",
+      "creator": "0xa9a13b84ee026b8a54eccc19ee57d256112ec2c6",
+      "createdAt": "2026-08-06T05:36:23.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x90939d0f1d7e7c5711a6ed3fb012096433b89597c04ab79269a02e418e8e515f",
+      "token": "0xbc191b1d09e51cbe10c15c9191086931b5876b83",
+      "creator": "0xb92700892c07905b0e068a1bfa32cc1e3d7c7ab6",
+      "createdAt": "2026-09-04T22:10:07.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x90cc9aaf6418d9a639331f6d1575aeaa564e4fe9b11b7c1f370c594a90040ba2",
+      "token": "0x7fe3778b2520a5868fb8bc16fea0f33dd9e7122a",
+      "creator": "0xe83e8ec76783d9f072d847ee69b7e630a8b6c501",
+      "createdAt": "2026-08-05T16:38:29.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x9339210baa69fc2391411f8fdcf3e501cb46d2446d665e678e5d8a19dac21e6e",
+      "token": "0x6e9acbfbdd8b57649ffeacea4d26a81ae1395367",
+      "creator": "0x9c86a6f30d3de0c082023284fd4cd28cb951493e",
+      "createdAt": "2026-08-05T23:37:58.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x9633f7406f1677cfc5d1e904a27c57c9b104a4b1eb2a006a685fbba5b87ae024",
+      "token": "0x1bac3cd87752fa63fa196ee998296c910931dd5f",
+      "creator": "0xd28093a762d321d25a67d3b02f67773618f902c6",
+      "createdAt": "2026-09-14T12:50:25.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x98b37102fadd92241e957547aa6b233803eb30819ed7729046a68d84a6352b41",
+      "token": "0xf73119ea74207ddeb4675b6f3736b69ce285ff58",
+      "creator": "0xa5f945a1184745b5ce665c0f180c0339b83fe19b",
+      "createdAt": "2026-09-14T22:21:01.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x99537683eb28dc4894f00b798d04254a604ef71b8ff5dcf157133c31f59b9951",
+      "token": "0x63ecf3a907049bd6a5cf25a90842c9a7c66c4ef2",
+      "creator": "0x5fce24570086fef87ff5e827113a23dda6c821b3",
+      "createdAt": "2026-08-05T19:51:12.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0x99b90b716cde6de7f6b0e7dbd5835eb726a9f6434bf9312193e3f0a8195f02bc",
+      "token": "0xe9fc7c0e400bdf181dfdb8a4e4df26d2872be341",
+      "creator": "0x481fee70dddaa9a5395bd3d814b9a9c14dca4d5c",
+      "createdAt": "2026-09-15T00:54:40.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x99e33b21519bd1cfd0b458cd01be8ef1f4960afa93bc95f32be781dfbaed75e7",
+      "token": "0xe148c6f23ce26fa3864d27be36ed1aa022e40831",
+      "creator": "0xf0d7040e2e9cb927b78eed574adaea20a4d72007",
+      "createdAt": "2026-09-14T02:57:08.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x9c10c6e08c1a350e6d866e76524967614f170db7871c278545c64173e8a87a7b",
+      "token": "0x1a1cc4d0308cc09693a45905d41e7d6c656dbc56",
+      "creator": "0x46e741dfeb9724a7b96bdd4c858e4c97c2e77ca0",
+      "createdAt": "2026-09-14T10:03:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0x9d35297537fdf4a56fa9fa58d247792a7b519af877a084e4963c9920fc712b96",
+      "token": "0x349065655926a3f6968990246f986f2e19d75231",
+      "creator": "0x0206cc4ec063b4f0479aac7b0bb0e88826b6f50d",
+      "createdAt": "2026-09-14T12:58:41.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xa294fb24e88df1b5133f69c7b7e201befd6de1805b75d0f9aa4f469752ca8613",
+      "token": "0x8f5c8c40f87dd6c9da581bc6262dee808b9eb995",
+      "creator": "0x271dcabc6ced75571472c7891bb7081561c94998",
+      "createdAt": "2026-09-14T04:07:28.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xa2ac723417b75906fe5e817a5a75335862d8ae3615ee73644fd22ce0cf189cde",
+      "token": "0x9a53d45bc9905c98ec63c8b7be3effbca8a51c1b",
+      "creator": "0xaec1c3b2af2964ab7179edca2a16926d85e8e32e",
+      "createdAt": "2026-09-14T12:13:41.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xa2e3a1ba769e6d429c6c32a5baa01963d9d58d82060afc0198e51d695a3409fb",
+      "token": "0x0017fda428f9810fd7c2e249a3ccc0865e96769e",
+      "creator": "0xec7414b7572c5e5f3298deec6917306f65d0f644",
+      "createdAt": "2026-08-06T19:44:23.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xa819a108f21325006a4a07b83473eb0d02d94ae7d6448e7723d7ec7057456c04",
+      "token": "0x8b48e9da0501a3556a961463fcf39bb426501d0d",
+      "creator": "0xad0880db741470e53e9c24d1226950274bc1a203",
+      "createdAt": "2026-08-10T14:38:48.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xa9b42b0ffe09371015050096bc05b132bdbf76d41d4c337ddfdc3b7b17ae281f",
+      "token": "0xfeacef09be172634bd8cadc2429b92eb4ed73799",
+      "creator": "0x52d2b1164b6794b2ca1582f0ba67a7efa203fa5a",
+      "createdAt": "2026-08-05T23:37:19.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xaa440abaa5d4517181a783a76ef2d4e1466e454422cbada099c107720b01d13f",
+      "token": "0x8750da3e48345ec0c5aaaacfcda2a004da3b60c2",
+      "creator": "0x29b4a7876df2a6e1a6a282783255cb61cefb50f4",
+      "createdAt": "2026-07-30T17:05:02.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xaa74475f584c352aec4d3d3ad44dcb6ff0f164365d0dab37e1721258f6687de6",
+      "token": "0x4c8d1bce58eb642539d3b161220c1f91cdc7d9b3",
+      "creator": "0xd5c83484e7bd84dde56261651f3d5316ddeb4276",
+      "createdAt": "2026-09-14T05:10:31.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xaa9f2179c38d7e0b9797449f7df15b03a6becd84bdacdfc49bbacd12c3592709",
+      "token": "0x8e7dffb4b8e0abfaf6297e81d63e239e9bc366af",
+      "creator": "0x5da0ad00d17f9773cbccfd8d61abc41198194c75",
+      "createdAt": "2026-09-14T06:36:37.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xabfad9011a40a33c1e91401390c070fad3d46815e94c9fa5d0b42a819f042651",
+      "token": "0xa85bd69ea5492e42bb912a82b4feed6fe10d5e12",
+      "creator": "0x53854edf8dcd8eed337c3cb30e6e5ffd65cc4ebd",
+      "createdAt": "2026-08-03T10:33:49.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xacbb561f77dc804738208ff4564c0ac73193c077a957cd7673251ddaf7e9fea3",
+      "token": "0x024289f1cf86c82a204ace250883963f0dcbe74b",
+      "creator": "0x1f77d34deff2b72b0a0258603effe72704742ebb",
+      "createdAt": "2026-08-07T23:22:14.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xacea8920877840033f0275c37f9b61550b5326917e948bcf8339714d96f9521a",
+      "token": "0x6245e67affa44a23077f0ea7f981a8dc743a0c47",
+      "creator": "0xe19537029b8013dc37c55d509b0a5038c7c5ce58",
+      "createdAt": "2026-07-30T20:16:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xad625be17be01484eb161e9b44a03f42b5e9a44a2299bb4c5a17bd5556bda309",
+      "token": "0xd64166d922e840fced30341d493e42a8b4a5fdca",
+      "creator": "0x4756d860c892efb82e5b3b8477585f05407fc448",
+      "createdAt": "2026-09-13T22:22:43.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xae5918609ed2762ba8421fcc150824b46cc6d236ac2116d45d30d3b389a5c608",
+      "token": "0x39f32f41da7ca7853b768e666107b951d5038dd0",
+      "creator": "0xb9d604584077e2cd260cec68b45a8d3ac52d836b",
+      "createdAt": "2026-09-11T02:33:28.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xaff8e2d7015c76fa6d9b2bedb72da7d6b305fd7b2140df3fca5c3c57e877ecfa",
+      "token": "0x298348d5b2e45c774e3ee4f1a0924071dfbdc8c7",
+      "creator": "0x0053bc8f80e2014e38d240b91127115d7d70cff9",
+      "createdAt": "2026-08-04T17:50:12.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xb04ea21312a950c7609cded7894f8ee752fcdd199ec6c2ed509bce5c777ca7d9",
+      "token": "0x3600982efe8507a8c11ae9bb57a30117eb40f09b",
+      "creator": "0x810a9b60905d81b5d782ac87f43c82513cba5069",
+      "createdAt": "2026-09-14T10:59:11.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xb2bb6a65097d8713046b4c7c4311eb6867de14302b95cc0d1ee1735f9d8d47d9",
+      "token": "0xbfcf92ec01e1481aa1332145f263ca18f53e8974",
+      "creator": "0x47e86520411638f1ca294eaf5f3d9561843cb989",
+      "createdAt": "2026-09-14T13:55:40.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xb37682bb9f6c63ef0194068ea90e13f51e7b6694ab5be082ac02e9a47d7328a3",
+      "token": "0x310c100659fc9054a025a264a4f3e51978a168cb",
+      "creator": "0x3012f89c46f6878bb111fd4f18649c38f114a61a",
+      "createdAt": "2026-09-15T02:21:08.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xb452320b9f6a9fea1f100bc7f75686562d434e90c1c19433a6f4e54bdb4d65b4",
+      "token": "0xdbe9a8897f73ee91fc2e1e27f9b50a72f9fe5a43",
+      "creator": "0x31f77f253f6b4fd7dc1d32671e327274bd52c429",
+      "createdAt": "2026-08-06T16:10:18.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xb46dbebbb05b7c770c62e24dc8359be0e6595dd6e8bd4a4fa2af6642b6a1f813",
+      "token": "0xb864b445733979cf587c4e102b3d334668484c6e",
+      "creator": "0x9166084ae3b22bb144f55bf668ddf5372440f01e",
+      "createdAt": "2026-09-15T01:42:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xb46ffdc8e3f7374eb3b367611dc589062ba74aec97fdc98baed743dfa53ba5a6",
+      "token": "0x1ee45c01e5d70c8760a9024e8ac3052e63b680a9",
+      "creator": "0x4fb1a9c7e8a7069c08897b6ef593f8b2d23831f4",
+      "createdAt": "2026-08-10T11:59:31.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xb502a49f2d1484d1b7f4221623fe0205cee199f4244b7625d8bec9c1415a78ae",
+      "token": "0x5ab5f320d8a3de4967fbed6d0678ad71683f53c7",
+      "creator": "0x73707848923ec06f1970b50a1ba00c75bd735a77",
+      "createdAt": "2026-07-30T17:07:35.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xb6a81d36c7711ecf747921290a4c4c040ebad4ea8f8125214b5668f946368de0",
+      "token": "0x7e6f2a9d8f823650bcd5ba17390e27dff42f48e2",
+      "creator": "0x55d2fb0455a1b78d315485ee1716ee02e4b9411a",
+      "createdAt": "2026-09-14T11:52:16.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xb7b3d0b25011173ce076fb35e5e8b70fb1316d0dcf0d77b515f5ae51e8301cb4",
+      "token": "0x2e39ef8eda6dc785313df17250ec735bf1831dcb",
+      "creator": "0xe346c9e65cb8228a25ca49206e638b227474063a",
+      "createdAt": "2026-09-14T19:03:44.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xba8ae25e3245de54099725dc62114aa0373f3f47a790caf9e052a86de578a91e",
+      "token": "0xdea2e41c2f44c0801f82776964c35af49e0217f7",
+      "creator": "0xea8650b291b77233ec338e394662b634636582c1",
+      "createdAt": "2026-08-05T19:49:54.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xbb0bc8d39d33e7205e2800a749260dba8aa666ef0c48b81a0f0ecef71fc35bee",
+      "token": "0x34d406c517db6b440e2e001560580c0e245cff32",
+      "creator": "0xd7d2f9a51b29bfb9813132e869edc84e6526cf7d",
+      "createdAt": "2026-09-14T05:50:20.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xbec7f5bb6b28df7f5fc81af186e4ae52859c1cb6711d6b0d5954ed5e9cd3d67d",
+      "token": "0x117a860274973d4a1d0023c34f02d3757c9bff52",
+      "creator": "0x1d689e77371c56414c6db3437ed3279868ef6d37",
+      "createdAt": "2026-09-02T18:04:03.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xc0d2c224c2715205a742c24b205e964875beecddc04143fd4690f1e909af4448",
+      "token": "0xcea0279fa2c1c8db83ddd49eab65b233f4efe86a",
+      "creator": "0x2b0dff24a35df8e9e3b3c157b54a99946fb34a63",
+      "createdAt": "2026-08-07T18:34:17.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xc1ccf929ae9106f9d1aaa06a44b8f184c608c71428ca141a8d1d84c32329c6e6",
+      "token": "0x2b5a382a5ac930dbd73c1515ce9790d155aeef08",
+      "creator": "0x7ec5fd398c9845bf3763390d02c9d85242b89f7c",
+      "createdAt": "2026-09-14T07:21:18.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xc4f008a88ca27220ad30a91d354cd22f40c15b9339d8103bfb9c97a9e033128f",
+      "token": "0xb60e6fa5bd79f7ab99fcaa7bf3a639cd16bda3b7",
+      "creator": "0x6773584d80911bea0b98e62482565a669333639a",
+      "createdAt": "2026-08-07T16:06:23.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xc543a56cc8a695b1363e6f7b19e531551a4cd8eac05ccd72c6ebc76b44daaaba",
+      "token": "0x1676f82f57d500a0d418c8c10334cf69ed050b83",
+      "creator": "0xbee39719711ef97bcc83f481f758c055faf6b94a",
+      "createdAt": "2026-09-15T00:12:20.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xc841ab4651426d43c502f39cc6dbc9593e5f73f6075b496bb9e92fa7d209bd78",
+      "token": "0xd7020736a3b5e3ba7978b6bf922b42f8217db584",
+      "creator": "0xbceee14c42812f2b9d95fd3d42bc9bbfa5837427",
+      "createdAt": "2026-08-05T21:02:53.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xc87eb4c5af597c2a7f4f77471e91c580bf6a44881cdb864a203f289c1da07205",
+      "token": "0xc54adea2b8b247fe87cd6ad9e8d09594a61e88c9",
+      "creator": "0xc8758719a4dc94788caa5a2e3686c46b2dba1c59",
+      "createdAt": "2026-09-14T04:41:10.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xc9736658d50d6b85392171f04adda832dfde5ca38010f6d6443e9040876b099d",
+      "token": "0x658bf542c9384dc000a07540b0b29ef7e79fe126",
+      "creator": "0xdf44fd66f46de89bb9f13a919f4fb97a0dc0fc95",
+      "createdAt": "2026-08-06T02:29:54.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xca7f37647807ddc4582a0b3ed22206a9056a70c99edf17d05cd1f9ec9182dfdf",
+      "token": "0xf6567fc78ad460ac00977908040b1bf212ec5e06",
+      "creator": "0x5a5aa38e7bb017e280ef69fce36dcad4046ae7d4",
+      "createdAt": "2026-09-14T09:24:12.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xcbf61811ebe1e52bf86d8edda7170b05b9c13a4733a736ef6867a42ecd69aded",
+      "token": "0x6710fea82ca70346a8e643bb6875b25da2df4ab2",
+      "creator": "0x06071042c210999c277a230cb8265c98f4ec68fd",
+      "createdAt": "2026-09-14T16:14:40.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xce237c2653ee69f2e3f839df59f5650ba87c807b879f3064c67cb3437e454527",
+      "token": "0x7bb3e171ec502f65c08d38a61d51b9841524a72d",
+      "creator": "0x29a1d36daee6b0e0dd4873dd964677000b6e23eb",
+      "createdAt": "2026-08-19T18:16:17.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xce4b57ec5f5c71eae4281506c4dd5e994befbbfa307ce1d177e4c908f1ab325e",
+      "token": "0x5042f710be3b7ff97d13ede2f31781fa875778bb",
+      "creator": "0x90d696e86276a0506ab0d51f6177cb365ecd79fe",
+      "createdAt": "2026-09-15T00:48:27.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xd0e362a3fc6f90391d9a72d1aa1e23369a0fddd8d5ee8a637999de9cf94611c6",
+      "token": "0x272b9ac3237fe3c29bf92a942049c2f63ded4bdf",
+      "creator": "0x0fe98ed897d0dc80f771f7615ac98e9f9d530bf1",
+      "createdAt": "2026-08-26T21:03:24.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xd25a917de6a8977f92794b652ab4c03b81c4eabd43460faf23f8a79a74f10479",
+      "token": "0x0901486b4c690d438a10754a5ee4c4f54876d821",
+      "creator": "0xbb83f29d92c4284c7f2588b3ed9896d6f4094e3a",
+      "createdAt": "2026-09-15T01:02:13.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xd3d9c1295eaad1b47f4f045e52036228ab897e34832ceb3b94bf261059aa5d89",
+      "token": "0xe0061932a2eb3b4815ae9ddb99008a1486b48de7",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T11:15:39.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xd710d0c92930a3f60d6d380756dd420ce1634dc7690e925319597ad08cc6df20",
+      "token": "0x34eb33638d360c16f64f4ad5af4cc59ba3783b36",
+      "creator": "0xce5b9dea40c94479a0c6f07f03248e469ff92f8f",
+      "createdAt": "2026-08-05T17:46:57.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xdb1b25daa15d984916ea93c08680b3d529f2a248943806c15a7c96d72559bf40",
+      "token": "0xf5dcad5f404ee2c92231a21b1bdced275d65795f",
+      "creator": "0xe969169784750760b9b8063b2415bf1665702cc8",
+      "createdAt": "2026-09-14T11:41:42.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xdbf484c77b8a3518466efffc9055220554a7a0973284e8eeb064781b238294ef",
+      "token": "0xeb934b2d626bd1a7202497e6327828b0a6806fa9",
+      "creator": "0x7eaf232fff53499fd3ead3c93924671b149e4837",
+      "createdAt": "2026-08-10T20:02:13.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xdc60bfd2ecd452d8096c932b81513b70d4a9b5763f01f87adb969d0aa3526413",
+      "token": "0x6c6f4f0b09e8eeb56bfc20e85f8b05488b5b1f1b",
+      "creator": "0x5d4ccf2ed959ab523408bd35ee9ebdc33ad609fd",
+      "createdAt": "2026-09-14T08:05:37.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xdeba159a06ac72c08bd824ab5dd601c85f829dca6b240e47ffaedff36ce578bd",
+      "token": "0x29564cfab1acfa39ec7012d0d83b4e02126f9c6e",
+      "creator": "0x810a9b60905d81b5d782ac87f43c82513cba5069",
+      "createdAt": "2026-09-14T13:55:01.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe09387484a7cb87428743bfa96080012b47f64a91c90ed9c677ecf7cf2320eab",
+      "token": "0x261151bbe8930b4b618fa424c49219c011124013",
+      "creator": "0x0dc34119cdc7a7d5496d293eb8600ab29bea0999",
+      "createdAt": "2026-09-15T02:40:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xe2ec4021169f4c5a34b000189283c3c0acda46c1e19815b12824ea16a1919289",
+      "token": "0x1de758a5964e1ebdd97f389d46735f3cf052cec8",
+      "creator": "0xae9da5f72c0ee2fb894f525bc0568aaf4d18d33f",
+      "createdAt": "2026-09-14T09:01:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe43abed27145d7f3ade737379b22da83c72d3edd858fcc84c1c66532563b8796",
+      "token": "0x08c9d9dcd835556593741486a23457a06967d33e",
+      "creator": "0x9b3db4d9eec3b372104d10d8e741c2029174c528",
+      "createdAt": "2026-09-14T04:47:01.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe4c4856f1b3ba3ab6bb6f5a5bcb12d283564c18a06b2a8b449c6b4261b79bfa3",
+      "token": "0x59909ff2ca2962e8aef2852292a68b71a1fe38d0",
+      "creator": "0x584233b81e1b5bb28296002a5849abd2b5d996b8",
+      "createdAt": "2026-09-14T15:19:14.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe51f3b34421f1958ad9447fd47608104d1efce654129a1d14fecf7900ea18d4d",
+      "token": "0xe9cc5f3d8983ace5e53f34a505c7e72810910ac4",
+      "creator": "0x9ed2afd818ae22f0293f749b7427f86159974c09",
+      "createdAt": "2026-09-14T23:09:36.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe5bdb637d556f7e2dd66fcff1d2d1808279be485e02b78778ebdd45eaa4d0568",
+      "token": "0x74aa4c87ecda1e84818f8bc702610996f03f133b",
+      "creator": "0xcdea19e6d247619ed5fefe47b4992ea577ad2142",
+      "createdAt": "2026-08-06T01:58:29.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xe628f8e86b59dca43ca6336c5974a0a6862f7f480ed5b37e129b73f080ff6101",
+      "token": "0x6883d48e1a6119aff0c2cd5d607bc1f1835f4ea1",
+      "creator": "0xfd5da569c88942369b231ad8c5191e23d6c4a6df",
+      "createdAt": "2026-09-06T09:57:38.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xe728cd9152582f0bfde42704f06dec33dadbaef730aceb589b9cdcece74bca4f",
+      "token": "0xb91506a804b784b9509f8066c669d2c4907926e9",
+      "creator": "0xcfb92a6575667677e51b3c6db2f57744045c4268",
+      "createdAt": "2026-09-14T02:18:21.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xe9e0720bb1990bdab6316361f4b27a365e70ea334aa73393ccdd9ab6fe2ffc9c",
+      "token": "0x2067b01c9d55a56b8edc4cf7643e4a6444cd19f2",
+      "creator": "0xe4d7cecdb0873caa29debf7425ffd831f0d89a54",
+      "createdAt": "2026-09-14T04:15:35.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xeac5e7757a947867189f9739a9cf8da055ab1359cfc38386b48f34d4ed5ed9e5",
+      "token": "0x8a6853482a71c954d853562cf63541f34d3ea358",
+      "creator": "0xcd2a1bfb718613e0fb3befc4de54d1b4a9574e9d",
+      "createdAt": "2026-09-13T22:20:59.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xecec3e50c2b552ba0a8ff76e4ed5ab90db56ccc5d637c9102d9332e3cfb0a0f9",
+      "token": "0xaad54b43907c6aefa8cd5e2a5c918cc335d983d8",
+      "creator": "0x367f8273e653e9bf2b56cf98f133c765918343e1",
+      "createdAt": "2026-09-14T18:03:50.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xed7223a979381c40943fae50e4f86981a1201a1f1f3359e4e21bcd7aade41e8a",
+      "token": "0x617cb16825ffc10ca6bdba133b21f8aadf8d622d",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T13:09:01.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xef1041fc0929718aeac54b2c84250ef9d5468b959342014569fceac71e9740e6",
+      "token": "0x4d765a0e312ae4542915f9dcd01391421415bf02",
+      "creator": "0x8395fe393922ea6903cadb4618d9dd770ab02f0f",
+      "createdAt": "2026-09-14T14:52:19.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xf1447c527ec2e2856edebc6a5f1f8e208e66bec8c108750052e1b56700edd8fb",
+      "token": "0x9a5d03de82f2bbe649871837c1ba7f9d879def60",
+      "creator": "0x6fd96f1a38989407577e2eb2633af6d2e64d72ca",
+      "createdAt": "2026-08-06T12:00:50.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xf35cf5af09957e8f2bc1179bb1bc4f1dd25f826717129bd74b8fe6e75dfc4eee",
+      "token": "0x05e4eda215fa3da3d540d8dd381e893e9daac15f",
+      "creator": "0x7833b6ae559aa2253a52c26be79100efca50a34e",
+      "createdAt": "2026-08-06T22:26:19.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xf44978d4607ced50f8b4158c9274b42f17595c172f30baf7dfc2d94e586f6089",
+      "token": "0xe6220c38bb0e3353609da2d00f3efe41b59a1cdc",
+      "creator": "0x0dc34119cdc7a7d5496d293eb8600ab29bea0999",
+      "createdAt": "2026-09-14T12:44:47.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xf5eecbfa6aaad42fc1db776221e88a7da12a5895d9404424f8e419eda9aba56d",
+      "token": "0x1df1f09c4dd65c76746d53467361d536cdfdc719",
+      "creator": "0x24ecd23096fcf03a15ee8a6fe63f24345cc4ba46",
+      "createdAt": "2026-08-05T21:58:52.000Z",
+      "launchpadId": "uniswap-cca",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xf79f05ea6d07063d4c7e78ccca028eef15ffe0627f022f7ea2d16f5b0191e1cc",
+      "token": "0xc7cfb2626ddad1331292436fa41ddf376b6ff944",
+      "creator": "0xd28093a762d321d25a67d3b02f67773618f902c6",
+      "createdAt": "2026-09-14T12:26:56.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xf88dc36946c6d89dc4d5a5590c3ea9496b3279bc13630926fadc4869dce8c9a5",
+      "token": "0xd977f0932fada7fdcb69ccd7e9c7c82ce33e3963",
+      "creator": "0x14f99f8843d08b70cb675c3a01b9cc64206353ab",
+      "createdAt": "2026-08-07T22:55:33.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "fdv"
+      ]
+    },
+    {
+      "poolId": "0xfb666aa663e2368def11a9fe82862190c40bf903d83ae9f343bcd38e7719e602",
+      "token": "0x4636e0604cd1d0f638a6512c1c32e1cd25e2af02",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T07:20:19.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xfbd2a0ddd4d7dae8e9cc2db03e21b16e8c94c793a9cdc75b0ba38c06510c2fd3",
+      "token": "0x9e5235413d03f3497e898fe058eebd8db2ecd381",
+      "creator": "0x3155c22b6b423c52301250b90e5b0e1070ea1e8f",
+      "createdAt": "2026-09-14T12:46:55.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xfdd3ff4c3706ff6814bd7daa20091d5e5d535448ca4404239a4481636a1621bd",
+      "token": "0x856db023d1660441a40679d3afa642b758380210",
+      "creator": "0x99fc168755af1f17861a929234ee3ff712fe49c8",
+      "createdAt": "2026-09-15T01:50:50.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    },
+    {
+      "poolId": "0xfe21f429c7bff20d4ca9600b3a6f64232a8ba9e76b4d5df994e569481d060e34",
+      "token": "0x55be7803eac3f73fbeb5f9ce9190d1016b98b632",
+      "creator": "0x8bbb4f1e2d01ce6b1fd77263078ea09346659e7d",
+      "createdAt": "2026-09-14T07:44:32.000Z",
+      "launchpadId": "uniswap-bonding-curve",
+      "seenIn": [
+        "trending",
+        "volume"
+      ]
+    }
+  ]
+}
