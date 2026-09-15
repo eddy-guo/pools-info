@@ -1,4 +1,9 @@
 import { rpcPacing } from "./rpc-pacing";
+import {
+  rpcRateLimitObserver,
+  throwIfRateLimitExhausted,
+  workerFailureExitCode,
+} from "./rpc-operations";
 import { DiscoveryScheduler } from "./discovery-worker";
 import {
   canonicalHeader as header,
@@ -38,6 +43,7 @@ function rpc() {
     // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
     // batch can exceed the free provider's throughput even over one connection.
     ...rpcPacing(),
+    onRateLimit: rpcRateLimitObserver("main"),
     // Configure only a provider range verified by scripts/check-rpc-range.ts.
     // Conservative defaults remain safe for an unconfigured free endpoint.
     logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
@@ -199,6 +205,14 @@ async function main() {
     if (stopping) return;
     if (!locked) throw Error("Another worker holds the writer lock");
     console.log(JSON.stringify({ event: "writer_acquired" }));
+    console.log(
+      JSON.stringify({
+        event: "worker_rpc_configuration",
+        worker: "main",
+        logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
+        ...rpcPacing(),
+      }),
+    );
     // Activation requires explicit approval of the historical scan. No stream
     // setup or v1 fallback happens while disabled; deep pool work continues.
     if (!discovery.enabled)
@@ -233,6 +247,7 @@ async function main() {
             }),
           );
       } catch (e) {
+        throwIfRateLimitExhausted(e);
         failed = true;
         cycleError = e;
         console.error(
@@ -242,10 +257,16 @@ async function main() {
           }),
         );
       }
-      // Discovery and each pool are independent retry units. A broken launch
-      // cannot prevent already-known pools from making progress in this cycle.
+      // Phase A owns historical catch-up. Keep saved deep cursors intact and
+      // resume them only when discovery is caught up or explicitly disabled.
+      // A failed discovery retries with backoff, without routing around it.
+      if (discoveryBehind && !failed && mode === "run" && !stopping) {
+        failures = 0;
+        continue;
+      }
+      const deepAllowed = !discovery.enabled || (!discoveryBehind && !failed);
       let attempted = 0;
-      while (attempted < poolsPerCycle && !stopping) {
+      while (deepAllowed && attempted < poolsPerCycle && !stopping) {
         let group: (Stream & { token: string })[];
         try {
           group = await nextPoolGroup(db, poolsPerCycle - attempted);
@@ -282,6 +303,7 @@ async function main() {
             );
             continue;
           } catch (error) {
+            throwIfRateLimitExhausted(error);
             console.error(
               JSON.stringify({
                 event: "pool_group_fallback",
@@ -303,6 +325,7 @@ async function main() {
               budgetOptions([pool.key]),
             );
           } catch (error) {
+            throwIfRateLimitExhausted(error);
             failed = true;
             cycleError ??= error;
             console.error(
@@ -325,13 +348,10 @@ async function main() {
           }),
         );
       // Finish the in-flight operation on termination, without another attempt
-      // or a final poll. A failed one-shot still tries all independent streams.
+      // or a final poll. One-shot catch-up never starts an unbounded next cycle.
       if (stopping) break;
       if (failed && (mode === "once" || failures >= 5)) throw cycleError;
       if (mode === "once") break;
-      // RPC pacing limits catch-up throughput; an extra poll delay serves no
-      // purpose while v2 has history to collect. Deep pools still run each cycle.
-      if (discoveryBehind && !failed) continue;
       await sleep(Math.min(300000, interval * 2 ** failures), undefined, {
         signal: stop.signal,
       }).catch((e) => {
@@ -347,5 +367,5 @@ main().catch((e) => {
   console.error(
     JSON.stringify({ event: "worker_stopped", error: safeError(e) }),
   );
-  process.exitCode = 1;
+  process.exitCode = workerFailureExitCode(e);
 });

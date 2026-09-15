@@ -1,5 +1,6 @@
 import {
   Rpc,
+  RpcRateLimitExhausted,
   auditPool,
   contracts,
   decodeLaunch,
@@ -12,6 +13,7 @@ import {
   type Receipt,
   type EventHeader,
 } from "@pools/chain";
+import { throwIfRateLimitExhausted } from "./rpc-operations";
 import {
   buildHolderLedger,
   type ChainSnapshot,
@@ -661,6 +663,7 @@ export async function runAnalyticsOnce(db: Client, rpc: Rpc, poolId?: string) {
     );
     return true;
   } catch (e) {
+    throwIfRateLimitExhausted(e);
     const code = analyticsError(e);
     await db.query(
       "UPDATE analytics_pool_jobs SET last_error_code=$2 WHERE chain_id=4663 AND pool_id=$1",
@@ -670,6 +673,8 @@ export async function runAnalyticsOnce(db: Client, rpc: Rpc, poolId?: string) {
   }
 }
 export function analyticsError(e: unknown) {
+  if (e instanceof RpcRateLimitExhausted)
+    return "analytics_rpc_rate_limit_exhausted";
   return e instanceof Error && /^analytics_[a-z_]+$/.test(e.message)
     ? e.message
     : "analytics_projection_failed";

@@ -1,9 +1,9 @@
 # Broad swap implementation boundary
 
 The broad collector is a foundation for Phase B, not active historical
-coverage. Discovery v2 activation still requires the user's confirmation after
-the reported RPC range check. No broad worker, cursor or serving projection is
-enabled by the collector alone.
+coverage. Discovery v2 was explicitly approved and activated on Railway on
+September 15; see [PHASE-A-RUN.md](PHASE-A-RUN.md). No broad worker, cursor or
+serving projection is enabled by the collector alone.
 
 ## Collection
 

@@ -97,6 +97,10 @@ export function safeError(e: unknown) {
     return "rpc_timeout: retry the bounded request";
   const categories: [RegExp, string][] = [
     [
+      /^RPC rate limit exhausted after 4 throttled attempts$/,
+      "rpc_rate_limit_exhausted: collection stopped; inspect provider capacity before manually restarting",
+    ],
+    [
       /^RPC response ID mismatch$/,
       "rpc_response_id_mismatch: provider returned a different request ID",
     ],

@@ -9,6 +9,7 @@ import {
 } from "viem";
 import {
   Rpc,
+  RpcRateLimitExhausted,
   contracts,
   getInstantDeployment,
   swapEvent,
@@ -20,6 +21,8 @@ import {
 import {
   projectAnalytics,
   loadIndexedAnalytics,
+  runAnalyticsOnce,
+  analyticsError,
   type AnalyticsInput,
 } from "./analytics";
 import type { Client } from "@pools/db";
@@ -315,6 +318,103 @@ test("indexed loader refuses non-contiguous saved batches and rolls its read tra
     /analytics_coverage_gap/,
   );
   assert.equal(calls.at(-1), "ROLLBACK");
+});
+
+test("analytics preserves terminal rate limits without publication or generic retry classification", async () => {
+  for (const terminal of [true, false]) {
+    const { input, rpc } = fixture();
+    const calls: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        calls.push(sql);
+        if (sql.includes("SELECT p.*"))
+          return {
+            rows: [
+              {
+                pool_id: input.poolId,
+                token: input.token,
+                name: input.name,
+                symbol: input.symbol,
+                launch_block: input.launchBlock,
+                launch_tx: input.launchTx,
+                source_stream: "discovery:v1",
+                source_batch: 100,
+                stream_key: `pool:${input.poolId}`,
+                start_block: input.fromBlock,
+                cursor_block: input.toBlock,
+                cursor_hash: input.blockHash,
+              },
+            ],
+          };
+        if (sql.startsWith("SELECT from_block"))
+          return {
+            rows: [
+              {
+                from_block: input.fromBlock,
+                to_block: input.toBlock,
+                block_hash: input.blockHash,
+                bytes: 100,
+              },
+            ],
+          };
+        if (sql.startsWith("SELECT evidence") && sql.includes("to_block<="))
+          return {
+            rows: [
+              {
+                evidence: {
+                  swapLogs: input.swapLogs,
+                  transferLogs: input.transferLogs,
+                  receipts: input.receipts,
+                  headers: input.headers,
+                },
+              },
+            ],
+          };
+        if (sql.startsWith("SELECT evidence"))
+          return {
+            rows: [
+              {
+                evidence: {
+                  logs: [input.launchLog],
+                  receipts: [input.launchReceipt],
+                },
+              },
+            ],
+          };
+        return { rows: [] };
+      },
+    } as unknown as Client;
+    const error = terminal
+      ? new RpcRateLimitExhausted()
+      : Error("private_provider_url");
+    let rpcCalls = 0;
+    rpc.call = async () => {
+      rpcCalls++;
+      throw error;
+    };
+    await assert.rejects(
+      runAnalyticsOnce(db, rpc, input.poolId),
+      (e: unknown) =>
+        terminal
+          ? e === error
+          : e instanceof Error && e.message === "analytics_projection_failed",
+    );
+    assert.equal(rpcCalls, 1);
+    assert.equal(
+      calls.some((sql) => sql.includes("INSERT INTO analytics_pool_snapshots")),
+      false,
+    );
+    assert.equal(
+      calls.some((sql) => sql.includes("SET last_error_code")),
+      !terminal,
+    );
+    assert.equal(
+      analyticsError(error),
+      terminal
+        ? "analytics_rpc_rate_limit_exhausted"
+        : "analytics_projection_failed",
+    );
+  }
 });
 
 test("unsupported swap signs preserve holder preload without silently publishing partial PnL", async () => {

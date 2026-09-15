@@ -21,6 +21,34 @@ class BatchRateLimit extends Error {
     super("RPC HTTP 429");
   }
 }
+/** Terminal for this collection and its worker. Do not retry with a fresh Rpc. */
+export class RpcRateLimitExhausted extends Error {
+  constructor() {
+    super("RPC rate limit exhausted after 4 throttled attempts");
+    this.name = "RpcRateLimitExhausted";
+  }
+}
+export interface RpcRateLimitEvent {
+  source: "http" | "json_rpc";
+  methods: string[];
+  batchCalls: number;
+  throttledCalls: number;
+  attempt: number;
+  httpRequests: number;
+  rpcCalls: number;
+}
+const observedMethods = new Set([
+  "eth_chainId",
+  "eth_blockNumber",
+  "eth_getLogs",
+  "eth_getBlockByNumber",
+  "eth_getTransactionReceipt",
+  "eth_getTransactionByHash",
+  "eth_getCode",
+  "eth_call",
+  "eth_getBalance",
+  "eth_getStorageAt",
+]);
 export class Rpc {
   requests = 0;
   // Distinct logical calls; retries reuse IDs. This is not billable provider usage.
@@ -30,6 +58,8 @@ export class Rpc {
   private logRange = 10000;
   private batchSize = 20;
   private throttleMs = 0;
+  private rateLimitAttempts = new Map<number, number>();
+  private rateLimitFailure?: RpcRateLimitExhausted;
   constructor(
     private url = process.env.ROBINHOOD_RPC_URL ??
       "https://rpc.mainnet.chain.robinhood.com",
@@ -39,6 +69,7 @@ export class Rpc {
       minIntervalMs?: number;
       maxBatchSize?: number;
       logRangeBlocks?: number;
+      onRateLimit?: (event: RpcRateLimitEvent) => void;
     } = {},
   ) {
     const batchSize = limits.maxBatchSize ?? 20;
@@ -63,6 +94,7 @@ export class Rpc {
   }
   private async send(body: Request | Request[]): Promise<Reply | Reply[]> {
     for (let attempt = 0; attempt < 4; attempt++) {
+      if (this.rateLimitFailure) throw this.rateLimitFailure;
       const scheduledAt = Math.max(Date.now(), this.nextRequestAt);
       this.nextRequestAt =
         scheduledAt + Math.max(this.limits.minIntervalMs ?? 0, this.throttleMs);
@@ -85,6 +117,60 @@ export class Rpc {
         });
         const result = (await response.json().catch(() => null)) as
           Reply | Reply[] | null;
+        // Observe throttling before any range/error handling. Only fixed method
+        // labels and counters leave this boundary, never URLs, params or text.
+        const replies = Array.isArray(result) ? result : result ? [result] : [];
+        if (
+          response.status === 429 ||
+          replies.some((r) => r.error?.code === 429)
+        ) {
+          const requests = Array.isArray(body) ? body : [body];
+          const limitedIds = new Set(
+            replies.filter((r) => r.error?.code === 429).map((r) => r.id),
+          );
+          const limited =
+            response.status === 429
+              ? requests
+              : requests.filter((r) => limitedIds.has(r.id));
+          for (const request of limited)
+            this.rateLimitAttempts.set(
+              request.id,
+              (this.rateLimitAttempts.get(request.id) ?? 0) + 1,
+            );
+          const throttledAttempt = Math.max(
+            0,
+            ...limited.map((r) => this.rateLimitAttempts.get(r.id)!),
+          );
+          this.limits.onRateLimit?.({
+            source: response.status === 429 ? "http" : "json_rpc",
+            methods: [
+              ...new Set(
+                requests.map((r) =>
+                  observedMethods.has(r.method) ? r.method : "other",
+                ),
+              ),
+            ],
+            batchCalls: requests.length,
+            throttledCalls: limited.length,
+            attempt: throttledAttempt,
+            httpRequests: this.requests,
+            rpcCalls: this.calls,
+          });
+          if (throttledAttempt >= 4) {
+            this.rateLimitFailure = new RpcRateLimitExhausted();
+            throw this.rateLimitFailure;
+          }
+          this.throttled();
+          if (Array.isArray(body))
+            throw new BatchRateLimit(
+              response.status === 429
+                ? null
+                : Array.isArray(result)
+                  ? result
+                  : null,
+            );
+          throw Error("RPC HTTP 429");
+        }
         // Some providers return plan limits as HTTP 400 JSON-RPC errors. Keep
         // provider messages private and only extract the advertised range size.
         if (
@@ -104,18 +190,6 @@ export class Rpc {
           )
             throw new LogRangeLimit(blocks);
         }
-        // A batch can succeed at HTTP level while individual calls are throttled.
-        // Preserve successful replies and let batch() retry only throttled calls.
-        const replies = Array.isArray(result) ? result : result ? [result] : [];
-        if (
-          response.status === 429 ||
-          replies.some((r) => r.error?.code === 429)
-        ) {
-          this.throttled();
-          if (Array.isArray(body))
-            throw new BatchRateLimit(Array.isArray(result) ? result : null);
-          throw Error("RPC HTTP 429");
-        }
         if (!response.ok) throw Error(`RPC HTTP ${response.status}`);
         if (!result) throw Error("RPC returned invalid JSON");
         for (const row of Array.isArray(result) ? result : [result])
@@ -126,6 +200,7 @@ export class Rpc {
         if (
           error instanceof LogRangeLimit ||
           error instanceof BatchRateLimit ||
+          error instanceof RpcRateLimitExhausted ||
           attempt === 3
         )
           throw error;
@@ -184,7 +259,10 @@ export class Rpc {
         const reply = replies.get(request.id);
         if (!reply) throw Error("Missing RPC batch ID");
         if (limited && reply.error?.code === 429) {
-          if ((attempts.get(request.id) ?? 0) >= 4) throw Error("RPC HTTP 429");
+          if ((attempts.get(request.id) ?? 0) >= 4) {
+            this.rateLimitFailure = new RpcRateLimitExhausted();
+            throw this.rateLimitFailure;
+          }
           retry.push(request);
         } else if (reply.error || reply.result === undefined) {
           throw Error("RPC returned an error or missing result");

@@ -1,4 +1,9 @@
 import { rpcPacing } from "./rpc-pacing";
+import {
+  rpcRateLimitObserver,
+  throwIfRateLimitExhausted,
+  workerFailureExitCode,
+} from "./rpc-operations";
 import { gunzipSync } from "node:zlib";
 import { readFile, stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -21,6 +26,7 @@ function rpc() {
     timeoutMs: 300000,
     maxRequests: 500,
     ...rpcPacing(),
+    onRateLimit: rpcRateLimitObserver("analytics"),
     logRangeBlocks: range,
   });
 }
@@ -147,6 +153,7 @@ async function main() {
           mode === "once" ? process.argv[3]?.toLowerCase() : undefined,
         );
       } catch (e) {
+        throwIfRateLimitExhausted(e);
         if (mode === "once") throw e;
         console.error(
           JSON.stringify({
@@ -168,5 +175,5 @@ main().catch((e) => {
   console.error(
     JSON.stringify({ event: "analytics_stopped", error: analyticsError(e) }),
   );
-  process.exitCode = 1;
+  process.exitCode = workerFailureExitCode(e);
 });

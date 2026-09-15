@@ -193,11 +193,24 @@ test("discovery range config defaults to 10000 and rejects invalid bounds", () =
 });
 
 test("discovery activation accepts only explicit 0 or 1 and defaults off", () => {
-  assert.equal(discoveryV2Enabled(undefined), false);
-  assert.equal(discoveryV2Enabled("0"), false);
-  assert.equal(discoveryV2Enabled("1"), true);
-  for (const value of ["", "true", "false", "01", " 1", "1 ", "2", " "])
-    assert.throws(() => discoveryV2Enabled(value), /expected 0 or 1/);
+  const previous = process.env.INDEXER_DISCOVERY_V2_ENABLED;
+  try {
+    delete process.env.INDEXER_DISCOVERY_V2_ENABLED;
+    assert.equal(discoveryV2Enabled(), false);
+    assert.equal(discoveryV2Enabled(undefined), false);
+    process.env.INDEXER_DISCOVERY_V2_ENABLED = "1";
+    assert.equal(discoveryV2Enabled(), true);
+    assert.equal(discoveryV2Enabled(undefined), true);
+    assert.equal(discoveryV2Enabled("0"), false);
+    process.env.INDEXER_DISCOVERY_V2_ENABLED = "0";
+    assert.equal(discoveryV2Enabled(), false);
+    assert.equal(discoveryV2Enabled("1"), true);
+    for (const value of ["", "true", "false", "01", " 1", "1 ", "2", " "])
+      assert.throws(() => discoveryV2Enabled(value), /expected 0 or 1/);
+  } finally {
+    if (previous === undefined) delete process.env.INDEXER_DISCOVERY_V2_ENABLED;
+    else process.env.INDEXER_DISCOVERY_V2_ENABLED = previous;
+  }
 });
 
 test("discovery budget shrinks proven capacity failures, recovers and preserves unrelated failures", async () => {

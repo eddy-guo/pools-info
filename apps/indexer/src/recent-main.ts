@@ -1,4 +1,9 @@
 import { rpcPacing } from "./rpc-pacing";
+import {
+  rpcRateLimitObserver,
+  throwIfRateLimitExhausted,
+  workerFailureExitCode,
+} from "./rpc-operations";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Rpc } from "@pools/chain";
 import { createClient, migrate, recentResumeBatchBlocks } from "@pools/db";
@@ -67,6 +72,7 @@ async function main() {
         timeoutMs: RECENT_TIMEOUT_MS,
         maxRequests: RECENT_MAX_REQUESTS,
         ...rpcPacing(),
+        onRateLimit: rpcRateLimitObserver("recent"),
         logRangeBlocks,
       });
       const started = performance.now();
@@ -98,6 +104,7 @@ async function main() {
         if (mode === "once" || stop.signal.aborted) break;
         if (!r.advanced || r.through === r.head - 128) await pause(2000);
       } catch (e) {
+        throwIfRateLimitExhausted(e);
         goodCycles = 0;
         const smaller = smallerRecentBatch(e, batchBlocks);
         if (smaller < batchBlocks) {
@@ -132,5 +139,5 @@ main().catch((e) => {
       ...errorDetails(e),
     }),
   );
-  process.exitCode = 1;
+  process.exitCode = workerFailureExitCode(e);
 });

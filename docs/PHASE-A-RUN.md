@@ -53,6 +53,8 @@ estimate is not a total for every method and worker.
 V1 stayed at **62,923,934**, hash
 `0x5d6729bc6b864fd7b271488dd056febd9bba5c71d1828c72d1c380ca8de2724f`,
 with its saved timestamp still **07:26:44.328 UTC**. No local writer was started.
+After refreshing the Railway page, deployment `e798bf66` explicitly showed
+**Active** in its deployment header.
 
 At 08:40:22 the recent worker committed 1000 blocks, observed 2034 swaps,
 saved 490 registered swaps and reported 1544 unregistered swaps. Its reported
@@ -78,6 +80,12 @@ assuming the earlier 23.7M-remaining figure describes the upgraded plan's
 current counter. The total includes all three workers and dashboard reporting
 may lag. No billing settings were changed.
 
+Around 08:50 UTC, Alchemy Request Logs was filtered to **Last hour** and
+**All errors** (`time=hour&allErrors=true`). It returned **No request logs found**.
+This is provider-dashboard evidence for that selected window, supplementing
+the Railway startup logs; it is not a claim about dashboard retention or every
+future request.
+
 ## Monitoring and abort
 
 The thread heartbeat `phase-a-discovery-progress` is active every 30 minutes.
@@ -89,15 +97,34 @@ than treating only `eth_getLogs` as the entire workload.
 On sustained throttling, runaway retries, material unexpected consumption or
 identity conflicts, set `INDEXER_DISCOVERY_V2_ENABLED=0` on this Railway service
 and deploy. Preserve all cursors and evidence. Report the problem immediately;
-do not substitute unrelated work. The worker's internal retry observability
-and terminal rate-limit stop behavior need an operational guard, tracked in the
-current implementation work.
+do not substitute unrelated work. The operational increment described in
+[RPC-RATE-LIMIT-STOP.md](RPC-RATE-LIMIT-STOP.md) logs recovered limits and stops
+the service after four throttled attempts. If `service_paused_rpc_rate_limit`
+has already stopped it, leave it stopped and report; do not restart merely to
+change the flag. Confirm the increment's deployment before relying on the guard.
 
 When v2 reaches the confirmed chain cutoff, record the final count and fraction
 carrying factory `image_url`. Compare with 52,404 measured FeeSplitter positions
 without assuming the counts must be identical. Then proceed to Phase B's
 global atomic swap persistence. No LBP/CCA decoder expansion or evidence
 pruning is authorized.
+
+## Operational validation
+
+The operational increment passed `pnpm check`, all **44 database tests** with
+zero skipped, and **82 desktop/mobile browser tests** on September 15. The
+first full DB run exposed an environment-dependent activation test (expected
+off while `.env.local` explicitly enabled v2); the test now scopes and restores
+its own environment, and the full suite was rerun successfully. No environment
+file was changed to make the test pass. Exact counts use normalized columns
+and surviving launch-source evidence in `/v1/status.indexedPools`.
+
+The scheduler increment prioritizes v2 historical discovery over deep pool
+work until catch-up; recent and analytics remain separate processes. This
+removes the several seconds of deep work between discovery commits. New
+startup logs report configured `logRangeBlocks`, `minIntervalMs` and
+`maxBatchSize`. This section records validated code; confirm its new Railway
+deployment and continued cursor movement before claiming it is live.
 
 ## Paused product work
 

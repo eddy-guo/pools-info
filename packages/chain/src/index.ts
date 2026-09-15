@@ -11,7 +11,7 @@ export {
   type BroadIndexedSwap,
   type BroadPoolEventGroup,
 } from "./broad-pool-events";
-export { Rpc } from "./rpc";
+export { Rpc, RpcRateLimitExhausted, type RpcRateLimitEvent } from "./rpc";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
 
