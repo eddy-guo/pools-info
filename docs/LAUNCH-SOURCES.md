@@ -25,6 +25,14 @@ rewind in either source order, exact position/event/cursor preservation, final-s
 cleanup and rediscovery. All 33 database checks passed locally. Existing analytics
 tests also exercise direct launch inserts after migration.
 
+## Deployment verification
+
+Implementation `a14e4cc` passed full CI34924987243. Railway deployment
+`5712e18d-ff29-4ca0-8a2f-0b2f704d5cd7` became active, with migration success and
+writer acquisition confirmed in production logs on 2026-09-15 at 03:33-03:34 UTC.
+All five serving endpoints returned HTTP 200 afterward. No candidate import was
+performed, and this rollout does not resolve the existing live-feed lag.
+
 ## Remaining import work
 
 This change does not import candidates, create a new discovery stream, reset
