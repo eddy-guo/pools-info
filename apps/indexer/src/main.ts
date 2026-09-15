@@ -1,18 +1,21 @@
+import {
+  canonicalHeader as header,
+  reconcileStream as reconcile,
+} from "./checkpoints";
+import { alignedPoolEnd, runPoolGroup } from "./pool-group-worker";
 import { setTimeout as sleep } from "node:timers/promises";
 import { withLogRpc } from "./log-rpc";
 import { safeError, errorDetails } from "./errors";
 import { collectCatalog, collectPoolEvents, Rpc } from "@pools/chain";
 import {
   acquireWriter,
-  checkpoints,
   commitBatch,
   createClient,
   ensureDiscovery,
   getStream,
   markAttempt,
   migrate,
-  nextPool,
-  rewind,
+  nextPoolGroup,
   status,
   waitForWriter,
   type Client,
@@ -49,35 +52,6 @@ function rpc() {
       )
     : state;
 }
-const hex = (n: number) => `0x${n.toString(16)}`;
-type Header = { number: string; hash: string; parentHash: string };
-async function header(client: Rpc, n: number) {
-  const b = await client.call<Header>("eth_getBlockByNumber", [hex(n), false]);
-  if (!b || Number(b.number) !== n || !/^0x[0-9a-f]{64}$/i.test(b.hash))
-    throw Error("Missing canonical header");
-  return b;
-}
-async function reconcile(db: Client, s: Stream, client: Rpc): Promise<Stream> {
-  if (s.cursor === null) return s;
-  if ((await header(client, s.cursor)).hash === s.hash) return s;
-  let ancestor: number | null = null;
-  for (const batch of await checkpoints(db, s.key)) {
-    if ((await header(client, batch.to)).hash === batch.hash) {
-      ancestor = batch.to;
-      break;
-    }
-  }
-  await rewind(db, s, ancestor);
-  console.log(
-    JSON.stringify({
-      event: "rewind",
-      stream: s.key,
-      from: s.cursor,
-      to: ancestor,
-    }),
-  );
-  return getStream(db, s.key);
-}
 async function runBatch(
   db: Client,
   initial: Stream,
@@ -96,7 +70,10 @@ async function runBatch(
     if (!Number.isSafeInteger(head) || head < 128)
       throw Error("Invalid chain head");
     const from = s.cursor === null ? s.start : s.cursor + 1;
-    const to = Math.min(head - 128, from + batchSize - 1);
+    const to =
+      s.kind === "pool"
+        ? alignedPoolEnd(from, batchSize, head - 128)
+        : Math.min(head - 128, from + batchSize - 1);
     if (from > to) return;
     stage = "mark_attempt";
     await markAttempt(db, s.key);
@@ -268,29 +245,62 @@ async function main() {
       }
       // Discovery and each pool are independent retry units. A broken launch
       // cannot prevent already-known pools from making progress in this cycle.
-      for (let i = 0; i < poolsPerCycle && !stopping; i++) {
-        let pool: (Stream & { token: string }) | null = null;
-        let rotated = false;
+      let attempted = 0;
+      while (attempted < poolsPerCycle && !stopping) {
+        let group: (Stream & { token: string })[];
         try {
-          pool = await nextPool(db);
-          if (!pool) break;
-          // Rotate before attempting, including caught-up or failing streams.
-          await markAttempt(db, pool.key);
-          rotated = true;
-          if (stopping) break;
-          await runBatch(db, pool, batch, pool.token);
-        } catch (e) {
+          group = await nextPoolGroup(db, poolsPerCycle - attempted);
+          if (!group.length) break;
+          for (const pool of group) await markAttempt(db, pool.key);
+          attempted += group.length;
+        } catch (error) {
           failed = true;
-          cycleError ??= e;
+          cycleError ??= error;
           console.error(
             JSON.stringify({
-              event: "pool_batch_failed",
-              pool: pool?.poolId ?? null,
-              error: safeError(e),
+              event: "pool_selection_failed",
+              error: safeError(error),
             }),
           );
-          // Failed pool selection or rotation cannot safely select another pool.
-          if (!rotated) break;
+          break;
+        }
+        if (stopping) break;
+        if (group.length > 1) {
+          try {
+            await runPoolGroup(db, group, rpc(), batch, stop.signal);
+            continue;
+          } catch (error) {
+            console.error(
+              JSON.stringify({
+                event: "pool_group_fallback",
+                pools: group.length,
+                error: safeError(error),
+              }),
+            );
+          }
+        }
+        // Re-read after reconciliation or a failed group. A bad member must not
+        // indefinitely prevent its healthy peers from advancing independently.
+        for (const pool of group) {
+          if (stopping) break;
+          try {
+            await runBatch(
+              db,
+              await getStream(db, pool.key),
+              batch,
+              pool.token,
+            );
+          } catch (error) {
+            failed = true;
+            cycleError ??= error;
+            console.error(
+              JSON.stringify({
+                event: "pool_batch_failed",
+                pool: pool.poolId,
+                error: safeError(error),
+              }),
+            );
+          }
         }
       }
       failures = failed ? failures + 1 : 0;

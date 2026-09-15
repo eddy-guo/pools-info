@@ -155,6 +155,29 @@ export async function markAttempt(db: Client, key: string) {
     [key],
   );
 }
+/** Preserve oldest-attempted scheduling while grouping only contiguous peers. */
+export async function nextPoolGroup(
+  db: Client,
+  limit: number,
+): Promise<(Stream & { token: string })[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
+    throw Error("Invalid pool selection limit");
+  const rows = await db.query(
+    `WITH seed AS (
+      SELECT coalesce(s.cursor_block + 1, s.start_block) AS next_block
+      FROM indexer_streams s
+      JOIN indexed_pools p ON p.chain_id=s.chain_id AND p.pool_id=s.pool_id
+      WHERE s.chain_id=4663 AND s.kind='pool'
+      ORDER BY s.attempted_at, s.stream_key LIMIT 1
+    ) SELECT s.*, p.token FROM indexer_streams s
+      JOIN indexed_pools p ON p.chain_id=s.chain_id AND p.pool_id=s.pool_id
+      WHERE s.chain_id=4663 AND s.kind='pool'
+      AND coalesce(s.cursor_block + 1, s.start_block)=(SELECT next_block FROM seed)
+      ORDER BY s.attempted_at, s.stream_key LIMIT $1`,
+    [limit],
+  );
+  return rows.rows.map((r) => ({ ...stream(r), token: r.token }));
+}
 export interface PoolRecord {
   id: string;
   token: string;
