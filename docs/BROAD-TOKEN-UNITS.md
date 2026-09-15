@@ -49,13 +49,21 @@ discovery rewinds invalidate dependent units with their complete range.
 
 Read units only by exact chain/token/batch-end/cutoff-hash match against the
 surviving broad batch and canonical indexer boundary. These observations prove
-units at that cutoff only. Do not apply them to earlier swaps, reuse them at a
-later cutoff, or infer token immutability. A dated chart point may pair the last
-price state carried through contiguous broad coverage to that batch end with
-units observed at the same cutoff. Missing observations mean unavailable
-verified units, not 18 decimals or zero supply. A real zero supply can produce
-zero or unsupported derived FDV according to serving policy. Market units do
-not establish Transfer accounting, beneficiary positions, holders, or PnL.
+units at that cutoff only. Never relabel them as observations made at earlier
+swaps or a later cutoff, and never infer token immutability.
+
+A chart may explicitly express canonical raw price states in the display units
+of one verified snapshot at its chosen cutoff. This is a declared normalization
+scale, not a claim that decimals were independently observed at every trade.
+Carry the normalization snapshot's block, hash, and time in market coverage and
+disclose the basis. Conflicting observed decimals in the requested history make
+that normalization unavailable. Do not apply one supply observation to claim
+historical FDV; dated FDV needs appropriately matched supply evidence.
+
+Missing observations mean unavailable verified units, not 18 decimals or zero
+supply. A real zero supply can produce zero or unsupported derived FDV according
+to serving policy. Market units do not establish Transfer accounting,
+beneficiary positions, holders, or PnL.
 
 Migration 011 also owns the partial canonical deep/recent swap identity index
 on `indexed_events(chain_id, tx_hash, log_index) WHERE kind='swap'` for serving
