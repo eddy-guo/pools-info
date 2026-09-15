@@ -22,6 +22,7 @@ import {
   ensureDiscoveryV2,
   getStream,
   migrate,
+  nextPoolGroup,
   rewind,
   type Client,
 } from "./index";
@@ -212,6 +213,17 @@ async function counts(db: Client) {
   ).rows[0];
 }
 
+test("deep scheduler loses broad activity priority when its canonical source rewinds", async (t) => {
+  const { db } = await database(t);
+  await commit(
+    db,
+    await collect([swap(), swap(pools[1].poolId, 1, [-100n, 1n])]),
+  );
+  assert.equal((await nextPoolGroup(db, 1))[0].poolId, pools[1].poolId);
+  await rewind(db, await getStream(db, broadStreamIdentity.key), null);
+  assert.equal((await nextPoolGroup(db, 1))[0].poolId, pools[0].poolId);
+});
+
 test("broad collection persists one shared retained range and exact unsupported activity without changing deep/v1 coverage", async (t) => {
   const { db, saved, schema } = await database(t);
   const group = await collect([
@@ -221,6 +233,9 @@ test("broad collection persists one shared retained range and exact unsupported 
     swap(unknown, 3),
   ]);
   assert.equal(await commit(db, group), true);
+  // The deep scheduler consumes surviving normalized broad volume without
+  // treating raw token-unit Swap liquidity as comparable ETH liquidity.
+  assert.equal((await nextPoolGroup(db, 1))[0].poolId, pools[1].poolId);
   assert.deepEqual(await counts(db), {
     batches: 1,
     swaps: 3,

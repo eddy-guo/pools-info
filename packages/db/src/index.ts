@@ -160,7 +160,14 @@ export async function markAttempt(db: Client, key: string) {
     [key],
   );
 }
-/** Preserve oldest-attempted scheduling while grouping only contiguous peers. */
+/** Prioritize observed ETH activity without changing stream coverage. Bands
+ * round-robin by attempt time. After thirty minutes a global oldest-attempt
+ * rescue lane overrides every band, including newly arrived high-volume pools.
+ * A finite waiting set therefore cannot be displaced forever by the top band.
+ * This is an attempt-age guarantee, not a completion/throughput deadline.
+ * Swap liquidity is not comparable across token units; only published ETH
+ * liquidity is used. Missing observations stay NULL, distinct from observed 0.
+ */
 export async function nextPoolGroup(
   db: Client,
   limit: number,
@@ -168,19 +175,77 @@ export async function nextPoolGroup(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200)
     throw Error("Invalid pool selection limit");
   const rows = await db.query(
-    `WITH seed AS (
-      SELECT coalesce(s.cursor_block + 1, s.start_block) AS next_block
-      FROM indexer_streams s
-      JOIN indexed_pools p ON p.chain_id=s.chain_id AND p.pool_id=s.pool_id
+    `WITH publications AS MATERIALIZED (
+      SELECT a.* FROM analytics_accounting_pools a
+      JOIN analytics_pool_snapshots p USING(chain_id,pool_id)
+      LEFT JOIN indexer_batches b ON b.chain_id=p.chain_id AND b.stream_key=p.source_stream AND b.to_block=p.source_batch
+      WHERE a.chain_id=4663 AND (a.through_block,a.through_hash,a.asof_timestamp,a.generated_at)
+        IS NOT DISTINCT FROM (p.through_block,p.through_hash,p.asof_timestamp,p.generated_at)
+        AND (p.source_kind='rpc_capture' OR b.to_block=p.through_block AND b.block_hash=p.through_hash)
+    ), copies AS (
+      SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.eth_wei::numeric AS eth_wei,e.side,e.token_raw::numeric AS token_raw
+      FROM recent_swaps e JOIN indexed_pools p USING(chain_id,pool_id)
+      JOIN recent_batches b ON b.chain_id=e.chain_id AND b.stream_key=e.source_stream AND b.to_block=e.batch_end
+      JOIN recent_streams s ON s.chain_id=b.chain_id AND s.stream_key=b.stream_key
+      JOIN recent_batches tip ON tip.chain_id=s.chain_id AND tip.stream_key=s.stream_key AND tip.to_block=s.cursor_block
+        AND tip.block_hash=s.cursor_hash AND tip.to_timestamp=s.cursor_timestamp
+      WHERE e.chain_id=4663 AND e.token=p.token AND e.block_number BETWEEN greatest(s.start_block,b.from_block,p.launch_block) AND least(s.cursor_block,b.to_block)
+        AND e.timestamp BETWEEN p.launched_at AND b.to_timestamp
+        AND (e.block_number<>b.to_block OR e.block_hash=b.block_hash)
+      UNION ALL
+      SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.eth_wei,e.side,e.token_raw
+      FROM broad_swaps e JOIN indexed_pools p USING(chain_id,pool_id)
+      JOIN broad_batches b USING(chain_id,stream_key,batch_end)
+      JOIN broad_registry_members m USING(chain_id,stream_key,batch_end,pool_id)
+      JOIN pool_launch_sources ps ON ps.chain_id=p.chain_id AND ps.pool_id=p.pool_id AND ps.stream_key='discovery:v2'
+        AND ps.batch_end::text=m.identity->>'source_batch'
+      JOIN indexer_batches launch ON launch.chain_id=ps.chain_id AND launch.stream_key=ps.stream_key AND launch.to_block=ps.batch_end
+        AND launch.block_hash=m.identity->>'source_hash' AND launch.content_hash=m.identity->>'source_content_hash'
+      JOIN indexer_batches ib ON ib.chain_id=b.chain_id AND ib.stream_key=b.stream_key AND ib.to_block=b.batch_end
+      JOIN indexer_streams s ON s.chain_id=b.chain_id AND s.stream_key=b.stream_key AND s.kind='broad'
+      JOIN indexer_batches tip ON tip.chain_id=s.chain_id AND tip.stream_key=s.stream_key AND tip.to_block=s.cursor_block AND tip.block_hash=s.cursor_hash
+      JOIN indexer_batches d ON d.chain_id=b.chain_id AND d.stream_key=b.discovery_stream AND d.to_block=b.discovery_batch
+        AND d.block_hash=b.discovery_hash AND d.content_hash=b.discovery_content_hash
+      WHERE e.chain_id=4663 AND e.token=p.token AND e.eth_wei IS NOT NULL
+        AND e.block_number BETWEEN greatest(s.start_block,b.from_block,p.launch_block) AND least(s.cursor_block,b.batch_end)
+        AND b.from_block=ib.from_block AND e.timestamp BETWEEN p.launched_at AND b.timestamp
+        AND (e.block_number<>b.batch_end OR e.block_hash=ib.block_hash)
+        AND (m.identity->>'pool_id',m.identity->>'token',m.identity->>'launch_block',m.identity->>'launch_tx',m.identity->>'launch_sender',m.identity->>'launched_at')
+          IS NOT DISTINCT FROM (p.pool_id,p.token,p.launch_block::text,p.launch_tx,p.launch_sender,p.launched_at::text)
+      UNION ALL
+      SELECT t.pool_id,p.token,t.transaction_hash,t.log_index,t.block_number,
+        CASE WHEN t.block_number=a.through_block THEN a.through_hash ELSE NULL END,t.timestamp,t.eth_wei,t.side,t.token_raw
+      FROM analytics_accounting_trades t JOIN publications a USING(chain_id,pool_id) JOIN indexed_pools p USING(chain_id,pool_id)
+      WHERE t.chain_id=4663 AND t.block_number BETWEEN a.from_block AND a.through_block AND t.timestamp<=a.asof_timestamp
+    ), canonical AS MATERIALIZED (
+      SELECT tx_hash,log_index,min(pool_id) AS pool_id,min(eth_wei) AS eth_wei,
+        count(DISTINCT ROW(pool_id,token,block_number,timestamp,eth_wei,side,token_raw))>1 OR count(DISTINCT block_hash)>1 AS conflict
+      FROM copies GROUP BY tx_hash,log_index
+    ), volumes AS (SELECT pool_id,sum(eth_wei) AS volume FROM canonical GROUP BY pool_id),
+    ranked AS MATERIALIZED (
+      SELECT s.*,p.token,row_number() OVER(ORDER BY
+        coalesce(v.volume,CASE WHEN a.market->>'volumeWei'='0' THEN 0::numeric END) DESC NULLS LAST,
+        a.liquidity_wei DESC NULLS LAST,s.stream_key) AS activity_rank
+      FROM indexer_streams s JOIN indexed_pools p ON p.chain_id=s.chain_id AND p.pool_id=s.pool_id
+      LEFT JOIN volumes v ON v.pool_id=s.pool_id LEFT JOIN publications a ON a.chain_id=s.chain_id AND a.pool_id=s.pool_id
       WHERE s.chain_id=4663 AND s.kind='pool'
-      ORDER BY s.attempted_at, s.stream_key LIMIT 1
-    ) SELECT s.*, p.token FROM indexer_streams s
-      JOIN indexed_pools p ON p.chain_id=s.chain_id AND p.pool_id=s.pool_id
-      WHERE s.chain_id=4663 AND s.kind='pool'
-      AND coalesce(s.cursor_block + 1, s.start_block)=(SELECT next_block FROM seed)
-      ORDER BY s.attempted_at, s.stream_key LIMIT $1`,
+    ), banded AS MATERIALIZED (
+      SELECT *,CASE WHEN activity_rank<=500 THEN 0 WHEN activity_rank<=2000 THEN 1 WHEN activity_rank<=10000 THEN 2 ELSE 3 END AS band,
+        CASE WHEN attempted_at='epoch'::timestamptz THEN updated_at ELSE attempted_at END AS waiting_since,
+        (CASE WHEN attempted_at='epoch'::timestamptz THEN updated_at ELSE attempted_at END)<statement_timestamp()-interval '30 minutes' AS overdue FROM ranked
+    ), seed AS (
+      SELECT * FROM banded ORDER BY overdue DESC,
+        CASE WHEN overdue THEN waiting_since END ASC,band,attempted_at,activity_rank LIMIT 1
+    ) SELECT s.*,(SELECT coalesce(bool_or(conflict),false) FROM canonical) AS evidence_conflict
+      FROM banded s CROSS JOIN seed
+      WHERE s.band=seed.band AND coalesce(s.cursor_block+1,s.start_block)=coalesce(seed.cursor_block+1,seed.start_block)
+      ORDER BY (s.stream_key=seed.stream_key) DESC,s.overdue DESC,s.attempted_at,s.activity_rank LIMIT $1`,
     [limit],
   );
+  if (rows.rows.some((r) => r.evidence_conflict))
+    throw Error(
+      "Conflicting canonical scheduler activity; reconcile stored sources first",
+    );
   return rows.rows.map((r) => ({ ...stream(r), token: r.token }));
 }
 export interface PoolRecord {
