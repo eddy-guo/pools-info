@@ -1,37 +1,38 @@
 # Status - 15 Sep 2026, current settling pass
 
-## Resumed goal: tier-2 serving candidate
+## Resumed goal handoff: tier-2 CI blocker
 
-The prior settling pass is deployed at **b985105**, full CI **34966065169 passed**.
-Live verification: launch sorting includes the entire discovered catalog; volume
-sorting returns exactly 488 measured pools (offset 480 yields 8 rows, no missing
-volume, no next page). Liquidity sorting correctly returns no rows when the
-column is unavailable. The existing 7-day verified board shows 367 wallets.
+The validated production baseline is **b985105** (full CI **34966065169 passed**).
+Its API was verified live: launch sorting covers the discovered catalog; volume
+sorting returns 488 measured pools, with 8 rows at offset 480 and no missing
+values. Liquidity has no published comparable values. The 7-day verified board
+has 367 wallets, 25 actual rows per page, with evidence labels.
 
-The resumed goal is focused only on the tier-2 read blocker. No new sweep,
-coverage job, schema, infrastructure, billing change or worktree is authorized by
-this work. The 50M CU cap and all source/cursor/accounting invariants stay intact.
+Candidate **6138ed9** is preserved on **wip/tier2-serving-candidate**, pushed to
+origin. Its local 115k-swap/52k-pool complete reads improved from 2,939ms to
+1,026/862/860ms (cold/warm 7-day/All), retaining all 11,500 fixture wallets.
+The expensive work was SQL numeric normalization on every row; validation stays
+integer-exact, while normalization now runs only for cross-source comparisons.
+Source tests also found and fixed a real bug where changing a duplicate's pool
+could hide a conflict behind eligibility filtering. Both directions now reject
+it. Mixed accounting, pre-window basis and canonical rewind are covered.
 
-Local baseline reproduced the complete 115k-swap/52k-pool read at **2,939ms**.
-Profiling isolated unnecessary per-row SQL numeric normalization. Keeping exact
-stored strings until duplicate comparison and validating every execution with
-BigInt reduced complete cold/warm 7-day/All reads to **1,026/862/860ms**. All
-11,500 fixture wallets remain ranked, with 285 observed pools and exact gains.
-The runtime 2.8-second budget is unchanged; the regression requires under 2s.
-These are local fixture measurements, not production latency claims.
+Local candidate validation: `pnpm check` passed; final lint/build passed;
+**103 Postgres checks passed with zero skips**; **102 browser tests passed with
+no retries**. However CI **34968386636**, job **104378294611**, failed the scale
+test with PostgreSQL **57014: canceling statement due to statement timeout** at
+`tier2-read.ts:143` (initial coverage/metadata query), called from
+`accounting-read.ts:366`. The other 102 DB checks passed. This is a different
+environment failure from the earlier local per-row bottleneck, not permission
+to increase the 3-second statement or 2.8-second accounting budgets.
 
-Source tests exposed a real conflict bug: changing a duplicate's pool could hide
-it behind eligibility filtering. Reconciliation now checks surviving raw source
-collisions first; both directions reject incompatible copies. Tests also verify
-identical/leading-zero duplicates, source identity drift, invalid tips, suffix
-rewind, and whole-pool precedence over verified histories. Mixed wallet PnL,
-net flow, volume, flags, curve and pre-window basis agree. Full local Postgres
-suite: **103 passed, zero skips**. `pnpm check` passed; final copy changes passed
-lint and build, followed by **102 browser tests with no retries** (53.2s).
-
-The historical blocker below is superseded locally, but production deployment
-and actual tier-2 leaderboard rows are **not yet verified**. Do not call Task 3
-or the full goal complete until those live checks pass.
+**Deployment remains blocked.** Railway did not release the candidate. Its
+runtime is reverted from main to the validated baseline; the feature and tests
+remain safely on the candidate branch. Next work must reproduce/profile this
+CI PostgreSQL query plan and establish sufficient margin before deploying and
+visually verifying actual tier-2 rows. No further infrastructure/product work
+was substituted. No sweep, coverage job, schema, billing change, cursor reset or
+new worktree was started. The full goal remains incomplete.
 
 ## Current priority and blocker
 

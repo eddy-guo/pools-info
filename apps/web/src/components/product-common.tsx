@@ -19,10 +19,7 @@ export function ProductCoverage({
         {coverage ? (
           <>
             {coverage.catalogPools.toLocaleString()} discovered pools ·{" "}
-            {(
-              coverage.processedPools + (coverage.tier2Pools ?? 0)
-            ).toLocaleString()}{" "}
-            with saved analytics
+            {coverage.processedPools.toLocaleString()} with saved analytics
           </>
         ) : (
           "Loading saved analytics coverage"
@@ -31,8 +28,7 @@ export function ProductCoverage({
       <p data-pending={!coverage}>
         {coverage ? (
           <>
-            {coverage.processedPools + (coverage.tier2Pools ?? 0) > 0 &&
-            coverage.asOf > 0 ? (
+            {coverage.processedPools > 0 && coverage.asOf > 0 ? (
               <>
                 Latest captured data{" "}
                 {new Date(coverage.asOf * 1000).toLocaleString("en-US", {
@@ -44,7 +40,7 @@ export function ProductCoverage({
               "Analytics processing has not completed yet."
             )}{" "}
             {coverage.pnlScope === "observed_initiator_and_verified_positions"
-              ? `PnL includes ${coverage.tier2Pools ?? 0} swap-only pools and ${coverage.processedPools} pools with transfer data. Initiator estimates are flagged; unknown basis stays excluded.`
+              ? "PnL combines flagged initiator estimates and transfer-verified positions. Unknown basis stays excluded."
               : "PnL covers supported pool positions, not all wallet activity."}
             {delivery?.notice ? ` ${delivery.notice}` : ""}{" "}
             <Link href="/methodology/">Coverage and methodology ↗</Link>
