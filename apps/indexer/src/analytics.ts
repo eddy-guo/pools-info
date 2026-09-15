@@ -3,6 +3,7 @@ import {
   auditPool,
   contracts,
   decodeLaunch,
+  getInstantDeployment,
   decodeSwap,
   spotPriceWei,
   swapEvent,
@@ -26,6 +27,10 @@ import {
   type Hex,
 } from "viem";
 import type { Client } from "@pools/db";
+import {
+  backfillAccountingRows,
+  replaceAccountingRows,
+} from "./accounting-projection";
 
 const hex = (n: number): Hex => `0x${n.toString(16)}`;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -144,13 +149,15 @@ export async function projectAnalytics(
   if (!same(cutoff.hash, input.blockHash))
     throw Error("analytics_cutoff_changed");
   const launch = decodeLaunch(input.launchLog);
+  const deployment = getInstantDeployment(input.launchLog.address);
   if (
+    !deployment ||
     !same(launch.poolId, input.poolId) ||
     !same(launch.token, input.token) ||
     Number(input.launchLog.blockNumber) !== input.launchBlock ||
     !same(input.launchLog.transactionHash, input.launchTx) ||
     !receiptMatches(input.launchLog, input.launchReceipt) ||
-    !input.launchReceipt.logs.some((l) => same(l.address, contracts.launcher))
+    !input.launchReceipt.logs.some((l) => same(l.address, deployment.launcher))
   )
     throw Error("analytics_launch_unverified");
   for (const h of input.headers) {
@@ -417,7 +424,7 @@ export async function projectAnalytics(
         launchSender: input.launchReceipt.from.toLowerCase(),
         positionRecipient: launch.finalPositionRecipient.toLowerCase(),
         strategy: input.launchLog.address.toLowerCase(),
-        creatorFees: same(input.launchLog.address, contracts.strategies[0]),
+        creatorFees: deployment.creatorFees,
         fee: launch.key.fee,
         priceWei: unsupportedSwaps ? null : (series.at(-1)?.wei ?? null),
         volumeWei: trades.reduce((n, t) => n + BigInt(t.ethWei), 0n).toString(),
@@ -594,6 +601,14 @@ export async function publishAnalytics(
         input.source.kind === "indexed" ? input.source.batch : null,
       ],
     );
+    if ((written.rowCount ?? 0) > 0)
+      await replaceAccountingRows(db, {
+        snapshot: s,
+        holders: result.holders,
+        liquidityWei: null,
+        sourceKind: input.source.kind,
+        generatedAt: s.generatedAt,
+      });
     await db.query(
       `INSERT INTO analytics_pool_jobs(chain_id,pool_id,attempted_at,published_at,next_attempt_at,last_error_code) VALUES(4663,$1,now(),CASE WHEN $2 THEN now() ELSE NULL END,now()+interval '30 minutes',NULL)
       ON CONFLICT(chain_id,pool_id) DO UPDATE SET published_at=CASE WHEN $2 THEN now() ELSE analytics_pool_jobs.published_at END,next_attempt_at=now()+interval '30 minutes',last_error_code=NULL`,
@@ -620,6 +635,9 @@ export async function nextAnalyticsPool(db: Client): Promise<string | null> {
   return row?.pool_id ?? null;
 }
 export async function runAnalyticsOnce(db: Client, rpc: Rpc, poolId?: string) {
+  // Retry any publication skipped because another transaction held its lock
+  // during startup. Backfill itself never queries the RPC.
+  await backfillAccountingRows(db, 25);
   const selected = poolId ?? (await nextAnalyticsPool(db));
   if (!selected) return false;
   await db.query(

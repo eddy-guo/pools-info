@@ -1,3 +1,4 @@
+import { getInstantDeployment } from "./deployments";
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -79,7 +80,14 @@ export async function collectCatalog(
     )
   )
     throw Error("Out-of-range catalog log");
-  const decoded = logs.map(decodeLaunch);
+  const decoded = logs.map((l) => {
+    const launch = decodeLaunch(l);
+    if (
+      Number(l.blockNumber) < getInstantDeployment(l.address)!.deployedAtBlock
+    )
+      throw Error("Launch precedes verified deployment");
+    return launch;
+  });
   const heights = [
     ...new Set([toBlock, ...logs.map((l) => Number(l.blockNumber))]),
   ];
@@ -110,7 +118,10 @@ export async function collectCatalog(
       r.status !== "0x1" ||
       r.blockHash !== l.blockHash ||
       blocks.get(Number(l.blockNumber))!.hash !== l.blockHash ||
-      !r.logs.some((e) => e.address.toLowerCase() === contracts.launcher) ||
+      !r.logs.some(
+        (e) =>
+          e.address.toLowerCase() === getInstantDeployment(l.address)!.launcher,
+      ) ||
       !r.logs.some(
         (e) =>
           e.address.toLowerCase() === l.address.toLowerCase() &&

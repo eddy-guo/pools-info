@@ -10,6 +10,7 @@ import {
 import {
   Rpc,
   contracts,
+  getInstantDeployment,
   swapEvent,
   transferEvent,
   type RawLog,
@@ -85,7 +86,12 @@ function fixture(
   const launchLog: RawLog = {
     ...base(100, 0),
     address: contracts.strategies[0],
-    topics: [toEventSelector(launchEvent), poolId, word(11), word(22)],
+    topics: [
+      toEventSelector(launchEvent),
+      poolId,
+      word(11),
+      `0x${getInstantDeployment(contracts.strategies[0])!.feeSplitter.slice(2).padStart(64, "0")}`,
+    ],
     data: encodeAbiParameters(keyTypes, keyValues),
   };
   const mint = transfer(100, 2, zero, contracts.manager, 1000n);
@@ -349,6 +355,7 @@ test(
         "001_indexer.sql",
         "002_read_indexes.sql",
         "003_analytics.sql",
+        "005_accounting_rows.sql",
       ])
         await db.query(
           await readFile(
@@ -383,6 +390,72 @@ test(
       const newer = fixture(),
         newResult = await projectAnalytics(newer.input, newer.rpc);
       assert.equal(await publishAnalytics(db, newer.input, newResult), true);
+      const { backfillAccountingRows } =
+        await import("./accounting-projection");
+      assert.deepEqual(
+        (
+          await db.query(
+            "SELECT realized_wei::text,quantity_raw::text FROM analytics_accounting_positions",
+          )
+        ).rows,
+        [{ realized_wei: "60", quantity_raw: "0" }],
+      );
+      assert.deepEqual(
+        (
+          await db.query(
+            "SELECT count(*)::int AS trades,sum(realized_wei)::text AS gain,count(closed_gain_wei)::int AS closures,sum(closed_hold_seconds)::text AS hold FROM analytics_accounting_trades",
+          )
+        ).rows[0],
+        { trades: 12, gain: "60", closures: 6, hold: "12" },
+      );
+      // A saved publication from the previous application version is upgraded
+      // without RPC, and a bounded second pass has no repeated work.
+      await db.query("DELETE FROM analytics_accounting_pools");
+      await db.query(
+        "UPDATE analytics_pool_snapshots SET generated_at=generated_at + interval '123 microseconds'",
+      );
+      const lockingWriter = createClient(process.env.TEST_DATABASE_URL);
+      await lockingWriter.connect();
+      try {
+        await lockingWriter.query(`SET search_path TO ${schema}`);
+        await lockingWriter.query("BEGIN");
+        await lockingWriter.query(
+          "SELECT pool_id FROM analytics_pool_snapshots FOR UPDATE",
+        );
+        assert.equal(await backfillAccountingRows(db, 1), 0);
+        await lockingWriter.query("ROLLBACK");
+      } finally {
+        await lockingWriter.end();
+      }
+      assert.equal(await backfillAccountingRows(db, 1), 1);
+      assert.equal(await backfillAccountingRows(db, 1), 0);
+      const originalRows = (
+        await db.query(
+          "SELECT * FROM analytics_accounting_trades ORDER BY block_number,log_index",
+        )
+      ).rows;
+      const malformed = structuredClone(newResult);
+      malformed.snapshot.markets[0].series[0].wei = "-1";
+      await assert.rejects(
+        publishAnalytics(db, newer.input, malformed),
+        /check constraint/,
+      );
+      assert.deepEqual(
+        (
+          await db.query(
+            "SELECT * FROM analytics_accounting_trades ORDER BY block_number,log_index",
+          )
+        ).rows,
+        originalRows,
+      );
+      assert.equal(
+        (
+          await db.query(
+            "SELECT snapshot->'markets'->0->'series'->0->>'wei' AS price FROM analytics_pool_snapshots",
+          )
+        ).rows[0].price,
+        newResult.snapshot.markets[0].series[0].wei,
+      );
       const published = (
         await db.query("SELECT published_at FROM analytics_pool_jobs")
       ).rows[0].published_at.toISOString();
@@ -412,6 +485,14 @@ test(
       ).rows[0];
       assert.equal(saved.through_block, "120");
       assert.equal(
+        (
+          await db.query(
+            "SELECT through_block::text FROM analytics_accounting_pools",
+          )
+        ).rows[0].through_block,
+        "120",
+      );
+      assert.equal(
         saved.snapshot.markets[0].accounting.wallets[0].realizedWei,
         "60",
       );
@@ -440,10 +521,68 @@ test(
         ).rows[0].n,
         0,
       );
+      for (const table of [
+        "analytics_accounting_pools",
+        "analytics_accounting_positions",
+        "analytics_accounting_trades",
+        "analytics_accounting_prices",
+      ])
+        assert.equal(
+          (await db.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n,
+          0,
+        );
       await assert.rejects(
         publishAnalytics(db, newer.input, newResult),
         /analytics_source_changed/,
       );
+      // Two pending publications prove the caller's batch bound is honored,
+      // and the next invocation resumes without replaying completed rows.
+      for (const n of [901, 902]) {
+        const empty = structuredClone(newResult.snapshot);
+        empty.markets[0] = {
+          ...empty.markets[0],
+          id: word(n),
+          token: addr(n),
+          swaps: 0,
+          buys: 0,
+          sells: 0,
+          volumeWei: "0",
+          series: [],
+          accounting: {
+            wallets: [],
+            executions: [],
+            unattributedSwaps: 0,
+            transfersChecked: 0,
+          },
+        };
+        empty.trades = [];
+        await db.query(
+          "INSERT INTO indexed_pools VALUES(4663,$1,$2,'Empty','EMPTY',100,$3,$4,200,'discovery:v1',100)",
+          [word(n), addr(n), word(n + 1000), wallet],
+        );
+        await db.query(
+          "INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,generated_at,snapshot,source_kind) VALUES(4663,$1,$2,$3,$4,$5,$6,'rpc_capture')",
+          [
+            word(n),
+            empty.toBlock,
+            empty.blockHash,
+            empty.toTimestamp,
+            empty.generatedAt,
+            JSON.stringify(empty),
+          ],
+        );
+      }
+      assert.equal(await backfillAccountingRows(db, 1), 1);
+      assert.equal(
+        (
+          await db.query(
+            "SELECT count(*)::int AS n FROM analytics_accounting_pools",
+          )
+        ).rows[0].n,
+        1,
+      );
+      assert.equal(await backfillAccountingRows(db, 1), 1);
+      assert.equal(await backfillAccountingRows(db, 1), 0);
     } finally {
       await db.query(`DROP SCHEMA ${schema} CASCADE`);
       await db.end();

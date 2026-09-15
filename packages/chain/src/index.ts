@@ -38,3 +38,13 @@ export {
   type RecentPoolIdentity,
   type VerifiedRecentSwap,
 } from "./recent-events";
+
+export {
+  instantDeployments,
+  getInstantDeployment,
+  instantRegistryRevision,
+  instantRegistrySourceRevision,
+  instantRegistryStartBlock,
+  instantRegistryVerifiedAtBlock,
+  type InstantDeployment,
+} from "./deployments";

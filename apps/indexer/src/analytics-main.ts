@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Rpc } from "@pools/chain";
 import { createClient } from "@pools/db";
+import { backfillAccountingRows } from "./accounting-projection";
 import {
   analyticsError,
   captureAnalyticsInput,
@@ -100,7 +101,7 @@ async function analyticsLock(
 }
 async function main() {
   const mode = process.argv[2] ?? "once";
-  if (!["once", "run", "import", "seed"].includes(mode))
+  if (!["once", "run", "import", "seed", "backfill"].includes(mode))
     throw Error("analytics_invalid_command");
   const db = createClient();
   db.on("error", () => {
@@ -117,6 +118,22 @@ async function main() {
     const acquired = await analyticsLock(db, mode === "run");
     if (stop.signal.aborted) return;
     if (!acquired) throw Error("analytics_writer_busy");
+    // Upgrade already published evidence without re-querying the chain. Each
+    // pool commits separately, so interruption resumes from the next marker.
+    let backfilled = 0;
+    while (!stop.signal.aborted) {
+      const count = await backfillAccountingRows(db, 25);
+      backfilled += count;
+      if (count < 25) break;
+    }
+    if (backfilled || mode === "backfill")
+      console.log(
+        JSON.stringify({
+          event: "analytics_accounting_backfilled",
+          pools: backfilled,
+        }),
+      );
+    if (mode === "backfill" || stop.signal.aborted) return;
     if (mode === "import" || mode === "seed") {
       await seedCapture(db, process.argv[3], mode === "seed");
       return;

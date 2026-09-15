@@ -1,5 +1,7 @@
+import { getInstantDeployment } from "./deployments";
 import {
   decodeEventLog,
+  keccak256,
   decodeFunctionResult,
   encodeFunctionData,
   erc20Abi,
@@ -71,17 +73,6 @@ export async function collectSnapshot(
   }
   const cutoff = await block(toBlock);
 
-  const deployments = [
-    contracts.manager,
-    contracts.launcher,
-    ...contracts.strategies,
-  ];
-  const deploymentCode = await rpc.batch<Hex>(
-    "eth_getCode",
-    deployments.map((address) => [address, hex(toBlock)]),
-  );
-  if (deploymentCode.some((code) => code === "0x"))
-    throw Error("Missing deployed contract");
   const discovery = options.target
     ? null
     : await discoverRecentLaunches(rpc, fromBlock, toBlock, poolLimit);
@@ -108,6 +99,37 @@ export async function collectSnapshot(
   const selected = launches.slice(-poolLimit).reverse();
   if (!selected.length)
     throw Error("No launches found; keeping previous snapshot");
+  // Historical captures check only the generations actually represented. New
+  // deployments did not exist at old cutoffs and must not invalidate old pools.
+  const selectedDeployments = [
+    ...new Map(
+      selected.map((log) => {
+        const d = getInstantDeployment(log.address);
+        if (!d || Number(log.blockNumber) < d.deployedAtBlock)
+          throw Error("Launch precedes verified deployment");
+        return [d.strategy, d] as const;
+      }),
+    ).values(),
+  ];
+  const deployments = [
+    ...new Set([
+      contracts.manager,
+      ...selectedDeployments.flatMap((d) => [d.launcher, d.strategy]),
+    ]),
+  ];
+  const deploymentCode = await rpc.batch<Hex>(
+    "eth_getCode",
+    deployments.map((address) => [address, hex(toBlock)]),
+  );
+  if (deploymentCode.some((code) => code === "0x"))
+    throw Error("Missing deployed contract");
+  for (const d of selectedDeployments) {
+    if (
+      keccak256(deploymentCode[deployments.indexOf(d.strategy)]) !==
+      d.runtimeCodeHash
+    )
+      throw Error("Strategy runtime changed");
+  }
   const markets: ChainMarket[] = [];
   const trades: ChainTrade[] = [];
   const evidence: {
@@ -193,6 +215,7 @@ export async function collectSnapshot(
   );
   for (const log of selected) {
     const launch = decodeLaunch(log);
+    const deployment = getInstantDeployment(log.address)!;
     const launchBlock = Number(log.blockNumber);
     const header = await block(launchBlock);
     if (header.hash !== log.blockHash) throw Error("Launch block changed");
@@ -207,7 +230,7 @@ export async function collectSnapshot(
           l.data.toLowerCase() === log.data.toLowerCase() &&
           l.topics.join().toLowerCase() === log.topics.join().toLowerCase(),
       ) ||
-      !receipt.logs.some((l) => l.address.toLowerCase() === contracts.launcher)
+      !receipt.logs.some((l) => l.address.toLowerCase() === deployment.launcher)
     )
       throw Error("Unverified launch receipt");
     const [name, symbol, decimals, supply] = metadata.get(launch.poolId)!;
@@ -347,7 +370,7 @@ export async function collectSnapshot(
     }
     const tokenBornAtLaunch = receipt.logs.some(
       (l) =>
-        l.address.toLowerCase() === contracts.launcher &&
+        l.address.toLowerCase() === deployment.launcher &&
         l.topics[0] ===
           toEventSelector(
             parseAbiItem("event TokenCreated(address indexed tokenAddress)"),
@@ -382,7 +405,7 @@ export async function collectSnapshot(
       launchSender: receipt.from,
       positionRecipient: launch.finalPositionRecipient,
       strategy: log.address,
-      creatorFees: log.address.toLowerCase() === contracts.strategies[0],
+      creatorFees: deployment.creatorFees,
       fee: launch.key.fee,
       priceWei: series.at(-1)?.wei ?? null,
       volumeWei: decoded

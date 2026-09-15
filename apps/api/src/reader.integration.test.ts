@@ -255,6 +255,29 @@ test(
         "INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,snapshot,source_kind,source_stream,source_batch) VALUES(4663,$1,199,$2,2000,$3,'indexed',$4,199)",
         [word(1), word(99), JSON.stringify(snapshot), "pool:" + word(1)],
       );
+      const { replaceAccountingRows } = await import(
+        new URL("../../indexer/src/accounting-projection.ts", import.meta.url)
+          .href
+      );
+      await db.query(
+        "UPDATE analytics_pool_snapshots SET generated_at=$1 WHERE pool_id=$2",
+        [snapshot.generatedAt, word(1)],
+      );
+      const publishedAt = (
+        await db.query(
+          "SELECT generated_at FROM analytics_pool_snapshots WHERE pool_id=$1",
+          [word(1)],
+        )
+      ).rows[0].generated_at.toISOString();
+      await db.query("BEGIN");
+      await replaceAccountingRows(db, {
+        snapshot,
+        holders: null,
+        liquidityWei: null,
+        sourceKind: "indexed",
+        generatedAt: publishedAt,
+      });
+      await db.query("COMMIT");
       await assert.rejects(
         db.query("UPDATE analytics_pool_snapshots SET snapshot='{}'"),
         /check constraint/,
@@ -286,6 +309,118 @@ test(
         parseRequest("/v1/search?q=Pepe"),
       )) as any;
       assert(found.entries.some((e: any) => e.address === address(1)));
+      // Exercise the public product paths above the former 10,000-pool cap.
+      // Only the requested page and bounded financial publications may enter JS.
+      await db.query(`INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch)
+        SELECT 4663,'0x'||lpad(to_hex(g),64,'0'),'0x'||lpad(to_hex(g),40,'0'),
+          CASE WHEN g=22000 THEN 'FarawayNeedle_%' ELSE 'Bulk Token '||g END,'B'||g,
+          100+(g%99),'0x'||lpad(to_hex(g+100000),64,'0'),'0x'||lpad(to_hex(500000),40,'0'),1000,
+          'discovery:v1',199 FROM generate_series(10000,22000) g`);
+      await db.query("ANALYZE indexed_pools");
+      let largestRead = 0;
+      let searchPlan: any = null;
+      const boundedQuery = async (sql: string, values?: unknown[]) => {
+        if (
+          sql.includes("token_matches AS") &&
+          values?.[0] === "farawayneedle_%"
+        )
+          searchPlan = (
+            await db.query("EXPLAIN (ANALYZE,FORMAT JSON) " + sql, values)
+          ).rows[0]["QUERY PLAN"];
+        const result = await db.query(sql, values);
+        largestRead = Math.max(largestRead, result.rows.length);
+        return result;
+      };
+      const productRead = (path: string) =>
+        readData(boundedQuery, parseRequest(path)) as Promise<any>;
+      const large = await productRead("/v1/explore?sort=volume&limit=25");
+      assert.equal(large.total, 12003);
+      assert.equal(large.coverage.catalogPools, 12003);
+      assert.equal(large.coverage.processedPools, 1);
+      assert.equal(large.items.length, 25);
+      assert.equal(large.items[0].id, word(1));
+      assert.equal(large.items[0].stats.volumeWei, "250");
+      const tail = await productRead(
+        "/v1/explore?sort=volume&offset=12000&limit=25",
+      );
+      assert.equal(tail.items.length, 3);
+      assert.equal(tail.nextOffset, null);
+      assert.equal(tail.items.at(-1).id, word(22000));
+      const needle = await productRead("/v1/explore?q=FarawayNeedle_%");
+      assert.equal(needle.total, 1);
+      assert.equal(needle.items[0].id, word(22000));
+      const watch = await productRead(
+        `/v1/explore?view=watchlist&ids=${word(1)},${word(22000)}&limit=1&offset=1`,
+      );
+      assert.equal(watch.total, 2);
+      assert.equal(watch.items[0].id, word(22000));
+      const lookedUp = await productRead("/v1/search?q=FarawayNeedle_%");
+      assert(
+        lookedUp.entries.some(
+          (e: any) => e.group === "Tokens" && e.address === address(22000),
+        ),
+      );
+      assert.equal(lookedUp.coverage.pools, 12003);
+      assert(searchPlan);
+      const planText = JSON.stringify(searchPlan);
+      if (process.env.DEBUG_SQL_PLAN) {
+        const nodes: any[] = [];
+        const walk = (v: any) => {
+          if (v && typeof v === "object") {
+            if (v["Node Type"])
+              nodes.push({
+                type: v["Node Type"],
+                relation: v["Relation Name"],
+                index: v["Index Name"],
+                cte: v["CTE Name"],
+                filter: v.Filter,
+              });
+            for (const child of Object.values(v)) walk(child);
+          }
+        };
+        walk(searchPlan);
+        process.stdout.write(JSON.stringify(nodes) + "\n");
+      }
+      assert(
+        !planText.includes('"CTE Name":"catalog"'),
+        "catalog CTE must remain eligible for index pushdown",
+      );
+      assert(
+        planText.includes("indexed_pools_name_search") ||
+          planText.includes("indexed_pools_symbol_search"),
+        "selective catalog text query should use pg_trgm indexes",
+      );
+
+      const broadSearch = await productRead("/v1/search?q=Bulk&group=Tokens");
+      assert.equal(broadSearch.total, 12000);
+      assert.equal(broadSearch.entries.length, 8);
+      const idSearch = await productRead(
+        `/v1/search?q=${word(22000)}&group=Tokens`,
+      );
+      assert.equal(idSearch.entries.length, 1);
+      assert.equal(idSearch.entries[0].address, word(22000));
+      assert.equal(
+        (await productRead(`/v1/pools/${word(22000)}`)).analytics,
+        null,
+      );
+      assert.equal(
+        (await productRead("/v1/leaderboard?minTrades=0")).items[0].realizedWei,
+        "50",
+      );
+      assert.equal(
+        (await productRead(`/v1/wallets/${address(90)}`)).wallet.realizedWei,
+        "50",
+      );
+      const prolific = await productRead(`/v1/wallets/${address(500000)}`);
+      assert.equal(prolific.launches.length, 500);
+      assert.equal(prolific.launchesTruncated, true);
+      assert(
+        largestRead <= 501,
+        `Unexpected full catalog read: ${largestRead} rows`,
+      );
+      await db.query("DELETE FROM indexed_pools WHERE launch_sender=$1", [
+        address(500000),
+      ]);
       await db.query(
         "UPDATE indexer_batches SET evidence='{}' WHERE stream_key=$1",
         ["pool:" + word(1)],

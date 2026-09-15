@@ -180,6 +180,12 @@ export function ProductWallet({ address }: { address: string }) {
                     No supported realized history in this window.
                   </div>
                 )}
+                {data?.curveSampled && (
+                  <p className="panel-footnote">
+                    Chart points are sampled for readability. PnL totals include
+                    all supported sales in this window.
+                  </p>
+                )}
               </section>
               <section className="panel live-section">
                 <div
@@ -261,6 +267,12 @@ export function ProductWallet({ address }: { address: string }) {
                         inactivity outside coverage.
                       </div>
                     )}
+                    {data?.positionsTruncated && (
+                      <p className="panel-footnote">
+                        Showing {data.positions.length} positions. Summary
+                        metrics include all saved positions.
+                      </p>
+                    )}
                   </>
                 )}
                 {tab === "Trades" && (
@@ -329,7 +341,10 @@ export function ProductWallet({ address }: { address: string }) {
                 {tab === "Launches" && (
                   <>
                     <div className="panel-heading">
-                      <h2>Launches · {data?.launches.length ?? 0} covered</h2>
+                      <h2>
+                        Launches · {data?.launches.length ?? 0}{" "}
+                        {data?.launchesTruncated ? "shown" : "covered"}
+                      </h2>
                     </div>
                     <div className="table-scroll">
                       <table className="data-table">
@@ -363,6 +378,12 @@ export function ProductWallet({ address }: { address: string }) {
                         </tbody>
                       </table>
                     </div>
+                    {data?.launchesTruncated && (
+                      <p className="panel-footnote">
+                        Showing the latest {data.launches.length} launches.
+                        Search can find older launches in the saved catalog.
+                      </p>
+                    )}
                     <p className="panel-footnote">
                       Grouped by launch transaction sender. This does not
                       independently verify creator identity.

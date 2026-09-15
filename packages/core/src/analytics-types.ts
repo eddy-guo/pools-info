@@ -124,7 +124,13 @@ export interface AnalyticsWalletResponse {
   trades: (ObservedExecution & { symbol: string; poolId: string })[];
   curve: PricePoint[];
   launches: CatalogPool[];
+  /** Hosted metadata list is bounded independently from complete financial aggregates. */
+  launchesTruncated?: boolean;
   window: LiveWindow;
   /** Profile trades are bounded separately from complete aggregate calculation. */
   tradesTruncated: boolean;
+  positionsTruncated?: boolean;
+  curveSampled?: boolean;
+  /** Per-position realization lists are omitted by the SQL aggregate reader. */
+  positionRealizationsIncluded?: boolean;
 }

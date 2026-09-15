@@ -24,6 +24,33 @@ ENS is a separate Ethereum lookup. There is no account database: public wallet
 profiles are derived from chain evidence; watchlists and follows stay in the
 visitor's browser.
 
+## Saved accounting and catalog reads
+
+Migration 005 adds replaceable public-data projections alongside the original
+per-pool evidence: pool publication markers, audited wallet positions, observed
+trades with exact per-sale cost basis, and price points. The worker derives these
+using the existing core average-cost calculation. Excluded positions retain their
+reasons and null financial values. Selecting a time window filters realized sales;
+it does not forget purchases before that window.
+
+Each new snapshot and its accounting rows publish in one transaction. Replacing
+or invalidating a snapshot cascades to its derived rows. On startup the analytics
+worker upgrades existing saved snapshots one pool per transaction without RPC
+calls. This is resumable and also available explicitly with
+`node --import tsx apps/indexer/src/analytics-main.ts backfill` from the repository
+root, after migrations. Existing writer locks still apply.
+
+Migration 006 adds PostgreSQL `pg_trgm` name/symbol indexes and address/hash prefix
+indexes. The API filters, sorts and paginates saved catalog data in SQL. Search
+returns a bounded set of matching tokens, wallets, creators and transaction
+references; loading a larger catalog does not require sending it to a browser.
+Unknown exact transaction hashes can still open the chain explorer.
+
+These projections improve reads and remove repeated accounting work from page
+requests. They do not discover missing launches, manufacture missing trades, or
+turn a historical snapshot into a current price. Full historical collection and
+keeping the recent cursor near head remain separate work.
+
 ## Collection and correctness
 
 1. Verify and version the Pools deployment registry, including historical
@@ -99,10 +126,13 @@ while waiting. A one-shot command still fails immediately if another writer exis
 Canonical hash mismatches rewind a stream to a retained matching batch, deleting
 orphaned records and (for discovery) affected pool streams before replaying.
 
-This foundation does not yet publish holder snapshots, compute database-backed
-trader rankings, index Crowd auctions, or replace website reads. Transfer coverage
-starts at each observed pool launch, which is not automatically proof of a token's
-birth. The existing accounting rules still determine whether PnL is supported.
+The analytics worker now publishes holder snapshots and supported pool accounting,
+and the website reads the saved catalog, rankings and wallet profiles through the
+Railway API. This is still partial historical coverage. Crowd auctions remain
+unsupported, and discovering a launch does not automatically provide its financial
+history. Transfer coverage starts at each observed pool launch, which is not
+automatically proof of a token's birth. The accounting rules still determine
+whether PnL is supported.
 
 ### Worker commands
 
@@ -239,7 +269,13 @@ Settings:
 
 One combined query reads registered strategy launch events plus PoolManager
 Swap events. Unknown pool IDs are discarded before receipt/header enrichment.
-The registry combines verified historical and recent launches. The swap cursor
+The registry combines verified historical and recent launches. Each cycle resolves
+only the pool IDs present in its bounded swap-log batch through indexed database
+lookups; it does not load the full catalog. Batch commits likewise validate only
+their referenced markets. This allows the registry to exceed 10,000 pools while
+retaining bounded collection work. A PostgreSQL regression test reproduces the
+old failure with 10,002 markets and checks successful collection, restart and
+reorg replacement after the fix. The swap cursor
 never passes discovery, so a newly discovered launch cannot be skipped within
 this recent window. Every published swap has a matching successful receipt,
 canonical event header and rechecked cutoff. Transaction sender means initiator,

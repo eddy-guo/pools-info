@@ -99,10 +99,23 @@ export async function observeRecentHead(
     [head, timestamp],
   );
 }
-export async function knownRecentPools(db: Client): Promise<PoolRecord[]> {
+export async function knownRecentPools(
+  db: Client,
+  poolIds?: readonly string[],
+): Promise<PoolRecord[]> {
+  const ids = poolIds && [...new Set(poolIds.map((id) => id.toLowerCase()))];
+  if (ids && (ids.length > 10000 || ids.some((id) => !hash(id))))
+    throw Error("Invalid recent registry selection");
+  if (ids?.length === 0) return [];
+  // Production callers select only markets observed in this bounded block
+  // batch. Total catalog size must not limit live ingestion or its memory use.
+  const selected = ids ? " AND pool_id=ANY($1::text[])" : "";
   const rows = (
-    await db.query(`SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM indexed_pools WHERE chain_id=4663
-    UNION ALL SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM recent_pools WHERE chain_id=4663 LIMIT 20001`)
+    await db.query(
+      `SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM indexed_pools WHERE chain_id=4663${selected}
+    UNION ALL SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM recent_pools WHERE chain_id=4663${selected} LIMIT 20001`,
+      ids ? [ids] : [],
+    )
   ).rows;
   if (rows.length > 20000) throw Error("Recent registry exceeds budget");
   const pools = new Map<string, PoolRecord>();
@@ -228,7 +241,14 @@ export async function commitRecentBatch(
       if (d.cursor === null || b.to > d.cursor)
         throw Error("Recent swaps exceed discovery coverage");
     }
-    const known = new Map((await knownRecentPools(db)).map((p) => [p.id, p]));
+    const known = new Map(
+      (
+        await knownRecentPools(db, [
+          ...(b.pools ?? []).map((p) => p.id),
+          ...(b.events ?? []).map((e) => e.poolId),
+        ])
+      ).map((p) => [p.id, p]),
+    );
     for (const p of b.pools ?? []) {
       if (
         !hash(p.id) ||

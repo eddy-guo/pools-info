@@ -1,0 +1,258 @@
+{
+  "sdkRevision": "2b210b8ef8eb7e7c041e9ca1d95a39b2e1f9dd6f",
+  "head": 63243824,
+  "entries": [
+    {
+      "strategy": "0x60d73b21cdf2ea846ab3d58699bbbb8f29d72491",
+      "generation": "c3f9506",
+      "feeSplitter": "0x7198c32a497c09497e04c86cf8f77a244a9e4b8f",
+      "creatorFees": true,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x2562884d759c0753bffcd3e7fb60891bb1df15be441e6fe399e45fb5f3c87c4e",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x7198C32a497c09497e04C86cf8F77A244A9E4b8F",
+        "beneficiaryVault": "0x587D2fDDDF14F6f84022b51e8c3a473eB88C4544",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 22754669
+    },
+    {
+      "strategy": "0xfce92c70f1fc017b72f6dd7a00d9e38725c7fbd1",
+      "generation": "c3f9506",
+      "feeSplitter": "0xdf50f4ea2207f9d2a753a3dae729b36fdef13b23",
+      "creatorFees": false,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0xcfdc2cbbf2d955ed4e87a556b81ea338218601296f27c4b4ea12689aa92f8fbf",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0xDF50f4ea2207F9D2A753a3DaE729B36FDEF13b23",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 22754669
+    },
+    {
+      "strategy": "0xce57498d3474dcc244dfb6710ffbe6d4441cd2b2",
+      "generation": "8e40a35",
+      "feeSplitter": "0x7198c32a497c09497e04c86cf8f77a244a9e4b8f",
+      "creatorFees": true,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x50c9d66d818a575b0c8ac7af64fd0beeb92aeed26db5a71c6901cdbd135539ba",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x7198C32a497c09497e04C86cf8F77A244A9E4b8F",
+        "beneficiaryVault": "0x587D2fDDDF14F6f84022b51e8c3a473eB88C4544",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 23385219
+    },
+    {
+      "strategy": "0x583a7903152b95831e82fff534448dee081754ec",
+      "generation": "8e40a35",
+      "feeSplitter": "0xdf50f4ea2207f9d2a753a3dae729b36fdef13b23",
+      "creatorFees": false,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x0c2952a42a22148ccca35433ca55255e5f23a4e610cffa1aea5cb01807878f08",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0xDF50f4ea2207F9D2A753a3DaE729B36FDEF13b23",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 23385219
+    },
+    {
+      "strategy": "0x9f67b864b565966dfcc2e0c6ba2483b2d5ff4b00",
+      "generation": "3e05da8",
+      "feeSplitter": "0x7198c32a497c09497e04c86cf8f77a244a9e4b8f",
+      "creatorFees": true,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x50c9d66d818a575b0c8ac7af64fd0beeb92aeed26db5a71c6901cdbd135539ba",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x7198C32a497c09497e04C86cf8F77A244A9E4b8F",
+        "beneficiaryVault": "0x587D2fDDDF14F6f84022b51e8c3a473eB88C4544",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 23618250
+    },
+    {
+      "strategy": "0x16b63f1c8415fd68591c31fb3c6796a333dd640c",
+      "generation": "3e05da8",
+      "feeSplitter": "0xdf50f4ea2207f9d2a753a3dae729b36fdef13b23",
+      "creatorFees": false,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x0c2952a42a22148ccca35433ca55255e5f23a4e610cffa1aea5cb01807878f08",
+      "getters": {
+        "launcher": "0x00004c4ccc709Ef590F7C81102C0689F0263D4e9",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0xDF50f4ea2207F9D2A753a3DaE729B36FDEF13b23",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 23618250
+    },
+    {
+      "strategy": "0x3f556b542105d5efbbefe7c766a4919c76b960fb",
+      "generation": "v311",
+      "feeSplitter": "0x6cc1b74fc1be1ff373fa07f3381856f38103e653",
+      "creatorFees": true,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0xde7da44a0b62c0b3a6d99d2bc883b2bdd9f3fc5dcfbe6c270d51e06e13f8f47d",
+      "getters": {
+        "launcher": "0x7A6C474b4DcD35b72203D2B569EAfE4C9b5C768e",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x6CC1b74Fc1BE1ff373Fa07f3381856f38103e653",
+        "beneficiaryVault": "0xa5889CaFCB1757218eA71730bee381Cc2a3F2CCC",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 28080860
+    },
+    {
+      "strategy": "0x36bdb859518c89f764337cd5c24762d2aa650f3c",
+      "generation": "v311",
+      "feeSplitter": "0xdf50f4ea2207f9d2a753a3dae729b36fdef13b23",
+      "creatorFees": false,
+      "tickSpacing": 60,
+      "initialTick": 198060,
+      "minLaunchTick": -208980,
+      "runtimeCodeHash": "0x9c91c2d1627ceeec54bdee042534465fd47c6a1cdd72991e404c79bca94c9b0f",
+      "getters": {
+        "launcher": "0x7A6C474b4DcD35b72203D2B569EAfE4C9b5C768e",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0xDF50f4ea2207F9D2A753a3DaE729B36FDEF13b23",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 60,
+        "initialTick": 198060,
+        "MIN_LAUNCH_TICK": -208980,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 28080860
+    },
+    {
+      "strategy": "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
+      "generation": "20260805",
+      "feeSplitter": "0xeff166aaf189323c58dc27ed1206eb2c37faacdf",
+      "creatorFees": true,
+      "tickSpacing": 25,
+      "initialTick": 198050,
+      "minLaunchTick": -160100,
+      "runtimeCodeHash": "0x29df27cf43533e9b3708dcd2a2c0fd17a1a8796407e7d39375f47e5c809cffca",
+      "getters": {
+        "launcher": "0x0000FffFBE8efE702c8703aE3477FF5dE3d319C0",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0xeFF166AAf189323c58dc27eD1206EB2C37FaACDf",
+        "beneficiaryVault": "0xd35E9CA72F64C7F93BE30fad67524323396B36D7",
+        "TICK_SPACING": 25,
+        "initialTick": 198050,
+        "MIN_LAUNCH_TICK": -160100,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 28519960
+    },
+    {
+      "strategy": "0xad44d55e7f8337c3ce113fbb591486e85be104b2",
+      "generation": "20260805",
+      "feeSplitter": "0x222d6d4f1ce59b0d48d5505114ec8addc90a4359",
+      "creatorFees": false,
+      "tickSpacing": 25,
+      "initialTick": 198050,
+      "minLaunchTick": -160100,
+      "runtimeCodeHash": "0x6944058fa8339bcf018c4a2ddc043d378b47516f8756db34202bdc6cf93a9a8e",
+      "getters": {
+        "launcher": "0x0000FffFBE8efE702c8703aE3477FF5dE3d319C0",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x222D6d4f1ce59b0d48D5505114eC8Addc90A4359",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 25,
+        "initialTick": 198050,
+        "MIN_LAUNCH_TICK": -160100,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 28519981
+    },
+    {
+      "strategy": "0x7c48dde3b447381f4d986334679b3afc7f2d35c2",
+      "generation": "v330",
+      "feeSplitter": "0x9411fa7f956f64aa7981aa27cb3bc6ec0415449c",
+      "creatorFees": true,
+      "tickSpacing": 25,
+      "initialTick": 198050,
+      "minLaunchTick": -160100,
+      "runtimeCodeHash": "0xbcf3403daaaf65a9e575e8736872ff79865c9988a303f1bb6ada7ae5ddfc4bdd",
+      "getters": {
+        "launcher": "0x0000FffFBE8efE702c8703aE3477FF5dE3d319C0",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x9411fa7F956f64aa7981AA27cB3bC6eC0415449C",
+        "beneficiaryVault": "0x26d2F7AcB07707034406a0dC458351Bb63C02553",
+        "TICK_SPACING": 25,
+        "initialTick": 198050,
+        "MIN_LAUNCH_TICK": -160100,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 57982785
+    },
+    {
+      "strategy": "0xc9566675b1ea42861546f3c5b74ace2c79c49572",
+      "generation": "v330",
+      "feeSplitter": "0x882ae5e2095435a62fd1bbdefcb637f5ceafc0ee",
+      "creatorFees": false,
+      "tickSpacing": 25,
+      "initialTick": 198050,
+      "minLaunchTick": -160100,
+      "runtimeCodeHash": "0x549e67dfd42358ddaeed7ef63437239245c67d381342b0ab1ee0470c3b97d8d9",
+      "getters": {
+        "launcher": "0x0000FffFBE8efE702c8703aE3477FF5dE3d319C0",
+        "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "feeSplitter": "0x882Ae5e2095435A62Fd1BBDEfcb637f5CeAFc0ee",
+        "beneficiaryVault": "0x0000000000000000000000000000000000000000",
+        "TICK_SPACING": 25,
+        "initialTick": 198050,
+        "MIN_LAUNCH_TICK": -160100,
+        "LP_FEE": 2500
+      },
+      "deployedAtBlock": 57983002
+    }
+  ]
+}

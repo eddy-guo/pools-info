@@ -1,3 +1,4 @@
+import { instantDeployments, getInstantDeployment } from "./deployments";
 import {
   decodeEventLog,
   encodeAbiParameters,
@@ -10,10 +11,17 @@ export const contracts = {
   router: "0x8876789976decbfcbbbe364623c63652db8c0904",
   manager: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
   launcher: "0x0000ffffbe8efe702c8703ae3477ff5de3d319c0",
+  // Preserve the original pair's ordering for existing snapshots/tests. All
+  // attribution resolves deployment properties by address, never array index.
   strategies: [
-    "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
-    "0xad44d55e7f8337c3ce113fbb591486e85be104b2",
+    ...instantDeployments
+      .filter((d) => d.generation === "20260805")
+      .map((d) => d.strategy),
+    ...instantDeployments
+      .filter((d) => d.generation !== "20260805")
+      .map((d) => d.strategy),
   ],
+  launchers: [...new Set(instantDeployments.map((d) => d.launcher))],
 } as const;
 // InstantLaunchStrategy at the deployment's published source commit dd8769c.
 export const launchEvent = parseAbiItem(
@@ -36,11 +44,8 @@ export interface RawLog {
   removed: boolean;
 }
 export function decodeLaunch(log: RawLog) {
-  if (
-    log.removed ||
-    !contracts.strategies.some((a) => a === log.address.toLowerCase())
-  )
-    throw Error("Unexpected launch source");
+  const deployment = getInstantDeployment(log.address);
+  if (log.removed || !deployment) throw Error("Unexpected launch source");
   const { args } = decodeEventLog({ abi: [launchEvent], ...log, strict: true });
   const k = args.key;
   const id = keccak256(
@@ -59,7 +64,10 @@ export function decodeLaunch(log: RawLog) {
     id !== args.poolId ||
     k.currency0 !== "0x0000000000000000000000000000000000000000" ||
     k.currency1.toLowerCase() !== args.token.toLowerCase() ||
-    k.hooks !== "0x0000000000000000000000000000000000000000"
+    k.hooks !== "0x0000000000000000000000000000000000000000" ||
+    k.fee !== deployment.fee ||
+    k.tickSpacing !== deployment.tickSpacing ||
+    args.finalPositionRecipient.toLowerCase() !== deployment.feeSplitter
   )
     throw Error("Unsupported or inconsistent PoolKey");
   return args;

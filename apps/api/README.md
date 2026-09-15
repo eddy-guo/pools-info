@@ -27,14 +27,18 @@ Set `DATABASE_URL` through Railway's private Postgres reference; Railway supplie
 service can have a Railway HTTPS domain for the Next.js server to call. No new
 RPC key is required. Prefer a dedicated database role with SELECT access only
 to `indexed_pools`, `indexed_events`, `indexer_streams`, `indexer_batches`, and
-`analytics_pool_snapshots`,
-plus schema USAGE. Even when using the existing connection initially, all API
+`analytics_pool_snapshots`, the four `analytics_accounting_*` tables and the
+four `recent_*` tables, plus schema USAGE. Even when using the existing connection initially, all API
 transactions explicitly run READ ONLY. Database roles are infrastructure
 permissions and are unrelated to user accounts.
 
 Deploy the indexer first so its pre-deploy migration applies
-`002_read_indexes.sql` and `003_analytics.sql` before exposing the growing event history. The API has
-no migration privileges or startup migration command.
+all migrations through `006_catalog_search.sql` before exposing the growing
+event history. Migration 005 adds normalized accounting rows; the writer
+backfills existing publications without RPC. `/ready` checks read access and
+rejects `analytics_projection_pending` until every publication has a matching
+projection. Migration 006 adds indexed substring/fuzzy catalog search. The API
+has no migration privileges or startup migration command.
 
 No deployment is implied by these files. The website must be explicitly wired
 to this service after deployment and data validation.
@@ -156,9 +160,9 @@ jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
 | `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
-| `/v1/wallets/:address?window=All`                                           | Public wallet summary, all available positions, bounded latest 500 recorded executions, cumulative supported realized-PnL curve and observed launches. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                               |
+| `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                 |
 | `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |
-| `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports fuzzy text through the shared provider. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                                      |
+| `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                 |
 
 Windows support `1h`, `6h`, `24h`, `7d`, `30d`, and `All`. Their common endpoint
 is `coverage.asOf`, the latest published chain timestamp, not the current clock.
@@ -187,16 +191,23 @@ flows, volume, ROI and accounting; conflicting duplicates reject the capture.
 Unsupported positions expose null folded position/cost values rather than
 letting a consumer accidentally display an incomplete basis as valid.
 
-The shared pure functions in `@pools/core` provide the same fallback and hosted
-calculations. The API loads and caches a complete product read model for 15
-seconds, grouping audits by wallet and memoizing window calculations. Global
-sorting never happens on an already-paginated page. This bounded pilot supports
-10,000 catalog pools, 500 published captures, and 32 MiB of snapshot/holder JSON.
-Exceeding those limits returns `analytics_materialization_limit` (503), not a
-silently truncated leaderboard. Larger corpora should publish relational
-position/stat summaries before increasing the limits. In-process response
-caching can add up to another five seconds before a corrected publication is
-visible.
+The writer publishes normalized pool, position, trade and price rows atomically
+with each validated snapshot. The API filters, aggregates, ranks and paginates
+these rows in PostgreSQL. Global totals do not depend on a 500-snapshot or
+10,000-catalog-entry materialization limit. Regression tests compare these SQL
+results with the shared `@pools/core` rules, including carried basis, excluded
+positions, stale windows and integer amounts above JavaScript's safe range.
+Each pool detail loads only that pool's saved snapshot, capped at 32 MiB.
+
+Wallet summary totals and rank cover all matching stored positions. Displayed
+positions, launches and executions each cap at 500 and expose
+`positionsTruncated`, `launchesTruncated` and `tradesTruncated`. Individual
+position realization arrays are omitted (`positionRealizationsIncluded:false`).
+The curve samples interior points when needed (`curveSampled:true`), while
+preserving its exact terminal realized total. Search returns up to eight results
+per group with full matching counts; catalog pages never load the full catalog
+into application memory. Global sorting always precedes pagination. In-process
+response caching can add up to five seconds before a correction is visible.
 
 ## Recent trade stream
 

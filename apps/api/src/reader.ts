@@ -1,14 +1,14 @@
 import pg from "pg";
+import {
+  readLeaderboard,
+  readWallet,
+  accountingCoverage,
+} from "./accounting-read";
+import { readProjectedExplore } from "./projected-explore";
+import { readSearch } from "./search-read";
 import { assertCatalogIdentity, catalogCte } from "./catalog-read";
 import { readLiveTrades } from "./live-read";
-import {
-  exploreAnalytics,
-  leaderboardAnalytics,
-  walletAnalytics,
-  poolAnalytics,
-  searchAnalytics,
-  type AnalyticsModel,
-} from "@pools/core";
+import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
 import {
   encodeCursor,
@@ -116,7 +116,6 @@ function paginate(rows: Row[], request: ReadRequest, type: "pools" | "events") {
 export async function readData(
   query: Query,
   request: ReadRequest,
-  getModel: () => Promise<AnalyticsModel> = () => loadAnalyticsModel(query),
 ): Promise<unknown> {
   if (request.route === "ready") {
     // Zero-row reads check table access too, unlike SELECT 1 alone.
@@ -127,19 +126,24 @@ export async function readData(
     await query("SELECT 1 FROM recent_streams WHERE false");
     await query("SELECT 1 FROM recent_pools WHERE false");
     await query("SELECT 1 FROM recent_swaps WHERE false");
+    await query("SELECT 1 FROM analytics_accounting_pools WHERE false");
+    await query("SELECT 1 FROM analytics_accounting_positions WHERE false");
+    await query("SELECT 1 FROM analytics_accounting_trades WHERE false");
+    await query("SELECT 1 FROM analytics_accounting_prices WHERE false");
+    await accountingCoverage(query);
     return { ready: true };
   }
   if (request.route === "live-trades")
     return readLiveTrades(query, request.poolId);
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
   if (request.route === "explore")
-    return exploreAnalytics(await getModel(), request.explore);
+    return readProjectedExplore(query, request.explore);
   if (request.route === "leaderboard")
-    return leaderboardAnalytics(await getModel(), request.leaderboard);
+    return readLeaderboard(query, request.leaderboard);
   if (request.route === "profile")
-    return walletAnalytics(await getModel(), request.wallet!, request.window);
+    return readWallet(query, request.wallet!, request.window);
   if (request.route === "search")
-    return searchAnalytics(await getModel(), request.q, request.group);
+    return readSearch(query, request.q, request.group);
   if (request.route === "feed") {
     const streams = await query(
       `SELECT s.stream_key, s.pool_id, ${coverageColumns}
@@ -287,7 +291,7 @@ export async function readData(
       ...base,
       pool: poolItem(result.rows[0]),
       analytics: poolAnalytics(
-        await getModel(),
+        await loadAnalyticsModel(query, request.poolId!),
         request.poolId!,
         request.window,
       ),
@@ -357,11 +361,6 @@ export function createReader(
   pool.on("error", () =>
     process.stderr.write('{"event":"idle_database_connection_error"}\n'),
   );
-  let cachedModel: {
-    model: AnalyticsModel;
-    expires: number;
-    catalogRevision: string;
-  } | null = null;
   return {
     async read(request) {
       const client = await pool.connect();
@@ -372,29 +371,6 @@ export function createReader(
         const result = await readData(
           (sql, values) => client.query(sql, values),
           request,
-          async () => {
-            // Recent discovery can rewind independently of historical analytics.
-            // A changed membership invalidates the product catalog cache too.
-            const revision = await client.query(
-              `SELECT md5(coalesce(string_agg(r::text, ',' ORDER BY pool_id),'')) AS revision FROM recent_pools r WHERE chain_id=4663`,
-            );
-            const catalogRevision = revision.rows[0].revision;
-            if (
-              cachedModel &&
-              cachedModel.expires > Date.now() &&
-              cachedModel.catalogRevision === catalogRevision
-            )
-              return cachedModel.model;
-            const model = await loadAnalyticsModel((sql, values) =>
-              client.query(sql, values),
-            );
-            cachedModel = {
-              model,
-              expires: Date.now() + 15000,
-              catalogRevision,
-            };
-            return model;
-          },
         );
         await client.query("COMMIT");
         return result;

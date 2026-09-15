@@ -22,6 +22,8 @@ On-chain evidence can establish use of a launch path, not whether a person click
 
 ## Current implementation gap
 
-The current collector follows one LiquidityLauncher and two instant strategies in packages/chain/src/events.ts. It does not discover the entire chain, and it does not yet cover every historical/current Pools deployment or Crowd auctions. Correct direction, incomplete coverage. Do not silently call the two-entry registry exhaustive.
+The collector now has a versioned registry of all 12 Robinhood Instant strategy entries in the pinned official SDK, spanning six generations and three historically mapped launchers. Runtime code, getters and deployment blocks were verified using Alchemy. Historical 60-tick and current 25-tick pools retain their own pool shape, recipient and creator-fee variant. See [DEPLOYMENT-REGISTRY.md](DEPLOYMENT-REGISTRY.md) for the exact source revision and evidence.
+
+Registry support is separate from scanned coverage. Existing discovery cursors searched only the original August 5 pair; their earlier ranges do not become complete for the ten added strategies. A separately tracked rescan is needed to cover those gaps. No destructive reset or automatic full-history rescan is included. Crowd/LBP auctions and migrations remain explicitly unsupported, so the overall product registry is still not exhaustive.
 
 The database and worker should implement this narrower protocol scope. Unrelated Robinhood token deployments, other launchpads and arbitrary Uniswap pools are outside the default catalog. Complete indexing still requires historical backfill, resumable progress, canonical-block reconciliation, holder snapshots and trader accounting; narrowing scope reduces the work but does not remove these requirements.

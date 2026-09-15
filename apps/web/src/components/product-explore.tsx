@@ -126,7 +126,7 @@ export function ProductExplore() {
               <Link className="launch-card" key={p.id} href={poolHref(p)}>
                 <div className="launch-card-identity">
                   <Avatar address={p.token} small />
-                  <span>
+                  <span className="launch-card-label">
                     <strong>{p.name}</strong>
                     <small>
                       <time

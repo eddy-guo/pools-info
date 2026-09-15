@@ -76,7 +76,7 @@ import {
 } from "@pools/db";
 import { runRecentCycle } from "./recent-worker";
 test(
-  "recent worker commits canonical swaps in actual PostgreSQL, restarts and rewinds both cursors",
+  "recent worker handles a catalog above 10000 pools, commits canonical swaps, restarts and rewinds both cursors",
   { skip: !process.env.TEST_DATABASE_URL },
   async (t) => {
     const db = createClient(process.env.TEST_DATABASE_URL!);
@@ -116,6 +116,13 @@ test(
       pools: [p],
     });
     await commitRecentBatch(db, await recentStream(db, "swaps"), b);
+    // Reproduce a real growing-catalog failure through the worker and database,
+    // even though this block range only trades one of the registered markets.
+    await db.query(`INSERT INTO recent_pools
+      (chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch)
+      SELECT 4663,'0x'||lpad(to_hex(n),64,'0'),'0x'||repeat('ab',20),
+        'Other '||n,'OTHER',10,'0x'||lpad(to_hex(n),64,'0'),
+        '0x'||repeat('ab',20),100,19 FROM generate_series(1000,11000) n`);
     let changed = false;
     const h = (n: number) => ({
       number: hex(n),

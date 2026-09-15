@@ -146,9 +146,9 @@ export async function runRecentCycle(
   );
   if (from > to || options.signal?.aborted)
     return { head, through: swaps.cursor, advanced: 0, swaps: 0, pools: 0 };
+  await prepareRecentCycleRpc(rpc, head, from, to);
   let pools = 0;
   if (!behindDiscovery) {
-    await prepareRecentCycleRpc(rpc, head, from, to);
     const first = await recentHeader(rpc, from);
     if (discovery.hash && first.parentHash.toLowerCase() !== discovery.hash)
       throw Error("Checkpoint parent changed");
@@ -176,8 +176,20 @@ export async function runRecentCycle(
   }
   if (options.signal?.aborted)
     return { head, through: swaps.cursor, advanced: 0, swaps: 0, pools };
+  // The combined logs are already cached for this exact range. Resolve only
+  // their IDs against the verified registry instead of loading every launch.
+  // collectRecentEvents still validates all logs, receipts and canonical blocks.
+  const observed = await rpc.logs(
+    contracts.manager,
+    [toEventSelector(swapEvent)],
+    from,
+    to,
+  );
+  const ids = [...new Set(observed.map((log) => log.topics[1]?.toLowerCase()))];
+  if (ids.some((id) => !id || !/^0x[\da-f]{64}$/.test(id)))
+    throw Error("Unexpected recent event pool identity");
   const result = await collectRecentEvents(
-    { fromBlock: from, toBlock: to, pools: await knownRecentPools(db) },
+    { fromBlock: from, toBlock: to, pools: await knownRecentPools(db, ids) },
     rpc,
   );
   // Pin the common discovery cutoff as well as the swap result, even when

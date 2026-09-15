@@ -3611,7 +3611,15 @@ main {
   margin-bottom: 11px;
   min-width: 0;
 }
+.launch-card-label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
 .launch-card-identity strong {
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   overflow: hidden;

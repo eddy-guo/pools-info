@@ -21,7 +21,7 @@
     "indexer:once": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts once",
     "indexer:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts run",
     "indexer:status": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts status",
-    "test:db": "node --env-file-if-exists=.env.local --import tsx --test packages/db/src/*.test.ts apps/api/src/reader.integration.test.ts apps/api/src/live.integration.test.ts apps/indexer/src/analytics.test.ts apps/indexer/src/recent-worker.test.ts",
+    "test:db": "node --env-file-if-exists=.env.local --import tsx --test packages/db/src/*.test.ts apps/api/src/*.integration.test.ts apps/indexer/src/analytics.test.ts apps/indexer/src/recent-worker.test.ts",
     "api:run": "node --env-file-if-exists=.env.local --import tsx apps/api/src/main.ts",
     "analytics:once": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/analytics-main.ts once",
     "analytics:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/analytics-main.ts run",

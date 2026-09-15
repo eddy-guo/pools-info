@@ -163,6 +163,15 @@ test(
       await db.query("UPDATE recent_pools SET token=$1", [address(555)]);
       await assert.rejects(read("/v1/pools"), /catalog_identity_conflict/);
       await assert.rejects(feed(), /catalog_identity_conflict/);
+      await assert.rejects(
+        read("/v1/leaderboard"),
+        /catalog_identity_conflict/,
+      );
+      await assert.rejects(
+        read(`/v1/wallets/${address(90)}`),
+        /catalog_identity_conflict/,
+      );
+      await assert.rejects(read("/ready"), /catalog_identity_conflict/);
     } finally {
       await reader.close();
       await db.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
