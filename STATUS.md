@@ -1,4 +1,48 @@
-# Status - 15 Sep 2026, 10:07 UTC
+# Status - 15 Sep 2026, 10:21 UTC
+
+## Operational update: 10:21 UTC - 22,439 pools and measured Phase B costs
+
+At **10:18:50.334 UTC**, Luna verified v2 cursor **29,527,168**, exact indexed
+pools **22,439**, factory images **19,038**, v2-source pools **22,138**, overlap
+**0**, and `/ready` true. The cursor advanced 252,500 blocks since the prior
+10:06:17.555 sample: **335.65 blocks/sec** over 752.779 seconds. Its saved hash
+is `0xe507824afe1bf992e1cab4aa59669f61ec5f5df4c9c02602fcda1524d26ec4b2`,
+indexed at 10:18:44.403 UTC. V1 remains unchanged, including its timestamp.
+Phase A is incomplete and the v1/v2 overlap region is still ahead.
+
+The same Railway deployment remains Active. Discovery committed 2,500 blocks
+with 39 launches/38 images at 10:18:50, using 27 HTTP requests/170 logical calls.
+Recent lag was 128 at 10:18:54; 136 of 157 observed swaps were unregistered.
+Analytics was publishing. No classified throttle/error/identity conflict or
+stop appeared in the inspected log window. Alchemy usage refreshed around
+10:19 was **7,824,026 CU**, up 716,936 since the 10:06 observation, across all
+workers. Its last-hour All errors filter returned no request logs around 10:21.
+
+Token units through **ba86346** passed full CI **34955981383**. Sol's serving
+increment is **f40f0fd**, cherry-picked with an identical tree as **e377eec** on
+the real prerequisite chain and pushed to `phase-b-persistence`. It preserves
+dated units across quiet ranges and existing published deep accounting on
+direct pool links. Sol passed 76 database tests with zero skips and 10 actual
+desktop/mobile page cases; Luna independently reviewed SQL/core boundaries
+without finding an actionable defect. CI **34957093365** is running. No Phase B
+code has been merged into main or deployed.
+
+Read-only workload probes now establish that Phase B has substantial variable
+cost beyond log requests: sampled 1,000-block windows had 661-870 distinct log
+blocks, each requiring a header under the current evidence policy. See
+[PHASE-B-PREFLIGHT.md](docs/PHASE-B-PREFLIGHT.md) for exact counts, per-sample
+bounds and the successfully tested historical `eth_getBlockReceipts` capability.
+The Phase A estimate is not a Phase B budget. Full historical Phase B cost and
+storage remain unverified, and green CI alone does not authorize that workload.
+No billing or provider configuration was changed.
+
+Sol's next bounded assignment is optional, default-off block receipt collection
+in `.pools-info-block-receipts`, based on e377eec, using mocks/local Postgres
+only. It must produce the identical retained selected receipt evidence, preserve
+all validation, bound HTTP response bytes/counts, and respect the method's
+500-CU throughput weight. Root owns integration and live measurement. Luna is
+available for bounded checks after completing the latest progress sample.
+The 15-minute heartbeat remains active; the UI stash is unchanged.
 
 ## Operational update: 10:07 UTC - 17,752 pools, Phase B still isolated
 
