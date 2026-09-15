@@ -44,6 +44,7 @@ export function PreloadedOverview() {
     <time
       dateTime={new Date(market.launchedAt * 1000).toISOString()}
       data-launched-at={market.launchedAt}
+      data-pending={now === null}
       title={`Launched ${new Date(market.launchedAt * 1000).toISOString()}`}
     >
       {now === null || now < market.launchedAt

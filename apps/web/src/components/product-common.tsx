@@ -6,34 +6,64 @@ export function ProductCoverage({
   coverage,
   delivery,
 }: {
-  coverage: AnalyticsCoverage;
+  coverage?: AnalyticsCoverage;
   delivery?: ProductDelivery;
 }) {
   return (
-    <div className="coverage-notice" role="status">
-      <strong>
-        {coverage.catalogPools.toLocaleString()} discovered pools ·{" "}
-        {coverage.processedPools.toLocaleString()} with saved analytics
-      </strong>
-      <p>
-        {coverage.processedPools > 0 && coverage.asOf > 0 ? (
+    <div
+      className="coverage-notice product-coverage"
+      role="status"
+      aria-busy={!coverage}
+    >
+      <strong data-pending={!coverage}>
+        {coverage ? (
           <>
-            Latest captured data{" "}
-            {new Date(coverage.asOf * 1000).toLocaleString("en-US", {
-              timeZone: "UTC",
-            })}{" "}
-            UTC. Pool cutoffs vary.
+            {coverage.catalogPools.toLocaleString()} discovered pools ·{" "}
+            {coverage.processedPools.toLocaleString()} with saved analytics
           </>
         ) : (
-          "Analytics processing has not completed yet."
-        )}{" "}
-        PnL covers supported pool positions, not all wallet activity.
-        {delivery?.notice ? ` ${delivery.notice}` : ""}{" "}
-        <Link href="/methodology/">Coverage and methodology ↗</Link>
+          "Loading saved analytics coverage"
+        )}
+      </strong>
+      <p data-pending={!coverage}>
+        {coverage ? (
+          <>
+            {coverage.processedPools > 0 && coverage.asOf > 0 ? (
+              <>
+                Latest captured data{" "}
+                {new Date(coverage.asOf * 1000).toLocaleString("en-US", {
+                  timeZone: "UTC",
+                })}{" "}
+                UTC. Pool cutoffs vary.
+              </>
+            ) : (
+              "Analytics processing has not completed yet."
+            )}{" "}
+            {coverage.pnlScope === "observed_initiator_and_verified_positions"
+              ? "PnL combines flagged initiator estimates and transfer-verified positions. Unknown basis stays excluded."
+              : "PnL covers supported pool positions, not all wallet activity."}
+            {delivery?.notice ? ` ${delivery.notice}` : ""}{" "}
+            <Link href="/methodology/">Coverage and methodology ↗</Link>
+          </>
+        ) : (
+          "Coverage and dated capture details are pending."
+        )}
       </p>
     </div>
   );
 }
+
+/** Pending values occupy the same line box as resolved values, without fake data. */
+export function PendingValue({
+  pending = false,
+  children,
+}: {
+  pending?: boolean;
+  children: React.ReactNode;
+}) {
+  return <span data-pending={pending}>{pending ? "Pending" : children}</span>;
+}
+
 export function ProductPagination({
   offset,
   total,

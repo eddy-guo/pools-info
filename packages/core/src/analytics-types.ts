@@ -20,7 +20,12 @@ export interface AnalyticsCoverage {
   generatedAt: string;
   complete: false;
   registryExhaustive: false;
-  pnlScope: "supported_pool_positions_only";
+  pnlScope:
+    | "supported_pool_positions_only"
+    | "observed_initiator_and_verified_positions";
+  tier2Pools?: number;
+  tier3Pools?: number;
+  realizedPools?: number;
 }
 export interface AnalyticsPoolStats {
   priceWei: string | null;
@@ -64,10 +69,13 @@ export interface AnalyticsExploreResponse {
   message?: string;
 }
 export interface AnalyticsWalletPosition {
+  accountingTier?: "tier2" | "tier3";
+  attribution?: "transaction_initiator_only" | "transfer_verified";
+  modeledPosition?: Position | null;
   poolId: string;
   token: string;
   symbol: string;
-  decimals: number;
+  decimals: number | null;
   launchTx: string;
   asOf: number;
   throughBlock: number;
@@ -80,6 +88,19 @@ export interface AnalyticsWalletPosition {
   position: Position | null;
 }
 export interface AnalyticsWalletSummary {
+  verifiedUnrealizedWei?: string | null;
+  unrealizedScope?: "verified_positions_only" | "unavailable";
+  accountingTier?: "tier2" | "tier3" | "mixed" | "unavailable";
+  attribution?:
+    | "transaction_initiator_only"
+    | "transfer_verified"
+    | "mixed"
+    | "unavailable";
+  flags?: string[];
+  tier2PositionCount?: number;
+  tier3PositionCount?: number;
+  realizedPositionCount?: number;
+  rankingTradeCount?: number;
   address: string;
   rank: number | null;
   realizedWei: string | null;

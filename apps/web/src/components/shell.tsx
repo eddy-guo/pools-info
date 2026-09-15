@@ -133,17 +133,29 @@ function ShellStatus() {
               : (error ?? "Saved data unavailable")}
       </strong>
       <span className="network-context">Uniswap v4 · Robinhood Chain</span>
-      {captured && (
-        <span className="capture-time" title={captured}>
-          Latest capture {captured.slice(5, 10)} {captured.slice(11, 16)} UTC
-        </span>
-      )}
-      {data && (
-        <span className="coverage-tag">
-          {data.coverage.catalogPools} discovered ·{" "}
-          {data.coverage.processedPools} processed
-        </span>
-      )}
+      <span
+        className="capture-time"
+        title={captured ?? undefined}
+        data-pending={loading}
+      >
+        {captured
+          ? `Latest capture ${captured.slice(5, 10)} ${captured.slice(11, 16)} UTC`
+          : loading
+            ? "Capture time pending"
+            : "Capture time unavailable"}
+      </span>
+      <span className="coverage-tag" data-pending={loading}>
+        {data ? (
+          <>
+            {data.coverage.catalogPools} discovered ·{" "}
+            {data.coverage.processedPools} processed
+          </>
+        ) : loading ? (
+          "Coverage pending"
+        ) : (
+          "Coverage unavailable"
+        )}
+      </span>
       <div className="status-actions">
         <button
           className="icon-button"

@@ -1,4 +1,61 @@
-# Status - 15 Sep 2026, 10:52 UTC
+# Status - 15 Sep 2026, current settling pass
+
+## Current priority and blocker
+
+The user requested a ranked deep scheduler, launch-first screener with metric-only
+sorts, explicit coverage tiers, and measured first-paint layout stability. No new
+sweep, new coverage job, billing change or worktree was started for this pass.
+
+Scheduler commits **fed7758** and **93a0cb8** are on main. The latter fixes the
+initial overdue override: waiting age is weighted 64/16/4/1 for ranks <=500,
+<=2,000, <=10,000 and the remainder. Within a band the oldest attempt goes first.
+A 40k aged-backlog test proves sustained high-band preference and lower-band
+progress. Source identity, exact wei, compatible range grouping, writer lock and
+reorg rules are preserved. Full CI **34963571241 passed** at 93a0cb8.
+
+**Tier-2 ranking is BLOCKED for deployment.** The complete 115k-swap/52k-registry
+read sometimes exceeds the existing 2.8-second serving budget; the best standalone
+result was 2,785 ms, with no safe margin for Railway. Do not deploy that path or
+raise the budget silently. Its WIP is backed up on
+`wip/tier2-read-budget` at **af6a7f3**. Its runtime and integration-test changes
+were removed from main's working tree; optional display types remain for explicit
+evidence labels. Correctness fixtures pass, but broad/recent conflict and mixed
+integration verification are also unfinished. This is not a completed Tier-2 board.
+The existing verified ranking remains available; the live browser previously showed
+25 actual rows per page and 373 qualifying traders, not a 14-row global ceiling.
+
+Read-only production measurements:
+- At 11:26:57 UTC: 488 deep pools, 574 pools with observed volume in the requested
+  trailing filter; deep pools account for **16.0908%** of stored observed volume.
+- Top 400 account for **99.1837%** and top 500 **99.8360%** of that stored volume.
+- At 11:28:11 UTC: 388,815 contiguous retained recent blocks; top 500 density
+  **23.5233%**, up-to-2,000 measured set density **23.5356%** (only 575 rankable).
+- At 10 blocks/sec and the measured densities, 14-day block receipts alone would
+  be ~56.9M CU; logs plus those receipts ~57.6M CU, before other calls/workers.
+- **89.34% of recent observed swaps were unregistered at collection.** Unmeasured
+  pools are not zero-volume pools. These shares cannot establish whole-market
+  coverage or the true global top500/top2000. No spend was authorized by them.
+- Evidence: `docs/evidence/ranked-observed-volume-2026-09-15.json`.
+
+Alchemy's account-wide cap was set and visibly verified at **50M CU** per the
+user's choice. Earlier Phase A ETA at 10:59 was ~7h and 20-23M additional account
+CU; that is a dated observation, not a fresh estimate.
+
+Only main and `.pools-info-market-rollups` remain as worktrees. The four redundant
+worktrees were removed and their two helper app tasks archived. The old heartbeat
+is paused. Market WIP e7d0058 is still unmerged; its bounded 52,031-row fixture
+passed with 828.1ms serving latency and 521 pages/52,031 unique IDs.
+
+Frontend validation is being finalized independently of the blocked Tier-2 path.
+The focused 28-test run and final two screener checks pass. All six tested routes
+on desktop/mobile (12 cases) record CLS 0 with unchanged sentinel geometry,
+including on-demand pool success/error. Four approximate route loading components
+are deleted; real nullable elements retain their nodes and pending texture.
+The text ramp is applied and paired screenshots are saved in
+`docs/evidence/layout-2026-09-15/`. Do not call the whole requested project done.
+
+---
+
 
 ## Priority update: consolidate, measure, then widen the leaderboard
 

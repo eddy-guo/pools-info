@@ -142,11 +142,22 @@ export function Money({
   wei,
   signed = false,
   className = "",
+  pending = false,
 }: {
-  wei: string;
+  wei?: string | null;
   signed?: boolean;
   className?: string;
+  pending?: boolean;
 }) {
+  if (wei == null)
+    return (
+      <span
+        className={`number muted unavailable ${className}`}
+        data-pending={pending}
+      >
+        {pending ? "Pending" : "N/A"}
+      </span>
+    );
   return (
     <span
       className={`number ${signed ? (BigInt(wei) > 0n ? "positive" : BigInt(wei) < 0n ? "negative" : "muted") : ""} ${className}`}
@@ -160,7 +171,24 @@ export function Money({
     </span>
   );
 }
-export function Price({ wei }: { wei: string }) {
+export function Price({
+  wei,
+  pending = false,
+}: {
+  wei?: string | null;
+  pending?: boolean;
+}) {
+  if (wei == null)
+    return (
+      <span
+        className="number price muted unavailable"
+        data-pending={pending}
+        title="No observed swap price"
+        aria-label={pending ? undefined : "Unavailable: No observed swap price"}
+      >
+        {pending ? "Pending" : "N/A"}
+      </span>
+    );
   const currency = "ETH";
   const value = displayEth(wei);
   const prefix = "";
@@ -186,7 +214,26 @@ export function Price({ wei }: { wei: string }) {
     </span>
   );
 }
-export function Change({ value }: { value: number }) {
+export function Change({
+  value,
+  pending = false,
+}: {
+  value?: number | null;
+  pending?: boolean;
+}) {
+  if (value == null)
+    return (
+      <span
+        className="number change muted unavailable"
+        data-pending={pending}
+        title="No opening price observation"
+        aria-label={
+          pending ? undefined : "Unavailable: No opening price observation"
+        }
+      >
+        {pending ? "Pending" : "N/A"}
+      </span>
+    );
   const displayed = Number(value.toFixed(2));
   return (
     <span
@@ -375,10 +422,12 @@ export function Chart({
   points,
   label = "Price",
   profit = false,
+  pending = false,
 }: {
   points: PricePoint[];
   label?: string;
   profit?: boolean;
+  pending?: boolean;
 }) {
   const gradient = useId().replace(/:/g, "");
   const last = BigInt(points.at(-1)?.wei ?? "0");
@@ -394,13 +443,6 @@ export function Chart({
   const index =
     hover === null ? points.length - 1 : Math.min(hover, points.length - 1);
   const point = points[Math.max(0, index)];
-  if (!point)
-    return (
-      <EmptyState
-        title="No chart data"
-        description="No observations are available for this period."
-      />
-    );
   const dates = [
     points[0],
     points[Math.floor(points.length / 3)],
@@ -408,25 +450,28 @@ export function Chart({
     points.at(-1)!,
   ];
   return (
-    <div className="chart">
+    <div className="chart" aria-busy={pending}>
       <div className="chart-readout">
         <span className="muted">{label}</span>
         <strong>
           {profit ? (
-            <Money wei={point.wei} signed />
+            <Money wei={point?.wei} signed pending={pending} />
           ) : (
-            <Price wei={point.wei} />
+            <Price wei={point?.wei} pending={pending} />
           )}
         </strong>
         <time>
-          {new Date(point.time * 1000).toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: "UTC",
-          })}{" "}
-          UTC
+          {point
+            ? new Date(point.time * 1000).toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                timeZone: "UTC",
+              }) + " UTC"
+            : pending
+              ? "Observation pending"
+              : "No observations"}
         </time>
       </div>
       <div className="chart-frame">
@@ -437,7 +482,10 @@ export function Chart({
           role="img"
           aria-label={`${label} chart. Use left and right arrow keys to inspect observations.`}
           onKeyDown={(e) => {
-            if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            if (
+              points.length &&
+              (e.key === "ArrowLeft" || e.key === "ArrowRight")
+            ) {
               e.preventDefault();
               setHover(
                 Math.max(
@@ -451,6 +499,7 @@ export function Chart({
             }
           }}
           onPointerMove={(e) => {
+            if (!points.length) return;
             const rect = e.currentTarget.getBoundingClientRect();
             const fraction = Math.max(
               0,
@@ -487,7 +536,10 @@ export function Chart({
               strokeDasharray="3 5"
             />
           ))}
-          <path d={`${g.path} L812,230 L8,230 Z`} fill={`url(#${gradient})`} />
+          <path
+            d={points.length ? `${g.path} L812,230 L8,230 Z` : ""}
+            fill={`url(#${gradient})`}
+          />
           <path
             d={g.path}
             fill="none"
@@ -495,7 +547,7 @@ export function Chart({
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
-          {hover !== null && (
+          {hover !== null && !!point && (
             <>
               <line
                 x1={g.x(index)}
@@ -516,21 +568,34 @@ export function Chart({
         </svg>
         <div className="chart-axis">
           {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
-            <span key={i}>{compact(v)}</span>
+            <span key={i} data-pending={pending}>
+              {points.length ? compact(v) : pending ? "Pending" : "N/A"}
+            </span>
           ))}
         </div>
       </div>
       <div className="chart-dates">
         {dates.map((p, i) => (
           <span key={i}>
-            {new Date(p.time * 1000).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-              timeZone: "UTC",
-            })}
+            {p
+              ? new Date(p.time * 1000).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  timeZone: "UTC",
+                })
+              : pending
+                ? "Pending"
+                : "N/A"}
           </span>
         ))}
       </div>
+      <p className="chart-empty-note" data-pending={pending}>
+        {point
+          ? "\u00a0"
+          : pending
+            ? "Loading saved PnL observations"
+            : "No supported realized history in this window."}
+      </p>
     </div>
   );
 }

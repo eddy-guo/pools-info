@@ -4,12 +4,12 @@ import captures from "../../data/pools/index.json";
 import { poolHref } from "@pools/core";
 const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
-test("Explore skeletons respect reduced motion and preserve rows during refresh", async ({
-  page,
-  request,
-}, testInfo) => {
-  const path = `/api/product/explore?window=24h&view=all&offset=0&limit=25&q=&sort=volume&direction=desc`;
-  const payload = await (await request.get(path)).json();
+test("Explore retains saved rows during refresh", async ({ page, request }) => {
+  const payload = await (
+    await request.get(
+      "/api/product/explore?window=24h&view=all&offset=0&limit=25&q=&sort=launch&direction=desc",
+    )
+  ).json();
   let release: () => void = () => {},
     calls = 0;
   await page.route("**/api/product/explore?**", async (route) => {
@@ -22,29 +22,9 @@ test("Explore skeletons respect reduced motion and preserve rows during refresh"
     await route.fulfill({ json: payload });
   });
   await page.goto("/");
-  const skeleton = page
-    .locator('[data-skeleton="explore"]')
-    .filter({ visible: true });
-  await expect(skeleton).toBeVisible();
-  await expect(
-    page.getByRole("status", { name: "Loading pools", exact: true }),
-  ).toBeVisible();
-  const block = skeleton.locator('[data-skeleton="line"]').first();
-  await expect(block).toHaveCSS("animation-duration", "1.8s");
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(block).toHaveCSS("animation-name", "none");
-  await page.screenshot({
-    path: testInfo.outputPath("explore-loading.png"),
-    fullPage: false,
-  });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect(page.locator(".product-coverage[aria-busy=true]")).toBeVisible();
   await expect.poll(() => calls).toBe(1);
   release();
-  await expect(skeleton).toHaveCount(0);
   const first = page
     .locator(".desktop-pools, .mobile-pools")
     .getByText(payload.items[0].name, { exact: true })
@@ -56,9 +36,9 @@ test("Explore skeletons respect reduced motion and preserve rows during refresh"
     .click();
   await expect.poll(() => calls).toBe(2);
   await expect(first).toBeVisible();
-  await expect(
-    page.getByRole("status", { name: "Loading pools", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.locator(".product-coverage[aria-busy=true]")).toHaveCount(
+    0,
+  );
   release();
   await expect(
     page
@@ -79,7 +59,7 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       loaded: "Positions across covered pools",
     },
     {
-      url: "/traders/",
+      url: "/traders/?window=All",
       api: "leaderboard",
       label: "Loading trader rankings",
       loaded: null,
@@ -98,9 +78,7 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       await route.fulfill({ json: payload });
     });
     await page.goto(entry.url);
-    const skeleton = page
-      .getByRole("status", { name: entry.label, exact: true })
-      .filter({ visible: true });
+    const skeleton = page.locator(".product-coverage[aria-busy=true]");
     await expect(skeleton).toBeVisible();
     await expect(
       page
@@ -150,11 +128,9 @@ test("on-demand pools reserve a chart layout while saved data loads", async ({
       await route.continue();
     });
   await page.goto(poolHref(pool));
-  const skeleton = page
-    .getByRole("status", { name: "Loading pool page", exact: true })
-    .filter({ visible: true });
+  const skeleton = page.locator(".nullable-pool-page[aria-busy=true]");
   await expect(skeleton).toBeVisible();
-  await expect(skeleton.locator('[data-skeleton="chart"]')).toBeVisible();
+  await expect(skeleton.locator(".interactive-chart")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("pool-loading.png"),
     fullPage: false,

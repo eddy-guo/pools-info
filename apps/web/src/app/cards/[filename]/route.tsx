@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { walletCaptureLabel, readCardWallet } from "@/lib/product-card";
+import { accountingExplanation, accountingLabel } from "@/lib/accounting-evidence";
 import {
   shortAddress,
   visualTheme,
@@ -91,7 +92,7 @@ export async function GET(
             }}
           >
             <span style={{ color: visualTheme.muted, fontSize: 18 }}>
-              REALIZED SWAP PNL
+              REALIZED SWAP PNL · {accountingLabel(m)}
             </span>
             <span style={{ color: visualTheme.accent, fontSize: 17 }}>
               {rank
@@ -176,13 +177,12 @@ export async function GET(
           }}
         >
           <span>
-            Supported positions {global ? "across" : "in"} {scope}. Average
-            cost, before gas.
+            {accountingExplanation(m)}
           </span>
           <span>{walletCaptureLabel(m)}</span>
           <span>{`poolsinfo.com/wallet/${address}/`}</span>
           <span style={{ fontSize: 13 }}>
-            {m.excludedPositionCount} unsupported positions excluded.
+            {m.excludedPositionCount} positions excluded. Average cost, before gas.
             {result.delivery.source === "preloaded"
               ? " Preloaded public dataset."
               : " Saved chain data."}

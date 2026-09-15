@@ -57,13 +57,15 @@ export function preloadedProduct(
 ): unknown {
   model ??= preloadModel();
   const window = (params.get("window") ??
-    (endpoint === "leaderboard" || endpoint.startsWith("wallets/")
-      ? "All"
-      : "24h")) as LiveWindow;
+    (endpoint === "leaderboard"
+      ? "7d"
+      : endpoint.startsWith("wallets/")
+        ? "All"
+        : "24h")) as LiveWindow;
   if (endpoint === "explore")
     return exploreAnalytics(model, {
       window,
-      sort: (params.get("sort") ?? "volume") as AnalyticsExploreOptions["sort"],
+      sort: (params.get("sort") ?? "launch") as AnalyticsExploreOptions["sort"],
       direction: (params.get("direction") ?? "desc") as "asc" | "desc",
       view: (params.get("view") ?? "all") as AnalyticsExploreOptions["view"],
       ids: params.get("ids")?.split(",").filter(Boolean),

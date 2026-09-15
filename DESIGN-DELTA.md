@@ -65,6 +65,25 @@ This is why the UI drifts no matter how carefully components are written. Fix th
 
 ## Defect 2 — the text hierarchy is collapsed (biggest visual cause)
 
+**Resolved in the 15 September stability pass.** Components now use the existing
+five-step theme through token-backed CSS: text-2 for bright secondary text,
+text-3 for ordinary secondary text, muted/faint for lower emphasis, and
+line-strong on raised panel boundaries. The three private literals were removed
+from component rules. Body weight defaults to 600; explanatory paragraphs can
+still explicitly use 400. The comparisons below describe the original defect.
+
+Loading now paints on persistent real elements. Launch rails, rows, charts and
+coverage notices reserve geometry, including empty/error states. The four
+approximate route loading pages were removed. Desktop and mobile measurements
+cover the screener, pool, traders and wallet, plus on-demand pool success/error:
+CLS 0, unchanged sentinels, and persistent representative numeric nodes.
+
+Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
+(`screener-before-desktop.png` / `screener-after-desktop.png`, and mobile peers).
+They use the same real preloaded fixture with chain refresh disabled. Current
+live coverage counts are intentionally not hardcoded into these screenshots.
+
+
 The design's two most-used colours are **missing entirely** from the implementation.
 
 | Design colour | Uses   | Role             | In impl?                |

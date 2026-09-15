@@ -1,6 +1,5 @@
 "use client";
 import Link from "next/link";
-import { CoverageSkeleton, LeaderboardSkeleton } from "./skeletons";
 import { shortAddress, type AnalyticsLeaderboardResponse } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
@@ -8,9 +7,10 @@ import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { Avatar, Change } from "./ui";
 import { PersonalRankPreview } from "./feature-preview";
 import { ProductCoverage, ProductPagination } from "./product-common";
+import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
   const { params, set } = useQuery(),
-    { window, setWindow } = useWindow("All");
+    { window, setWindow } = useWindow("7d");
   const minimum = Number(params.get("minTrades") ?? 10),
     metric = params.get("metric") ?? "realized",
     offset = Number(params.get("offset") ?? 0);
@@ -37,10 +37,7 @@ export function ProductTraders() {
         </Link>
       </div>
       <PersonalRankPreview />
-      {loading && !data && <CoverageSkeleton />}
-      {data && (
-        <ProductCoverage coverage={data.coverage} delivery={data.delivery} />
-      )}
+      <ProductCoverage coverage={data?.coverage} delivery={data?.delivery} />
       <section className="panel leaderboard-panel">
         <div className="live-controls">
           <label>
@@ -85,10 +82,11 @@ export function ProductTraders() {
           </button>
         </div>
         <p className="panel-footnote">
-          Ranked across all processed pools before pagination. Unknown basis and
-          unsupported positions are excluded from profit, with excluded position
-          counts shown. Net ETH includes purchases of unsold inventory. These
-          are supported-position totals, not complete wallet returns.
+          Ranked before pagination using transfer-verified positions with known
+          purchase basis. Swap-based estimates are not enabled yet. Unknown
+          basis is excluded from realized PnL. Net ETH includes purchases of
+          unsold inventory. Coverage varies by pool; these are not complete
+          wallet returns.
         </p>
         {loading && data && (
           <span className="sr-only" role="status">
@@ -100,179 +98,302 @@ export function ProductTraders() {
             {error}
           </p>
         )}
-        {loading && !data ? (
-          <LeaderboardSkeleton />
-        ) : (
-          <>
-            {!offset && !!data?.items.length && (
-              <div className="live-podium">
-                {data.items.slice(0, 3).map((w) => (
+        <>
+          {!offset && (
+            <div className="live-podium">
+              {Array.from({ length: 3 }, (_, index) => data?.items[index]).map(
+                (w, index) => (
                   <Link
-                    href={`/wallet/${w.address}/?window=${window}`}
-                    key={w.address}
+                    href={
+                      w ? `/wallet/${w.address}/?window=${window}` : "/traders/"
+                    }
+                    key={index}
+                    prefetch={!!w}
+                    aria-disabled={!w}
+                    tabIndex={w ? undefined : -1}
+                    onClick={(event) => {
+                      if (!w) event.preventDefault();
+                    }}
                   >
-                    <small>#{w.rank} · covered pools</small>
-                    <Avatar address={w.address} />
-                    <strong>{shortAddress(w.address)}</strong>
+                    <small data-pending={!data}>
+                      {w ? `#${w.rank} · covered pools` : "Covered pools"}
+                    </small>
+                    {w ? (
+                      <Avatar address={w.address} />
+                    ) : (
+                      <span className="avatar" data-pending={!data}>
+                        Wallet
+                      </span>
+                    )}
+                    <strong data-pending={!data}>
+                      {w ? shortAddress(w.address) : "Wallet pending"}
+                    </strong>
+                    <span>
+                      {w ? (
+                        <AccountingBadge wallet={w} />
+                      ) : (
+                        <span className="evidence-badge" data-pending={!data}>
+                          Accounting pending
+                        </span>
+                      )}
+                    </span>
                     <Eth
-                      wei={metric === "realized" ? w.realizedWei : w.netWei}
+                      wei={metric === "realized" ? w?.realizedWei : w?.netWei}
                       signed
+                      pending={!data}
                     />
                   </Link>
-                ))}
-              </div>
-            )}
-            <div className="table-scroll desktop-traders">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Trader</th>
-                    <th>
-                      {metric === "realized" ? "Realized PnL" : "Net ETH"}
-                    </th>
-                    <th>ROI</th>
-                    <th>W / L</th>
-                    <th>Supported trades</th>
-                    <th>Volume</th>
-                    <th>Positions</th>
-                    <th>Best sale</th>
-                    <th>Last (UTC)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data?.items.map((w) => (
-                    <tr key={w.address}>
-                      <td>#{w.rank}</td>
-                      <td>
-                        <Link
-                          className="mono"
-                          href={`/wallet/${w.address}/?window=${window}`}
-                        >
-                          {shortAddress(w.address)}
-                        </Link>
-                      </td>
-                      <td>
-                        <Eth
-                          wei={metric === "realized" ? w.realizedWei : w.netWei}
-                          signed
-                        />
-                      </td>
-                      <td>
-                        {w.roi === null ? (
-                          <Unavailable />
-                        ) : (
-                          <span
-                            className={
-                              w.roi > 0
-                                ? "positive"
-                                : w.roi < 0
-                                  ? "negative"
-                                  : ""
-                            }
+                ),
+              )}
+            </div>
+          )}
+          <div className="table-scroll desktop-traders">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Trader</th>
+                  <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
+                  <th>ROI</th>
+                  <th>W / L</th>
+                  <th>Ranking trades</th>
+                  <th>Volume</th>
+                  <th>Positions</th>
+                  <th>Best sale</th>
+                  <th>Last (UTC)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(
+                  { length: Math.max(25, data?.items.length ?? 0) },
+                  (_, index) => data?.items[index],
+                ).map((w, index) => (
+                  <tr
+                    key={index}
+                    aria-hidden={!w}
+                    data-row={w ? "resolved" : "reserved"}
+                  >
+                    <td data-pending={!w && !data}>
+                      {w ? <>#{w.rank}</> : data ? "\u00a0" : "Pending"}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>
+                          <Link
+                            className="mono"
+                            href={`/wallet/${w.address}/?window=${window}`}
                           >
-                            {w.roi.toFixed(2)}%
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {w.wins} / {w.losses}
-                      </td>
-                      <td>{w.supportedTradeCount}</td>
-                      <td>
-                        <Eth wei={w.volumeWei} />
-                      </td>
-                      <td>
-                        {w.supportedPositionCount} supported
-                        <small className="cell-sub">
-                          {w.excludedPositionCount} excluded
-                        </small>
-                      </td>
-                      <td>
-                        <Eth wei={w.bestWei} signed />
-                      </td>
-                      <td>{w.last ? utc(w.last) : <Unavailable />}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-traders">
-              {data?.items.map((w) => (
-                <div className="mobile-trader" key={w.address}>
-                  <div className="mobile-trader-heading">
-                    <span className="rank-number">#{w.rank}</span>
-                    <Link
-                      className="trader-identity"
-                      href={`/wallet/${w.address}/?window=${window}`}
-                    >
-                      <Avatar address={w.address} small />
-                      <span className="mono">{shortAddress(w.address)}</span>
-                    </Link>
-                  </div>
-                  <div className="mobile-trader-value">
-                    <Eth
-                      wei={metric === "realized" ? w.realizedWei : w.netWei}
-                      signed
-                    />
-                    <span>
-                      {metric === "realized" ? "realized" : "net flow"}
-                    </span>
-                  </div>
-                  <div className="mobile-pool-stats">
-                    <span>
-                      ROI
-                      <strong>
-                        {w.roi === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Change value={w.roi} />
-                        )}
-                      </strong>
-                    </span>
-                    <span>
-                      Trades<strong>{w.supportedTradeCount}</strong>
-                    </span>
-                    <span>
-                      Volume
-                      <strong>
-                        <Eth wei={w.volumeWei} />
-                      </strong>
-                    </span>
-                    <span>
-                      Best sale
-                      <strong>
-                        <Eth wei={w.bestWei} signed />
-                      </strong>
-                    </span>
-                  </div>
-                  <p className="panel-footnote">
-                    {w.supportedPositionCount} supported positions ·{" "}
-                    {w.excludedPositionCount} excluded
-                  </p>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+                            {shortAddress(w.address)}
+                          </Link>
+                          <div className="cell-sub">
+                            <AccountingBadge wallet={w} />
+                          </div>
+                        </>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      <Eth
+                        pending={!data}
+                        wei={metric === "realized" ? w?.realizedWei : w?.netWei}
+                        signed
+                      />
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>
+                          {w.roi === null ? (
+                            <Unavailable />
+                          ) : (
+                            <span
+                              className={
+                                w.roi > 0
+                                  ? "positive"
+                                  : w.roi < 0
+                                    ? "negative"
+                                    : ""
+                              }
+                            >
+                              {w.roi.toFixed(2)}%
+                            </span>
+                          )}
+                        </>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>
+                          {w.wins} / {w.losses}
+                        </>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>{w.rankingTradeCount ?? w.supportedTradeCount}</>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      <Eth pending={!data} wei={w?.volumeWei} />
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>
+                          {w.realizedPositionCount ?? w.supportedPositionCount}{" "}
+                          eligible
+                          <small className="cell-sub">
+                            {w.excludedPositionCount} excluded
+                          </small>
+                        </>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                    <td data-pending={!w && !data}>
+                      <Eth pending={!data} wei={w?.bestWei} signed />
+                    </td>
+                    <td data-pending={!w && !data}>
+                      {w ? (
+                        <>{w.last ? utc(w.last) : <Unavailable />}</>
+                      ) : data ? (
+                        "\u00a0"
+                      ) : (
+                        "Pending"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mobile-traders">
+            {Array.from(
+              { length: Math.max(25, data?.items.length ?? 0) },
+              (_, index) => data?.items[index],
+            ).map((w, index) => (
+              <div className="mobile-trader" key={index}>
+                {w ? (
+                  <>
+                    <div className="mobile-trader-heading">
+                      <span className="rank-number">#{w.rank}</span>
+                      <Link
+                        className="trader-identity"
+                        href={`/wallet/${w.address}/?window=${window}`}
+                      >
+                        <Avatar address={w.address} small />
+                        <span className="mono">{shortAddress(w.address)}</span>
+                      </Link>
+                      <AccountingBadge wallet={w} />
+                    </div>
+                    <div className="mobile-trader-value">
+                      <Eth
+                        wei={metric === "realized" ? w.realizedWei : w.netWei}
+                        signed
+                      />
+                      <span>
+                        {metric === "realized" ? "realized" : "net flow"}
+                      </span>
+                    </div>
+                    <div className="mobile-pool-stats">
+                      <span>
+                        ROI
+                        <strong>
+                          {w.roi === null ? (
+                            <Unavailable />
+                          ) : (
+                            <Change value={w.roi} />
+                          )}
+                        </strong>
+                      </span>
+                      <span>
+                        Trades
+                        <strong>
+                          {w.rankingTradeCount ?? w.supportedTradeCount}
+                        </strong>
+                      </span>
+                      <span>
+                        Volume
+                        <strong>
+                          <Eth wei={w.volumeWei} />
+                        </strong>
+                      </span>
+                      <span>
+                        Best sale
+                        <strong>
+                          <Eth wei={w.bestWei} signed />
+                        </strong>
+                      </span>
+                    </div>
+                    <p className="panel-footnote">
+                      {w.realizedPositionCount ?? w.supportedPositionCount}{" "}
+                      eligible positions · {w.excludedPositionCount} excluded
+                    </p>
+                  </>
+                ) : !data ? (
+                  <>
+                    <div className="mobile-trader-heading">
+                      <span className="rank-number" data-pending="true">
+                        Rank
+                      </span>
+                      <span className="trader-identity" data-pending="true">
+                        Wallet pending
+                      </span>
+                    </div>
+                    <div className="mobile-trader-value">
+                      <span className="number" data-pending="true">
+                        PnL pending
+                      </span>
+                    </div>
+                    <div className="mobile-pool-stats">
+                      {["ROI", "Trades", "Volume", "Best sale"].map((label) => (
+                        <span key={label}>
+                          {label}
+                          <strong data-pending="true">Pending</strong>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="panel-footnote" data-pending="true">
+                      Eligible positions pending
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </>
         {data && !data.items.length && !loading && (
           <div className="empty-state">
             <h3>No qualifying traders in this window</h3>
             <p>
-              Try the All window or a lower minimum. Only saved, supported
-              positions qualify.
+              Try a wider window or a lower minimum. Realized PnL requires
+              observed purchase basis; missing history is not assigned zero
+              cost.
             </p>
           </div>
         )}
-        {data && (
-          <ProductPagination
-            offset={offset}
-            total={data.total}
-            nextOffset={data.nextOffset}
-            onPage={(n) => set({ offset: String(n) })}
-            loading={loading}
-          />
-        )}
+        <ProductPagination
+          offset={offset}
+          total={data?.total ?? 0}
+          nextOffset={data?.nextOffset ?? null}
+          onPage={(n) => set({ offset: String(n) })}
+          loading={loading}
+        />
       </section>
     </div>
   );

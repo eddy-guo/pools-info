@@ -3,7 +3,6 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
-import { RowsSkeleton } from "./skeletons";
 import { Eth, explorer, utc } from "./live-ui";
 import styles from "./trade-stream.module.css";
 const subscribeClock = (notify: () => void) => {
@@ -157,10 +156,35 @@ export function TradeStream({ poolId }: { poolId?: string }) {
           </button>
         )}
       </div>
-      {!data && !current?.error && (
-        <RowsSkeleton rows={3} label="Loading recent trades" />
-      )}
       <div className={`activity-list ${styles.events}`}>
+        {!data &&
+          !current?.error &&
+          Array.from({ length: 3 }, (_, index) => (
+            <div
+              className={`stream-event ${styles.row}`}
+              key={index}
+              aria-hidden="true"
+            >
+              <div className={styles.top}>
+                <strong data-pending="true">Token pending</strong>
+                <span data-pending="true">Side</span>
+                <span className="number" data-pending="true">
+                  Amount pending
+                </span>
+              </div>
+              <div className={styles.meta}>
+                <span data-pending="true">Tx initiator pending</span>
+                <time data-pending="true">Time pending</time>
+              </div>
+            </div>
+          ))}
+        {data && !data.events.length && (
+          <p className={styles.note}>
+            {coverage?.state === "uninitialized"
+              ? "The collector is starting. Trades appear after the first saved capture."
+              : "No swaps in the saved recent window. Checking continues while this page is visible."}
+          </p>
+        )}
         {data?.events.map((event) => (
           <div
             className={`stream-event ${styles.row}`}
@@ -209,13 +233,6 @@ export function TradeStream({ poolId }: { poolId?: string }) {
           </div>
         ))}
       </div>
-      {data && !data.events.length && (
-        <p className={styles.note}>
-          {coverage?.state === "uninitialized"
-            ? "The collector is starting. Trades appear after the first saved capture."
-            : "No swaps in the saved recent window. Checking continues while this page is visible."}
-        </p>
-      )}
       <p className={styles.note}>
         {coverage?.throughBlock != null && coverage?.asOf ? (
           <>

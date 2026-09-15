@@ -174,7 +174,7 @@ export function parseRequest(input: string): ReadRequest {
   const window = choice(
     "window",
     ["1h", "6h", "24h", "7d", "30d", "All"] as const,
-    route === "profile" || route === "leaderboard" ? "All" : "24h",
+    route === "leaderboard" ? "7d" : route === "profile" ? "All" : "24h",
   );
   const offsetRaw = url.searchParams.get("offset") ?? "0",
     minRaw = url.searchParams.get("minTrades") ?? "10";
@@ -197,7 +197,7 @@ export function parseRequest(input: string): ReadRequest {
     sort: choice(
       "sort",
       ["volume", "change", "launch", "liquidity"] as const,
-      "volume",
+      "launch",
     ),
     direction: choice("direction", ["asc", "desc"] as const, "desc"),
     view: choice(

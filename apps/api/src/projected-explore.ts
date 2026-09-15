@@ -33,6 +33,10 @@ export async function readProjectedExplore(
   }
   if (options.view === "gainers") conditions.push("m.change>0");
   if (options.view === "crowd") conditions.push("false");
+  const sort = options.view === "new" ? "launch" : (options.sort ?? "launch");
+  if (sort === "volume") conditions.push("m.volume IS NOT NULL");
+  if (sort === "liquidity") conditions.push("m.liquidity_wei IS NOT NULL");
+  if (sort === "change") conditions.push("m.change IS NOT NULL");
   const from = `${catalogCte}, flow AS (
     SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id
   ), metrics AS (
@@ -55,7 +59,6 @@ export async function readProjectedExplore(
   const total = Number(count.count),
     offset = options.offset ?? 0,
     limit = options.limit ?? 25;
-  const sort = options.view === "new" ? "launch" : (options.sort ?? "volume");
   const column = {
       launch: "launch_block",
       volume: "volume",

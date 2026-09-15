@@ -150,7 +150,7 @@ test("same wallet aggregates exact supported positions, excludes unknown basis a
   assert.equal(profile.curve.at(-1)!.wei, "60");
   const explore = exploreAnalytics(model, { sort: "volume", limit: 1 });
   assert.equal(explore.items[0].id, word(1));
-  assert.equal(explore.total, 5);
+  assert.equal(explore.total, 4);
   const watchlist = exploreAnalytics(model, {
     view: "watchlist",
     ids: [word(4)],
@@ -159,7 +159,7 @@ test("same wallet aggregates exact supported positions, excludes unknown basis a
   assert.equal(watchlist.items[0].id, word(4));
   assert.equal(exploreAnalytics(model, { view: "crowd" }).items.length, 0);
   assert.equal(
-    exploreAnalytics(model, { sort: "volume", offset: 4 }).items[0].processed,
+    exploreAnalytics(model, { sort: "launch", offset: 4 }).items[0].processed,
     false,
   );
   assert.equal(model.coverage.processedPools, 4);
@@ -264,5 +264,41 @@ test("mixed cutoffs stay explicit and conflicting log identities are rejected", 
   assert.throws(
     () => buildAnalyticsModel([catalog(old)], [old]),
     /Conflicting analytics trade/,
+  );
+});
+
+test("launch explorer defaults to newest and market sorts exclude missing values but retain zero", () => {
+  const saved = publication(1, alice, [["buy", "100", "10", 1000]]);
+  saved.liquidityWei = "0";
+  const missing = {
+    ...catalog(saved),
+    id: word(2),
+    token: address(2),
+    launchBlock: 200,
+    launchedAt: 200,
+  };
+  const model = buildAnalyticsModel([catalog(saved), missing], [saved]);
+  assert.equal(exploreAnalytics(model).items[0].id, missing.id);
+  assert.equal(exploreAnalytics(model).total, 2);
+  for (const direction of ["asc", "desc"] as const) {
+    for (const sort of ["volume", "liquidity", "change"] as const) {
+      const result = exploreAnalytics(model, { sort, direction });
+      assert.equal(result.total, 1, `${sort} filters unknown values`);
+      assert.equal(result.items[0].id, word(1));
+      assert.equal(result.nextOffset, null);
+    }
+  }
+  assert.equal(
+    exploreAnalytics(model, { sort: "volume", window: "1h" }).items[0].stats
+      .volumeWei,
+    "0",
+  );
+  assert.equal(
+    exploreAnalytics(model, { sort: "liquidity" }).items[0].stats.liquidityWei,
+    "0",
+  );
+  assert.equal(
+    exploreAnalytics(model, { sort: "volume", q: "no such token" }).total,
+    0,
   );
 });

@@ -952,7 +952,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#0B0B0E"/></svg>',
     }),
   );
-  await page.goto("/traders/");
+  await page.goto("/traders/?window=All");
   await expect(page.getByRole("button", { name: /Audit traders/ })).toHaveCount(
     0,
   );
@@ -1232,7 +1232,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
     if (r.url().includes("/accounting/") || r.method() === "POST")
       unexpected.push(r.url());
   });
-  await page.goto("/traders/");
+  await page.goto("/traders/?window=All");
   await expect(page.locator(".network-subnav .capture-time")).toHaveAttribute(
     "title",
     new Date(board.coverage.asOf * 1000).toISOString(),

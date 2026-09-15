@@ -87,14 +87,17 @@ function observedBars(observed: ObservedMarket, interval: number): Candle[] {
 export function Candles(
   props:
     | { market: ChainMarket; snapshot: ChainSnapshot }
-    | { observed: ObservedMarket },
+    | { observed: ObservedMarket }
+    | { poolId: string; pending: boolean },
 ) {
   const market = "market" in props ? props.market : null;
   const snapshot = "snapshot" in props ? props.snapshot : null;
   const observed = "observed" in props ? props.observed : null;
-  const id = market?.id ?? observed!.poolId;
+  const pending = "pending" in props && props.pending;
+  const id =
+    market?.id ?? observed?.poolId ?? ("poolId" in props ? props.poolId : "");
   const toTimestamp =
-    snapshot?.toTimestamp ?? observed!.coverage.cutoff?.asOf ?? 0;
+    snapshot?.toTimestamp ?? observed?.coverage.cutoff?.asOf ?? 0;
   // The server preview must not accept selections before React can retain them.
   const hydrated = useSyncExternalStore(
     noHydrationUpdates,
@@ -115,7 +118,9 @@ export function Candles(
     () =>
       market && snapshot
         ? buildCandles(market, snapshot, candleIntervals[interval])
-        : observedBars(observed!, candleIntervals[interval]),
+        : observed
+          ? observedBars(observed, candleIntervals[interval])
+          : [],
     [market, snapshot, observed, interval],
   );
   const active = bars.find((b) => b.time === focused) ?? bars.at(-1);
@@ -142,7 +147,7 @@ export function Candles(
         horzLines: { color: visualTheme.surface4 },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: visualTheme.line },
+      rightPriceScale: { borderColor: visualTheme.line, minimumWidth: 120 },
       timeScale: {
         borderColor: visualTheme.line,
         timeVisible: true,
@@ -253,7 +258,7 @@ export function Candles(
             Candle interval
             <select
               aria-label="Candle interval"
-              disabled={!hydrated}
+              disabled={!hydrated || pending}
               value={interval}
               onChange={(e) => {
                 setInterval(e.target.value as typeof interval);
@@ -270,39 +275,48 @@ export function Candles(
         </div>
       </div>
       <div className="candle-readout" aria-live="off">
-        {active ? (
-          <>
-            <span>{utc(active.time)}</span>
-            {(
-              [
-                ["O", active.open],
-                ["H", active.high],
-                ["L", active.low],
-                ["C", active.close],
-              ] as const
-            ).map(([name, value]) => (
-              <span key={name}>
-                {name}{" "}
-                {metric === "Price" ? (
-                  <Price wei={value.toString()} />
-                ) : (
-                  <Eth wei={chartValue(value, market, metric).toString()} />
-                )}
-              </span>
-            ))}
-            <span>
-              V <Eth wei={active.volume.toString()} />
+        <>
+          <span data-pending={pending}>
+            {active
+              ? utc(active.time)
+              : pending
+                ? "Pending observation"
+                : "No observed candles in the loaded history"}
+          </span>
+          {(
+            [
+              ["O", active?.open],
+              ["H", active?.high],
+              ["L", active?.low],
+              ["C", active?.close],
+            ] as const
+          ).map(([name, value]) => (
+            <span key={name}>
+              {name}{" "}
+              {metric === "Price" ? (
+                <Price wei={value?.toString()} pending={pending} />
+              ) : (
+                <Eth
+                  wei={
+                    value == null
+                      ? undefined
+                      : chartValue(value, market, metric).toString()
+                  }
+                  pending={pending}
+                />
+              )}
             </span>
-          </>
-        ) : (
-          <span>No observed candles in the loaded history</span>
-        )}
+          ))}
+          <span>
+            V <Eth wei={active?.volume.toString()} pending={pending} />
+          </span>
+        </>
       </div>
       <div
         className="interactive-chart"
         ref={container}
         role="img"
-        aria-busy={!hydrated}
+        aria-busy={!hydrated || pending}
         aria-label={`${metric} candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect.`}
         tabIndex={hydrated ? 0 : -1}
         onKeyDown={(e) => {
@@ -334,7 +348,7 @@ export function Candles(
           {Object.keys(ranges).map((r) => (
             <button
               key={r}
-              disabled={!hydrated}
+              disabled={!hydrated || pending}
               aria-pressed={range === r}
               onClick={() => {
                 setRange(r as keyof typeof ranges);
@@ -347,7 +361,7 @@ export function Candles(
         </div>
         <button
           className="text-button"
-          disabled={!hydrated}
+          disabled={!hydrated || pending}
           onClick={() => {
             api.current?.chart.timeScale().fitContent();
             if (bars.length < 40)

@@ -19,22 +19,36 @@ export const utc = (seconds: number) =>
 export function Eth({
   wei,
   signed = false,
+  pending = false,
 }: {
   wei: string | null | undefined;
   signed?: boolean;
+  pending?: boolean;
 }) {
-  if (wei === null || wei === undefined) return <Unavailable />;
-  const n = Number(wei) / 1e18;
+  const known = wei !== null && wei !== undefined;
+  const n = known ? Number(wei) / 1e18 : null;
   return (
     <span
-      className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
-      title={`${wei} wei`}
+      className={`number ${!known ? "muted unavailable" : signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
+      title={known ? `${wei} wei` : "Not collected yet"}
+      data-pending={pending}
+      aria-label={
+        !known && !pending ? "Unavailable: Not collected yet" : undefined
+      }
     >
-      {signed && n > 0 ? "+" : ""}
-      {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
-        n,
-      )}{" "}
-      ETH
+      {pending ? (
+        "Pending"
+      ) : n === null ? (
+        "N/A"
+      ) : (
+        <>
+          {signed && n > 0 ? "+" : ""}
+          {new Intl.NumberFormat("en-US", {
+            maximumSignificantDigits: 6,
+          }).format(n)}{" "}
+          ETH
+        </>
+      )}
     </span>
   );
 }
@@ -57,15 +71,21 @@ export function Stat({
   label,
   children,
   note,
+  pending = false,
 }: {
   label: string;
   children: React.ReactNode;
   note?: string;
+  pending?: boolean;
 }) {
   return (
     <div className="stat">
       <span>{label}</span>
-      <strong>{children}</strong>
+      <strong>
+        <span data-pending={pending}>
+          {pending && children == null ? "Pending" : children}
+        </span>
+      </strong>
       {note && <small>{note}</small>}
     </div>
   );

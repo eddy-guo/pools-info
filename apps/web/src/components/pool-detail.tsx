@@ -21,7 +21,7 @@ import {
   useMarket,
   utc,
 } from "./live-ui";
-import { PageSkeleton, SkeletonLine, RowsSkeleton } from "./skeletons";
+import { SkeletonLine, RowsSkeleton } from "./skeletons";
 import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
@@ -40,7 +40,10 @@ export function PoolDetail({ id }: { id: string }) {
     refresh,
     refreshing,
   } = useMarket(id, params.get("launch"));
-  const { audits } = useLive();
+  const { audits, snapshot: initialSnapshot } = useLive();
+  const [preloadedIds] = useState(
+    () => new Set(initialSnapshot.markets.map((market) => market.id)),
+  );
   const saved = useProduct<{
     name: string;
     symbol: string;
@@ -70,6 +73,46 @@ export function PoolDetail({ id }: { id: string }) {
   const m = usePublished ? publishedMarket : loadedMarket;
   const s = usePublished ? publication!.snapshot : loadedSnapshot;
   const [tab, setTab] = useState("Top traders");
+  if (!preloadedIds.has(id)) {
+    const pool =
+      savedIdentity || m
+        ? {
+            poolId: id,
+            name: savedIdentity?.name ?? m?.name,
+            symbol: savedIdentity?.symbol ?? m?.symbol,
+            token: savedIdentity?.token ?? m?.token,
+            imageUrl: savedIdentity?.imageUrl,
+            launch:
+              "launch" in (savedIdentity ?? {})
+                ? (savedIdentity as ObservedPoolIdentity).launch
+                : m
+                  ? {
+                      timestamp: m.launchedAt,
+                      transactionHash: m.launchTx,
+                      transactionInitiator: m.launchSender,
+                    }
+                  : undefined,
+          }
+        : undefined;
+    return (
+      <ObservedPoolDetail
+        id={id}
+        pool={pool}
+        market={saved.data?.market}
+        accountedMarket={m}
+        snapshot={m ? s : undefined}
+        publication={publication ?? undefined}
+        audit={publication?.audit ?? audits[id]}
+        refresh={() => {
+          refresh();
+          saved.refresh();
+        }}
+        loading={loading || saved.loading || refreshing}
+        pending={!saved.data && !m && saved.loading}
+        error={saved.error ?? (error || undefined)}
+      />
+    );
+  }
   if (
     saved.data?.market &&
     saved.data.pool &&
@@ -78,6 +121,7 @@ export function PoolDetail({ id }: { id: string }) {
   )
     return (
       <ObservedPoolDetail
+        id={id}
         pool={saved.data.pool as ObservedPoolIdentity}
         market={saved.data.market}
         refresh={saved.refresh}
@@ -85,8 +129,6 @@ export function PoolDetail({ id }: { id: string }) {
         error={saved.error}
       />
     );
-  if (!m && (loading || saved.loading) && saved.data?.analytics !== null)
-    return <PageSkeleton kind="pool" title={savedIdentity?.name} />;
   if (!m)
     return (
       <div className={`page ${styles.page}`}>
@@ -169,6 +211,14 @@ export function PoolDetail({ id }: { id: string }) {
               <h1>{m.name}</h1>
               <span className={styles.symbol}>{m.symbol}</span>
               <span className={styles.mode}>INSTANT</span>
+              {holders?.complete && a && (
+                <span
+                  className="evidence-badge"
+                  title="Birth-contiguous token Transfer history reconciles with contract supply at the saved cutoff. Individual wallet exclusions still apply."
+                >
+                  Verified history
+                </span>
+              )}
             </div>
             <AddressLabel address={m.token} full />
             <div className={styles.meta}>

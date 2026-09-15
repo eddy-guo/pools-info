@@ -328,7 +328,15 @@ export function exploreAnalytics(
           (p.stats.change !== null && p.stats.change > 0)) &&
         view !== "crowd",
     );
-  const sort = view === "new" ? "launch" : (options.sort ?? "volume");
+  const sort = view === "new" ? "launch" : (options.sort ?? "launch");
+  if (sort !== "launch") {
+    const metric = {
+      volume: "volumeWei",
+      liquidity: "liquidityWei",
+      change: "change",
+    }[sort] as "volumeWei" | "liquidityWei" | "change";
+    rows = rows.filter((pool) => pool.stats[metric] !== null);
+  }
   rows = rows.sort((a, b) => {
     const x =
       sort === "launch"

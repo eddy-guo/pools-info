@@ -45,7 +45,11 @@ test("preloaded catalog preserves unprocessed launches and global sorting before
     "explore",
     new URLSearchParams("limit=1&offset=1&sort=volume"),
   )) as AnalyticsExploreResponse;
-  assert.equal(first.total, all.total);
+  assert.equal(
+    first.total,
+    all.items.filter((pool) => pool.stats.volumeWei !== null).length,
+  );
+  assert.ok(first.total < all.total);
   assert.notEqual(first.items[0].id, second.items[0].id);
   assert.ok(
     BigInt(first.items[0].stats.volumeWei!) >=
@@ -135,7 +139,7 @@ test("proxy supports backend windows and uses matching bounds and fallback defau
         new URLSearchParams(),
       )) as AnalyticsLeaderboardResponse
     ).window,
-    "All",
+    "7d",
   );
 });
 
