@@ -1,4 +1,45 @@
-# Status - 15 Sep 2026, 10:21 UTC
+# Status - 15 Sep 2026, 10:52 UTC
+
+## Priority update: consolidate, measure, then widen the leaderboard
+
+The latest user instruction supersedes the earlier Phase B sequencing below:
+1. Consolidate the existing worktrees before starting anything else.
+2. Report the distinct-block fraction of registry-pool swaps and projected CU
+   for full history and a trailing 14-day window, with writes disabled.
+3. Add explicitly flagged tier-2 swap/initiator ranking with a trailing default;
+   retain tier-3 Transfer-backed verification as a badge. Preserve exact wei,
+   the realized/basis identity, basis across windows, and canonical reconciliation.
+
+Task 1 is consolidated locally. Merge **5f89d4b** brings `wt/block-receipts`
+(`b1f3173`) into main, including migrations 010/011, broad collection/persistence,
+dated token units, pool-detail serving, block-receipt transport and the refreshed
+snapshot precedence fix. Git reported no conflicts in the actual current tree.
+The six anticipated conflict files and supervisor were reviewed against both
+parents: main's discovery-first scheduling, writer lock, sticky rate-limit stop,
+sibling drain and clean non-restarting service exit remain intact. Phase B is
+still disabled by default; no historical writer or production configuration was
+changed for consolidation.
+
+Rollup edits were saved on existing `wt/market-rollups` as WIP **3f1dbdd**
+(24 files at the actual snapshot). They were rebased onto the merged main with
+an identical patch, verified by `git range-diff`. Migration 012 and the broad
+explore/rollup work remain on that one WIP branch, not main. Its 52k-pool fixture
+still needs bounded seed batches and serving-latency verification before landing.
+The duplicate `wt/broad-reads` branch was deleted as requested.
+
+The detached phase-b, broad-reads, token-units and block-receipts worktrees are
+now redundant and may be closed. Their directories were left in place for the
+user. Only main and market-rollups need to remain. Do not create more worktrees.
+All workers are idle after the merge review; the 15-minute coordination heartbeat
+is paused during consolidation. The saved UI stash is unchanged.
+
+Validation of the merged code: `pnpm check` passed; the real local Postgres
+suite passed **85/85, zero skips**; the complete desktop/mobile browser suite
+passed **90/90, no retries**. The identical code parent `b1f3173` also passed full
+GitHub CI **34958739524**, including both container builds and smoke checks.
+Task 2 measurement and Task 3 implementation have not yet started under this
+revised sequence. No full-history Phase B activation is authorized by a merge.
+
 
 ## Operational update: 10:21 UTC - 22,439 pools and measured Phase B costs
 
