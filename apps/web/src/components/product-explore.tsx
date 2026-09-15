@@ -17,7 +17,12 @@ import {
   type AnalyticsExploreOptions,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import {
+  MAX_WATCHLIST_QUERY_POOLS,
+  parseSharedWatchlist,
+} from "@/lib/watchlist";
 import { useQuery, useWatchlist } from "./state";
+import { WatchlistControls } from "./watchlist-controls";
 import { Change, Price, Sparkline, WatchButton } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, Stat, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
@@ -41,9 +46,12 @@ export function ProductExplore() {
     "leaderboard?limit=5&window=24h&minTrades=10",
   );
   const { params, set } = useQuery(),
-    { ids } = useWatchlist(),
+    { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
-  const view = (params.get("view") ?? "all") as AnalyticsExploreOptions["view"],
+  const view = (params.get("view") ??
+      (params.has("watchlist")
+        ? "watchlist"
+        : "all")) as AnalyticsExploreOptions["view"],
     offset = Math.max(0, Number(params.get("offset") ?? 0)),
     q = params.get("q") ?? "";
   const sort = params.get("sort") ?? (view === "new" ? "launch" : "volume"),
@@ -57,7 +65,10 @@ export function ProductExplore() {
     sort,
     direction,
   });
-  if (view === "watchlist") query.set("ids", ids.join(","));
+  const shared = view === "watchlist" ? parseSharedWatchlist(params) : null;
+  const watched = shared?.ids ?? ids;
+  if (view === "watchlist")
+    query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
   const { data, loading, error, refresh } =
     useProduct<AnalyticsExploreResponse>(`explore?${query}`);
   return (
@@ -175,7 +186,14 @@ export function ProductExplore() {
                 <button
                   key={key}
                   className={view === key ? "active" : ""}
-                  onClick={() => set({ view: key, offset: null, sort: null })}
+                  onClick={() =>
+                    set({
+                      view: key,
+                      watchlist: null,
+                      offset: null,
+                      sort: null,
+                    })
+                  }
                 >
                   {label}
                 </button>
@@ -229,6 +247,15 @@ export function ProductExplore() {
                 Refresh saved data
               </button>
             </div>
+            {view === "watchlist" && (
+              <WatchlistControls
+                ids={watched}
+                shared={shared}
+                query={params.toString()}
+                save={add}
+                openPersonal={() => set({ watchlist: null, offset: null })}
+              />
+            )}
             {loading && data && (
               <span className="sr-only" role="status">
                 Updating saved pools
@@ -395,10 +422,23 @@ export function ProductExplore() {
             )}
             {data && !data.items.length && !loading && (
               <div className="empty-state">
-                <h3>No pools match these filters</h3>
+                <h3>
+                  {view === "watchlist" && !watched.length
+                    ? shared
+                      ? "This shared watchlist cannot be displayed"
+                      : "Your watchlist starts here"
+                    : shared
+                      ? "No shared pools match these filters"
+                      : "No pools match these filters"}
+                </h3>
                 <p>
-                  Try another token or select All. Unprocessed launches are
-                  included in the catalog.
+                  {view === "watchlist" && !watched.length
+                    ? shared
+                      ? "Ask for a new link, or open your own watchlist."
+                      : "Star pools on Explore to save them in this browser."
+                    : shared
+                      ? "Try clearing the filter. Shared pools must be in the saved catalog to appear here."
+                      : "Try another token or select All. Unprocessed launches are included in the catalog."}
                 </p>
               </div>
             )}

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useSyncExternalStore } from "react";
+import { normalizePoolIds, parseSavedWatchlist } from "@/lib/watchlist";
 const subscribe = (callback: () => void) => {
   window.addEventListener("popstate", callback);
   return () => window.removeEventListener("popstate", callback);
@@ -36,35 +37,50 @@ function readLocal(key: string) {
   }
 }
 function writeLocal(key: string, value: string) {
+  let saved = false;
   try {
     localStorage.setItem(key, value);
+    saved = true;
   } catch {
     /* Storage may be unavailable in private browsers. */
   }
   window.dispatchEvent(new Event("pools-preferences"));
+  return saved;
 }
+const savedWatchlist = () =>
+  readLocal("poolsinfo.watchlist.v1") || readLocal("pools:watchlist");
 export function useWatchlist() {
   const value = useSyncExternalStore(
     subscribePrefs,
     // Retain existing stars when adopting the design system's versioned key.
-    () => readLocal("poolsinfo.watchlist.v1") || readLocal("pools:watchlist"),
+    savedWatchlist,
     empty,
   );
-  let ids: string[] = [];
-  try {
-    const parsed: unknown = JSON.parse(value || "[]");
-    if (Array.isArray(parsed))
-      ids = parsed.filter((id): id is string => typeof id === "string");
-  } catch {
-    /* Ignore a malformed device preference. */
-  }
+  const ids = parseSavedWatchlist(value);
   return {
     ids,
-    toggle: (id: string) =>
+    toggle: (id: string) => {
+      const normalized = normalizePoolIds([id])[0];
+      if (!normalized) return false;
+      // Read at the interaction boundary so another tab's latest stars survive.
+      const current = parseSavedWatchlist(savedWatchlist());
+      return writeLocal(
+        "poolsinfo.watchlist.v1",
+        JSON.stringify(
+          current.includes(normalized)
+            ? current.filter((v) => v !== normalized)
+            : [...current, normalized],
+        ),
+      );
+    },
+    add: (incoming: readonly string[]) =>
       writeLocal(
         "poolsinfo.watchlist.v1",
         JSON.stringify(
-          ids.includes(id) ? ids.filter((v) => v !== id) : [...ids, id],
+          normalizePoolIds([
+            ...parseSavedWatchlist(savedWatchlist()),
+            ...incoming,
+          ]),
         ),
       ),
   };
