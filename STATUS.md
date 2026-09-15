@@ -1,4 +1,59 @@
-# Status - 15 Sep 2026, 09:40 UTC
+# Status - 15 Sep 2026, 10:07 UTC
+
+## Operational update: 10:07 UTC - 17,752 pools, Phase B still isolated
+
+Luna independently measured the public status API at these exact timestamps:
+
+| Metric | 10:05:22.188 UTC | 10:06:17.555 UTC |
+| --- | ---: | ---: |
+| v2 cursor | 29,249,668 | 29,274,668 |
+| indexed pools | 17,464 | 17,752 |
+| factory images | 14,265 | 14,539 |
+| pools with v2 evidence | 17,163 | 17,451 |
+| v1/v2 overlap | 0 | 0 |
+
+The interval is 25,000 blocks / 55.367 seconds, **451.5 blocks/sec**.
+Images cover **81.90% of the current discovered set**, not a final fraction.
+V1 remains 62,923,934 with its original hash and 07:26:44.328 UTC timestamp.
+`/ready` returned HTTP 200 at 10:06:26 UTC. Phase A is still incomplete; the
+overlap region above 62,625,935 has not yet been tested in production.
+
+Railway deployment `246355c8-4a9f-49e9-a8ae-5006d78e96dd` remains Active.
+At 10:06:35 a 2,500-block discovery batch added 41 pools and 40 images with
+30 HTTP requests / 178 logical calls. The 1,000-block RPC log cap is unchanged.
+Recent lag at 10:06:34 was **128 blocks**, the confirmation buffer; 191 of
+228 observed swaps were still unregistered. Analytics was publishing alongside
+it. No classified throttling, error, stop or identity conflict was present in
+the inspected bounded deployment log window. Alchemy's last-hour All errors
+filter returned no request logs around 10:04. Refreshed account-wide usage
+around 10:06 was **7,107,090 CU**, versus 6,444,538 around 09:55 and 5,394,638
+around 09:38. These totals include all workers, not just discovery.
+
+The default-off broad worker at **649b985** passed full CI **34954298767**.
+Dated token-unit evidence is now committed through **ba86346** and backed up
+on `phase-b-persistence`; root passed `pnpm check` and **75 database tests,
+zero skips**. CI **34955981383** is running. One failed expectation had omitted
+migration 011 from the migration lifecycle test; it is fixed, and the previously
+blocked lifecycle subtests now execute. Neither increment is merged or deployed.
+Read-only Alchemy probes accepted canonical hash-pinned `decimals()` and
+`totalSupply()` at blocks 63,566,573 and 38,994,681, with final header checks.
+This verifies those samples and provider capability, not every historical token.
+
+Sol is working in `.pools-info-broad-reads` on the existing pool-detail path.
+Its full-history SQL aggregation fixture covers 21,001 canonical events while
+bounding returned trades and candles. Six desktop/mobile page cases passed
+before root found one further issue: requiring token units at the global scan
+tip would blank inactive tokens after an unrelated range advances. Sol is
+reproducing and fixing this using the latest surviving dated unit observation,
+with its own block/hash/time disclosed separately from the market cutoff.
+Missing or conflicting units stay unavailable; broad data never supplies PnL.
+Final combined validation and commit are still pending. Luna has returned to
+bounded checks and is reviewing only the new token-unit evidence increment.
+
+The existing **15-minute heartbeat** remains active. Root retains production
+changes and integration. Phase B activation remains gated on Phase A completion;
+its historical request volume and total CU remain unmeasured. The UI stash
+`f56d87fb7c83fcdf0bffbd1c16458ed7f3adee2f` remains untouched.
 
 ## Operational update: 09:40 UTC - launch-dense ranges, persistence CI passed
 
