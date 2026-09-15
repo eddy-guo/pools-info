@@ -160,11 +160,12 @@ export async function markAttempt(db: Client, key: string) {
     [key],
   );
 }
-/** Prioritize observed ETH activity without changing stream coverage. Bands
- * round-robin by attempt time. After thirty minutes a global oldest-attempt
- * rescue lane overrides every band, including newly arrived high-volume pools.
- * A finite waiting set therefore cannot be displaced forever by the top band.
- * This is an attempt-age guarantee, not a completion/throughput deadline.
+/** Prioritize observed ETH activity without changing stream coverage. Rank
+ * bands weight elapsed waiting time 64 / 16 / 4 / 1. Each attempt resets that
+ * stream's score; unserved lower bands continue aging instead of an overdue
+ * backlog disabling priority globally. Within a band the oldest waiting stream
+ * always wins. A finite queue with continuing positive-rate attempts progresses
+ * in every band; weights express attempt preference, not CU shares or deadlines.
  * Swap liquidity is not comparable across token units; only published ETH
  * liquidity is used. Missing observations stay NULL, distinct from observed 0.
  */
@@ -231,15 +232,16 @@ export async function nextPoolGroup(
       WHERE s.chain_id=4663 AND s.kind='pool'
     ), banded AS MATERIALIZED (
       SELECT *,CASE WHEN activity_rank<=500 THEN 0 WHEN activity_rank<=2000 THEN 1 WHEN activity_rank<=10000 THEN 2 ELSE 3 END AS band,
-        CASE WHEN attempted_at='epoch'::timestamptz THEN updated_at ELSE attempted_at END AS waiting_since,
-        (CASE WHEN attempted_at='epoch'::timestamptz THEN updated_at ELSE attempted_at END)<statement_timestamp()-interval '30 minutes' AS overdue FROM ranked
+        CASE WHEN attempted_at='epoch'::timestamptz THEN updated_at ELSE attempted_at END AS waiting_since FROM ranked
+    ), weighted AS MATERIALIZED (
+      SELECT *,greatest(0,extract(epoch FROM statement_timestamp()-waiting_since)) *
+        (CASE band WHEN 0 THEN 64 WHEN 1 THEN 16 WHEN 2 THEN 4 ELSE 1 END) AS priority FROM banded
     ), seed AS (
-      SELECT * FROM banded ORDER BY overdue DESC,
-        CASE WHEN overdue THEN waiting_since END ASC,band,attempted_at,activity_rank LIMIT 1
+      SELECT * FROM weighted ORDER BY priority DESC,band,waiting_since,activity_rank LIMIT 1
     ) SELECT s.*,(SELECT coalesce(bool_or(conflict),false) FROM canonical) AS evidence_conflict
-      FROM banded s CROSS JOIN seed
+      FROM weighted s CROSS JOIN seed
       WHERE s.band=seed.band AND coalesce(s.cursor_block+1,s.start_block)=coalesce(seed.cursor_block+1,seed.start_block)
-      ORDER BY (s.stream_key=seed.stream_key) DESC,s.overdue DESC,s.attempted_at,s.activity_rank LIMIT $1`,
+      ORDER BY (s.stream_key=seed.stream_key) DESC,s.waiting_since,s.activity_rank LIMIT $1`,
     [limit],
   );
   if (rows.rows.some((r) => r.evidence_conflict))

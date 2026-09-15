@@ -187,6 +187,10 @@ async function database(t: TestContext) {
       evidence: { deep: "retained" },
       events: [],
     });
+  // Equal waiting ages isolate canonical activity rank from within-band RR.
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp()-interval '4 hours' WHERE kind='pool'",
+  );
   const saved = await cursors(db);
   await ensureBroadStream(db);
   return { db, saved, schema };

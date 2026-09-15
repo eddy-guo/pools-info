@@ -60,6 +60,9 @@ test("deep scheduler starts with the busiest stored canonical pool rather than k
     "INSERT INTO recent_swaps(chain_id,batch_end,pool_id,token,tx_hash,log_index,block_number,block_hash,timestamp,transaction_sender,amount0,amount1,eth_wei,token_raw,side) VALUES(4663,200,$1,$2,$3,0,101,$4,1001,$2,$5,'100',$6,'100','buy')",
     [word(4), address(4), word(4000), word(101), "-" + volume, volume],
   );
+  await db.query(
+    "UPDATE indexer_streams SET updated_at=statement_timestamp()-interval '4 hours' WHERE kind='pool'",
+  );
   assert.equal((await nextPoolGroup(db, 1))[0].poolId, word(4));
   // Adjacent values above 2^53 must not collapse to a floating point tie.
   await db.query(
@@ -79,7 +82,7 @@ test("deep scheduler starts with the busiest stored canonical pool rather than k
   // Losing the owned recent range removes its priority, even with a stale tip.
   await db.query("DELETE FROM recent_batches WHERE stream_key='swaps'");
   await db.query(
-    "UPDATE indexer_streams SET attempted_at='epoch' WHERE kind='pool'",
+    "UPDATE indexer_streams SET attempted_at='epoch',updated_at=statement_timestamp()-interval '4 hours' WHERE kind='pool'",
   );
   assert.equal((await nextPoolGroup(db, 1))[0].poolId, word(1));
   const publication = async (i: number, liquidity: string | null) => {
@@ -171,8 +174,51 @@ test("deep scheduler starts with the busiest stored canonical pool rather than k
     performance.now() - started < 3000,
     "52k selection must complete within the existing API-sized budget",
   );
-  // All overdue bands use global age before rank. Repeated top-band demand
-  // cannot displace this finite queue of low-ranked streams.
+  // A realistic 40k lower-band queue has waited four hours. After an initial
+  // high-band pass, weighted five-minute high-band waiting still beats that
+  // overdue backlog, without needing to drain every lower pool first.
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp() WHERE kind='pool'",
+  );
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp()-interval '4 hours' WHERE kind='pool' AND pool_id>$1",
+    [word(12004)],
+  );
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp()-interval '5 minutes' WHERE kind='pool' AND pool_id<=$1",
+    [word(500)],
+  );
+  const highAttempts = new Set<string>();
+  for (let round = 0; round < 4; round++) {
+    const selected = await nextPoolGroup(db, 200);
+    assert.ok(selected.every((pool) => BigInt(pool.poolId!) <= 501n));
+    selected.forEach((pool) => highAttempts.add(pool.key));
+    for (const pool of selected) await markAttempt(db, pool.key);
+  }
+  assert.equal(highAttempts.size, 500);
+  const lower = await nextPoolGroup(db, 20);
+  assert.equal(lower[0].poolId, word(12005));
+  for (const pool of lower) await markAttempt(db, pool.key);
+  assert.equal(lower.length, 20);
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp()-interval '5 minutes' WHERE stream_key=$1",
+    ["pool:" + word(3)],
+  );
+  assert.equal((await nextPoolGroup(db, 1))[0].poolId, word(3));
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::integer AS n FROM indexer_streams WHERE kind='pool' AND pool_id>$1 AND attempted_at<statement_timestamp()-interval '3 hours'",
+        [word(12004)],
+      )
+    ).rows[0].n,
+    39980,
+  );
+  // Lower bands still progress through a finite oldest-waiting queue when
+  // higher bands have recently been served. No fixed wall-clock phase is used.
+  await db.query(
+    "UPDATE indexer_streams SET attempted_at=statement_timestamp() WHERE kind='pool'",
+  );
   for (let i = 52000; i <= 52004; i++)
     await db.query(
       "UPDATE indexer_streams SET attempted_at=statement_timestamp()-interval '31 minutes'+$2::integer*interval '1 second' WHERE stream_key=$1",
@@ -191,6 +237,8 @@ test("deep scheduler starts with the busiest stored canonical pool rather than k
   await markAttempt(db, first.key);
   const peer = (await nextPoolGroup(db, 1))[0];
   assert.notEqual(peer.key, first.key);
+  await markAttempt(db, peer.key);
+  assert.notEqual((await nextPoolGroup(db, 1))[0].key, peer.key);
   assert.notEqual((await nextPoolGroup(db, 1))[0].poolId, word(52004));
   // Scheduling reads do not change coverage or the writer-lock implementation.
   assert.equal((await getStream(db, "pool:" + word(3))).cursor, 199);

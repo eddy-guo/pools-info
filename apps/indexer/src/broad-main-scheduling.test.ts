@@ -38,7 +38,7 @@ test("actual main preserves discovery priority, bounds broad catch-up and stops 
       proto.connect=async()=>{};
       proto.query=async(sql)=>{
         if(sql.includes("pg_try_advisory_lock")){locked=true;return {rows:[{acquired:true}]};}
-        if(sql.includes("WITH seed AS")){
+        if(sql.includes("seed AS (")){
           console.log(JSON.stringify({event:"deep_selection"}));
           if(state==="broad-catchup-run"||state==="broad-split-run")process.emit("SIGTERM");
         }
