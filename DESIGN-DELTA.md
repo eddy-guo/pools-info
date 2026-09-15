@@ -32,6 +32,16 @@ The generated `apps/web/src/app/visual-theme.css` contains the palette portion o
 
 This follow-up changes the avatar/card accent to pink and centralizes existing chart colors. It does not change chart behavior, financial calculations, component spacing, or table density. Text-ramp application and component-level contrast/weight/radius work remain separate.
 
+## Desktop pool rows and readability
+
+The desktop screener now follows the reference's measured row proportions: 62px rows, 30px token icons, 14px / weight 500 token names, 12px secondary token text, 13px prices, and weight 600 signed changes and sorting actions. The metadata, liquidity, holder count and creator columns use their distinct shared neutral tokens. Related table/filter literals now reference equivalent shared colors. Existing panel, card and control radii remain unchanged.
+
+These density changes are scoped to `.desktop-pools`. The token icon selector covers both the original avatar and the new `PoolImage` wrapper. Coverage labels and timestamps remain present; their line boxes and the watch-button display were adjusted to avoid inflating the reference row height. Mobile cards retain their separate typography and touch targets.
+
+Production-build browser validation at 1440 x 1000 measured eight visible rows at exactly 62px, token names at 14px / 500, secondary text at 12px / `rgb(154, 154, 164)`, icons at 30 x 30, and signed changes at 14px / 600. The page has no viewport overflow. Matching-viewport screenshots: `/tmp/pools-rows-before.png`, `/tmp/pools-rows-reference.png`, and `/tmp/pools-rows-after.png`. The final screenshot uses the built application without injected preview CSS. A manual 500px viewport check also confirmed stacked mobile cards, hidden desktop tables, 44px watch controls and no horizontal page overflow.
+
+The combined production build and four token-image desktop/mobile E2E checks passed in the parallel image task. Broader responsive regression checks remain with the root task. This increment changes no component markup, query behavior or financial calculations. The coverage notice and double toolbar still cause the largest page-level difference from the reference and are deliberately left for a separate layout decision.
+
 ---
 
 Extracted from `~/Downloads/Poolsinfo Design System/poolsinfo.html` and compared against `apps/web/src/app/globals.css` + components, 15 Sep 2026.
@@ -57,29 +67,29 @@ This is why the UI drifts no matter how carefully components are written. Fix th
 
 The design's two most-used colours are **missing entirely** from the implementation.
 
-| Design colour | Uses | Role | In impl? |
-|---|---|---|---|
-| `#9a9aa4` | **83** | secondary text | ❌ **missing** |
-| `#8a8a94` | 83 | muted text | ✅ `--muted` |
-| `#f2f2f5` | 61 | primary text | ✅ `--text` |
-| `#b4b4be` | **51** | bright secondary | ❌ **missing** |
-| `#7a7a85` | 12 | faint | ❌ (impl has `#777781`) |
+| Design colour | Uses   | Role             | In impl?                |
+| ------------- | ------ | ---------------- | ----------------------- |
+| `#9a9aa4`     | **83** | secondary text   | ❌ **missing**          |
+| `#8a8a94`     | 83     | muted text       | ✅ `--muted`            |
+| `#f2f2f5`     | 61     | primary text     | ✅ `--text`             |
+| `#b4b4be`     | **51** | bright secondary | ❌ **missing**          |
+| `#7a7a85`     | 12     | faint            | ❌ (impl has `#777781`) |
 
 The design runs a **five-step text ramp**: `f2f2f5 → b4b4be → 9a9aa4 → 8a8a94 → 7a7a85`.
 The implementation has three, and is missing the two most-used steps.
 
 Same story for surfaces and lines:
 
-| Design | Uses | Role | In impl? |
-|---|---|---|---|
-| `#22222a` | 37 | raised border | ❌ missing |
-| `#1a1a1f` | 28 | line | ✅ `--line` |
-| `#101014` | 26 | panel raised | ✅ |
-| `#17171c` | 25 | grid / subtle line | ❌ missing |
-| `#0e0e11` | 23 | panel | ✅ |
-| `#131317` | 20 | surface step | ❌ missing |
-| `#33333d` | 19 | hover border | ❌ missing (hardcoded in `candles.tsx` only) |
-| `#1c1c22` · `#1e1e25` · `#26262e` · `#2a2a33` · `#3a3a44` | 6–13 each | elevation steps | ❌ missing |
+| Design                                                    | Uses      | Role               | In impl?                                     |
+| --------------------------------------------------------- | --------- | ------------------ | -------------------------------------------- |
+| `#22222a`                                                 | 37        | raised border      | ❌ missing                                   |
+| `#1a1a1f`                                                 | 28        | line               | ✅ `--line`                                  |
+| `#101014`                                                 | 26        | panel raised       | ✅                                           |
+| `#17171c`                                                 | 25        | grid / subtle line | ❌ missing                                   |
+| `#0e0e11`                                                 | 23        | panel              | ✅                                           |
+| `#131317`                                                 | 20        | surface step       | ❌ missing                                   |
+| `#33333d`                                                 | 19        | hover border       | ❌ missing (hardcoded in `candles.tsx` only) |
+| `#1c1c22` · `#1e1e25` · `#26262e` · `#2a2a33` · `#3a3a44` | 6–13 each | elevation steps    | ❌ missing                                   |
 
 **Twelve neutrals missing.** A design with a graduated ramp rendered with 6 flat values reads as cheap regardless of layout — this is the single largest contributor to "looks off."
 
@@ -87,27 +97,27 @@ Same story for surfaces and lines:
 
 ## Defect 3 — wrong accent
 
-| | Colour | Uses in design |
-|---|---|---|
-| **Design** | `#fc72ff` (pink) | **53** |
+|                | Colour           | Uses in design            |
+| -------------- | ---------------- | ------------------------- |
+| **Design**     | `#fc72ff` (pink) | **53**                    |
 | Implementation | `#4de1c1` (teal) | primary accent everywhere |
 
 The design is built around pink. `#4de1c1` appears only 6 times in the design file — it's a minor secondary, not the primary accent.
 
 Note `--ac: {{ accent }}` is a template variable in the design source, so the accent was intended to be themeable, but every rendered instance uses `#fc72ff`.
 
-*Aside:* `#fc72ff` is Uniswap's interface pink. A colour isn't a trademark, and the design folder's Uniswap wordmark is **not** referenced in the HTML (verified: 0 occurrences), so there's no mark usage. Just be aware the palette reads as deliberately Uniswap-adjacent — which is probably the intent, and is fine as long as the wordmark stays out.
+_Aside:_ `#fc72ff` is Uniswap's interface pink. A colour isn't a trademark, and the design folder's Uniswap wordmark is **not** referenced in the HTML (verified: 0 occurrences), so there's no mark usage. Just be aware the palette reads as deliberately Uniswap-adjacent — which is probably the intent, and is fine as long as the wordmark stays out.
 
 ---
 
 ## Defect 4 — body type is one step too large
 
-| | Design | Impl |
-|---|---|---|
+|                    | Design                      | Impl              |
+| ------------------ | --------------------------- | ----------------- |
 | Dominant body size | **13px (35×) / 12px (34×)** | `font-size: 14px` |
-| Label sizes | 10px, 11px | — |
-| Headings | 14–20px | — |
-| Display | 26, 30, 32, 34px | — |
+| Label sizes        | 10px, 11px                  | —                 |
+| Headings           | 14–20px                     | —                 |
+| Display            | 26, 30, 32, 34px            | —                 |
 
 Shipping 14px where the design specifies 12–13px inflates every row, cell and label. Combined with the missing neutrals, that's most of the perceived difference.
 
@@ -128,66 +138,68 @@ Replace the `:root` block in `apps/web/src/app/globals.css`:
 
 @theme {
   /* surfaces — dark to light */
-  --color-bg:            #08080a;
-  --color-panel:         #0e0e11;
-  --color-panel-raised:  #101014;
-  --color-panel-hover:   #121216;
-  --color-surface-3:     #131317;
-  --color-surface-4:     #17171c;
-  --color-surface-5:     #1c1c22;
-  --color-surface-6:     #1e1e25;
+  --color-bg: #08080a;
+  --color-panel: #0e0e11;
+  --color-panel-raised: #101014;
+  --color-panel-hover: #121216;
+  --color-surface-3: #131317;
+  --color-surface-4: #17171c;
+  --color-surface-5: #1c1c22;
+  --color-surface-6: #1e1e25;
 
   /* lines — subtle to prominent */
-  --color-line:          #1a1a1f;
-  --color-line-strong:   #22222a;
-  --color-line-hover:    #33333d;
-  --color-line-raised:   #26262e;
-  --color-line-active:   #2a2a33;
-  --color-line-bright:   #3a3a44;
+  --color-line: #1a1a1f;
+  --color-line-strong: #22222a;
+  --color-line-hover: #33333d;
+  --color-line-raised: #26262e;
+  --color-line-active: #2a2a33;
+  --color-line-bright: #3a3a44;
 
   /* text ramp — five steps, brightest first */
-  --color-text:          #f2f2f5;
-  --color-text-2:        #b4b4be;
-  --color-text-3:        #9a9aa4;
-  --color-muted:         #8a8a94;
-  --color-faint:         #7a7a85;
+  --color-text: #f2f2f5;
+  --color-text-2: #b4b4be;
+  --color-text-3: #9a9aa4;
+  --color-muted: #8a8a94;
+  --color-faint: #7a7a85;
 
   /* semantic */
-  --color-accent:        #fc72ff;
-  --color-accent-deep:   #45184f;
-  --color-up:            #3fd68c;
-  --color-up-soft:       #7fd9a6;
-  --color-up-bg:         #06120d;
-  --color-down:          #ff6169;
-  --color-warn:          #e0b45c;
-  --color-warn-bright:   #ffc94d;
-  --color-warn-bg:       #4a3a16;
+  --color-accent: #fc72ff;
+  --color-accent-deep: #45184f;
+  --color-up: #3fd68c;
+  --color-up-soft: #7fd9a6;
+  --color-up-bg: #06120d;
+  --color-down: #ff6169;
+  --color-warn: #e0b45c;
+  --color-warn-bright: #ffc94d;
+  --color-warn-bg: #4a3a16;
 
   /* type */
   --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
-  --text-2xs:  9px;
-  --text-xs:  10px;
-  --text-sm:  11px;
-  --text-base:12px;
-  --text-md:  13px;
-  --text-lg:  14px;
-  --text-xl:  17px;
+  --text-2xs: 9px;
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-base: 12px;
+  --text-md: 13px;
+  --text-lg: 14px;
+  --text-xl: 17px;
   --text-2xl: 20px;
   --text-3xl: 26px;
   --text-4xl: 34px;
 
   /* radii */
-  --radius-xs:  3px;
-  --radius-sm:  5px;
-  --radius-md:  7px;
-  --radius-lg:  9px;
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 9px;
   --radius-xl: 10px;
-  --radius-2xl:14px;
-  --radius-3xl:16px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
 }
 
-body { font-size: 13px; }   /* was 14px */
+body {
+  font-size: 13px;
+} /* was 14px */
 ```
 
 Every existing `bg-panel`, `text-muted`, `border-line` className now resolves to the design system instead of Tailwind defaults.

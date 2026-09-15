@@ -3752,10 +3752,10 @@ main {
   height: 32px;
   min-height: var(--ctl-min);
   padding: 0 10px;
-  border: 1px solid #22222a;
+  border: 1px solid var(--color-line-strong);
   border-radius: 9px;
-  background: #101014;
-  color: #9a9aa4;
+  background: var(--color-panel-raised);
+  color: var(--color-text-3);
 }
 .filter-input input {
   width: 92px;
@@ -3770,8 +3770,8 @@ main {
   border-color: var(--ac);
 }
 .segmented {
-  background: #101014;
-  border-color: #22222a;
+  background: var(--color-panel-raised);
+  border-color: var(--color-line-strong);
   border-radius: 9px;
   padding: 2px;
   gap: 2px;
@@ -3794,22 +3794,22 @@ main {
 }
 .data-table th {
   padding: 9px 13px;
-  background: #0b0b0e;
-  border-color: #17171c;
+  background: var(--color-panel-inset);
+  border-color: var(--color-surface-4);
   font-size: 10px;
   letter-spacing: 0.04em;
   font-weight: 400;
-  color: #9a9aa4;
+  color: var(--color-text-3);
   text-transform: uppercase;
   white-space: nowrap;
 }
 .data-table td {
   padding: 13px;
-  border-color: #131317;
+  border-color: var(--color-surface-3);
   font-size: 12px;
 }
 .data-table tbody tr:hover {
-  background: #121216;
+  background: var(--color-panel-hover);
 }
 .data-table td .mono {
   font-size: 11px;
@@ -3868,7 +3868,7 @@ main {
 .cell-sub {
   margin-top: 3px;
   font-size: 10px;
-  color: #9a9aa4;
+  color: var(--color-text-3);
 }
 .creator-link {
   color: var(--muted);
@@ -3891,6 +3891,74 @@ main {
 }
 .watch.active {
   color: var(--ac);
+}
+/* Match the reference's desktop pool row density without shrinking mobile targets. */
+.desktop-pools .data-table td {
+  height: auto;
+  padding-top: 13px;
+  padding-bottom: 13px;
+  font-size: 14px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.desktop-pools .watch {
+  display: flex;
+}
+.desktop-pools .data-table td > .badge {
+  display: inline-flex;
+  line-height: 12px;
+  vertical-align: top;
+}
+.desktop-pools .data-table td > .cell-sub {
+  line-height: 14px;
+}
+.desktop-pools .token-cell {
+  gap: 11px;
+}
+.desktop-pools .token-cell > :first-child {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.desktop-pools .token-cell strong {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 500;
+}
+.desktop-pools .token-cell small {
+  display: block;
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--color-text-3);
+}
+.desktop-pools .token-cell small .mono {
+  font-size: inherit;
+}
+.desktop-pools .price {
+  font-size: 13px;
+}
+.desktop-pools .price small {
+  color: var(--color-text-3);
+}
+.desktop-pools .price sub {
+  font-size: 9.5px;
+  color: var(--color-muted);
+}
+.desktop-pools .change,
+.desktop-pools .data-table th button {
+  font-weight: 600;
+}
+.desktop-pools .data-table td:nth-child(6),
+.desktop-pools .data-table td:nth-child(7) {
+  color: var(--color-text-2);
+}
+.desktop-pools .data-table td:nth-child(8) .mono {
+  color: var(--color-muted);
+  font-size: 12.5px;
+}
+.desktop-pools .data-table td:nth-child(8) a:hover {
+  color: var(--color-accent);
 }
 .corpus-footer {
   display: flex;
