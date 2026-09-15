@@ -1,3 +1,4 @@
+import type { MarketBoundary, ObservedMarket } from "./observed-market";
 import type { CatalogPool } from "./catalog";
 import type { ChainSnapshot, ChainMarket, PoolAudit } from "./chain-types";
 import type { HolderLedger } from "./holders";
@@ -37,6 +38,17 @@ export interface AnalyticsPoolStats {
   completeWindow: boolean;
 }
 export interface AnalyticsPoolRow extends CatalogPool {
+  marketCoverage?: {
+    source: "canonical_broad" | "deep_publication";
+    startBlock: number;
+    cutoff: MarketBoundary;
+    windowStart: number;
+    indexedAt: string;
+    unitsConflict: boolean;
+    unitBasis: ObservedMarket["coverage"]["unitBasis"];
+    rawPrice: (MarketBoundary & { sqrtPriceX96: string }) | null;
+    priceBaseline: MarketBoundary | null;
+  } | null;
   processed: boolean;
   market: ChainMarket | null;
   stats: AnalyticsPoolStats;
@@ -52,7 +64,7 @@ export interface AnalyticsPoolDetail extends AnalyticsPublication {
 }
 export interface AnalyticsExploreOptions {
   window?: LiveWindow;
-  sort?: "volume" | "change" | "launch" | "liquidity";
+  sort?: "volume" | "trades" | "change" | "launch" | "liquidity";
   direction?: "asc" | "desc";
   view?: "all" | "gainers" | "new" | "crowd" | "watchlist";
   ids?: string[];
@@ -62,6 +74,7 @@ export interface AnalyticsExploreOptions {
 }
 export interface AnalyticsExploreResponse {
   coverage: AnalyticsCoverage;
+  broadMarketCutoff?: (MarketBoundary & { rebuildPending: boolean }) | null;
   items: AnalyticsPoolRow[];
   total: number;
   nextOffset: number | null;

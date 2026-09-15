@@ -412,6 +412,7 @@ export async function commitBroadGroupInTransaction(
        FROM jsonb_to_recordset($3::jsonb) AS x(token text,block bigint,"blockHash" text,timestamp bigint,decimals integer,"totalSupply" numeric,"decimalsResult" text,"totalSupplyResult" text)`,
       [expected.key, group.toBlock, JSON.stringify(group.tokenUnits)],
     );
+  await db.query("SELECT project_broad_market($1)", [group.toBlock]);
   await db.query(
     "UPDATE indexer_streams SET cursor_block=$2,cursor_hash=$3,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
     [expected.key, group.toBlock, group.blockHash],

@@ -93,8 +93,8 @@ CU; that is a dated observation, not a fresh estimate.
 
 Only main and `.pools-info-market-rollups` remain as worktrees. The four redundant
 worktrees were removed and their two helper app tasks archived. The old heartbeat
-is paused. Market WIP e7d0058 is still unmerged; its bounded 52,031-row fixture
-passed with 828.1ms serving latency and 521 pages/52,031 unique IDs.
+is paused. The market rollups work from e7d0058 is landed on the
+`fm/pools-rollups-land-p2` PR branch; see the market-rollups paragraph below.
 
 Frontend validation is complete independently of the blocked Tier-2 path.
 Lint, typecheck, unit tests and production build passed; the final full browser
@@ -129,12 +129,28 @@ sibling drain and clean non-restarting service exit remain intact. Phase B is
 still disabled by default; no historical writer or production configuration was
 changed for consolidation.
 
-Rollup edits were saved on existing `wt/market-rollups` as WIP **3f1dbdd**
-(24 files at the actual snapshot). They were rebased onto the merged main with
-an identical patch, verified by `git range-diff`. Migration 012 and the broad
-explore/rollup work remain on that one WIP branch, not main. Its 52k-pool fixture
-still needs bounded seed batches and serving-latency verification before landing.
-The duplicate `wt/broad-reads` branch was deleted as requested.
+The market rollups work (`wt/market-rollups` e7d0058: migration 012 with
+`broad_market_batches`/`buckets`/`summaries`, the broad explore serving path,
+the bounded rebuild script, the market browser suite and the screener changes)
+is rebased onto current main as one commit on the `fm/pools-rollups-land-p2`
+PR branch, resolved for main's launch-first metric sorts and compact screener
+toolbar. Every explore page now computes the full per-pool metrics for the page
+being served only: launch order selects its page's identities with a narrow
+catalog sort, trade count and volume rank on the summary flow columns before
+binding the page, and change, liquidity and the gainers view rank the
+deep-publication set. The trade-count sort is new; `sort=price` still answers
+`invalid_sort` because a catalog-wide price or change order waits for a
+per-pool latest-state rollup (follow-up). The 52k-pool fixture seeds in
+1,000-row batches, runs as the serial second phase of `pnpm test:db`, asserts
+the first metric-sorted and launch-order reads under 2,000 ms against the
+reader's 3,000 ms statement budget (the catalog-wide statement took 3.5 s on
+CI's two-vCPU container and 5.3 s with JIT, so the explore read also runs
+`jit=off`), and pages the whole 52,031-row catalog with two requests in flight
+to a null final `nextOffset` across 521 pages; the measured local and CI
+numbers are in the PR description. Broad rollups stay outside deep PnL and
+holder accounting: migration 012 touches no accounting table and broad data
+never supplies PnL. The duplicate `wt/broad-reads` branch was deleted as
+requested.
 
 The detached phase-b, broad-reads, token-units and block-receipts worktrees are
 now redundant and may be closed. Their directories were left in place for the

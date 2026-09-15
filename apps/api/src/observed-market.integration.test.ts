@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomBytes } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
 import pg from "pg";
+import { migrate } from "../../../packages/db/src/index";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { readObservedMarket } from "./observed-market-read";
@@ -32,11 +32,7 @@ test(
     try {
       await db.query(`CREATE SCHEMA ${schema}`);
       await db.query(`SET search_path TO ${schema}`);
-      const dir = new URL("../../../packages/db/migrations/", import.meta.url);
-      for (const name of (await readdir(dir))
-        .filter((n) => n.endsWith(".sql"))
-        .sort())
-        await db.query(await readFile(new URL(name, dir), "utf8"));
+      await migrate(db);
       await db.query(
         `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash) VALUES(4663,'discovery:v2','discovery',$1,$2,$3)`,
         [first, first + 29999, word(first + 29999)],

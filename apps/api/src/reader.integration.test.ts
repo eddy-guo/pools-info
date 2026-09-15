@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 import pg from "pg";
+import { migrate } from "../../../packages/db/src/index";
 import { createReader } from "./reader";
 import { parseRequest } from "./request";
 import type { ChainSnapshot } from "@pools/core";
@@ -23,14 +23,7 @@ test(
     try {
       await db.query(`CREATE SCHEMA ${schema}`);
       await db.query(`SET search_path TO ${schema}`);
-      const migrationDir = new URL(
-        "../../../packages/db/migrations/",
-        import.meta.url,
-      );
-      for (const name of (await readdir(migrationDir))
-        .filter((n) => n.endsWith(".sql"))
-        .sort())
-        await db.query(await readFile(new URL(name, migrationDir), "utf8"));
+      await migrate(db);
 
       const counts = async () =>
         ((await reader.read(parseRequest("/v1/status"))) as any).indexedPools;
@@ -157,14 +150,7 @@ test(
     try {
       await db.query(`CREATE SCHEMA ${schema}`);
       await db.query(`SET search_path TO ${schema}`);
-      const migrationDir = new URL(
-        "../../../packages/db/migrations/",
-        import.meta.url,
-      );
-      for (const name of (await readdir(migrationDir))
-        .filter((n) => n.endsWith(".sql"))
-        .sort())
-        await db.query(await readFile(new URL(name, migrationDir), "utf8"));
+      await migrate(db);
       await db.query(
         "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash) VALUES(4663,'discovery:v1','discovery',100,199,$1)",
         [word(99)],

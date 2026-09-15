@@ -281,7 +281,7 @@ test("launch explorer defaults to newest and market sorts exclude missing values
   assert.equal(exploreAnalytics(model).items[0].id, missing.id);
   assert.equal(exploreAnalytics(model).total, 2);
   for (const direction of ["asc", "desc"] as const) {
-    for (const sort of ["volume", "liquidity", "change"] as const) {
+    for (const sort of ["volume", "trades", "liquidity", "change"] as const) {
       const result = exploreAnalytics(model, { sort, direction });
       assert.equal(result.total, 1, `${sort} filters unknown values`);
       assert.equal(result.items[0].id, word(1));

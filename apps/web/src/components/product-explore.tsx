@@ -10,6 +10,7 @@ import {
   type AnalyticsLeaderboardResponse,
   type AnalyticsExploreResponse,
   type AnalyticsExploreOptions,
+  type AnalyticsPoolRow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import {
@@ -28,6 +29,23 @@ const subscribeClock = (notify: () => void) => {
 };
 const currentSeconds = () => Math.floor(Date.now() / 1000);
 const serverSeconds = () => null;
+function MarketBasis({ pool }: { pool: AnalyticsPoolRow }) {
+  const basis = pool.marketCoverage;
+  return (
+    <span
+      className="cell-sub"
+      title={
+        basis?.unitBasis
+          ? `Price units: ${basis.unitBasis.decimals} decimals at block ${basis.unitBasis.block}, ${utc(basis.unitBasis.asOf)} (${basis.unitBasis.source}).`
+          : "Normalized price units unavailable."
+      }
+    >
+      {basis
+        ? `${basis.source === "canonical_broad" ? "Broad swaps" : "Deep market"} · ${pool.stats.completeWindow ? "Covered window" : "Partial metrics"} · ${utc(basis.cutoff.asOf)}`
+        : "Market unavailable"}
+    </span>
+  );
+}
 export function ProductExplore() {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -199,6 +217,7 @@ export function ProductExplore() {
                   onChange={(e) => set({ sort: e.target.value, offset: null })}
                 >
                   <option value="volume">Volume</option>
+                  <option value="trades">Trade count</option>
                   <option value="change">Price change</option>
                   <option value="launch">Launch time</option>
                   <option value="liquidity">Liquidity</option>
@@ -252,6 +271,18 @@ export function ProductExplore() {
                 {error}
               </p>
             )}
+            <p className="panel-footnote">
+              Observed windows end at each row&apos;s dated market cutoff.
+              Coverage is partial across the catalog. Deep holders and verified
+              PnL use separate evidence. Missing metrics remain N/A; sorting by
+              a metric lists only pools with that metric.
+            </p>
+            {data?.broadMarketCutoff?.rebuildPending && (
+              <p className="panel-footnote">
+                Historical market rebuild is incomplete. The broad cutoff stops
+                before the first missing batch.
+              </p>
+            )}
             <>
               <div
                 className="table-scroll desktop-pools"
@@ -266,6 +297,7 @@ export function ProductExplore() {
                       <th>Price</th>
                       <th>{window} change</th>
                       <th>{window} volume</th>
+                      <th>{window} trades</th>
                       <th>Liquidity</th>
                       <th>Holders</th>
                       <th>Launch sender</th>
@@ -332,6 +364,15 @@ export function ProductExplore() {
                           <Eth pending={!data} wei={p?.stats.volumeWei} />
                         </td>
                         <td data-pending={!p && !data}>
+                          {p ? (
+                            <>{p.stats.trades ?? <Unavailable />}</>
+                          ) : data ? (
+                            " "
+                          ) : (
+                            "Pending"
+                          )}
+                        </td>
+                        <td data-pending={!p && !data}>
                           <Eth pending={!data} wei={p?.stats.liquidityWei} />
                         </td>
                         <td data-pending={!p && !data}>
@@ -362,7 +403,8 @@ export function ProductExplore() {
                         <td data-pending={!p && !data}>
                           {p ? (
                             <>
-                              {p.market?.series.length ? (
+                              {p.marketCoverage?.source !== "canonical_broad" &&
+                              p.market?.series.length ? (
                                 <Sparkline
                                   points={p.market.series}
                                   positive={(p.stats.change ?? 0) >= 0}
@@ -383,13 +425,11 @@ export function ProductExplore() {
                               <span className="badge">
                                 {p.processed
                                   ? "Market evidence"
-                                  : "Launch only"}
+                                  : p.marketCoverage
+                                    ? "Swaps only"
+                                    : "Launch only"}
                               </span>
-                              {p.asOf && (
-                                <small className="cell-sub">
-                                  {utc(p.asOf)}
-                                </small>
-                              )}
+                              <MarketBasis pool={p} />
                             </>
                           ) : data ? (
                             "\u00a0"
@@ -433,6 +473,7 @@ export function ProductExplore() {
                           </Link>
                           <WatchButton id={p.id} />
                         </div>
+                        <MarketBasis pool={p} />
                         <div className="mobile-pool-stats">
                           <span>
                             Price
@@ -449,6 +490,10 @@ export function ProductExplore() {
                             <strong>
                               <Eth wei={p.stats.volumeWei} />
                             </strong>
+                          </span>
+                          <span>
+                            Trades
+                            <strong>{p.stats.trades ?? <Unavailable />}</strong>
                           </span>
                           <span>
                             Change
@@ -478,14 +523,17 @@ export function ProductExplore() {
                           </span>
                         </div>
                         <div className="mobile-pool-stats">
-                          {["Price", `${window} volume`, "Change"].map(
-                            (label) => (
-                              <span key={label}>
-                                {label}
-                                <strong data-pending="true">Pending</strong>
-                              </span>
-                            ),
-                          )}
+                          {[
+                            "Price",
+                            `${window} volume`,
+                            "Trades",
+                            "Change",
+                          ].map((label) => (
+                            <span key={label}>
+                              {label}
+                              <strong data-pending="true">Pending</strong>
+                            </span>
+                          ))}
                         </div>
                       </>
                     ) : null}

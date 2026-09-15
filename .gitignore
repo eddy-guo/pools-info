@@ -11,3 +11,6 @@ playwright-report/
 .data/
 .vercel/
 *.json.tmp
+
+test-results-market/
+playwright-report-market/

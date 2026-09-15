@@ -52,7 +52,7 @@ export function productRequest(path: string[], input: URLSearchParams) {
       throw Error("Invalid search group");
     if (
       key === "sort" &&
-      !["volume", "change", "launch", "liquidity"].includes(value)
+      !["volume", "trades", "change", "launch", "liquidity"].includes(value)
     )
       throw Error("Invalid sort");
     if (key === "direction" && !["asc", "desc"].includes(value))
