@@ -19,7 +19,10 @@ export async function GET(
   }
   try {
     return Response.json(await readProduct(path, query), {
-      headers: { "Cache-Control": "private, max-age=15" },
+      headers: {
+        "Cache-Control":
+          path[0] === "following" ? "no-store" : "private, max-age=15",
+      },
     });
   } catch {
     return Response.json(

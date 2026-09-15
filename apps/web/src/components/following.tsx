@@ -6,6 +6,7 @@ import { UserRoundCheck, UserRoundPlus, X } from "lucide-react";
 import { shortAddress } from "@pools/core";
 import { Avatar } from "./ui";
 import styles from "./following.module.css";
+import { FollowActivity } from "./follow-activity";
 
 const key = "poolsinfo.following.v1";
 const changed = "poolsinfo-following-changed";
@@ -131,6 +132,7 @@ export function FollowedWallets() {
           {error}
         </p>
       )}
+      <FollowActivity addresses={addresses} />
     </section>
   );
 }

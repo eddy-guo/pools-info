@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 export type ProductDelivery = {
   source: "indexer" | "preloaded";
   notice: string | null;
@@ -55,10 +55,11 @@ export function useProduct<T>(path: string) {
     });
     return () => controller.abort();
   }, [path, attempt]);
+  const refresh = useCallback(() => setAttempt((n) => n + 1), []);
   return {
     data: state.path === path ? state.data : undefined,
     error: state.path === path ? state.error : undefined,
     loading: state.path !== path || state.pending,
-    refresh: () => setAttempt((n) => n + 1),
+    refresh,
   };
 }

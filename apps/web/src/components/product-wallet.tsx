@@ -1,4 +1,5 @@
 "use client";
+import { FollowActivity } from "./follow-activity";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -28,6 +29,7 @@ export function ProductWallet({ address }: { address: string }) {
     `wallets/${address.toLowerCase()}?window=${period}`,
   );
   const [tab, setTab] = useState("Positions"),
+    [showSignals, setShowSignals] = useState(false),
     [copied, setCopied] = useState(false),
     [card, setCard] = useState(false),
     [cardError, setCardError] = useState(false);
@@ -89,11 +91,19 @@ export function ProductWallet({ address }: { address: string }) {
             Share PnL card
           </button>
           <FeaturePreview feature="profile">Edit profile</FeaturePreview>
-          <FeaturePreview feature="copy" className="button">
-            Copy trade
-          </FeaturePreview>
+          <button
+            className="button"
+            aria-expanded={showSignals}
+            aria-controls="wallet-signals"
+            onClick={() => setShowSignals(!showSignals)}
+          >
+            {showSignals ? "Hide copy signals" : "View copy signals"}
+          </button>
         </div>
       </div>
+      {showSignals && (
+        <FollowActivity addresses={[address.toLowerCase()]} mode="wallet" />
+      )}
       {loading && !data && <CoverageSkeleton />}
       {data && (
         <ProductCoverage coverage={data.coverage} delivery={data.delivery} />

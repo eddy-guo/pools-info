@@ -214,3 +214,119 @@ test("an explicitly scoped share card cannot silently switch to global wallet Pn
     /capture unavailable/,
   );
 });
+
+test("following proxy bounds and canonicalizes explicit wallet selections", () => {
+  const a = `0x${"a".repeat(40)}`;
+  assert.equal(
+    productRequest(
+      ["following"],
+      new URLSearchParams({
+        wallets: a.toUpperCase().replace("0X", "0x"),
+        limit: "50",
+      }),
+    ).params.get("wallets"),
+    a,
+  );
+  for (const query of [
+    "wallets=bad",
+    `wallets=${a},${a}`,
+    `wallets=${a}&wallets=${a}`,
+    "limit=51",
+    "limit=0",
+    "window=All",
+  ]) {
+    assert.throws(() =>
+      productRequest(["following"], new URLSearchParams(query)),
+    );
+  }
+});
+
+test("following activity fails closed during outage instead of inventing an empty preload", async (t) => {
+  const old = process.env.INDEXER_API_URL;
+  const disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (old === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = old;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async () => new Response(null, { status: 503 }),
+  );
+  await assert.rejects(
+    readProduct(
+      ["following"],
+      new URLSearchParams({ wallets: `0x${"1".repeat(40)}` }),
+    ),
+    /Following|following/,
+  );
+});
+
+test("following proxy rejects another wallet's activity and unsupported attribution", async () => {
+  const { validateFollowingResponse } = await import("./following-response");
+  const a = `0x${"1".repeat(40)}`,
+    b = `0x${"2".repeat(40)}`,
+    h = `0x${"3".repeat(64)}`;
+  const params = new URLSearchParams({ wallets: a });
+  const response = {
+    scope: "saved_verified_positions",
+    notice: "Partial",
+    hasMore: false,
+    coverage: {
+      requestedWallets: 1,
+      returnedPools: 1,
+      asOf: 200,
+      oldestAsOf: 200,
+      generatedAt: "2026-09-15T00:00:00Z",
+      complete: false,
+      registryExhaustive: false,
+    },
+    items: [
+      {
+        id: `${h}:1`,
+        wallet: a,
+        poolId: h,
+        token: b,
+        symbol: "TOKEN",
+        decimals: 18,
+        txHash: h,
+        logIndex: 1,
+        block: 100,
+        timestamp: 100,
+        side: "buy",
+        ethWei: "9007199254740993",
+        tokenRaw: "1000000000000000000",
+        priceWei: "9007199254740993",
+        asOf: 200,
+        throughBlock: 200,
+        supported: true,
+      },
+    ],
+  };
+  assert.doesNotThrow(() => validateFollowingResponse(response, params));
+  for (const patch of [
+    { wallet: b },
+    { supported: false },
+    { ethWei: 9007199254740993 },
+    { side: "transfer" },
+    { timestamp: 201 },
+    { token: "javascript:alert(1)" },
+  ]) {
+    assert.throws(() =>
+      validateFollowingResponse(
+        { ...response, items: [{ ...response.items[0], ...patch }] },
+        params,
+      ),
+    );
+  }
+  assert.throws(() =>
+    validateFollowingResponse(
+      { ...response, items: [response.items[0], response.items[0]] },
+      params,
+    ),
+  );
+});

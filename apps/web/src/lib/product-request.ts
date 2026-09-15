@@ -1,9 +1,10 @@
+import { parseFollowingWallets } from "@pools/core";
 const wallet = /^0x[0-9a-f]{40}$/i;
 const pool = /^0x[0-9a-f]{64}$/i;
 export function productRequest(path: string[], input: URLSearchParams) {
   const endpoint = path.join("/");
   if (!(
-    ["explore", "leaderboard", "search"].includes(endpoint) ||
+    ["explore", "leaderboard", "search", "following"].includes(endpoint) ||
     (path.length === 2 &&
       ((path[0] === "wallets" && wallet.test(path[1])) ||
         (path[0] === "pools" && pool.test(path[1]))))
@@ -11,15 +12,17 @@ export function productRequest(path: string[], input: URLSearchParams) {
     throw Error("Invalid product route");
   const output = new URLSearchParams();
   const allowed =
-    endpoint === "explore"
-      ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
-      : endpoint === "leaderboard"
-        ? ["window", "minTrades", "metric", "limit", "offset"]
-        : endpoint === "search"
-          ? ["q", "group"]
-          : path[0] === "wallets" || path[0] === "pools"
-            ? ["window"]
-            : [];
+    endpoint === "following"
+      ? ["wallets", "limit"]
+      : endpoint === "explore"
+        ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
+        : endpoint === "leaderboard"
+          ? ["window", "minTrades", "metric", "limit", "offset"]
+          : endpoint === "search"
+            ? ["q", "group"]
+            : path[0] === "wallets" || path[0] === "pools"
+              ? ["window"]
+              : [];
   for (const [key, value] of input) {
     if (!allowed.includes(key) || input.getAll(key).length !== 1)
       throw Error("Invalid product query");
@@ -68,6 +71,12 @@ export function productRequest(path: string[], input: URLSearchParams) {
         (value && value.split(",").some((id) => !pool.test(id))))
     )
       throw Error("Invalid watchlist");
+    if (endpoint === "following" && key === "limit" && Number(value) > 50)
+      throw Error("Invalid following limit");
+    if (key === "wallets") {
+      output.set(key, parseFollowingWallets(value).join(","));
+      continue;
+    }
     output.set(
       key,
       ["limit", "offset", "minTrades"].includes(key)

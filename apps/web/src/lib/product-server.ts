@@ -1,3 +1,4 @@
+import { validateFollowingResponse } from "./following-response";
 import {
   buildAnalyticsModel,
   exploreAnalytics,
@@ -179,6 +180,8 @@ export async function readProduct<T>(
           !data.coverage)
       )
         throw Error("Invalid saved profile");
+      if (checked.endpoint === "following")
+        validateFollowingResponse(data, checked.params);
       return {
         ...data,
         delivery: { source: "indexer", notice: null },
@@ -187,6 +190,8 @@ export async function readProduct<T>(
       /* Keep the captured public dataset available during an outage. */
     }
   }
+  if (checked.endpoint === "following")
+    throw Error("Saved following activity is temporarily unavailable.");
   const data = await preloadedProduct(checked.endpoint, checked.params);
   if (!data) throw Error("Outside available saved coverage");
   return {
