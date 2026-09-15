@@ -11,6 +11,139 @@ import { readData } from "./reader";
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 test(
+  "Postgres: status counts exact pool identities, factory images and surviving discovery overlap",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const schema = "api_test_status_" + randomBytes(8).toString("hex");
+    const db = new pg.Client({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    await db.connect();
+    const reader = createReader(process.env.TEST_DATABASE_URL, schema);
+    try {
+      await db.query(`CREATE SCHEMA ${schema}`);
+      await db.query(`SET search_path TO ${schema}`);
+      const migrationDir = new URL(
+        "../../../packages/db/migrations/",
+        import.meta.url,
+      );
+      for (const name of (await readdir(migrationDir))
+        .filter((n) => n.endsWith(".sql"))
+        .sort())
+        await db.query(await readFile(new URL(name, migrationDir), "utf8"));
+
+      const counts = async () =>
+        ((await reader.read(parseRequest("/v1/status"))) as any).indexedPools;
+      assert.deepEqual(await counts(), {
+        total: "0",
+        withFactoryImage: "0",
+        discoveryV1: "0",
+        discoveryV2: "0",
+        discoveryV1V2Overlap: "0",
+      });
+      for (const stream of [
+        "discovery:v1",
+        "discovery:v2",
+        "discovery:candidate",
+      ]) {
+        await db.query(
+          "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash) VALUES(4663,$1,'discovery',100,299,$2)",
+          [stream, word(299)],
+        );
+        for (const end of [199, 299])
+          await db.query(
+            "INSERT INTO indexer_batches VALUES(4663,$1,$2,$3,$4,'checksum','{}')",
+            [stream, end - 99, end, word(end)],
+          );
+      }
+      for (const [id, stream, image] of [
+        [1, "discovery:v1", null],
+        [2, "discovery:v2", "ipfs://factory/two.png"],
+        [3, "discovery:v1", null],
+        [4, "discovery:candidate", "ipfs://factory/four.png"],
+        [5, "discovery:v2", "   "],
+      ] as const)
+        await db.query(
+          `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,
+            launch_sender,launched_at,source_stream,source_batch,image_url)
+          VALUES(4663,$1,$2,'Token','T',100,$3,$4,1000,$5,199,$6)`,
+          [word(id), address(id), word(id + 10), address(90), stream, image],
+        );
+      // Multiple observations of the same pool must not inflate either source count.
+      for (const end of [199, 299])
+        await db.query(
+          `INSERT INTO pool_launch_sources(chain_id,pool_id,stream_key,batch_end,image_url)
+          VALUES(4663,$1,'discovery:v2',$2,'ipfs://factory/three.png')`,
+          [word(3), end],
+        );
+      assert.equal(
+        (
+          await db.query(
+            "SELECT source_stream FROM indexed_pools WHERE pool_id=$1",
+            [word(3)],
+          )
+        ).rows[0].source_stream,
+        "discovery:v2",
+      );
+      // A recent-only pool belongs to the blended catalog, not indexed_pools.
+      await db.query(
+        "INSERT INTO recent_streams(chain_id,stream_key,start_block) VALUES(4663,'discovery',100)",
+      );
+      await db.query(
+        `INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence)
+        VALUES(4663,'discovery',100,199,$1,1000,'checksum','{}')`,
+        [word(199)],
+      );
+      await db.query(
+        `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch,image_url)
+        VALUES(4663,$1,$2,'Recent','R',100,$3,$4,1000,199,'ipfs://factory/recent.png')`,
+        [word(6), address(6), word(16), address(90)],
+      );
+      assert.deepEqual(await counts(), {
+        total: "5",
+        withFactoryImage: "3",
+        discoveryV1: "2",
+        discoveryV2: "3",
+        discoveryV1V2Overlap: "1",
+      });
+      await db.query(
+        "DELETE FROM indexer_batches WHERE stream_key='discovery:v2' AND to_block=199",
+      );
+      assert.deepEqual(await counts(), {
+        total: "3",
+        withFactoryImage: "2",
+        discoveryV1: "2",
+        discoveryV2: "1",
+        discoveryV1V2Overlap: "1",
+      });
+      await db.query(
+        "DELETE FROM indexer_batches WHERE stream_key='discovery:v2' AND to_block=299",
+      );
+      assert.deepEqual(await counts(), {
+        total: "3",
+        withFactoryImage: "1",
+        discoveryV1: "2",
+        discoveryV2: "0",
+        discoveryV1V2Overlap: "0",
+      });
+      await db.query(
+        "DELETE FROM indexer_batches WHERE stream_key='discovery:v1'",
+      );
+      assert.deepEqual(await counts(), {
+        total: "1",
+        withFactoryImage: "1",
+        discoveryV1: "0",
+        discoveryV2: "0",
+        discoveryV1V2Overlap: "0",
+      });
+    } finally {
+      await reader.close();
+      await db.query(`DROP SCHEMA ${schema} CASCADE`);
+      await db.end();
+    }
+  },
+);
+test(
   "Postgres: tied pagination, exact amounts, transfer participants, coverage and canonical feed boundary",
   { skip: !process.env.TEST_DATABASE_URL },
   async () => {
@@ -353,6 +486,13 @@ test(
       assert.equal(large.items.length, 25);
       assert.equal(large.items[0].id, word(1));
       assert.equal(large.items[0].stats.volumeWei, "250");
+      assert.deepEqual((await productRead("/v1/status")).indexedPools, {
+        total: "12003",
+        withFactoryImage: "1",
+        discoveryV1: "12003",
+        discoveryV2: "0",
+        discoveryV1V2Overlap: "0",
+      });
       const tail = await productRead(
         "/v1/explore?sort=volume&offset=12000&limit=25",
       );

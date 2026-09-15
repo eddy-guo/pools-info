@@ -251,6 +251,21 @@ export async function readData(
       await query(`SELECT count(*)::text AS streams, count(cursor_block)::text AS streams_started,
       min(cursor_block)::text AS earliest_cursor, max(cursor_block)::text AS latest_cursor,
       max(updated_at) AS last_commit_at FROM indexer_streams WHERE chain_id=4663 AND kind='pool'`);
+    // Count saved pool identities, not observations or the blended recent catalog.
+    // The representative source_stream can change; overlap uses surviving evidence.
+    const indexedPools = await query(`WITH sources AS (
+      SELECT pool_id, bool_or(stream_key='discovery:v1') AS v1,
+        bool_or(stream_key='discovery:v2') AS v2
+      FROM pool_launch_sources
+      WHERE chain_id=4663 AND stream_key IN ('discovery:v1','discovery:v2')
+      GROUP BY pool_id
+    ) SELECT count(*)::text AS total,
+      count(*) FILTER (WHERE nullif(btrim(p.image_url),'') IS NOT NULL)::text AS "withFactoryImage",
+      count(*) FILTER (WHERE s.v1)::text AS "discoveryV1",
+      count(*) FILTER (WHERE s.v2)::text AS "discoveryV2",
+      count(*) FILTER (WHERE s.v1 AND s.v2)::text AS "discoveryV1V2Overlap"
+    FROM indexed_pools p LEFT JOIN sources s ON s.pool_id=p.pool_id
+    WHERE p.chain_id=4663`);
     return {
       ...base,
       discovery: discovery.rows
@@ -258,6 +273,7 @@ export async function readData(
         .map((r) => ({ stream: r.stream_key, ...coverage(r) })),
       discoveryTruncated: discovery.rows.length > 100,
       poolStreams: summary.rows[0],
+      indexedPools: indexedPools.rows[0],
     };
   }
   if (request.route === "pools") {
