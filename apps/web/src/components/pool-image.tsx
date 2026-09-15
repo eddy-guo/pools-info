@@ -20,6 +20,7 @@ function LazyPoolImage({ poolId, token, hasImage, size = "normal" }: Props) {
   const [state, setState] = useState<"pending" | "loaded" | "failed">(
     "pending",
   );
+  const [retries, setRetries] = useState(0);
   useEffect(() => {
     if (!ref.current || !hasImage) return;
     const observer = new IntersectionObserver(
@@ -34,6 +35,20 @@ function LazyPoolImage({ poolId, token, hasImage, size = "normal" }: Props) {
     observer.observe(ref.current);
     return () => observer.disconnect();
   }, [hasImage]);
+  useEffect(() => {
+    if (!visible || !hasImage || state !== "failed" || retries >= 2) return;
+    // A cold viewport can exceed the server's eight-image concurrency limit.
+    // Retrying the same URL respects browser caching and the 503's no-store;
+    // permanent failures stop after two retries, with the avatar always visible.
+    const timer = window.setTimeout(
+      () => {
+        setRetries((attempt) => attempt + 1);
+        setState("pending");
+      },
+      5000 * (retries + 1),
+    );
+    return () => window.clearTimeout(timer);
+  }, [visible, hasImage, state, retries]);
   return (
     <span
       ref={ref}

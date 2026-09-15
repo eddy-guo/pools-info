@@ -78,6 +78,10 @@ Token icons mount an image only when their element approaches the viewport
 (100 px margin), and also use native lazy loading. Hidden alternate layouts
 do not trigger requests. Unseen catalog entries are never prefetched. Pending
 and failed images retain the deterministic fallback without a layout shift.
+Failed visible icons retry the same internal URL after five seconds and then
+ten seconds, at most twice. This lets temporary capacity errors recover without
+query overrides or endless retries. The fallback stays visible between attempts;
+unmounting or changing pool identity cancels pending retry timers.
 
 The handler coalesces simultaneous requests for one pool. Per warm process it
 allows eight image operations at a time and holds at most 64 cache entries.

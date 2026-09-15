@@ -93,3 +93,95 @@ test("image endpoint rejects arbitrary URL parameters and unavailable pools with
   expect(await absent.text()).toBe("");
   expect(absent.headers()["x-content-type-options"]).toBe("nosniff");
 });
+
+test("token images recover from temporary capacity errors with bounded retries", async ({
+  page,
+}, testInfo) => {
+  await page.clock.install();
+  const attempts = new Map<string, number>();
+  let unavailable = false;
+  await page.route("**/api/markets/", (route) =>
+    route.fulfill({ status: 503, json: { error: "disabled" } }),
+  );
+  await page.route("**/api/product/explore**", async (route) => {
+    const data = structuredClone(
+      await preloadedProduct(
+        "explore",
+        new URL(route.request().url()).searchParams,
+      ),
+    ) as AnalyticsExploreResponse;
+    for (const pool of data.items)
+      pool.imageUrl = "https://pools.trade/a-real-metadata-url.png";
+    await route.fulfill({
+      json: { ...data, delivery: { source: "preloaded", notice: null } },
+    });
+  });
+  await page.route("**/api/token-image/**", async (route) => {
+    const url = route.request().url();
+    const attempt = (attempts.get(url) ?? 0) + 1;
+    attempts.set(url, attempt);
+    await route.fulfill(
+      unavailable || attempt === 1
+        ? {
+            status: unavailable ? 404 : 503,
+            headers: { "Cache-Control": "no-store", "Retry-After": "5" },
+            body: "",
+          }
+        : { status: 200, contentType: "image/png", body: png },
+    );
+  });
+  await page.goto("/");
+  const icons = page.locator("[data-pool-image]").filter({ visible: true });
+  const icon = icons.first();
+  await expect(icon).toHaveAttribute("data-image-state", "failed");
+  await expect(icon.locator(".avatar svg")).toBeVisible();
+  const id = await icon.getAttribute("data-pool-image");
+  const imageUrl = `http://127.0.0.1:3101/api/token-image/${id}/`;
+  await page.clock.fastForward(5000);
+  await expect(icon).toHaveAttribute("data-image-state", "loaded", {
+    timeout: 2000,
+  });
+  expect(attempts.get(imageUrl)).toBe(2);
+  await expect(icon.locator("img")).toHaveAttribute("loading", "lazy");
+  if (testInfo.project.name === "desktop") {
+    const row = page.locator(".desktop-pools tbody tr").first();
+    const rowIcon = row.locator("[data-pool-image]");
+    await expect(rowIcon).toHaveAttribute("data-image-state", "loaded");
+    expect(
+      await rowIcon.evaluate((el) => el.getBoundingClientRect().width),
+    ).toBe(30);
+    expect(await row.evaluate((el) => el.getBoundingClientRect().height)).toBe(
+      62,
+    );
+  }
+
+  unavailable = true;
+  attempts.clear();
+  await page.reload();
+  await expect(icon).toHaveAttribute("data-image-state", "failed");
+  await page.clock.fastForward(5000);
+  await expect.poll(() => attempts.get(imageUrl)).toBe(2);
+  await expect(icon).toHaveAttribute("data-image-state", "failed");
+  await page.clock.fastForward(10000);
+  await expect.poll(() => attempts.get(imageUrl)).toBe(3);
+  await expect(icon).toHaveAttribute("data-image-state", "failed");
+  await page.clock.fastForward(60000);
+  expect(attempts.get(imageUrl)).toBe(3);
+  await expect(icon.locator(".avatar svg")).toBeVisible();
+  await expect(icon.locator("img")).toHaveCount(0);
+
+  attempts.clear();
+  await page.reload();
+  await expect(icon).toHaveAttribute("data-image-state", "failed");
+  // Client navigation unmounts the row while its retry timer is still pending.
+  await page
+    .locator('a[href="/methodology/"]')
+    .filter({ visible: true })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/methodology\/$/);
+  await expect(page.locator("[data-pool-image]")).toHaveCount(0);
+  const attemptsBeforeUnmount = attempts.get(imageUrl);
+  await page.clock.fastForward(20000);
+  expect(attempts.get(imageUrl)).toBe(attemptsBeforeUnmount);
+});
