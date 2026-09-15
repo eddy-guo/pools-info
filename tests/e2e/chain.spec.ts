@@ -1320,6 +1320,8 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText("1970");
-  await expect(page.locator(".network-subnav .capture-time")).toHaveCount(0);
+  await expect(page.locator(".network-subnav .capture-time")).toHaveText(
+    "Capture time unavailable",
+  );
   await expect(page.locator(".network-subnav")).toContainText("0 processed");
 });

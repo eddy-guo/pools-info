@@ -12,7 +12,7 @@ import {
 } from "@pools/core";
 import styles from "./detail-design.module.css";
 import { AddressLabel, Change, Price, WatchButton } from "./ui";
-import { Eth, Stat, Unavailable, explorer, utc } from "./live-ui";
+import { Eth, Stat, Trades, Unavailable, explorer, utc } from "./live-ui";
 import { PendingValue } from "./product-common";
 import { PoolImage } from "./pool-image";
 import { Candles } from "./candles";
@@ -211,9 +211,11 @@ export function ObservedPoolDetail({
         </button>
         <p className="pool-refresh-status" role="status">
           {error
-            ? pool
-              ? "Saved refresh is unavailable. Showing the last dated observation."
-              : "Saved pool is temporarily unavailable. Retry to check coverage."
+            ? accountedMarket
+              ? "Refresh unavailable. The captured pool data remains visible."
+              : pool
+                ? "Saved refresh is unavailable. Showing the last dated observation."
+                : "Saved pool is temporarily unavailable. Retry to check coverage."
             : loading
               ? "Loading saved market data"
               : "Saved market data loaded"}
@@ -236,7 +238,7 @@ export function ObservedPoolDetail({
               Audit results below have their own cutoff.{" "}
             </>
           ) : pool ? (
-            "This verified launch is in the catalog. Market history has not been processed. "
+            "Market history has not been processed. This verified launch's background analytics are still processing; values remain unavailable. "
           ) : (
             "This pool has no available saved publication. This coverage limit does not prove that the pool does not exist. "
           )}
@@ -403,53 +405,59 @@ export function ObservedPoolDetail({
                     </p>
                   </div>
                 ))}
-              {tab === "Trades" && (
-                <>
-                  <p className="panel-footnote">
-                    Observed historical swaps through the market cutoff. No
-                    beneficiary attribution is inferred. Latest 50 identities.
-                  </p>
-                  <div className="table-scroll">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Side</th>
-                          <th>ETH</th>
-                          <th>Transaction</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows?.slice(0, 50).map((trade, index) => {
-                          const observed = "transactionHash" in trade;
-                          const tx = observed
-                            ? trade.transactionHash
-                            : trade.txHash;
-                          return (
-                            <tr key={index}>
-                              <td>{utc(trade.timestamp)}</td>
-                              <td>{trade.side ?? "Unsupported"}</td>
-                              <td>
-                                <Eth wei={trade.ethWei} />
-                              </td>
-                              <td>
-                                <a
-                                  className="mono"
-                                  href={`${explorer}/tx/${tx}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {shortAddress(tx)} ↗
-                                </a>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
+              {tab === "Trades" &&
+                (accountedMarket && snapshot ? (
+                  <Trades
+                    trades={capturedTrades ?? []}
+                    markets={snapshot.markets}
+                  />
+                ) : (
+                  <>
+                    <p className="panel-footnote">
+                      Observed historical swaps through the market cutoff. No
+                      beneficiary attribution is inferred. Latest 50 identities.
+                    </p>
+                    <div className="table-scroll">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Time</th>
+                            <th>Side</th>
+                            <th>ETH</th>
+                            <th>Transaction</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows?.slice(0, 50).map((trade, index) => {
+                            const observed = "transactionHash" in trade;
+                            const tx = observed
+                              ? trade.transactionHash
+                              : trade.txHash;
+                            return (
+                              <tr key={index}>
+                                <td>{utc(trade.timestamp)}</td>
+                                <td>{trade.side ?? "Unsupported"}</td>
+                                <td>
+                                  <Eth wei={trade.ethWei} />
+                                </td>
+                                <td>
+                                  <a
+                                    className="mono"
+                                    href={`${explorer}/tx/${tx}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {shortAddress(tx)} ↗
+                                  </a>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ))}
             </div>
           </section>
         </div>

@@ -1,0 +1,223 @@
+{
+  "mode": "production build; real gated saved API responses; first paint before hydration",
+  "testsPassed": 102,
+  "retries": 0,
+  "measurements": [
+    {
+      "route": "traders",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 433.0625,
+        "width": 1376,
+        "height": 2312.125
+      },
+      "after": {
+        "x": 32,
+        "y": 433.0625,
+        "width": 1376,
+        "height": 2312.125
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "wallet",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 789.1875,
+        "width": 1376,
+        "height": 2518.5
+      },
+      "after": {
+        "x": 32,
+        "y": 789.1875,
+        "width": 1376,
+        "height": 2518.5
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "screener",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 667.0625,
+        "width": 1376,
+        "height": 1861.75
+      },
+      "after": {
+        "x": 32,
+        "y": 667.0625,
+        "width": 1376,
+        "height": 1861.75
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "pool",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 407.9375,
+        "width": 1376,
+        "height": 1582.265625
+      },
+      "after": {
+        "x": 32,
+        "y": 407.9375,
+        "width": 1376,
+        "height": 1582.265625
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "on-demand-pool",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 523.75,
+        "width": 1376,
+        "height": 3304
+      },
+      "after": {
+        "x": 32,
+        "y": 523.75,
+        "width": 1376,
+        "height": 3304
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "unknown-pool",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 523.75,
+        "width": 1376,
+        "height": 3304
+      },
+      "after": {
+        "x": 32,
+        "y": 523.75,
+        "width": 1376,
+        "height": 3304
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "traders",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 670.859375,
+        "width": 384,
+        "height": 7429.4375
+      },
+      "after": {
+        "x": 14,
+        "y": 670.859375,
+        "width": 384,
+        "height": 7429.4375
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "wallet",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 1675.84375,
+        "width": 384,
+        "height": 3686.1875
+      },
+      "after": {
+        "x": 14,
+        "y": 1675.84375,
+        "width": 384,
+        "height": 3686.1875
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "screener",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 1008.359375,
+        "width": 384,
+        "height": 6310
+      },
+      "after": {
+        "x": 14,
+        "y": 1008.359375,
+        "width": 384,
+        "height": 6310
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "pool",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 602.59375,
+        "width": 384,
+        "height": 3614.171875
+      },
+      "after": {
+        "x": 14,
+        "y": 602.59375,
+        "width": 384,
+        "height": 3614.171875
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "unknown-pool",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 826,
+        "width": 384,
+        "height": 5027.6875
+      },
+      "after": {
+        "x": 14,
+        "y": 826,
+        "width": 384,
+        "height": 5027.6875
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "on-demand-pool",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 826,
+        "width": 384,
+        "height": 5027.6875
+      },
+      "after": {
+        "x": 14,
+        "y": 826,
+        "width": 384,
+        "height": 5027.6875
+      },
+      "cls": 0,
+      "shifts": []
+    }
+  ]
+}

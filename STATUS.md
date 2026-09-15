@@ -46,10 +46,12 @@ worktrees were removed and their two helper app tasks archived. The old heartbea
 is paused. Market WIP e7d0058 is still unmerged; its bounded 52,031-row fixture
 passed with 828.1ms serving latency and 521 pages/52,031 unique IDs.
 
-Frontend validation is being finalized independently of the blocked Tier-2 path.
-The focused 28-test run and final two screener checks pass. All six tested routes
+Frontend validation is complete independently of the blocked Tier-2 path.
+Lint, typecheck, unit tests and production build passed; the final full browser
+suite passed **102/102 with no retries**. All six tested routes
 on desktop/mobile (12 cases) record CLS 0 with unchanged sentinel geometry,
-including on-demand pool success/error. Four approximate route loading components
+including on-demand pool success/error. Exact measurements are saved in
+`docs/evidence/layout-2026-09-15/measurements.json`. Four approximate route loading components
 are deleted; real nullable elements retain their nodes and pending texture.
 The text ramp is applied and paired screenshots are saved in
 `docs/evidence/layout-2026-09-15/`. Do not call the whole requested project done.

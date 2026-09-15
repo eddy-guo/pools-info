@@ -130,7 +130,8 @@ test("token images recover from temporary capacity errors with bounded retries",
         : { status: 200, contentType: "image/png", body: png },
     );
   });
-  await page.goto("/");
+  // Keep rail/table identities distinct so this measures one image instance's retry budget.
+  await page.goto("/?sort=volume");
   const icons = page.locator("[data-pool-image]").filter({ visible: true });
   const icon = icons.first();
   await expect(icon).toHaveAttribute("data-image-state", "failed");
