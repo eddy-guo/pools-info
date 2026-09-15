@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -29,6 +35,7 @@ const ranges = {
   "1W": 604800,
   All: Infinity,
 };
+const noHydrationUpdates = () => () => {};
 function axisPrice(value: number) {
   if (!Number.isFinite(value)) return "N/A";
   if (value === 0) return "0";
@@ -53,6 +60,12 @@ export function Candles({
   market: ChainMarket;
   snapshot: ChainSnapshot;
 }) {
+  // The server preview must not accept selections before React can retain them.
+  const hydrated = useSyncExternalStore(
+    noHydrationUpdates,
+    () => true,
+    () => false,
+  );
   const [interval, setInterval] = useState<keyof typeof candleIntervals>("1m"),
     [metric, setMetric] = useState<"Price" | "FDV">("Price"),
     [range, setRange] = useState<keyof typeof ranges>("All"),
@@ -193,6 +206,7 @@ export function Candles({
             Display
             <select
               aria-label="Chart display"
+              disabled={!hydrated}
               value={metric}
               onChange={(e) => setMetric(e.target.value as typeof metric)}
             >
@@ -204,6 +218,7 @@ export function Candles({
             Candle interval
             <select
               aria-label="Candle interval"
+              disabled={!hydrated}
               value={interval}
               onChange={(e) => {
                 setInterval(e.target.value as typeof interval);
@@ -250,8 +265,9 @@ export function Candles({
         className="interactive-chart"
         ref={container}
         role="img"
+        aria-busy={!hydrated}
         aria-label={`${metric} candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect.`}
-        tabIndex={0}
+        tabIndex={hydrated ? 0 : -1}
         onKeyDown={(e) => {
           if ((e.key !== "ArrowRight" && e.key !== "ArrowLeft") || !bars.length)
             return;
@@ -281,6 +297,7 @@ export function Candles({
           {Object.keys(ranges).map((r) => (
             <button
               key={r}
+              disabled={!hydrated}
               aria-pressed={range === r}
               onClick={() => {
                 setRange(r as keyof typeof ranges);
@@ -293,6 +310,7 @@ export function Candles({
         </div>
         <button
           className="text-button"
+          disabled={!hydrated}
           onClick={() => {
             api.current?.chart.timeScale().fitContent();
             if (bars.length < 40)
