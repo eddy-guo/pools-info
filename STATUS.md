@@ -1,4 +1,39 @@
-# Status — 15 Sep 2026, 08:40 UTC
+# Status - 15 Sep 2026, 09:28 UTC
+
+## Operational update: 09:28 UTC - discovery advancing, Phase B prepared separately
+
+At **09:25:53 UTC**, the production API reported **1,394 indexed pools**,
+**601 factory images**, **1,093 pools with v2 evidence**, and v2 cursor
+**28,294,668**. At 09:20:50 the cursor was 27,284,668: 1,010,000 blocks in
+302.464 seconds, about **3,339 blocks/sec** for that interval. V1 remains
+62,923,934, with zero v1/v2 source overlap so far. The overlap region above
+62,625,935 has not been reached; its production reconciliation is still unproven.
+
+Railway deployment `246355c8-4a9f-49e9-a8ae-5006d78e96dd` remains Active.
+Recent logs at 09:22:44 showed **128 blocks of lag**, the configured confirmation
+buffer. Most observed swaps were still unregistered (74 of 96 in that batch).
+Alchemy showed **4,546,628 CU total** around 09:22, up 435,410 from the prior
+4,111,218 observation. Its refreshed last-hour All errors filter returned no
+request logs around 09:24. These are bounded observations, not a claim that
+future requests cannot be throttled. All-worker usage remains combined.
+
+Sol completed isolated Phase B persistence at **23c9d34**, backed up on GitHub
+branch **phase-b-persistence**. It is **not merged into main or deployed**.
+Root independently passed `pnpm check`, all **53 database tests with zero skips**,
+and a 5,000-range discovery-dependency rewind fixture (2.7 seconds, no dangling
+batches/manifests/cursor). CI **34952527444** is running for that branch.
+The worktree is `/Users/eddyguo/Desktop/Work/Projects/.pools-info-phase-b`.
+
+Sol's next active assignment in that same worktree is the **disabled-by-default
+broad worker integration**, with local Postgres and mocked chain transport only.
+Do not duplicate this assignment or activate Phase B before Phase A completes.
+Luna finished a read-only API integration map; implementation must use Sol's
+normalized broad schema, not Luna's alternative suggestion to reuse raw events.
+Broad market statistics must never enter deep PnL or holder accounting.
+
+The Phase A 7.8M CU estimate is not a Phase B estimate. Broad historical receipt
+volume still needs measurement before making runtime or total-use claims.
+Main production remains on Phase A; no competing writer or billing change.
 
 ## Operational update: 09:11 UTC - Phase A resumed with revised estimate approved
 
