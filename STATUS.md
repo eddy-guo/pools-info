@@ -26,7 +26,10 @@ test with PostgreSQL **57014: canceling statement due to statement timeout** at
 environment failure from the earlier local per-row bottleneck, not permission
 to increase the 3-second statement or 2.8-second accounting budgets.
 
-**Deployment remains blocked.** Railway did not release the candidate. Its
+**Candidate acceptance remains blocked by CI.** The public API currently returns
+HTTP 200 with 367 verified-only wallets and no tier-2 coverage field. The Railway
+commit status reports success despite the failed CI, so do not assume the CI
+result alone proves which revision was or was not released. The candidate
 runtime is reverted from main to the validated baseline; the feature and tests
 remain safely on the candidate branch. Next work must reproduce/profile this
 CI PostgreSQL query plan and establish sufficient margin before deploying and
