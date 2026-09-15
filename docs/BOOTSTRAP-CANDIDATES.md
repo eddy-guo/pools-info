@@ -63,9 +63,37 @@ The skipped unit cases are database-gated; the separate database suite ran them.
 
 ## Next implementation
 
-Add a bounded multi-candidate runner with durable success/failure progress and
-canonical revalidation before reusing saved evidence. The current explicit CLI
-re-verifies its candidate on every run; a resumable scheduler is not implemented.
+A bounded serial runner now exists:
+
+```sh
+node --import tsx scripts/verify-launch-candidates.ts --plan 1
+node --env-file-if-exists=.env.local --import tsx scripts/verify-launch-candidates.ts --limit 1
+```
+
+Both modes accept a limit from 1 to 5. Plan mode makes no RPC calls. Run mode skips
+matching saved evidence snapshots, processes the selected candidates serially, and
+stops at the first failure to limit provider usage. Each candidate retains the
+single-candidate verifier's 100-request budget. Failure records live beside evidence
+as `<pool-id>.failed.json`; rerunning retries that candidate, and a successful retry
+removes its failure marker. Neither mode imports data or advances database cursors.
+
+A local exclusive `batch.lock` prevents concurrent batch commands. Normal exit and
+SIGINT/SIGTERM release it after the child exits. A hard crash may leave a stale lock:
+check its recorded PID and confirm no batch/child remains active before removing it.
+The individual one-candidate command still explicitly re-verifies even a saved pool.
+
+Skipped snapshots are historical verification results, not fresh canonical claims.
+The runner checks registry revision, candidate identity and evidence presence to
+resume collection. Database promotion must independently revalidate canonical
+hashes and full evidence; it cannot treat this skip check as import authorization.
+The runner reads only the committed snapshot of candidates, not a continuously
+updated or exhaustive launch source.
+
+Validation: script typecheck, real one-candidate run (42 calls), restart plan showing
+four saved snapshots and a different next candidate, invalid-limit rejection,
+concurrent-lock rejection, and an isolated wrong-chain endpoint proving failure
+recording, stop-on-first-failure and lock cleanup. A separate SIGTERM check confirmed
+that interruption waits for the child to exit and releases the lock.
 The fixed 32-block search window can reject imprecise timestamp hints or unusually
 many blocks sharing a timestamp. That is a safe rejection, not evidence of no launch.
 
