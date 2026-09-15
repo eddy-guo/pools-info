@@ -5,6 +5,7 @@ import { encodeAbiParameters, toEventSelector, type Hex } from "viem";
 import {
   Rpc,
   RpcRateLimitExhausted,
+  RpcResponseCapacity,
   collectPoolEventGroup,
   contracts,
   swapEvent,
@@ -26,7 +27,12 @@ import {
   resolveBroadPools,
   type Client,
 } from "@pools/db";
-import { BroadScheduler, broadV1Enabled, runBroadBatch } from "./broad-worker";
+import {
+  BroadScheduler,
+  broadV1Enabled,
+  broadReceiptMode,
+  runBroadBatch,
+} from "./broad-worker";
 import {
   BroadBatchBudget,
   BroadSingleBlockOverflow,
@@ -152,7 +158,7 @@ function provider(t: TestContext) {
     log(word(7), 2, first + 1),
     log(pools[0].id, 0, first + 4),
   ];
-  const response = async (row: Request) => {
+  const response = async (row: Request): Promise<unknown> => {
     methodCalls.push(row);
     if (row.method === "eth_chainId") return hex(4663);
     if (row.method === "eth_blockNumber") return hex(first + 19 + 128);
@@ -198,6 +204,24 @@ function provider(t: TestContext) {
         (l) => Number(l.blockNumber) >= from && Number(l.blockNumber) <= to,
       );
     }
+    if (row.method === "eth_getBlockReceipts") {
+      const txs = [
+        ...new Set(
+          logs()
+            .filter((l) => Number(l.blockNumber) === Number(row.params[0]))
+            .map((l) => l.transactionHash),
+        ),
+      ];
+      return Promise.all(
+        txs.reverse().map((tx) =>
+          response({
+            ...row,
+            method: "eth_getTransactionReceipt",
+            params: [tx],
+          }),
+        ),
+      );
+    }
     if (row.method === "eth_getTransactionReceipt") {
       if (beforeReceipt) {
         const hook = beforeReceipt;
@@ -208,6 +232,7 @@ function provider(t: TestContext) {
       return {
         transactionHash: row.params[0],
         blockHash: own[0].blockHash,
+        blockNumber: own[0].blockNumber,
         status: "0x1",
         from: sender,
         to: contracts.router,
@@ -309,7 +334,16 @@ test("broad defaults off and validates explicit activation/range limits", async 
   assert.equal(broadBatchBlocks("1"), 1);
   for (const value of ["", "0", "1001", "1.5", "NaN"])
     assert.throws(() => broadBatchBlocks(value), /Invalid/);
-  const disabled = new BroadScheduler("0", "invalid");
+  assert.equal(broadReceiptMode("transaction"), "transaction");
+  assert.equal(broadReceiptMode("block"), "block");
+  assert.equal(
+    new BroadScheduler("1", "3", "transaction").receiptMode,
+    "transaction",
+  );
+  assert.equal(new BroadScheduler("1", "3", "block").receiptMode, "block");
+  for (const value of ["", "1", "blocks", " block "])
+    assert.throws(() => broadReceiptMode(value), /Invalid/);
+  const disabled = new BroadScheduler("0", "invalid", "invalid");
   const db = {
     query: () => assert.fail("disabled database access"),
   } as unknown as Client;
@@ -935,3 +969,117 @@ test(
     );
   },
 );
+
+test(
+  "block receipt transport commits identical evidence and replays without network",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const registry = (await broadRangeCheckpoint(db, first, first + 5))!
+      .registry;
+    const range = {
+      mode: "broad" as const,
+      collectTokenUnits: true,
+      fromBlock: first,
+      toBlock: first + 5,
+      registry,
+      resolvePools: (ids: readonly string[]) =>
+        resolveBroadPools(db, ids, registry),
+    };
+    const legacy = await collectPoolEventGroup(range, p.createRpc());
+    const block = await collectPoolEventGroup(
+      { ...range, receiptMode: "block" },
+      p.createRpc(),
+    );
+    assert.deepEqual({ ...block, requests: legacy.requests }, legacy);
+    const expected = await ensureBroadStream(db);
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group: block }),
+      true,
+    );
+    t.mock.method(globalThis, "fetch", async () => {
+      throw Error("Replay must not fetch");
+    });
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group: legacy }),
+      false,
+    );
+  },
+);
+
+test(
+  "block mode worker retains cursor on receipt evidence failure, reorg and cancellation",
+  dbTest,
+  async (t) => {
+    for (const kind of [
+      "receipt",
+      "reorg",
+      "abort",
+      "oversized",
+      "rate_limit",
+      "malformed",
+    ])
+      await t.test(kind, async (sub) => {
+        const db = await database(sub),
+          p = provider(sub),
+          controller = new AbortController();
+        const expected = await ensureBroadStream(db);
+        if (["oversized", "rate_limit", "malformed"].includes(kind)) {
+          const originalFetch = globalThis.fetch;
+          sub.mock.method(
+            globalThis,
+            "fetch",
+            async (url: unknown, init: RequestInit) => {
+              const requests = JSON.parse(String(init.body)) as {
+                id: number;
+                method: string;
+              }[];
+              if (
+                Array.isArray(requests) &&
+                requests[0]?.method === "eth_getBlockReceipts"
+              ) {
+                if (kind === "rate_limit")
+                  return new Response(null, { status: 429 });
+                if (kind === "oversized")
+                  return new Response("{}", {
+                    headers: { "content-length": "8388609" },
+                  });
+                return Response.json(
+                  requests.map((r) => ({ id: r.id, result: [null] })),
+                );
+              }
+              return originalFetch(url as string, init);
+            },
+          );
+        }
+
+        if (kind === "receipt") p.badReceipt(true);
+        if (kind === "reorg") p.beforeReceipt(async () => p.reorg(first + 1));
+        if (kind === "abort") p.beforeReceipt(async () => controller.abort());
+        const run = new BroadScheduler("1", "3", "block").run(db, p.createRpc, {
+          signal: controller.signal,
+        });
+        if (kind === "oversized") assert.equal((await run)!.deferred, true);
+        else await assert.rejects(run);
+        assert.equal((await ensureBroadStream(db)).cursor, expected.cursor);
+        assert.equal(
+          (await db.query("SELECT count(*)::int AS n FROM broad_batches"))
+            .rows[0].n,
+          0,
+        );
+      });
+  },
+);
+
+test("block response capacity stops a single block without retrying the collection", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    new BroadBatchBudget(1).run(async () => {
+      attempts++;
+      throw new RpcResponseCapacity();
+    }),
+    BroadSingleBlockOverflow,
+  );
+  assert.equal(attempts, 1);
+});

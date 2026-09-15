@@ -84,6 +84,7 @@ function fake(
     receipt?: (r: Receipt) => Receipt;
     header?: (h: EventHeader, final: boolean) => EventHeader;
     incomplete?: "headers" | "receipts";
+    blockRows?: (rows: Receipt[]) => Receipt[];
   } = {},
 ) {
   const logs = options.logs ?? [swap()];
@@ -117,6 +118,25 @@ function fake(
       finalHeaders = true;
       return (options.incomplete === "headers" ? rows.slice(1) : rows) as T[];
     }
+    if (method === "eth_getBlockReceipts") {
+      const rows = await Promise.all(
+        params.map(async (p) => {
+          const txs = [
+            ...new Set(
+              logs
+                .filter((l) => Number(l.blockNumber) === Number(p[0]))
+                .map((l) => l.transactionHash),
+            ),
+          ];
+          const own = await rpc.batch<Receipt>(
+            "eth_getTransactionReceipt",
+            txs.map((h) => [h]),
+          );
+          return options.blockRows?.(own) ?? own.reverse();
+        }),
+      );
+      return rows as T[];
+    }
     if (method !== "eth_getTransactionReceipt")
       throw Error("Unexpected batch call");
     const rows = params.map((p): Receipt => {
@@ -129,6 +149,7 @@ function fake(
         to: contracts.router,
         logs: own,
       };
+      Object.assign(r, { blockNumber: own[0].blockNumber });
       return options.receipt?.(r) ?? r;
     });
     return (options.incomplete === "receipts" ? rows.slice(1) : rows) as T[];
@@ -468,4 +489,52 @@ test("broad chain, revision, confirmation and whole-batch bounds fail without pa
     (await collectPoolEventGroup(maxRange, fake({ logs: [] }).rpc)).toBlock,
     maxRange.toBlock,
   );
+});
+
+test("block receipts preserve exact transaction evidence/order across multi-pool transactions and discard unrelated receipts", async () => {
+  const logs = [
+    swap(),
+    swap(otherId, 1),
+    { ...swap(poolId, 2), transactionHash: word(10) },
+    { ...swap(unknownId, 3), transactionHash: word(11) },
+  ];
+  const r = range(async () => [pool(), pool(otherId)]);
+  const legacy = await collectPoolEventGroup(r, fake({ logs }).rpc);
+  const block = await collectPoolEventGroup(
+    { ...r, receiptMode: "block" },
+    fake({ logs }).rpc,
+  );
+  assert.deepEqual(block, legacy);
+  assert.equal(block.evidence.receipts.length, 2);
+});
+
+test("block receipts reject malformed, duplicate, missing, wrong-block and oversized-count responses", async (t) => {
+  for (const [name, blockRows] of [
+    ["missing", () => []],
+    ["duplicate", (r: Receipt[]) => [r[0], r[0]]],
+    ["wrong hash", (r: Receipt[]) => [{ ...r[0], blockHash: word(2) }]],
+    [
+      "wrong number",
+      (r: Receipt[]) => [
+        Object.assign({ ...r[0] }, { blockNumber: hex(first) }),
+      ],
+    ],
+    ["null", () => [null as unknown as Receipt]],
+    ["count", (r: Receipt[]) => Array(2001).fill(r[0])],
+    ["failed selected", (r: Receipt[]) => [{ ...r[0], status: "0x0" as Hex }]],
+    [
+      "altered log",
+      (r: Receipt[]) => [
+        { ...r[0], logs: [{ ...r[0].logs[0], data: "0x" as Hex }] },
+      ],
+    ],
+  ] as const)
+    await t.test(name, async () => {
+      await assert.rejects(
+        collectPoolEventGroup(
+          { ...range(), receiptMode: "block" },
+          fake({ blockRows }).rpc,
+        ),
+      );
+    });
 });

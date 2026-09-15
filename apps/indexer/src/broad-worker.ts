@@ -23,6 +23,15 @@ export function broadV1Enabled(value = process.env.INDEXER_BROAD_V1_ENABLED) {
   if (value === "1") return true;
   throw Error("Invalid INDEXER_BROAD_V1_ENABLED; expected 0 or 1");
 }
+export function broadReceiptMode(
+  value = process.env.INDEXER_BROAD_RECEIPT_MODE,
+): "transaction" | "block" {
+  if (value === undefined || value === "transaction") return "transaction";
+  if (value === "block") return "block";
+  throw Error(
+    "Invalid INDEXER_BROAD_RECEIPT_MODE; expected transaction or block",
+  );
+}
 export interface BroadProgress {
   advanced: number;
   committed: boolean;
@@ -67,8 +76,11 @@ export async function runBroadBatch(
   rpc: Rpc,
   batchBlocks: number,
   signal?: AbortSignal,
+  receiptMode: "transaction" | "block" = "transaction",
 ): Promise<BroadProgress> {
   broadBatchBlocks(String(batchBlocks));
+  broadReceiptMode(receiptMode);
+  rpc.withAbortSignal(signal);
   const started = performance.now();
   let stage = "chain_check",
     from: number | null = null,
@@ -127,6 +139,7 @@ export async function runBroadBatch(
       {
         mode: "broad",
         collectTokenUnits: true,
+        receiptMode,
         fromBlock: from,
         toBlock: to,
         registry,
@@ -187,13 +200,18 @@ export async function runBroadBatch(
  * successful run commits at most one range before main checks discovery again. */
 export class BroadScheduler {
   readonly enabled: boolean;
+  readonly receiptMode: "transaction" | "block";
   readonly maximumBlocks: number | null;
   private readonly budget?: BroadBatchBudget;
   constructor(
     enabled = process.env.INDEXER_BROAD_V1_ENABLED,
     batchBlocks = process.env.INDEXER_BROAD_BATCH_BLOCKS,
+    receiptMode = process.env.INDEXER_BROAD_RECEIPT_MODE,
   ) {
     this.enabled = broadV1Enabled(enabled);
+    this.receiptMode = this.enabled
+      ? broadReceiptMode(receiptMode)
+      : "transaction";
     this.maximumBlocks = this.enabled ? broadBatchBlocks(batchBlocks) : null;
     if (this.maximumBlocks !== null)
       this.budget = new BroadBatchBudget(this.maximumBlocks);
@@ -221,7 +239,13 @@ export class BroadScheduler {
         const rpc = createRpc();
         attempt.rpc = rpc;
         try {
-          return await runBroadBatch(db, rpc, blocks, options.signal);
+          return await runBroadBatch(
+            db,
+            rpc,
+            blocks,
+            options.signal,
+            this.receiptMode,
+          );
         } catch (error) {
           if (error instanceof BroadRangeCapacity) attempt.range = error;
           throw error;

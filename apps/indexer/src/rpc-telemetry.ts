@@ -16,6 +16,7 @@ export function trackRpcMethods(
       "eth_blockNumber",
       "eth_getBlockByNumber",
       "eth_getTransactionReceipt",
+      "eth_getBlockReceipts",
       "eth_getLogs",
       "eth_call",
     ].includes(method)

@@ -1,3 +1,5 @@
+import { RpcResponseCapacity } from "@pools/chain";
+
 /** 1000 blocks is the verified operational limit, independent of DTO capacity. */
 export const BROAD_MAX_BLOCKS = 1000;
 // Bound each catch-up attempt before main checks discovery again. These are
@@ -14,10 +16,12 @@ export function broadBatchBlocks(
 }
 export function isBroadCapacity(error: unknown) {
   return (
-    error instanceof Error &&
-    /^(Broad event group exceeds capacity; split the range|Collection budget exceeded after [0-9]+ HTTP requests and [0-9]+ RPC calls)$/.test(
-      error.message,
-    )
+    error instanceof BroadRangeCapacity ||
+    error instanceof RpcResponseCapacity ||
+    (error instanceof Error &&
+      /^(Broad event group exceeds capacity; split the range|Collection budget exceeded after [0-9]+ HTTP requests and [0-9]+ RPC calls)$/.test(
+        error.message,
+      ))
   );
 }
 export class BroadRangeCapacity extends Error {

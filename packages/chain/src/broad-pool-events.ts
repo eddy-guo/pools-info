@@ -7,7 +7,7 @@ import {
 } from "./deployments";
 import type { Receipt } from "./audit";
 import type { EventHeader } from "./pool-events";
-import { Rpc, hex } from "./rpc";
+import { Rpc, hex, blockReceiptPolicy, RpcResponseCapacity } from "./rpc";
 
 export const broadEventPolicy = Object.freeze({
   maxBlocks: 10000,
@@ -31,6 +31,8 @@ export interface BroadPoolEventRange {
   mode: "broad";
   /** Observe units at this range's canonical cutoff. Legacy callers opt out. */
   collectTokenUnits?: boolean;
+  /** Transport only; omitted from saved evidence and replay. */
+  receiptMode?: "transaction" | "block";
   fromBlock: number;
   toBlock: number;
   registry: BroadRegistryCheckpoint;
@@ -138,6 +140,9 @@ export async function collectBroadPoolEvents(
     toBlock < fromBlock ||
     toBlock - fromBlock >= broadEventPolicy.maxBlocks ||
     typeof resolvePools !== "function" ||
+    (range.receiptMode !== undefined &&
+      range.receiptMode !== "transaction" &&
+      range.receiptMode !== "block") ||
     (range.collectTokenUnits !== undefined &&
       typeof range.collectTokenUnits !== "boolean")
   )
@@ -276,12 +281,75 @@ export async function collectBroadPoolEvents(
     ...new Set(selected.map((l) => l.transactionHash.toLowerCase())),
   ].sort();
   const receipts: Receipt[] = [];
+  const receiptByHash = new Map<string, Receipt>();
+  if (range.receiptMode === "block") {
+    const transactionBlocks = new Map<string, number>();
+    for (const log of selected) {
+      const tx = log.transactionHash.toLowerCase(),
+        block = Number(log.blockNumber);
+      if (transactionBlocks.has(tx) && transactionBlocks.get(tx) !== block)
+        throw Error("Inconsistent broad transaction block");
+      transactionBlocks.set(tx, block);
+    }
+    const selectedBlocks = [...new Set(transactionBlocks.values())].sort(
+      (a, b) => a - b,
+    );
+    for (
+      let i = 0;
+      i < selectedBlocks.length;
+      i += blockReceiptPolicy.maxBatchCalls
+    ) {
+      const slice = selectedBlocks.slice(
+        i,
+        i + blockReceiptPolicy.maxBatchCalls,
+      );
+      const responses = await rpc.batch<(Receipt & { blockNumber: string })[]>(
+        "eth_getBlockReceipts",
+        slice.map((n) => [hex(n)]),
+      );
+      if (responses.length !== slice.length)
+        throw Error("Missing broad block receipts");
+      for (const [j, rows] of responses.entries()) {
+        if (!Array.isArray(rows))
+          throw Error("Invalid broad block receipt list");
+        if (rows.length > blockReceiptPolicy.maxReceiptsPerBlock)
+          throw new RpcResponseCapacity();
+        const seen = new Set<string>();
+        for (const row of rows) {
+          if (
+            !row ||
+            !hash(row.transactionHash) ||
+            !hash(row.blockHash) ||
+            !same(row.blockHash, blocks.get(slice[j])!.hash) ||
+            typeof row.blockNumber !== "string" ||
+            !/^0x[0-9a-f]+$/i.test(row.blockNumber) ||
+            Number(row.blockNumber) !== slice[j] ||
+            seen.has(row.transactionHash.toLowerCase()) ||
+            !["0x0", "0x1"].includes(row.status) ||
+            !Array.isArray(row.logs)
+          )
+            throw Error("Invalid broad block receipt evidence");
+          const tx = row.transactionHash.toLowerCase();
+          seen.add(tx);
+          if (transactionBlocks.has(tx)) {
+            if (transactionBlocks.get(tx) !== slice[j] || receiptByHash.has(tx))
+              throw Error("Inconsistent broad selected receipt block");
+            retain([row]);
+            receiptByHash.set(tx, row);
+          }
+        }
+      }
+    }
+  }
   for (let i = 0; i < hashes.length; i += broadEventPolicy.evidenceChunk) {
     const slice = hashes.slice(i, i + broadEventPolicy.evidenceChunk);
-    const fetched = await rpc.batch<Receipt>(
-      "eth_getTransactionReceipt",
-      slice.map((h) => [h]),
-    );
+    const fetched =
+      range.receiptMode === "block"
+        ? slice.map((h) => receiptByHash.get(h)!)
+        : await rpc.batch<Receipt>(
+            "eth_getTransactionReceipt",
+            slice.map((h) => [h]),
+          );
     if (fetched.length !== slice.length) throw Error("Missing broad receipts");
     for (let j = 0; j < fetched.length; j++) {
       const r = fetched[j];
@@ -296,7 +364,7 @@ export async function collectBroadPoolEvents(
       )
         throw Error("Invalid broad receipt");
     }
-    retain(fetched);
+    if (range.receiptMode !== "block") retain(fetched);
     receipts.push(...fetched);
   }
   const transactions = new Map(

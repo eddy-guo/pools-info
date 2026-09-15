@@ -37,12 +37,56 @@ export interface RpcRateLimitEvent {
   httpRequests: number;
   rpcCalls: number;
 }
+export const blockReceiptPolicy = Object.freeze({
+  maxBatchCalls: 2,
+  maxResponseBytes: 8 * 1024 * 1024,
+  maxReceiptsPerBlock: 2000,
+});
+export class RpcResponseCapacity extends Error {
+  constructor() {
+    super("Block receipt response exceeds capacity");
+    this.name = "RpcResponseCapacity";
+  }
+}
+async function boundedJson(response: Response, signal?: AbortSignal) {
+  const reader = response.body?.getReader();
+  if (!reader) throw Error("RPC returned empty body");
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    signal?.throwIfAborted();
+    const length = Number(response.headers.get("content-length"));
+    if (length > blockReceiptPolicy.maxResponseBytes)
+      throw new RpcResponseCapacity();
+    for (;;) {
+      signal?.throwIfAborted();
+      const { done, value } = await reader.read();
+      signal?.throwIfAborted();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > blockReceiptPolicy.maxResponseBytes)
+        throw new RpcResponseCapacity();
+      chunks.push(value);
+    }
+    const buffer = new Uint8Array(bytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer));
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
 const observedMethods = new Set([
   "eth_chainId",
   "eth_blockNumber",
   "eth_getLogs",
   "eth_getBlockByNumber",
   "eth_getTransactionReceipt",
+  "eth_getBlockReceipts",
   "eth_getTransactionByHash",
   "eth_getCode",
   "eth_call",
@@ -53,6 +97,28 @@ export class Rpc {
   requests = 0;
   // Distinct logical calls; retries reuse IDs. This is not billable provider usage.
   calls = 0;
+  private abortSignal?: AbortSignal;
+  withAbortSignal(signal?: AbortSignal) {
+    this.abortSignal = signal;
+    return this;
+  }
+  private async wait(ms: number) {
+    this.abortSignal?.throwIfAborted();
+    if (!this.abortSignal)
+      return new Promise<void>((resolve) => setTimeout(resolve, ms));
+    const signal = this.abortSignal;
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      };
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, ms);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
   private started = Date.now();
   private nextRequestAt = 0;
   private logRange = 10000;
@@ -95,11 +161,12 @@ export class Rpc {
   private async send(body: Request | Request[]): Promise<Reply | Reply[]> {
     for (let attempt = 0; attempt < 4; attempt++) {
       if (this.rateLimitFailure) throw this.rateLimitFailure;
+      this.abortSignal?.throwIfAborted();
       const scheduledAt = Math.max(Date.now(), this.nextRequestAt);
       this.nextRequestAt =
         scheduledAt + Math.max(this.limits.minIntervalMs ?? 0, this.throttleMs);
       const pause = scheduledAt - Date.now();
-      if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
+      if (pause > 0) await this.wait(pause);
       const remaining =
         (this.limits.timeoutMs ?? 45000) - (Date.now() - this.started);
       if (remaining <= 0 || this.requests >= (this.limits.maxRequests ?? 1500))
@@ -112,11 +179,29 @@ export class Rpc {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(Math.max(1, Math.min(10000, remaining))),
+          signal: this.abortSignal
+            ? AbortSignal.any([
+                this.abortSignal,
+                AbortSignal.timeout(Math.max(1, Math.min(10000, remaining))),
+              ])
+            : AbortSignal.timeout(Math.max(1, Math.min(10000, remaining))),
           cache: "no-store",
         });
-        const result = (await response.json().catch(() => null)) as
-          Reply | Reply[] | null;
+        const blockReceipts = (Array.isArray(body) ? body : [body]).some(
+          (r) => r.method === "eth_getBlockReceipts",
+        );
+        // HTTP throttling wins even when its error body is oversized or invalid.
+        let result: Reply | Reply[] | null;
+        if (blockReceipts && response.status === 429) {
+          await response.body?.cancel();
+          result = null;
+        } else if (blockReceipts) {
+          result = (await boundedJson(response, this.abortSignal)) as
+            Reply | Reply[];
+        } else {
+          result = (await response.json().catch(() => null)) as
+            Reply | Reply[] | null;
+        }
         // Observe throttling before any range/error handling. Only fixed method
         // labels and counters leave this boundary, never URLs, params or text.
         const replies = Array.isArray(result) ? result : result ? [result] : [];
@@ -198,13 +283,15 @@ export class Rpc {
         return result;
       } catch (error) {
         if (
+          this.abortSignal?.aborted ||
+          error instanceof RpcResponseCapacity ||
           error instanceof LogRangeLimit ||
           error instanceof BatchRateLimit ||
           error instanceof RpcRateLimitExhausted ||
           attempt === 3
         )
           throw error;
-        await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+        await this.wait(500 * 2 ** attempt);
       }
     }
     throw Error("RPC retry exhausted");
@@ -227,7 +314,12 @@ export class Rpc {
     const values = new Map<number, unknown>();
     const attempts = new Map<number, number>();
     while (pending.length) {
-      const chunk = pending.splice(0, this.batchSize);
+      const chunk = pending.splice(
+        0,
+        method === "eth_getBlockReceipts"
+          ? Math.min(this.batchSize, blockReceiptPolicy.maxBatchCalls)
+          : this.batchSize,
+      );
       for (const request of chunk)
         attempts.set(request.id, (attempts.get(request.id) ?? 0) + 1);
       let response: Reply[];

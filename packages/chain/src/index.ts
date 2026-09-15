@@ -12,7 +12,12 @@ export {
   type BroadPoolEventGroup,
   type BroadTokenUnits,
 } from "./broad-pool-events";
-export { Rpc, RpcRateLimitExhausted, type RpcRateLimitEvent } from "./rpc";
+export {
+  Rpc,
+  RpcRateLimitExhausted,
+  RpcResponseCapacity,
+  type RpcRateLimitEvent,
+} from "./rpc";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
 
