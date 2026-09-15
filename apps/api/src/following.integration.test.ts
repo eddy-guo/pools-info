@@ -9,7 +9,10 @@ import {
   getStream,
   rewind,
 } from "../../../packages/db/src/index";
-import type { FollowingActivityResponse } from "@pools/core";
+import type {
+  FollowingActivityResponse,
+  TradeShareResponse,
+} from "@pools/core";
 import { readData } from "./reader";
 import { parseRequest } from "./request";
 
@@ -147,20 +150,80 @@ test(
     assert.equal(response.items.length, 50);
     assert.equal(response.hasMore, true);
     assert.equal(new Set(response.items.map((row) => row.id)).size, 50);
+    // A share card reads the stored realization by event, independently of the
+    // bounded following or profile trade list. Both profit and loss stay exact.
+    const cost = "1801439850948198600004";
+    await trade(70, address(11));
+    await trade(71, address(12));
+    await db.query(
+      "UPDATE analytics_accounting_trades SET side='sell',disposed_cost_wei=$1,realized_wei=eth_wei-$1::numeric WHERE transaction_hash=ANY($2::text[])",
+      [cost, [word(1070), word(1071)]],
+    );
+    const share = (n: number, wallet = address(11)) =>
+      readData(
+        query,
+        parseRequest(
+          `/v1/trades/${pool.id}/${word(1000 + n)}/${n}?wallet=${wallet}`,
+        ),
+      ) as Promise<TradeShareResponse>;
+    const priorCalls = calls;
+    const sale = await share(70);
+    assert.equal(calls, priorCalls + 1);
+    assert.equal(sale.trade.wallet, address(11));
+    assert.equal(sale.trade.ethWei, exact);
+    assert.equal(sale.trade.disposedCostWei, cost);
+    assert.equal(
+      sale.trade.realizedWei,
+      (BigInt(exact) - BigInt(cost)).toString(),
+    );
+    assert.equal(sale.trade.asOf, 1000);
+    assert.equal(sale.trade.throughBlock, 199);
+    assert.equal(sale.scope, "saved_verified_sale");
+    assert.equal(sale.coverage.complete, false);
+    const unavailable = { status: 404, code: "trade_share_unavailable" };
+    await assert.rejects(share(70, address(12)), unavailable); // wrong beneficiary
+    await assert.rejects(share(71), unavailable); // another wallet's sale
+    await assert.rejects(share(0, address(12)), unavailable); // purchase, not realization
+    await assert.rejects(share(61, address(14)), unavailable); // unsupported position
+    await assert.rejects(share(62), unavailable); // unsupported execution
+    await assert.rejects(share(63), unavailable); // transaction sender is not beneficiary
+    await assert.rejects(share(99), unavailable); // absent event
+    // Position and execution qualification remain required even for a stored sale.
+    await db.query(
+      "UPDATE analytics_accounting_positions SET supported=false,flags='{unknown_basis}',quantity_raw=NULL,cost_wei=NULL,invested_wei=NULL,proceeds_wei=NULL,realized_wei=NULL,unrealized_wei=NULL,buys=NULL,sells=NULL WHERE wallet=$1",
+      [address(11)],
+    );
+    await assert.rejects(share(70), unavailable);
+    await db.query(
+      "UPDATE analytics_accounting_positions SET supported=true,flags='{}',quantity_raw=100,cost_wei=100,invested_wei=100,proceeds_wei=0,realized_wei=0,buys=1,sells=0 WHERE wallet=$1",
+      [address(11)],
+    );
+    await db.query(
+      "UPDATE analytics_accounting_trades SET execution_supported=false WHERE transaction_hash=$1",
+      [word(1070)],
+    );
+    await assert.rejects(share(70), unavailable);
+    await db.query(
+      "UPDATE analytics_accounting_trades SET execution_supported=true WHERE transaction_hash=$1",
+      [word(1070)],
+    );
     // A projection that no longer matches its publication is never presented as verified.
     await db.query(
       "UPDATE analytics_pool_snapshots SET generated_at=generated_at+interval '1 second'",
     );
     assert.equal((await read()).items.length, 0);
+    await assert.rejects(share(70), unavailable);
     await db.query(
       "UPDATE analytics_pool_snapshots SET generated_at=generated_at-interval '1 second'",
     );
     assert.equal((await read("&limit=1")).items.length, 1);
+    assert.equal((await share(70)).trade.realizedWei, sale.trade.realizedWei);
     // Removing the canonical launch batch cascades snapshots, positions and trades.
     await rewind(db, await getStream(db, "discovery:v1"), null);
     response = await read();
     assert.deepEqual(response.items, []);
     assert.equal(response.hasMore, false);
     assert.equal(response.coverage.asOf, null);
+    await assert.rejects(share(70), unavailable);
   },
 );

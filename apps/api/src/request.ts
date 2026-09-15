@@ -25,6 +25,7 @@ export type Route =
   | "pools"
   | "pool"
   | "trades"
+  | "trade-share"
   | "wallet"
   | "explore"
   | "leaderboard"
@@ -38,6 +39,8 @@ export interface ReadRequest {
   limit: number;
   q: string;
   poolId: string | null;
+  txHash: string | null;
+  logIndex: number | null;
   pools: string[];
   wallet: string | null;
   wallets: string[];
@@ -62,6 +65,12 @@ export function parseRequest(input: string): ReadRequest {
   let route: Route;
   let poolId: string | null = null;
   let wallet: string | null = null;
+  let txHash: string | null = null;
+  let logIndex: number | null = null;
+  const sale =
+    /^\/v1\/trades\/(0x[\da-f]{64})\/(0x[\da-f]{64})\/(0|[1-9]\d{0,9})$/i.exec(
+      url.pathname,
+    );
   const pool = /^\/v1\/pools\/(0x[\da-f]{64})$/i.exec(url.pathname);
   const activity = /^\/v1\/wallets\/(0x[\da-f]{40})\/activity$/i.exec(
     url.pathname,
@@ -78,7 +87,15 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/explore") route = "explore";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
   else if (url.pathname === "/v1/search") route = "search";
-  else if (profile) {
+  else if (sale) {
+    route = "trade-share";
+    poolId = sale[1].toLowerCase();
+    txHash = sale[2].toLowerCase();
+    logIndex = Number(sale[3]);
+    wallet = url.searchParams.get("wallet")?.toLowerCase() ?? null;
+    if (logIndex > 2147483647 || !wallet || !address.test(wallet))
+      throw new RequestError(400, "invalid_trade_identity");
+  } else if (profile) {
     route = "profile";
     wallet = profile[1].toLowerCase();
   } else if (pool) {
@@ -89,27 +106,38 @@ export function parseRequest(input: string): ReadRequest {
     wallet = activity[1].toLowerCase();
   } else throw new RequestError(404, "not_found");
   const allowed =
-    route === "following"
-      ? ["wallets", "limit"]
-      : route === "explore"
-        ? ["q", "window", "sort", "direction", "view", "ids", "limit", "offset"]
-        : route === "leaderboard"
-          ? ["window", "minTrades", "metric", "offset", "limit"]
-          : route === "profile" || route === "pool"
-            ? ["window"]
-            : route === "search"
-              ? ["q", "group"]
-              : route === "pools"
-                ? ["q", "limit", "cursor"]
-                : route === "live-trades"
-                  ? ["poolId"]
-                  : route === "trades"
-                    ? ["poolId", "limit", "cursor"]
-                    : route === "wallet"
-                      ? ["limit", "cursor"]
-                      : route === "feed"
-                        ? ["pools"]
-                        : [];
+    route === "trade-share"
+      ? ["wallet"]
+      : route === "following"
+        ? ["wallets", "limit"]
+        : route === "explore"
+          ? [
+              "q",
+              "window",
+              "sort",
+              "direction",
+              "view",
+              "ids",
+              "limit",
+              "offset",
+            ]
+          : route === "leaderboard"
+            ? ["window", "minTrades", "metric", "offset", "limit"]
+            : route === "profile" || route === "pool"
+              ? ["window"]
+              : route === "search"
+                ? ["q", "group"]
+                : route === "pools"
+                  ? ["q", "limit", "cursor"]
+                  : route === "live-trades"
+                    ? ["poolId"]
+                    : route === "trades"
+                      ? ["poolId", "limit", "cursor"]
+                      : route === "wallet"
+                        ? ["limit", "cursor"]
+                        : route === "feed"
+                          ? ["pools"]
+                          : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
@@ -216,6 +244,8 @@ export function parseRequest(input: string): ReadRequest {
       JSON.stringify([
         route,
         poolId,
+        txHash,
+        logIndex,
         wallet,
         wallets,
         q,
@@ -268,6 +298,8 @@ export function parseRequest(input: string): ReadRequest {
     limit: +rawLimit,
     q,
     poolId,
+    txHash,
+    logIndex,
     pools,
     wallet,
     wallets,

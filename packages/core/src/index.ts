@@ -8,6 +8,7 @@ export * from "./live-analytics";
 
 export * from "./search";
 export * from "./following";
+export * from "./trade-share";
 
 export * from "./candles";
 

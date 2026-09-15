@@ -9,6 +9,7 @@ import { readSearch } from "./search-read";
 import { assertCatalogIdentity, catalogCte } from "./catalog-read";
 import { readLiveTrades } from "./live-read";
 import { readFollowing } from "./following-read";
+import { readTradeShare } from "./trade-share-read";
 import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
 import {
@@ -142,6 +143,13 @@ export async function readData(
     return readLiveTrades(query, request.poolId);
   if (request.route === "following")
     return readFollowing(query, request.wallets, request.limit);
+  if (request.route === "trade-share")
+    return readTradeShare(query, {
+      poolId: request.poolId!,
+      txHash: request.txHash!,
+      logIndex: request.logIndex!,
+      wallet: request.wallet!,
+    });
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
   if (request.route === "explore")
     return readProjectedExplore(query, request.explore);

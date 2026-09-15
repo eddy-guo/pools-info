@@ -54,7 +54,8 @@ export function createApi(
       const cacheable =
         request.route !== "ready" &&
         request.route !== "live-trades" &&
-        request.route !== "following";
+        request.route !== "following" &&
+        request.route !== "trade-share";
       const hit = cache.get(request.cacheKey);
       if (cacheable && hit && hit.expires > now()) {
         res.setHeader("X-Data-Cache", "HIT");
