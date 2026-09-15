@@ -1,0 +1,1085 @@
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { encodeAbiParameters, toEventSelector, type Hex } from "viem";
+import {
+  Rpc,
+  RpcRateLimitExhausted,
+  RpcResponseCapacity,
+  collectPoolEventGroup,
+  contracts,
+  swapEvent,
+  type RawLog,
+} from "@pools/chain";
+import {
+  commitBatch,
+  commitPoolGroup,
+  createClient,
+  discoveryV2Identity,
+  ensureDiscovery,
+  ensureDiscoveryV2,
+  ensureBroadStream,
+  getStream,
+  migrate,
+  rewind,
+  broadStreamIdentity,
+  broadRangeCheckpoint,
+  resolveBroadPools,
+  type Client,
+} from "@pools/db";
+import {
+  BroadScheduler,
+  broadV1Enabled,
+  broadReceiptMode,
+  runBroadBatch,
+} from "./broad-worker";
+import {
+  BroadBatchBudget,
+  BroadSingleBlockOverflow,
+  broadBatchBlocks,
+  BROAD_RPC_TIMEOUT_MS,
+  BROAD_RPC_MAX_REQUESTS,
+} from "./broad-budget";
+import { trackRpcMethods } from "./rpc-telemetry";
+import { reconcileStream } from "./checkpoints";
+import {
+  rpcRateLimitObserver,
+  throwIfBroadCapacityOverflow,
+  throwIfRateLimitExhausted,
+  workerFailureExitCode,
+} from "./rpc-operations";
+
+const first = discoveryV2Identity.start;
+const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
+const hex = (n: number): Hex => `0x${n.toString(16)}`;
+const token: Hex = "0x1111111111111111111111111111111111111111";
+const sender: Hex = "0x2222222222222222222222222222222222222222";
+const pools = [word(3), word(5)].map((id, i) => ({
+  id,
+  token,
+  name: `Pool ${i}`,
+  symbol: `P${i}`,
+  launchBlock: first + i,
+  launchTx: word(100 + i),
+  launchSender: sender,
+  launchedAt: (first + i) * 2,
+}));
+const dbTest = { skip: !process.env.TEST_DATABASE_URL };
+async function database(t: TestContext) {
+  const db = createClient(process.env.TEST_DATABASE_URL!);
+  await db.connect();
+  const schema = `broad_worker_${randomUUID().replaceAll("-", "")}`;
+  await db.query(`CREATE SCHEMA "${schema}"`);
+  await db.query(`SET search_path TO "${schema}"`);
+  t.after(async () => {
+    await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+    await db.end();
+  });
+  await migrate(db);
+  const v1 = await ensureDiscovery(db, first);
+  await commitBatch(db, v1, {
+    from: first,
+    to: first + 2,
+    hash: word(first + 2),
+    evidence: {},
+    pools,
+  });
+  await ensureDiscoveryV2(db);
+  for (const [from, to] of [
+    [first, first + 2],
+    [first + 3, first + 9],
+    [first + 10, first + 19],
+  ])
+    await commitBatch(db, await getStream(db, "discovery:v2"), {
+      from,
+      to,
+      hash: word(to),
+      evidence: {
+        registryRevision: discoveryV2Identity.registryRevision,
+        registrySourceRevision: discoveryV2Identity.registrySourceRevision,
+      },
+      pools: from === first ? pools : [],
+    });
+  for (const p of pools)
+    await commitBatch(db, await getStream(db, `pool:${p.id}`), {
+      from: p.launchBlock,
+      to: first + 2,
+      hash: word(first + 2),
+      token,
+      evidence: { deep: "retained" },
+      events: [],
+    });
+  return db;
+}
+type Request = { id: number; method: string; params: unknown[] };
+function provider(t: TestContext) {
+  let reorgFrom: number | null = null;
+  let capacityAbove = Infinity;
+  let failReceipt = false;
+  let beforeReceipt: (() => Promise<void>) | undefined;
+  let decimals = 18n,
+    supply = (1n << 256n) - 1n;
+  let badUnits: string | null = null;
+  let revertUnits = false;
+  let beforeUnits: (() => Promise<void>) | undefined;
+  const ranges: number[][] = [];
+  const methodCalls: Request[] = [];
+  const blockHash = (n: number) =>
+    word(n + (reorgFrom !== null && n >= reorgFrom ? 10000000 : 0));
+  const header = (n: number) => ({
+    number: hex(n),
+    hash: blockHash(n),
+    parentHash: blockHash(n - 1),
+    timestamp: hex(n * 2),
+  });
+  const log = (pool: Hex, index: number, block: number): RawLog => ({
+    address: contracts.manager,
+    topics: [toEventSelector(swapEvent), pool, word(4)],
+    data: encodeAbiParameters(
+      [
+        { type: "int128" },
+        { type: "int128" },
+        { type: "uint160" },
+        { type: "uint128" },
+        { type: "int24" },
+        { type: "uint24" },
+      ],
+      [-10n, 200000000000000000001n, (1n << 96n) + 123n, 100n, -2, 2500],
+    ),
+    blockNumber: hex(block),
+    blockHash: blockHash(block),
+    transactionHash: word(block + 100),
+    logIndex: hex(index),
+    removed: false,
+  });
+  const logs = () => [
+    log(pools[0].id, 0, first + 1),
+    log(pools[1].id, 1, first + 1),
+    log(word(7), 2, first + 1),
+    log(pools[0].id, 0, first + 4),
+  ];
+  const response = async (row: Request): Promise<unknown> => {
+    methodCalls.push(row);
+    if (row.method === "eth_chainId") return hex(4663);
+    if (row.method === "eth_blockNumber") return hex(first + 19 + 128);
+    if (row.method === "eth_getBlockByNumber")
+      return header(Number(row.params[0]));
+    if (row.method === "eth_call") {
+      if (beforeUnits) {
+        const hook = beforeUnits;
+        beforeUnits = undefined;
+        await hook();
+      }
+      const call = row.params[0] as { to: string; data: string };
+      const selector = row.params[1] as {
+        blockHash: string;
+        requireCanonical: boolean;
+      };
+      assert.equal(call.to, token);
+      assert.equal(selector.requireCanonical, true);
+      assert.match(selector.blockHash, /^0x[\da-f]{64}$/);
+      if (badUnits !== null) return badUnits;
+      return (
+        "0x" +
+        (call.data === "0x313ce567" ? decimals : supply)
+          .toString(16)
+          .padStart(64, "0")
+      );
+    }
+    if (row.method === "eth_getLogs") {
+      const filter = row.params[0] as {
+        address: string;
+        fromBlock: string;
+        toBlock: string;
+      };
+      assert.equal(filter.address, contracts.manager);
+      const from = Number(filter.fromBlock),
+        to = Number(filter.toBlock);
+      ranges.push([from, to]);
+      if (to - from + 1 > capacityAbove)
+        return Array.from({ length: 10001 }, (_, i) =>
+          log(pools[0].id, i, from),
+        );
+      return logs().filter(
+        (l) => Number(l.blockNumber) >= from && Number(l.blockNumber) <= to,
+      );
+    }
+    if (row.method === "eth_getBlockReceipts") {
+      const txs = [
+        ...new Set(
+          logs()
+            .filter((l) => Number(l.blockNumber) === Number(row.params[0]))
+            .map((l) => l.transactionHash),
+        ),
+      ];
+      return Promise.all(
+        txs.reverse().map((tx) =>
+          response({
+            ...row,
+            method: "eth_getTransactionReceipt",
+            params: [tx],
+          }),
+        ),
+      );
+    }
+    if (row.method === "eth_getTransactionReceipt") {
+      if (beforeReceipt) {
+        const hook = beforeReceipt;
+        beforeReceipt = undefined;
+        await hook();
+      }
+      const own = logs().filter((l) => l.transactionHash === row.params[0]);
+      return {
+        transactionHash: row.params[0],
+        blockHash: own[0].blockHash,
+        blockNumber: own[0].blockNumber,
+        status: "0x1",
+        from: sender,
+        to: contracts.router,
+        logs: failReceipt ? own.filter((l) => Number(l.logIndex) !== 1) : own,
+      };
+    }
+    assert.fail(`Unexpected method ${row.method}`);
+  };
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: unknown, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Request | Request[];
+      const reply = async (row: Request) =>
+        row.method === "eth_call" && revertUnits
+          ? {
+              jsonrpc: "2.0",
+              id: row.id,
+              error: { code: -32000, message: "execution reverted" },
+            }
+          : { jsonrpc: "2.0", id: row.id, result: await response(row) };
+      return Response.json(
+        Array.isArray(body)
+          ? await Promise.all(body.map(reply))
+          : await reply(body),
+      );
+    },
+  );
+  const createRpc = () =>
+    trackRpcMethods(
+      new Rpc("http://127.0.0.1:1/mock-only", {
+        logRangeBlocks: 1000,
+        maxBatchSize: 10,
+        minIntervalMs: 0,
+        maxRequests: BROAD_RPC_MAX_REQUESTS,
+        timeoutMs: BROAD_RPC_TIMEOUT_MS,
+      }),
+    );
+  return {
+    createRpc,
+    ranges,
+    methodCalls,
+    units: (d: bigint, s: bigint) => {
+      decimals = d;
+      supply = s;
+    },
+    badUnits: (raw: string | null) => {
+      badUnits = raw;
+    },
+    revertUnits: () => {
+      revertUnits = true;
+    },
+    beforeUnits: (hook: () => Promise<void>) => {
+      beforeUnits = hook;
+    },
+    header,
+    reorg: (from: number) => {
+      reorgFrom = from;
+    },
+    capacity: (above: number) => {
+      capacityAbove = above;
+    },
+    badReceipt: (bad: boolean) => {
+      failReceipt = bad;
+    },
+    beforeReceipt: (hook: () => Promise<void>) => {
+      beforeReceipt = hook;
+    },
+  };
+}
+async function independent(db: Client) {
+  return (
+    await db.query(
+      "SELECT * FROM indexer_streams WHERE kind<>'broad' ORDER BY stream_key",
+    )
+  ).rows;
+}
+async function counts(db: Client) {
+  return (
+    await db.query(
+      "SELECT (SELECT count(*)::int FROM broad_batches) AS batches,(SELECT count(*)::int FROM broad_swaps) AS swaps,(SELECT count(*)::int FROM indexer_batches WHERE stream_key='swaps:broad:v1') AS manifests",
+    )
+  ).rows[0];
+}
+
+test("broad defaults off and validates explicit activation/range limits", async (t) => {
+  const previous = process.env.INDEXER_BROAD_V1_ENABLED;
+  delete process.env.INDEXER_BROAD_V1_ENABLED;
+  t.after(() => {
+    if (previous === undefined) delete process.env.INDEXER_BROAD_V1_ENABLED;
+    else process.env.INDEXER_BROAD_V1_ENABLED = previous;
+  });
+  assert.equal(broadV1Enabled(undefined), false);
+  assert.equal(broadV1Enabled("0"), false);
+  assert.equal(broadV1Enabled("1"), true);
+  for (const value of ["", "true", "2", " 1 "])
+    assert.throws(() => broadV1Enabled(value), /Invalid/);
+  assert.equal(broadBatchBlocks(undefined), 1000);
+  assert.equal(broadBatchBlocks("1"), 1);
+  for (const value of ["", "0", "1001", "1.5", "NaN"])
+    assert.throws(() => broadBatchBlocks(value), /Invalid/);
+  assert.equal(broadReceiptMode("transaction"), "transaction");
+  assert.equal(broadReceiptMode("block"), "block");
+  assert.equal(
+    new BroadScheduler("1", "3", "transaction").receiptMode,
+    "transaction",
+  );
+  assert.equal(new BroadScheduler("1", "3", "block").receiptMode, "block");
+  for (const value of ["", "1", "blocks", " block "])
+    assert.throws(() => broadReceiptMode(value), /Invalid/);
+  const disabled = new BroadScheduler("0", "invalid", "invalid");
+  const db = {
+    query: () => assert.fail("disabled database access"),
+  } as unknown as Client;
+  assert.equal(
+    await disabled.run(db, () => assert.fail("disabled RPC construction")),
+    null,
+  );
+});
+
+test(
+  "broad worker retains dated 6/18 decimals and exact uint256 supply without reuse",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t),
+      saved = await independent(db);
+    p.units(6n, (1n << 256n) - 1n);
+    const scheduler = new BroadScheduler("1", "3");
+    const firstResult = await scheduler.run(db, p.createRpc);
+    const firstUnits = (
+      await db.query(
+        "SELECT *,total_supply::text AS supply FROM broad_token_units",
+      )
+    ).rows[0];
+    assert.equal(firstUnits.decimals, 6);
+    assert.equal(firstUnits.supply, ((1n << 256n) - 1n).toString());
+    assert.equal(Number(firstUnits.block_number), first + 2);
+    assert.equal(firstUnits.block_hash, word(first + 2));
+    assert.equal(Number(firstUnits.timestamp), (first + 2) * 2);
+    assert.equal(BigInt(firstUnits.decimals_result), 6n);
+    assert.equal(BigInt(firstUnits.total_supply_result), (1n << 256n) - 1n);
+    // Two pools share one token, so only two calls are needed for the cutoff.
+    assert.equal(firstResult!.methodCountsBeforeRetries!.eth_call, 2);
+    const calls = p.methodCalls.filter((c) => c.method === "eth_call");
+    assert.deepEqual(
+      calls.map((c) => c.params[1]),
+      [
+        { blockHash: word(first + 2), requireCanonical: true },
+        { blockHash: word(first + 2), requireCanonical: true },
+      ],
+    );
+    p.units(18n, 123456789012345678901234567890n);
+    const next = await scheduler.run(db, p.createRpc);
+    assert.equal(next!.methodCountsBeforeRetries!.eth_call, 2);
+    const observations = (
+      await db.query(
+        "SELECT decimals,total_supply::text AS supply FROM broad_token_units ORDER BY batch_end",
+      )
+    ).rows;
+    assert.deepEqual(observations, [
+      { decimals: 6, supply: ((1n << 256n) - 1n).toString() },
+      { decimals: 18, supply: "123456789012345678901234567890" },
+    ]);
+    assert.deepEqual(await independent(db), saved);
+    const empty = await scheduler.run(db, p.createRpc);
+    assert.equal(empty!.methodCountsBeforeRetries!.eth_call, undefined);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      2,
+    );
+  },
+);
+
+test(
+  "verified zero supply and zero decimals are retained, never synthesized",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    p.units(0n, 0n);
+    await new BroadScheduler("1", "3").run(db, p.createRpc);
+    const units = (
+      await db.query(
+        "SELECT decimals,total_supply::text AS supply,total_supply_result FROM broad_token_units",
+      )
+    ).rows[0];
+    assert.equal(units.decimals, 0);
+    assert.equal(units.supply, "0");
+    assert.equal(units.total_supply_result, word(0));
+  },
+);
+
+test(
+  "malformed, reverted and out-of-bounds token units never advance broad groups",
+  dbTest,
+  async (t) => {
+    for (const kind of ["short", "decimals256", "oversizeSupply", "reverted"])
+      await t.test(kind, async (sub) => {
+        const db = await database(sub),
+          p = provider(sub),
+          saved = await independent(db);
+        if (kind === "short") p.badUnits("0x00");
+        if (kind === "decimals256") p.units(256n, 1n);
+        if (kind === "oversizeSupply") p.units(18n, 1n << 256n);
+        if (kind === "reverted") p.revertUnits();
+        await assert.rejects(new BroadScheduler("1", "3").run(db, p.createRpc));
+        assert.deepEqual(await counts(db), {
+          batches: 0,
+          swaps: 0,
+          manifests: 0,
+        });
+        assert.equal(
+          (await getStream(db, broadStreamIdentity.key)).cursor,
+          null,
+        );
+        assert.equal(
+          (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+            .rows[0].n,
+          0,
+        );
+        assert.deepEqual(await independent(db), saved);
+      });
+  },
+);
+
+test(
+  "canonical units cutoff change and units SQL failure roll back the complete group",
+  dbTest,
+  async (t) => {
+    await t.test("canonical change during metadata", async (sub) => {
+      const db = await database(sub),
+        p = provider(sub);
+      p.beforeUnits(async () => p.reorg(first + 2));
+      await assert.rejects(
+        new BroadScheduler("1", "3").run(db, p.createRpc),
+        /boundary changed/,
+      );
+      assert.deepEqual(await counts(db), {
+        batches: 0,
+        swaps: 0,
+        manifests: 0,
+      });
+      assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+    });
+    await t.test("SQL failure", async (sub) => {
+      const db = await database(sub),
+        p = provider(sub),
+        saved = await independent(db);
+      await db.query(
+        "CREATE FUNCTION reject_units() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'units SQL failure'; END; $$",
+      );
+      await db.query(
+        "CREATE TRIGGER reject_units BEFORE INSERT ON broad_token_units FOR EACH ROW EXECUTE FUNCTION reject_units()",
+      );
+      await assert.rejects(
+        new BroadScheduler("1", "3").run(db, p.createRpc),
+        /units SQL failure/,
+      );
+      assert.deepEqual(await counts(db), {
+        batches: 0,
+        swaps: 0,
+        manifests: 0,
+      });
+      assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+      assert.deepEqual(await independent(db), saved);
+    });
+  },
+);
+
+test(
+  "units are replayed from retained ABI results and invalidated by broad/discovery rewinds",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const range = (await broadRangeCheckpoint(db, first, first + 2))!;
+    const registry = range.registry;
+    const group = await collectPoolEventGroup(
+      {
+        mode: "broad",
+        collectTokenUnits: true,
+        fromBlock: first,
+        toBlock: range.toBlock,
+        registry,
+        resolvePools: (ids) => resolveBroadPools(db, ids, registry),
+      },
+      p.createRpc(),
+    );
+    const expected = await ensureBroadStream(db);
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group }),
+      true,
+    );
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group }),
+      false,
+    );
+    const conflicting = structuredClone(group);
+    conflicting.tokenUnits![0].decimalsResult = word(6);
+    conflicting.tokenUnits![0].decimals = 6;
+    await assert.rejects(
+      commitPoolGroup(db, { mode: "broad", expected, group: conflicting }),
+      /Conflicting broad replay/,
+    );
+    const mismatched = structuredClone(group);
+    mismatched.tokenUnits![0].totalSupply = "1";
+    await assert.rejects(
+      commitPoolGroup(db, { mode: "broad", expected, group: mismatched }),
+      /disagree with retained evidence/,
+    );
+    for (const mutate of [
+      (g: typeof group) => {
+        g.tokenUnits![0].block--;
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].blockHash = word(99);
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].timestamp++;
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].token = sender;
+      },
+      (g: typeof group) => {
+        g.tokenUnits!.push(g.tokenUnits![0]);
+      },
+      (g: typeof group) => {
+        g.tokenUnits = [];
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].totalSupplyResult = "0x";
+      },
+    ]) {
+      const invalid = structuredClone(group);
+      mutate(invalid);
+      await assert.rejects(
+        commitPoolGroup(db, { mode: "broad", expected, group: invalid }),
+      );
+    }
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      1,
+    );
+    await rewind(db, await getStream(db, broadStreamIdentity.key), null);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      0,
+    );
+    await commitPoolGroup(db, { mode: "broad", expected, group });
+    await rewind(db, await getStream(db, "discovery:v2"), null);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      0,
+    );
+    assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+  },
+);
+
+test(
+  "default-off worker leaves real Postgres without broad state",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    const saved = await independent(db);
+    const previous = process.env.INDEXER_BROAD_V1_ENABLED;
+    delete process.env.INDEXER_BROAD_V1_ENABLED;
+    t.after(() => {
+      if (previous === undefined) delete process.env.INDEXER_BROAD_V1_ENABLED;
+      else process.env.INDEXER_BROAD_V1_ENABLED = previous;
+    });
+    assert.equal(
+      await new BroadScheduler().run(db, () =>
+        assert.fail("disabled RPC construction"),
+      ),
+      null,
+    );
+    assert.equal(
+      (
+        await db.query(
+          "SELECT count(*)::int AS n FROM indexer_streams WHERE kind='broad'",
+        )
+      ).rows[0].n,
+      0,
+    );
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    assert.deepEqual(await independent(db), saved);
+  },
+);
+
+test(
+  "worker persists the complete range, selects nearest checkpoint, resumes and commits empty ranges",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t),
+      saved = await independent(db);
+    const scheduler = new BroadScheduler("1", "3");
+    const initial = await scheduler.run(db, p.createRpc);
+    assert.ok(initial);
+    assert.equal(initial.advanced, 3);
+    assert.equal(initial.discoveryThroughBlock, first + 2);
+    assert.equal(initial.observedSwaps, 3);
+    assert.equal(initial.registeredSwaps, 2);
+    assert.equal(initial.unsupportedSwaps, 0);
+    assert.equal(initial.lagBlocks, 17);
+    assert.equal(initial.capacitySplits, 0);
+    assert.equal(initial.methodCountsBeforeRetries!.eth_getLogs, 1);
+    assert.equal(
+      initial.methodCountsBeforeRetries!.eth_getTransactionReceipt,
+      1,
+    );
+    assert.equal(
+      initial.rpcCalls,
+      Object.values(initial.methodCountsBeforeRetries!).reduce(
+        (a, b) => a + b,
+        0,
+      ),
+    );
+    const resumed = await new BroadScheduler("1", "3").run(db, p.createRpc);
+    assert.equal(resumed!.from, first + 3);
+    assert.equal(resumed!.to, first + 5);
+    assert.equal(resumed!.discoveryThroughBlock, first + 9);
+    const empty = await scheduler.run(db, p.createRpc);
+    assert.equal(empty!.from, first + 6);
+    assert.equal(empty!.to, first + 8);
+    assert.equal(empty!.registeredSwaps, 0);
+    assert.equal(empty!.advanced, 3);
+    assert.deepEqual(await counts(db), { batches: 3, swaps: 3, manifests: 3 });
+    assert.deepEqual(p.ranges, [
+      [first, first + 2],
+      [first + 3, first + 5],
+      [first + 6, first + 8],
+    ]);
+    assert.deepEqual(await independent(db), saved);
+  },
+);
+
+test(
+  "broad reconciles its canonical prefix and resumes only after discovery's orphaned checkpoint is replaced",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const scheduler = new BroadScheduler("1", "3");
+    await scheduler.run(db, p.createRpc);
+    await scheduler.run(db, p.createRpc);
+    const saved = (await independent(db)).filter(
+      (s) => s.stream_key !== "discovery:v2",
+    );
+    p.reorg(first + 3);
+    await assert.rejects(
+      scheduler.run(db, p.createRpc),
+      /registry boundary changed/,
+    );
+    assert.equal(
+      (await getStream(db, broadStreamIdentity.key)).cursor,
+      first + 2,
+    );
+    assert.deepEqual(await counts(db), { batches: 1, swaps: 2, manifests: 1 });
+    assert.equal((await getStream(db, "discovery:v2")).cursor, first + 19);
+    await reconcileStream(
+      db,
+      await getStream(db, "discovery:v2"),
+      p.createRpc(),
+    );
+    for (const [from, to] of [
+      [first + 3, first + 9],
+      [first + 10, first + 19],
+    ])
+      await commitBatch(db, await getStream(db, "discovery:v2"), {
+        from,
+        to,
+        hash: p.header(to).hash,
+        evidence: {
+          registryRevision: discoveryV2Identity.registryRevision,
+          registrySourceRevision: discoveryV2Identity.registrySourceRevision,
+        },
+        pools: [],
+      });
+    const resumed = await scheduler.run(db, p.createRpc);
+    assert.equal(resumed!.from, first + 3);
+    assert.equal(resumed!.advanced, 3);
+    assert.equal(
+      (await getStream(db, broadStreamIdentity.key)).hash,
+      p.header(first + 5).hash,
+    );
+    assert.deepEqual(
+      (await independent(db)).filter((s) => s.stream_key !== "discovery:v2"),
+      saved,
+    );
+  },
+);
+
+test(
+  "discovery checkpoint removal during receipt fetch rejects the in-flight group without replacing source evidence",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const saved = (await independent(db)).filter(
+      (s) => s.stream_key !== "discovery:v2",
+    );
+    p.beforeReceipt(async () => {
+      await rewind(db, await getStream(db, "discovery:v2"), null);
+    });
+    await assert.rejects(
+      new BroadScheduler("1", "3").run(db, p.createRpc),
+      /coverage or identity changed/,
+    );
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+    assert.equal((await getStream(db, "discovery:v2")).cursor, null);
+    assert.deepEqual(
+      (await independent(db)).filter((s) => s.stream_key !== "discovery:v2"),
+      saved,
+    );
+    const waiting = await new BroadScheduler("1", "3").run(db, p.createRpc);
+    assert.equal(waiting!.waitingForDiscovery, true);
+    assert.equal(waiting!.advanced, 0);
+  },
+);
+
+test(
+  "worker evidence rejection and second-pool SQL failure remain atomic without capacity retries",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t),
+      saved = await independent(db);
+    const scheduler = new BroadScheduler("1", "3");
+    p.badReceipt(true);
+    await assert.rejects(scheduler.run(db, p.createRpc), /receipt evidence/);
+    assert.equal(p.ranges.length, 1);
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    p.badReceipt(false);
+    await db.query(
+      `CREATE FUNCTION fail_second_broad() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.pool_id='${pools[1].id}' THEN RAISE EXCEPTION 'second broad member failed'; END IF; RETURN NEW; END; $$`,
+    );
+    await db.query(
+      "CREATE TRIGGER fail_second_broad BEFORE INSERT ON broad_swaps FOR EACH ROW EXECUTE FUNCTION fail_second_broad()",
+    );
+    await assert.rejects(
+      scheduler.run(db, p.createRpc),
+      /second broad member failed/,
+    );
+    assert.equal(p.ranges.length, 2);
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+    assert.deepEqual(await independent(db), saved);
+  },
+);
+
+test(
+  "whole-range capacity splitting yields before retrying saved start and reports each attempt's method counts",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    p.capacity(2);
+    const reductions: number[][] = [];
+    const scheduler = new BroadScheduler("1", "4");
+    const deferred = await scheduler.run(db, p.createRpc, {
+      onReduce: (a, b) => reductions.push([a, b]),
+    });
+    assert.equal(deferred!.deferred, true);
+    assert.equal(deferred!.advanced, 0);
+    assert.equal(deferred!.from, null);
+    assert.equal(deferred!.to, null);
+    assert.equal(deferred!.capacitySplits, 1);
+    assert.equal(deferred!.methodCountsBeforeRetries!.eth_getLogs, 1);
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    const result = await scheduler.run(db, p.createRpc);
+    assert.deepEqual(p.ranges, [
+      [first, first + 3],
+      [first, first + 1],
+    ]);
+    assert.deepEqual(reductions, [[4, 2]]);
+    assert.equal(result!.advanced, 2);
+    assert.equal(result!.capacitySplits, 0);
+    assert.equal(result!.methodCountsBeforeRetries!.eth_getLogs, 1);
+    assert.equal(
+      result!.rpcCalls,
+      Object.values(result!.methodCountsBeforeRetries!).reduce(
+        (a, b) => a + b,
+        0,
+      ),
+    );
+    assert.deepEqual(await counts(db), { batches: 1, swaps: 2, manifests: 1 });
+    assert.equal(
+      (await getStream(db, broadStreamIdentity.key)).cursor,
+      first + 1,
+    );
+  },
+);
+
+test(
+  "single-block overflow stops once with typed capacity pause and preserves all cursors",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t),
+      saved = await independent(db);
+    p.capacity(0);
+    let failure: unknown;
+    await assert.rejects(
+      new BroadScheduler("1", "1").run(db, p.createRpc),
+      (e: unknown) => {
+        failure = e;
+        return e instanceof BroadSingleBlockOverflow && e.block === first;
+      },
+    );
+    assert.equal(p.ranges.length, 1);
+    assert.equal(workerFailureExitCode(failure), 76);
+    assert.throws(
+      () => throwIfBroadCapacityOverflow(failure),
+      (e) => e === failure,
+    );
+    assert.equal(workerFailureExitCode(Error("cleanup failure")), 76);
+    assert.deepEqual(await counts(db), { batches: 0, swaps: 0, manifests: 0 });
+    assert.deepEqual(await independent(db), saved);
+  },
+);
+
+test(
+  "nearest checkpoint helper clips missing coverage and resolves only v2 sources available by the pin",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    assert.equal(
+      (await broadRangeCheckpoint(db, first, first + 1))!.registry.throughBlock,
+      first + 2,
+    );
+    assert.equal(
+      (await broadRangeCheckpoint(db, first + 3, first + 4))!.registry
+        .throughBlock,
+      first + 9,
+    );
+    assert.equal(
+      (await broadRangeCheckpoint(db, first + 18, first + 25))!.toBlock,
+      first + 19,
+    );
+    assert.equal(await broadRangeCheckpoint(db, first + 20, first + 25), null);
+    const pin = (await broadRangeCheckpoint(db, first, first + 1))!.registry;
+    assert.deepEqual(
+      (
+        await resolveBroadPools(db, [pools[0].id, pools[1].id, word(7)], pin)
+      ).map((p) => p.poolId),
+      pools.map((p) => p.id),
+    );
+    await rewind(db, await getStream(db, "discovery:v2"), null);
+    assert.deepEqual(await resolveBroadPools(db, [pools[0].id], pin), []);
+    assert.equal(await broadRangeCheckpoint(db, first, first + 1), null);
+  },
+);
+
+test("budget recovers sparse capacity and never splits typed throttle or stale checkpoint failures", async () => {
+  const budget = new BroadBatchBudget(4);
+  const sizes: number[] = [];
+  let firstAttempt = true;
+  for (let i = 0; i < 7; i++)
+    await budget.run(async (size) => {
+      sizes.push(size);
+      if (firstAttempt) {
+        firstAttempt = false;
+        throw Error("Broad event group exceeds capacity; split the range");
+      }
+      return { advanced: size, rpcCalls: 10 };
+    });
+  assert.deepEqual(sizes, [4, 2, 2, 2, 2, 2, 4]);
+  for (const error of [
+    new RpcRateLimitExhausted(),
+    Error("Broad discovery checkpoint changed"),
+  ]) {
+    let attempts = 0;
+    await assert.rejects(
+      budget.run(async () => {
+        attempts++;
+        throw error;
+      }),
+      (e) => e === error,
+    );
+    assert.equal(attempts, 1);
+  }
+});
+
+test(
+  "real transport sustained throttling propagates the original type, exits75 and never retries a fresh client",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    let requests = 0,
+      clients = 0;
+    t.mock.method(globalThis, "fetch", async () => {
+      requests++;
+      return Response.json(
+        { error: { code: 429, message: "private provider text" } },
+        { status: 429 },
+      );
+    });
+    const failure = new BroadScheduler("1", "3").run(db, () => {
+      clients++;
+      return trackRpcMethods(
+        new Rpc("http://127.0.0.1:1/mock-only", {
+          minIntervalMs: 0,
+          onRateLimit: rpcRateLimitObserver("main"),
+        }),
+      );
+    });
+    let terminal: unknown;
+    await assert.rejects(failure, (e: unknown) => {
+      terminal = e;
+      return e instanceof RpcRateLimitExhausted;
+    });
+    assert.equal(requests, 4);
+    assert.equal(clients, 1);
+    assert.throws(
+      () => throwIfRateLimitExhausted(terminal),
+      (e) => e === terminal,
+    );
+    assert.equal(workerFailureExitCode(terminal), 75);
+    assert.equal(workerFailureExitCode(Error("database close failed")), 75);
+    assert.equal(
+      (
+        await db.query(
+          "SELECT count(*)::int AS n FROM indexer_streams WHERE kind='broad'",
+        )
+      ).rows[0].n,
+      0,
+    );
+  },
+);
+
+test(
+  "block receipt transport commits identical evidence and replays without network",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const registry = (await broadRangeCheckpoint(db, first, first + 5))!
+      .registry;
+    const range = {
+      mode: "broad" as const,
+      collectTokenUnits: true,
+      fromBlock: first,
+      toBlock: first + 5,
+      registry,
+      resolvePools: (ids: readonly string[]) =>
+        resolveBroadPools(db, ids, registry),
+    };
+    const legacy = await collectPoolEventGroup(range, p.createRpc());
+    const block = await collectPoolEventGroup(
+      { ...range, receiptMode: "block" },
+      p.createRpc(),
+    );
+    assert.deepEqual({ ...block, requests: legacy.requests }, legacy);
+    const expected = await ensureBroadStream(db);
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group: block }),
+      true,
+    );
+    t.mock.method(globalThis, "fetch", async () => {
+      throw Error("Replay must not fetch");
+    });
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group: legacy }),
+      false,
+    );
+  },
+);
+
+test(
+  "block mode worker retains cursor on receipt evidence failure, reorg and cancellation",
+  dbTest,
+  async (t) => {
+    for (const kind of [
+      "receipt",
+      "reorg",
+      "abort",
+      "oversized",
+      "rate_limit",
+      "malformed",
+    ])
+      await t.test(kind, async (sub) => {
+        const db = await database(sub),
+          p = provider(sub),
+          controller = new AbortController();
+        const expected = await ensureBroadStream(db);
+        if (["oversized", "rate_limit", "malformed"].includes(kind)) {
+          const originalFetch = globalThis.fetch;
+          sub.mock.method(
+            globalThis,
+            "fetch",
+            async (url: unknown, init: RequestInit) => {
+              const requests = JSON.parse(String(init.body)) as {
+                id: number;
+                method: string;
+              }[];
+              if (
+                Array.isArray(requests) &&
+                requests[0]?.method === "eth_getBlockReceipts"
+              ) {
+                if (kind === "rate_limit")
+                  return new Response(null, { status: 429 });
+                if (kind === "oversized")
+                  return new Response("{}", {
+                    headers: { "content-length": "8388609" },
+                  });
+                return Response.json(
+                  requests.map((r) => ({ id: r.id, result: [null] })),
+                );
+              }
+              return originalFetch(url as string, init);
+            },
+          );
+        }
+
+        if (kind === "receipt") p.badReceipt(true);
+        if (kind === "reorg") p.beforeReceipt(async () => p.reorg(first + 1));
+        if (kind === "abort") p.beforeReceipt(async () => controller.abort());
+        const run = new BroadScheduler("1", "3", "block").run(db, p.createRpc, {
+          signal: controller.signal,
+        });
+        if (kind === "oversized") assert.equal((await run)!.deferred, true);
+        else await assert.rejects(run);
+        assert.equal((await ensureBroadStream(db)).cursor, expected.cursor);
+        assert.equal(
+          (await db.query("SELECT count(*)::int AS n FROM broad_batches"))
+            .rows[0].n,
+          0,
+        );
+      });
+  },
+);
+
+test("block response capacity stops a single block without retrying the collection", async () => {
+  let attempts = 0;
+  await assert.rejects(
+    new BroadBatchBudget(1).run(async () => {
+      attempts++;
+      throw new RpcResponseCapacity();
+    }),
+    BroadSingleBlockOverflow,
+  );
+  assert.equal(attempts, 1);
+});

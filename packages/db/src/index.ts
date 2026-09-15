@@ -2,6 +2,11 @@ import pg from "pg";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+  commitBroadGroupInTransaction,
+  snapshotBroadCommit,
+  type BroadPoolCommit,
+} from "./broad";
 
 export type Client = pg.Client;
 export function createClient(url = process.env.DATABASE_URL): Client {
@@ -103,7 +108,7 @@ export async function waitForWriter(
 }
 export interface Stream {
   key: string;
-  kind: "discovery" | "pool";
+  kind: "discovery" | "pool" | "broad";
   poolId: string | null;
   start: number;
   cursor: number | null;
@@ -288,7 +293,33 @@ export async function commitCandidateBatch(
 export async function commitPoolGroup(
   db: Client,
   entries: { expected: Stream; batch: Batch }[],
-): Promise<boolean[]> {
+): Promise<boolean[]>;
+export async function commitPoolGroup(
+  db: Client,
+  entry: BroadPoolCommit,
+): Promise<boolean>;
+export async function commitPoolGroup(
+  db: Client,
+  entries: { expected: Stream; batch: Batch }[] | BroadPoolCommit,
+): Promise<boolean[] | boolean> {
+  if (!Array.isArray(entries)) {
+    if (entries.mode !== "broad") throw Error("Invalid pool commit group");
+    const { expected, group, serialized } = snapshotBroadCommit(entries);
+    await db.query("BEGIN");
+    try {
+      const changed = await commitBroadGroupInTransaction(
+        db,
+        expected,
+        group,
+        serialized,
+      );
+      await db.query("COMMIT");
+      return changed;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    }
+  }
   const first = entries[0]?.batch;
   if (
     !first ||
@@ -360,6 +391,8 @@ async function commitBatchInTransaction(
   );
   if (!locked.rowCount) throw Error("Stream disappeared");
   const current = stream(locked.rows[0]);
+  if (current.kind === "broad")
+    throw Error("Broad streams require the broad group transaction");
   const previous = await db.query(
     "SELECT from_block,block_hash,content_hash FROM indexer_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
     [expected.key, batch.to],
@@ -571,6 +604,15 @@ export async function status(db: Client) {
   return { counts: counts.rows[0], streams: s.rows, streamLimit: 100 };
 }
 export { ensureDiscoveryV2, discoveryV2Identity } from "./discovery";
+export {
+  ensureBroadStream,
+  broadStreamIdentity,
+  broadRangeCheckpoint,
+  resolveBroadPools,
+  type BroadPoolCommit,
+  type BroadPoolEventGroup,
+  type BroadIndexedSwap,
+} from "./broad";
 export {
   ensureRecentStreams,
   recentStream,
