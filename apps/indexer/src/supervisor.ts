@@ -2,6 +2,8 @@ import type { ChildProcess } from "node:child_process";
 
 /** Reserved for a worker that has exhausted its sustained RPC-429 allowance. */
 export const RPC_RATE_LIMIT_EXIT_CODE = 75;
+/** An indivisible broad range needs operator inspection, not automatic retries. */
+export const BROAD_CAPACITY_EXIT_CODE = 76;
 export interface WorkerSpec {
   name: "recent" | "indexer" | "analytics";
   file: string;
@@ -11,12 +13,12 @@ interface SupervisorRuntime {
   spawn: (worker: WorkerSpec) => ChildProcess;
   exitCode: (code: 0 | 1) => void;
   log: (event: {
-    event: "service_paused_rpc_rate_limit";
+    event: "service_paused_rpc_rate_limit" | "service_paused_broad_capacity";
     worker: WorkerSpec["name"];
   }) => void;
 }
 
-/** Launch once. A rate-limit pause drains the whole unit and exits successfully,
+/** Launch once. A capacity or rate-limit pause drains the unit successfully,
  * so Railway's ON_FAILURE policy cannot restart another round of RPC requests. */
 export function superviseWorkers(
   workers: readonly WorkerSpec[],
@@ -60,11 +62,17 @@ export function superviseWorkers(
     child.once("close", () => cleanedUp(child));
     child.once("exit", (code) => {
       cleanedUp(child);
-      if (code === RPC_RATE_LIMIT_EXIT_CODE) {
+      if (
+        code === RPC_RATE_LIMIT_EXIT_CODE ||
+        code === BROAD_CAPACITY_EXIT_CODE
+      ) {
         if (!paused) {
           paused = true;
           runtime.log({
-            event: "service_paused_rpc_rate_limit",
+            event:
+              code === RPC_RATE_LIMIT_EXIT_CODE
+                ? "service_paused_rpc_rate_limit"
+                : "service_paused_broad_capacity",
             worker: worker.name,
           });
           // A sibling may have failed while another was already reporting 429s.

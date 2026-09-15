@@ -66,6 +66,32 @@ export function safeError(e: unknown) {
   // Return our own descriptions, never arbitrary provider, SQL or fetch text.
   const message = e instanceof Error ? e.message : "";
   if (
+    /^Invalid INDEXER_BROAD_(V1_ENABLED; expected 0 or 1|BATCH_BLOCKS)$/.test(
+      message,
+    )
+  )
+    return "broad_configuration_invalid: inspect INDEXER_BROAD settings";
+  if (
+    /^Broad single-block range exceeds capacity; stop before resuming$/.test(
+      message,
+    )
+  )
+    return "broad_single_block_overflow: collection stopped; inspect range capacity before manually restarting";
+  if (/^Broad event group exceeds capacity; split the range$/.test(message))
+    return "broad_capacity_exceeded: retry the whole uncommitted range at a smaller size";
+  if (
+    /^(Broad (registry boundary changed|boundary changed during collection|discovery (checkpoint changed|coverage or identity changed)|registry members or source identity changed|launch source identity changed)|Conflicting broad replay|Stale broad checkpoint or noncontiguous batch|Broad replay (source identity changed|discovery source identity changed))$/.test(
+      message,
+    )
+  )
+    return "broad_checkpoint_conflict: saved coverage preserved; reconcile discovery and broad checkpoints";
+  if (
+    /^(Broad rows disagree with retained evidence|Inconsistent broad (receipt evidence|canonical log|canonical headers)|Invalid broad (receipt|canonical header|registry resolution|commit group)|Unexpected broad event source or range|Duplicate broad event evidence|Broad event precedes verified launch|Missing broad (headers|receipts|boundary recheck))$/.test(
+      message,
+    )
+  )
+    return "broad_evidence_rejected: inspect verified registry and retained canonical evidence before resuming";
+  if (
     /^Invalid INDEXER_(START_BLOCK|BATCH_BLOCKS|POLL_MS|POOLS_PER_CYCLE|LOG_RANGE_BLOCKS)$/.test(
       message,
     )

@@ -607,6 +607,8 @@ export { ensureDiscoveryV2, discoveryV2Identity } from "./discovery";
 export {
   ensureBroadStream,
   broadStreamIdentity,
+  broadRangeCheckpoint,
+  resolveBroadPools,
   type BroadPoolCommit,
   type BroadPoolEventGroup,
   type BroadIndexedSwap,

@@ -1,8 +1,10 @@
 import { RpcRateLimitExhausted, type RpcRateLimitEvent } from "@pools/chain";
+import { BroadSingleBlockOverflow } from "./broad-budget";
 
 // Process-local and deliberately sticky. A failed DB close must not replace a
 // known capacity stop with exit1 and restart the whole Railway service.
 let rateLimitStopped = false;
+let broadCapacityStopped = false;
 
 export function rpcRateLimitObserver(worker: "main" | "recent" | "analytics") {
   return (event: RpcRateLimitEvent) => {
@@ -21,7 +23,24 @@ export function throwIfRateLimitExhausted(error: unknown): void {
   }
 }
 
+/** A one-block capacity stop also survives a database-close failure. */
+export function throwIfBroadCapacityOverflow(error: unknown): void {
+  if (error instanceof BroadSingleBlockOverflow) {
+    broadCapacityStopped = true;
+    console.error(
+      JSON.stringify({
+        event: "broad_single_block_overflow",
+        block: error.block,
+      }),
+    );
+    throw error;
+  }
+}
+
 /** service.ts maps this reserved exit to a clean, non-restarting stop. */
 export function workerFailureExitCode(error: unknown): number {
-  return rateLimitStopped || error instanceof RpcRateLimitExhausted ? 75 : 1;
+  if (rateLimitStopped || error instanceof RpcRateLimitExhausted) return 75;
+  return broadCapacityStopped || error instanceof BroadSingleBlockOverflow
+    ? 76
+    : 1;
 }

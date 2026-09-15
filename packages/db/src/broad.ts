@@ -6,6 +6,7 @@ import {
   contracts,
   type BroadPoolEventGroup,
   type BroadPoolIdentity,
+  type BroadRegistryCheckpoint,
   type Rpc,
 } from "@pools/chain";
 import { discoveryV2Identity } from "./discovery";
@@ -53,6 +54,131 @@ async function checkedBroadStream(db: Client) {
   )
     throw Error("Broad stream identity changed");
   return row;
+}
+
+/** Select the nearest retained covering checkpoint. A moving discovery tip is
+ * not a dependency for an older range. Missing coverage never creates state. */
+export async function broadRangeCheckpoint(
+  db: Client,
+  fromBlock: number,
+  requestedTo: number,
+): Promise<{ toBlock: number; registry: BroadRegistryCheckpoint } | null> {
+  if (
+    !Number.isSafeInteger(fromBlock) ||
+    !Number.isSafeInteger(requestedTo) ||
+    fromBlock < discoveryV2Identity.start ||
+    requestedTo < fromBlock ||
+    requestedTo - fromBlock >= broadEventPolicy.maxBlocks
+  )
+    throw Error("Invalid broad checkpoint range");
+  const id = discoveryV2Identity;
+  const discovery = (
+    await db.query(
+      "SELECT * FROM indexer_streams WHERE chain_id=4663 AND stream_key=$1",
+      [id.key],
+    )
+  ).rows[0];
+  if (!discovery) return null;
+  if (
+    discovery.kind !== "discovery" ||
+    discovery.pool_id !== null ||
+    Number(discovery.start_block) !== id.start ||
+    discovery.registry_revision !== id.registryRevision ||
+    discovery.registry_source_revision !== id.registrySourceRevision
+  )
+    throw Error("Broad discovery coverage or identity changed");
+  if (
+    discovery.cursor_block === null ||
+    Number(discovery.cursor_block) < fromBlock
+  )
+    return null;
+  const toBlock = Math.min(requestedTo, Number(discovery.cursor_block));
+  const checkpoint = (
+    await db.query(
+      `SELECT to_block::text,block_hash,evidence->>'registryRevision' AS revision,evidence->>'registrySourceRevision' AS source_revision
+     FROM indexer_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block>=$2 AND to_block<=$3 ORDER BY to_block LIMIT 1`,
+      [id.key, toBlock, discovery.cursor_block],
+    )
+  ).rows[0];
+  if (
+    !checkpoint ||
+    !Number.isSafeInteger(Number(checkpoint.to_block)) ||
+    checkpoint.revision !== id.registryRevision ||
+    checkpoint.source_revision !== id.registrySourceRevision ||
+    !/^0x[0-9a-f]{64}$/.test(checkpoint.block_hash)
+  )
+    throw Error("Broad discovery checkpoint changed");
+  return {
+    toBlock,
+    registry: {
+      stream: "discovery:v2",
+      revision: id.registryRevision,
+      sourceRevision: id.registrySourceRevision,
+      throughBlock: Number(checkpoint.to_block),
+      blockHash: checkpoint.block_hash,
+    },
+  };
+}
+
+async function registryMembers(
+  db: Client,
+  observed: readonly string[],
+  pin: BroadRegistryCheckpoint,
+  lock: boolean,
+) {
+  const id = discoveryV2Identity;
+  if (
+    observed.length > broadEventPolicy.maxLogs ||
+    observed.some((p) => !/^0x[0-9a-f]{64}$/.test(p)) ||
+    new Set(observed).size !== observed.length ||
+    pin.stream !== id.key ||
+    pin.revision !== id.registryRevision ||
+    pin.sourceRevision !== id.registrySourceRevision ||
+    !Number.isSafeInteger(pin.throughBlock) ||
+    pin.throughBlock < id.start
+  )
+    throw Error("Invalid broad registry resolution");
+  const members = (
+    await db.query(
+      `SELECT p.pool_id,p.token,p.launch_block::text,p.launch_tx,p.launch_sender,p.launched_at::text,
+      s.batch_end::text AS source_batch,b.from_block::text AS source_from,b.block_hash AS source_hash,b.content_hash AS source_content_hash,
+      b.evidence->>'registryRevision' AS source_revision,b.evidence->>'registrySourceRevision' AS source_registry_revision
+     FROM indexed_pools p
+     JOIN pool_launch_sources s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id
+     JOIN indexer_batches b ON b.chain_id=s.chain_id AND b.stream_key=s.stream_key AND b.to_block=s.batch_end
+     WHERE p.chain_id=4663 AND p.pool_id=ANY($1::text[]) AND s.stream_key=$2 AND s.batch_end<=$3
+     ORDER BY p.pool_id,s.batch_end${lock ? " FOR SHARE OF p,s,b" : ""}`,
+      [observed, id.key, pin.throughBlock],
+    )
+  ).rows;
+  if (new Set(members.map((p) => p.pool_id)).size !== members.length)
+    throw Error("Ambiguous broad launch provenance");
+  if (
+    members.some(
+      (p) =>
+        p.source_revision !== id.registryRevision ||
+        p.source_registry_revision !== id.registrySourceRevision ||
+        Number(p.launch_block) < Number(p.source_from) ||
+        Number(p.launch_block) > Number(p.source_batch),
+    )
+  )
+    throw Error("Broad launch source identity changed");
+  return members;
+}
+function memberPools(members: Record<string, string>[]): BroadPoolIdentity[] {
+  return members.map((p) => ({
+    poolId: p.pool_id,
+    token: p.token,
+    launchBlock: Number(p.launch_block),
+  }));
+}
+/** The transaction revalidates this read after collection; it grants no writes. */
+export async function resolveBroadPools(
+  db: Client,
+  observed: readonly string[],
+  registry: BroadRegistryCheckpoint,
+): Promise<BroadPoolIdentity[]> {
+  return memberPools(await registryMembers(db, observed, registry, false));
 }
 
 /** Validate against retained bytes using the collector's decoder and canonical
@@ -165,36 +291,8 @@ export async function commitBroadGroupInTransaction(
   const observed = [
     ...new Set(group.evidence.swapLogs.map((l) => l.topics[1].toLowerCase())),
   ];
-  const members = (
-    await db.query(
-      `SELECT p.pool_id,p.token,p.launch_block::text,p.launch_tx,p.launch_sender,p.launched_at::text,
-        s.batch_end::text AS source_batch,b.from_block::text AS source_from,b.block_hash AS source_hash,b.content_hash AS source_content_hash,
-        b.evidence->>'registryRevision' AS source_revision,b.evidence->>'registrySourceRevision' AS source_registry_revision
-       FROM indexed_pools p
-       JOIN pool_launch_sources s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id
-       JOIN indexer_batches b ON b.chain_id=s.chain_id AND b.stream_key=s.stream_key AND b.to_block=s.batch_end
-       WHERE p.chain_id=4663 AND p.pool_id=ANY($1::text[]) AND s.stream_key=$2 AND s.batch_end<=$3
-       ORDER BY p.pool_id,s.batch_end FOR SHARE OF p,s,b`,
-      [observed, id.key, pin.throughBlock],
-    )
-  ).rows;
-  if (new Set(members.map((p) => p.pool_id)).size !== members.length)
-    throw Error("Ambiguous broad launch provenance");
-  if (
-    members.some(
-      (p) =>
-        p.source_revision !== id.registryRevision ||
-        p.source_registry_revision !== id.registrySourceRevision ||
-        Number(p.launch_block) < Number(p.source_from) ||
-        Number(p.launch_block) > Number(p.source_batch),
-    )
-  )
-    throw Error("Broad launch source identity changed");
-  const pools: BroadPoolIdentity[] = members.map((p) => ({
-    poolId: p.pool_id,
-    token: p.token,
-    launchBlock: Number(p.launch_block),
-  }));
+  const members = await registryMembers(db, observed, pin, true);
+  const pools = memberPools(members);
   if (!isDeepStrictEqual(pools, group.pools))
     throw Error("Broad registry members or source identity changed");
 

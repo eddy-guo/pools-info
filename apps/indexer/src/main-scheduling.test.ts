@@ -18,6 +18,7 @@ test("actual main gives discovery catch-up priority and resumes deep work after 
       process.env.DATABASE_URL="postgresql://test@127.0.0.1/test";
       process.env.ROBINHOOD_RPC_URL="http://127.0.0.1:1/private_key";
       delete process.env.INDEXER_LOG_RPC_URL;
+      delete process.env.INDEXER_BROAD_V1_ENABLED;
       process.env.INDEXER_DISCOVERY_V2_ENABLED=state==="disabled"?"0":"1";
       process.env.INDEXER_DISCOVERY_BATCH_BLOCKS="10000";
       process.env.INDEXER_LOG_RANGE_BLOCKS="1000";

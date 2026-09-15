@@ -2,9 +2,17 @@ import { rpcPacing } from "./rpc-pacing";
 import {
   rpcRateLimitObserver,
   throwIfRateLimitExhausted,
+  throwIfBroadCapacityOverflow,
   workerFailureExitCode,
 } from "./rpc-operations";
 import { DiscoveryScheduler } from "./discovery-worker";
+import { BroadScheduler } from "./broad-worker";
+import {
+  BROAD_MAX_BLOCKS,
+  BROAD_RPC_TIMEOUT_MS,
+  BROAD_RPC_MAX_REQUESTS,
+} from "./broad-budget";
+import { trackRpcMethods } from "./rpc-telemetry";
 import {
   canonicalHeader as header,
   reconcileStream as reconcile,
@@ -20,6 +28,7 @@ import {
   commitBatch,
   createClient,
   discoveryV2Identity,
+  broadStreamIdentity,
   getStream,
   markAttempt,
   migrate,
@@ -36,28 +45,35 @@ function integer(name: string, fallback: number, min: number, max: number) {
     throw Error(`Invalid ${name}`);
   return n;
 }
-function rpc() {
+function rpc(broad = false) {
+  const maxLogRange = broad ? BROAD_MAX_BLOCKS : 10000;
   const limits = {
-    timeoutMs: 120000,
-    maxRequests: 300,
+    timeoutMs: broad ? BROAD_RPC_TIMEOUT_MS : 120000,
+    maxRequests: broad ? BROAD_RPC_MAX_REQUESTS : 300,
     // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
     // batch can exceed the free provider's throughput even over one connection.
     ...rpcPacing(),
     onRateLimit: rpcRateLimitObserver("main"),
     // Configure only a provider range verified by scripts/check-rpc-range.ts.
     // Conservative defaults remain safe for an unconfigured free endpoint.
-    logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
+    logRangeBlocks: Math.min(
+      integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),
+      maxLogRange,
+    ),
   };
   const state = new Rpc(undefined, limits);
-  return process.env.INDEXER_LOG_RPC_URL
-    ? withLogRpc(
-        state,
-        new Rpc(process.env.INDEXER_LOG_RPC_URL, {
-          ...limits,
-          logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 1000, 1, 10000),
-        }),
-      )
-    : state;
+  const counts = {};
+  if (broad) trackRpcMethods(state, counts);
+  if (!process.env.INDEXER_LOG_RPC_URL) return state;
+  const logs = new Rpc(process.env.INDEXER_LOG_RPC_URL, {
+    ...limits,
+    logRangeBlocks: Math.min(
+      integer("INDEXER_LOG_RANGE_BLOCKS", 1000, 1, 10000),
+      maxLogRange,
+    ),
+  });
+  if (broad) trackRpcMethods(logs, counts);
+  return withLogRpc(state, logs);
 }
 async function runBatch(
   db: Client,
@@ -178,6 +194,7 @@ async function main() {
     if (!process.env.ROBINHOOD_RPC_URL)
       throw Error("ROBINHOOD_RPC_URL is required for the persistent worker");
     const discovery = new DiscoveryScheduler();
+    const broad = new BroadScheduler();
     const batch = integer("INDEXER_BATCH_BLOCKS", 1000, 1, 2000);
     const poolBudget = new PoolBatchBudget(batch);
     const budgetOptions = (keys: string[]) => ({
@@ -217,11 +234,34 @@ async function main() {
     // setup or v1 fallback happens while disabled; deep pool work continues.
     if (!discovery.enabled)
       console.log(JSON.stringify({ event: "discovery_v2_disabled" }));
+    console.log(
+      JSON.stringify(
+        broad.enabled
+          ? {
+              event: "broad_v1_configured",
+              stream: broadStreamIdentity.key,
+              batchBlocks: broad.maximumBlocks,
+              collectionTimeoutMs: BROAD_RPC_TIMEOUT_MS,
+              maxHttpRequests: BROAD_RPC_MAX_REQUESTS,
+              logRangeBlocks: Math.min(
+                integer(
+                  "INDEXER_LOG_RANGE_BLOCKS",
+                  process.env.INDEXER_LOG_RPC_URL ? 1000 : 10,
+                  1,
+                  10000,
+                ),
+                BROAD_MAX_BLOCKS,
+              ),
+            }
+          : { event: "broad_v1_disabled" },
+      ),
+    );
     let failures = 0;
     while (!stopping) {
       let cycleError: unknown;
       let failed = false;
       let discoveryBehind = false;
+      let broadBehind = false;
       try {
         const discovered = await discovery.run(db, rpc, {
           signal: stop.signal,
@@ -264,7 +304,56 @@ async function main() {
         failures = 0;
         continue;
       }
-      const deepAllowed = !discovery.enabled || (!discoveryBehind && !failed);
+      // One broad range per cycle, after discovery's canonical catch-up check.
+      // Continue back to discovery between broad commits, sharing the same lock
+      // and process rather than adding a competing fourth worker.
+      if (discovery.enabled && !discoveryBehind && !failed && !stopping) {
+        try {
+          const indexed = await broad.run(db, () => rpc(true), {
+            signal: stop.signal,
+            onReduce: (previousBatchBlocks, nextBatchBlocks) =>
+              console.log(
+                JSON.stringify({
+                  event: "broad_batch_reduced",
+                  stream: broadStreamIdentity.key,
+                  previousBatchBlocks,
+                  nextBatchBlocks,
+                }),
+              ),
+          });
+          broadBehind =
+            !!indexed &&
+            (indexed.deferred || (indexed.advanced > 0 && indexed.behind));
+          if (indexed)
+            console.log(
+              JSON.stringify({
+                event: indexed.deferred
+                  ? "broad_batch_deferred"
+                  : "broad_batch",
+                stream: broadStreamIdentity.key,
+                ...indexed,
+              }),
+            );
+        } catch (error) {
+          throwIfRateLimitExhausted(error);
+          console.error(
+            JSON.stringify({
+              event: "broad_batch_failed",
+              stream: broadStreamIdentity.key,
+              error: safeError(error),
+            }),
+          );
+          throwIfBroadCapacityOverflow(error);
+          failed = true;
+          cycleError = error;
+        }
+      }
+      if (broadBehind && !failed && mode === "run" && !stopping) {
+        failures = 0;
+        continue;
+      }
+      const deepAllowed =
+        (!discovery.enabled || (!discoveryBehind && !failed)) && !broadBehind;
       let attempted = 0;
       while (deepAllowed && attempted < poolsPerCycle && !stopping) {
         let group: (Stream & { token: string })[];
