@@ -1,5 +1,16 @@
 export { collectSnapshot } from "./collector";
-export { collectPoolEventGroup } from "./pool-event-group";
+export {
+  collectPoolEventGroup,
+  type DeepPoolEventGroupRange,
+} from "./pool-event-group";
+export {
+  broadEventPolicy,
+  type BroadRegistryCheckpoint,
+  type BroadPoolIdentity,
+  type BroadPoolEventRange,
+  type BroadIndexedSwap,
+  type BroadPoolEventGroup,
+} from "./broad-pool-events";
 export { Rpc } from "./rpc";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";

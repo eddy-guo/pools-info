@@ -7,18 +7,35 @@ import {
 } from "./pool-events";
 import type { Receipt } from "./audit";
 import { Rpc, hex } from "./rpc";
+import {
+  collectBroadPoolEvents,
+  type BroadPoolEventRange,
+  type BroadPoolEventGroup,
+} from "./broad-pool-events";
+
+export interface DeepPoolEventGroupRange {
+  mode?: "deep";
+  fromBlock: number;
+  toBlock: number;
+  pools: { poolId: string; token: string }[];
+}
+export function collectPoolEventGroup(
+  range: BroadPoolEventRange,
+  rpc?: Rpc,
+): Promise<BroadPoolEventGroup>;
+export function collectPoolEventGroup(
+  range: DeepPoolEventGroupRange,
+  rpc?: Rpc,
+): Promise<PoolEvents[]>;
 
 /** Collect a bounded group of verified markets over one common range. The caller
  * must commit the whole group and its checkpoint atomically. This does not
  * discover markets or establish coverage before the supplied range. */
 export async function collectPoolEventGroup(
-  range: {
-    fromBlock: number;
-    toBlock: number;
-    pools: { poolId: string; token: string }[];
-  },
+  range: DeepPoolEventGroupRange | BroadPoolEventRange,
   rpc = new Rpc(undefined, { timeoutMs: 120000, maxRequests: 1000 }),
-): Promise<PoolEvents[]> {
+): Promise<PoolEvents[] | BroadPoolEventGroup> {
+  if (range.mode === "broad") return collectBroadPoolEvents(range, rpc);
   const { fromBlock, toBlock } = range;
   const pools = range.pools.map((p) => ({
     poolId: p.poolId.toLowerCase(),
