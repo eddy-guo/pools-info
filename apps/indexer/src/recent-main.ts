@@ -1,8 +1,13 @@
 import { rpcPacing } from "./rpc-pacing";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Rpc } from "@pools/chain";
-import { createClient, migrate } from "@pools/db";
-import { smallerRecentBatch } from "./recent-budget";
+import { createClient, migrate, recentResumeBatchBlocks } from "@pools/db";
+import {
+  smallerRecentBatch,
+  recentBatchSuccess,
+  RECENT_TIMEOUT_MS,
+  RECENT_MAX_REQUESTS,
+} from "./recent-budget";
 import { runRecentCycle } from "./recent-worker";
 import { safeError, errorDetails } from "./errors";
 const stop = new AbortController();
@@ -53,14 +58,14 @@ async function main() {
     if (!acquired) throw Error("Another worker holds the writer lock");
     let failures = 0;
     let goodCycles = 0;
-    let batchBlocks = options.batchBlocks;
+    let batchBlocks = await recentResumeBatchBlocks(db, options.batchBlocks);
     do {
       if (stop.signal.aborted) break;
       // Always use the configured authenticated RPC. The public provider blocks
       // hosted requests, and this lane never inherits INDEXER_LOG_RPC_URL.
       const rpc = new Rpc(process.env.ROBINHOOD_RPC_URL, {
-        timeoutMs: 120000,
-        maxRequests: 300,
+        timeoutMs: RECENT_TIMEOUT_MS,
+        maxRequests: RECENT_MAX_REQUESTS,
         ...rpcPacing(),
         logRangeBlocks,
       });
@@ -68,17 +73,24 @@ async function main() {
       try {
         const r = await runRecentCycle(db, rpc, { ...options, batchBlocks });
         failures = 0;
-        goodCycles++;
-        if (goodCycles >= 5) {
-          batchBlocks = Math.min(options.batchBlocks, batchBlocks * 2);
-          goodCycles = 0;
-        }
+        const requestedBatchBlocks = batchBlocks;
+        const elapsedMs = Math.round(performance.now() - started);
+        ({ batchBlocks, goodCycles } = recentBatchSuccess({
+          batchBlocks,
+          maxBlocks: options.batchBlocks,
+          goodCycles,
+          advanced: r.advanced,
+          elapsedMs,
+          httpRequests: rpc.requests,
+        }));
         console.log(
           JSON.stringify({
             event: "recent_batch",
             ...r,
             lagBlocks: r.through === null ? null : r.head - r.through,
-            elapsedMs: Math.round(performance.now() - started),
+            elapsedMs,
+            requestedBatchBlocks,
+            nextBatchBlocks: batchBlocks,
             httpRequests: rpc.requests,
             rpcCalls: rpc.calls,
           }),

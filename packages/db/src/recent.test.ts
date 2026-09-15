@@ -6,6 +6,7 @@ import {
   migrate,
   ensureRecentStreams,
   recentStream,
+  recentResumeBatchBlocks,
   commitRecentBatch,
   rewindRecent,
   knownRecentPools,
@@ -35,6 +36,43 @@ const batch = (from = 10, to = 19): RecentBatch => ({
   parentHash: hash(from - 1),
   timestamp: to * 10,
   evidence: { headers: [] },
+});
+test("recent restart sizing uses only the matching saved swap checkpoint", async (t) => {
+  const db = createClient(url);
+  await db.connect();
+  const schema = `recent_${randomUUID().replaceAll("-", "")}`;
+  await db.query(`CREATE SCHEMA "${schema}"`);
+  await db.query(`SET search_path TO "${schema}"`);
+  t.after(async () => {
+    await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+    await db.end();
+  });
+  await migrate(db);
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 1000);
+  await ensureRecentStreams(db, 10);
+  await commitRecentBatch(
+    db,
+    await recentStream(db, "discovery"),
+    batch(10, 259),
+  );
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 1000);
+  await commitRecentBatch(db, await recentStream(db, "swaps"), batch(10, 259));
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 250);
+  assert.equal(await recentResumeBatchBlocks(db, 100), 100);
+  assert.equal(await recentResumeBatchBlocks(db, 5), 5);
+  await db.query(
+    "UPDATE recent_streams SET cursor_hash=$1 WHERE stream_key='swaps'",
+    [hash(999)],
+  );
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 1000);
+  await db.query(
+    "UPDATE recent_streams SET cursor_hash=$1 WHERE stream_key='swaps'",
+    [hash(259)],
+  );
+  await rewindRecent(db, await recentStream(db, "swaps"), null);
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 1000);
+  await commitRecentBatch(db, await recentStream(db, "swaps"), batch(10, 10));
+  assert.equal(await recentResumeBatchBlocks(db, 1000), 10);
 });
 test("recent streams preserve restart start, contiguous discovery bounds, exact replay and atomic reorg cascades", async (t) => {
   const db = createClient(url);

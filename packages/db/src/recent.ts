@@ -88,6 +88,29 @@ export async function ensureRecentStreams(db: Client, start: number) {
     throw e;
   }
 }
+/** A restart sizing hint only. Normal canonical reconciliation still runs. */
+export async function recentResumeBatchBlocks(
+  db: Client,
+  configuredMax: number,
+) {
+  if (
+    !Number.isSafeInteger(configuredMax) ||
+    configuredMax < 1 ||
+    configuredMax > 2000
+  )
+    throw Error("Invalid recent batch maximum");
+  const result = await db.query(
+    `SELECT (b.to_block-b.from_block+1)::text AS width
+     FROM recent_streams s JOIN recent_batches b
+       ON b.chain_id=s.chain_id AND b.stream_key=s.stream_key
+       AND b.to_block=s.cursor_block AND b.block_hash=s.cursor_hash
+     WHERE s.chain_id=4663 AND s.stream_key='swaps'`,
+  );
+  const width = Number(result.rows[0]?.width);
+  if (!Number.isSafeInteger(width) || width < 1 || width > 2000)
+    return configuredMax;
+  return Math.min(configuredMax, Math.max(10, width));
+}
 export async function observeRecentHead(
   db: Client,
   head: number,

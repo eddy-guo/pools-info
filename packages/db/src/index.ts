@@ -468,6 +468,7 @@ export async function status(db: Client) {
 export {
   ensureRecentStreams,
   recentStream,
+  recentResumeBatchBlocks,
   observeRecentHead,
   knownRecentPools,
   commitRecentBatch,
