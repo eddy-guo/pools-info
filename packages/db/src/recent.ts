@@ -135,8 +135,8 @@ export async function knownRecentPools(
   const selected = ids ? " AND pool_id=ANY($1::text[])" : "";
   const rows = (
     await db.query(
-      `SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM indexed_pools WHERE chain_id=4663${selected}
-    UNION ALL SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM recent_pools WHERE chain_id=4663${selected} LIMIT 20001`,
+      `SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,image_url,description,external_url FROM indexed_pools WHERE chain_id=4663${selected}
+    UNION ALL SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,image_url,description,external_url FROM recent_pools WHERE chain_id=4663${selected} LIMIT 20001`,
       ids ? [ids] : [],
     )
   ).rows;
@@ -152,10 +152,16 @@ export async function knownRecentPools(
       launchTx: r.launch_tx,
       launchSender: r.launch_sender,
       launchedAt: Number(r.launched_at),
+      ...(r.image_url === null ? {} : { imageUrl: r.image_url }),
+      ...(r.description === null ? {} : { description: r.description }),
+      ...(r.external_url === null ? {} : { externalUrl: r.external_url }),
     };
     if (pools.has(p.id) && !sameIdentity(pools.get(p.id)!, p))
       throw Error("Conflicting recent pool identity");
-    pools.set(p.id, p);
+    const existing = pools.get(p.id);
+    // Prefer historical claims when available; a matching recent observation
+    // can fill fields a legacy collector did not retain.
+    pools.set(p.id, existing ? { ...p, ...existing } : p);
   }
   if (pools.size > 10000) throw Error("Recent registry exceeds budget");
   return [...pools.values()];
@@ -312,8 +318,8 @@ export async function commitRecentBatch(
     );
     for (const p of b.pools ?? [])
       await db.query(
-        `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch)
-      VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(chain_id,pool_id) DO NOTHING`,
+        `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch,image_url,description,external_url)
+      VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(chain_id,pool_id) DO NOTHING`,
         [
           p.id,
           p.token,
@@ -324,6 +330,9 @@ export async function commitRecentBatch(
           p.launchSender,
           p.launchedAt,
           b.to,
+          p.imageUrl ?? null,
+          p.description ?? null,
+          p.externalUrl ?? null,
         ],
       );
     if (b.events?.length)

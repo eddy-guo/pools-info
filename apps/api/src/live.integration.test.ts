@@ -77,6 +77,9 @@ test(
           poolArgs(i),
         );
       await db.query(
+        "UPDATE recent_pools SET image_url='https://example.com/recent.png',description='Recent description',external_url='https://example.com/token'",
+      );
+      await db.query(
         "UPDATE recent_streams SET cursor_block=199,cursor_hash=$1,cursor_timestamp=$2,head_block=327,head_timestamp=$3,checked_at=now()",
         [word(199), now - 15, now],
       );
@@ -115,9 +118,36 @@ test(
       const catalog = await read("/v1/pools?limit=1");
       assert.equal(catalog.items[0].poolId, word(2));
       assert.equal(catalog.items[0].coverage.throughBlock, null);
+      assert.equal(catalog.items[0].imageUrl, "https://example.com/recent.png");
+      assert.equal(catalog.items[0].description, "Recent description");
+      assert.deepEqual(catalog.items[0].metadataSources.imageUrl, {
+        stream: "recent:discovery",
+        batch: 199,
+      });
       const next = await read("/v1/pools?limit=1&cursor=" + catalog.nextCursor);
       assert.equal(next.items[0].poolId, word(1));
+      assert.equal(next.items[0].imageUrl, "https://example.com/recent.png");
+      assert.equal(next.items[0].launch.sourceStream, "discovery:v1");
+      assert.deepEqual(next.items[0].metadataSources.imageUrl, {
+        stream: "recent:discovery",
+        batch: 199,
+      });
       assert.equal(next.nextCursor, null);
+      await db.query(
+        "UPDATE pool_launch_sources SET image_url='https://example.com/historical.png' WHERE pool_id=$1",
+        [word(1)],
+      );
+      const overlapping = (await read(`/v1/pools/${word(1)}`)).pool;
+      assert.equal(overlapping.imageUrl, "https://example.com/historical.png");
+      assert.equal(overlapping.description, "Recent description");
+      assert.deepEqual(overlapping.metadataSources.imageUrl, {
+        stream: "discovery:v1",
+        batch: 99,
+      });
+      assert.deepEqual(overlapping.metadataSources.description, {
+        stream: "recent:discovery",
+        batch: 199,
+      });
       assert.equal((await read(`/v1/pools/${word(2)}`)).analytics, null);
       let explore = await read("/v1/explore");
       assert.equal(explore.coverage.catalogPools, 2);
@@ -150,6 +180,11 @@ test(
       // Cached product model must not retain a launch removed by recent discovery.
       explore = await read("/v1/explore");
       assert.equal(explore.coverage.catalogPools, 1);
+      const afterRewind = (await read(`/v1/pools/${word(1)}`)).pool;
+      assert.equal(afterRewind.imageUrl, "https://example.com/historical.png");
+      assert.equal(afterRewind.description, null);
+      assert.equal(afterRewind.externalUrl, null);
+      assert.equal(afterRewind.metadataSources.description, null);
       await assert.rejects(read(`/v1/pools/${word(2)}`), /pool_not_indexed/);
       // Identity disagreements across independent discovery sources fail closed.
       await db.query(

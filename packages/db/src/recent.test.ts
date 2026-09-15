@@ -99,6 +99,9 @@ test("recent streams preserve restart start, contiguous discovery bounds, exact 
     pools: [
       {
         ...pool,
+        imageUrl: "https://example.com/token.png",
+        description: "Verified recent metadata",
+        externalUrl: "https://example.com/token",
         token: pool.token.toUpperCase().replace("0X", "0x"),
         launchSender: pool.launchSender.toUpperCase().replace("0X", "0x"),
       },
@@ -106,6 +109,42 @@ test("recent streams preserve restart start, contiguous discovery bounds, exact 
   };
   assert.equal(await commitRecentBatch(db, discovery, first), true);
   assert.equal(await commitRecentBatch(db, discovery, first), false);
+  const savedMetadata = {
+    image_url: first.pools[0].imageUrl,
+    description: first.pools[0].description,
+    external_url: first.pools[0].externalUrl,
+    source_batch: "19",
+  };
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT image_url,description,external_url,source_batch FROM recent_pools",
+      )
+    ).rows,
+    [savedMetadata],
+  );
+  await ensureRecentStreams(db, 999);
+  assert.equal(
+    (await knownRecentPools(db))[0].imageUrl,
+    first.pools[0].imageUrl,
+  );
+  await assert.rejects(
+    commitRecentBatch(db, discovery, {
+      ...first,
+      pools: [
+        { ...first.pools[0], imageUrl: "https://example.com/changed.png" },
+      ],
+    }),
+    /Conflicting recent replay/,
+  );
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT image_url,description,external_url,source_batch FROM recent_pools",
+      )
+    ).rows,
+    [savedMetadata],
+  );
   await assert.rejects(
     commitRecentBatch(db, discovery, { ...first, timestamp: 191 }),
     /Conflicting recent replay/,
@@ -173,6 +212,14 @@ test("recent streams preserve restart start, contiguous discovery bounds, exact 
   assert.equal((await recentStream(db, "swaps")).cursor, null);
   assert.equal((await knownRecentPools(db)).length, 0);
   assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::int AS n FROM recent_pools WHERE image_url IS NOT NULL",
+      )
+    ).rows[0].n,
+    0,
+  );
+  assert.equal(
     Number((await db.query("SELECT count(*) FROM recent_swaps")).rows[0].count),
     0,
   );
@@ -185,4 +232,15 @@ test("recent streams preserve restart start, contiguous discovery bounds, exact 
     /Conflicting recent pool identity/,
   );
   assert.equal((await recentStream(db, "discovery")).cursor, null);
+  const replacement = {
+    ...first,
+    hash: hash(919),
+    pools: [{ ...first.pools[0], imageUrl: "https://example.com/reorg.png" }],
+  };
+  await commitRecentBatch(db, await recentStream(db, "discovery"), replacement);
+  assert.equal(
+    (await knownRecentPools(db))[0].imageUrl,
+    replacement.pools[0].imageUrl,
+  );
+  assert.equal((await recentStream(db, "discovery")).hash, hash(919));
 });
