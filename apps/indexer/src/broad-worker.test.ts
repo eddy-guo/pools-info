@@ -5,16 +5,19 @@ import { encodeAbiParameters, toEventSelector, type Hex } from "viem";
 import {
   Rpc,
   RpcRateLimitExhausted,
+  collectPoolEventGroup,
   contracts,
   swapEvent,
   type RawLog,
 } from "@pools/chain";
 import {
   commitBatch,
+  commitPoolGroup,
   createClient,
   discoveryV2Identity,
   ensureDiscovery,
   ensureDiscoveryV2,
+  ensureBroadStream,
   getStream,
   migrate,
   rewind,
@@ -108,6 +111,11 @@ function provider(t: TestContext) {
   let capacityAbove = Infinity;
   let failReceipt = false;
   let beforeReceipt: (() => Promise<void>) | undefined;
+  let decimals = 18n,
+    supply = (1n << 256n) - 1n;
+  let badUnits: string | null = null;
+  let revertUnits = false;
+  let beforeUnits: (() => Promise<void>) | undefined;
   const ranges: number[][] = [];
   const methodCalls: Request[] = [];
   const blockHash = (n: number) =>
@@ -150,6 +158,28 @@ function provider(t: TestContext) {
     if (row.method === "eth_blockNumber") return hex(first + 19 + 128);
     if (row.method === "eth_getBlockByNumber")
       return header(Number(row.params[0]));
+    if (row.method === "eth_call") {
+      if (beforeUnits) {
+        const hook = beforeUnits;
+        beforeUnits = undefined;
+        await hook();
+      }
+      const call = row.params[0] as { to: string; data: string };
+      const selector = row.params[1] as {
+        blockHash: string;
+        requireCanonical: boolean;
+      };
+      assert.equal(call.to, token);
+      assert.equal(selector.requireCanonical, true);
+      assert.match(selector.blockHash, /^0x[\da-f]{64}$/);
+      if (badUnits !== null) return badUnits;
+      return (
+        "0x" +
+        (call.data === "0x313ce567" ? decimals : supply)
+          .toString(16)
+          .padStart(64, "0")
+      );
+    }
     if (row.method === "eth_getLogs") {
       const filter = row.params[0] as {
         address: string;
@@ -191,11 +221,14 @@ function provider(t: TestContext) {
     "fetch",
     async (_url: unknown, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Request | Request[];
-      const reply = async (row: Request) => ({
-        jsonrpc: "2.0",
-        id: row.id,
-        result: await response(row),
-      });
+      const reply = async (row: Request) =>
+        row.method === "eth_call" && revertUnits
+          ? {
+              jsonrpc: "2.0",
+              id: row.id,
+              error: { code: -32000, message: "execution reverted" },
+            }
+          : { jsonrpc: "2.0", id: row.id, result: await response(row) };
       return Response.json(
         Array.isArray(body)
           ? await Promise.all(body.map(reply))
@@ -217,6 +250,19 @@ function provider(t: TestContext) {
     createRpc,
     ranges,
     methodCalls,
+    units: (d: bigint, s: bigint) => {
+      decimals = d;
+      supply = s;
+    },
+    badUnits: (raw: string | null) => {
+      badUnits = raw;
+    },
+    revertUnits: () => {
+      revertUnits = true;
+    },
+    beforeUnits: (hook: () => Promise<void>) => {
+      beforeUnits = hook;
+    },
     header,
     reorg: (from: number) => {
       reorgFrom = from;
@@ -272,6 +318,249 @@ test("broad defaults off and validates explicit activation/range limits", async 
     null,
   );
 });
+
+test(
+  "broad worker retains dated 6/18 decimals and exact uint256 supply without reuse",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t),
+      saved = await independent(db);
+    p.units(6n, (1n << 256n) - 1n);
+    const scheduler = new BroadScheduler("1", "3");
+    const firstResult = await scheduler.run(db, p.createRpc);
+    const firstUnits = (
+      await db.query(
+        "SELECT *,total_supply::text AS supply FROM broad_token_units",
+      )
+    ).rows[0];
+    assert.equal(firstUnits.decimals, 6);
+    assert.equal(firstUnits.supply, ((1n << 256n) - 1n).toString());
+    assert.equal(Number(firstUnits.block_number), first + 2);
+    assert.equal(firstUnits.block_hash, word(first + 2));
+    assert.equal(Number(firstUnits.timestamp), (first + 2) * 2);
+    assert.equal(BigInt(firstUnits.decimals_result), 6n);
+    assert.equal(BigInt(firstUnits.total_supply_result), (1n << 256n) - 1n);
+    // Two pools share one token, so only two calls are needed for the cutoff.
+    assert.equal(firstResult!.methodCountsBeforeRetries!.eth_call, 2);
+    const calls = p.methodCalls.filter((c) => c.method === "eth_call");
+    assert.deepEqual(
+      calls.map((c) => c.params[1]),
+      [
+        { blockHash: word(first + 2), requireCanonical: true },
+        { blockHash: word(first + 2), requireCanonical: true },
+      ],
+    );
+    p.units(18n, 123456789012345678901234567890n);
+    const next = await scheduler.run(db, p.createRpc);
+    assert.equal(next!.methodCountsBeforeRetries!.eth_call, 2);
+    const observations = (
+      await db.query(
+        "SELECT decimals,total_supply::text AS supply FROM broad_token_units ORDER BY batch_end",
+      )
+    ).rows;
+    assert.deepEqual(observations, [
+      { decimals: 6, supply: ((1n << 256n) - 1n).toString() },
+      { decimals: 18, supply: "123456789012345678901234567890" },
+    ]);
+    assert.deepEqual(await independent(db), saved);
+    const empty = await scheduler.run(db, p.createRpc);
+    assert.equal(empty!.methodCountsBeforeRetries!.eth_call, undefined);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      2,
+    );
+  },
+);
+
+test(
+  "verified zero supply and zero decimals are retained, never synthesized",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    p.units(0n, 0n);
+    await new BroadScheduler("1", "3").run(db, p.createRpc);
+    const units = (
+      await db.query(
+        "SELECT decimals,total_supply::text AS supply,total_supply_result FROM broad_token_units",
+      )
+    ).rows[0];
+    assert.equal(units.decimals, 0);
+    assert.equal(units.supply, "0");
+    assert.equal(units.total_supply_result, word(0));
+  },
+);
+
+test(
+  "malformed, reverted and out-of-bounds token units never advance broad groups",
+  dbTest,
+  async (t) => {
+    for (const kind of ["short", "decimals256", "oversizeSupply", "reverted"])
+      await t.test(kind, async (sub) => {
+        const db = await database(sub),
+          p = provider(sub),
+          saved = await independent(db);
+        if (kind === "short") p.badUnits("0x00");
+        if (kind === "decimals256") p.units(256n, 1n);
+        if (kind === "oversizeSupply") p.units(18n, 1n << 256n);
+        if (kind === "reverted") p.revertUnits();
+        await assert.rejects(new BroadScheduler("1", "3").run(db, p.createRpc));
+        assert.deepEqual(await counts(db), {
+          batches: 0,
+          swaps: 0,
+          manifests: 0,
+        });
+        assert.equal(
+          (await getStream(db, broadStreamIdentity.key)).cursor,
+          null,
+        );
+        assert.equal(
+          (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+            .rows[0].n,
+          0,
+        );
+        assert.deepEqual(await independent(db), saved);
+      });
+  },
+);
+
+test(
+  "canonical units cutoff change and units SQL failure roll back the complete group",
+  dbTest,
+  async (t) => {
+    await t.test("canonical change during metadata", async (sub) => {
+      const db = await database(sub),
+        p = provider(sub);
+      p.beforeUnits(async () => p.reorg(first + 2));
+      await assert.rejects(
+        new BroadScheduler("1", "3").run(db, p.createRpc),
+        /boundary changed/,
+      );
+      assert.deepEqual(await counts(db), {
+        batches: 0,
+        swaps: 0,
+        manifests: 0,
+      });
+      assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+    });
+    await t.test("SQL failure", async (sub) => {
+      const db = await database(sub),
+        p = provider(sub),
+        saved = await independent(db);
+      await db.query(
+        "CREATE FUNCTION reject_units() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'units SQL failure'; END; $$",
+      );
+      await db.query(
+        "CREATE TRIGGER reject_units BEFORE INSERT ON broad_token_units FOR EACH ROW EXECUTE FUNCTION reject_units()",
+      );
+      await assert.rejects(
+        new BroadScheduler("1", "3").run(db, p.createRpc),
+        /units SQL failure/,
+      );
+      assert.deepEqual(await counts(db), {
+        batches: 0,
+        swaps: 0,
+        manifests: 0,
+      });
+      assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+      assert.deepEqual(await independent(db), saved);
+    });
+  },
+);
+
+test(
+  "units are replayed from retained ABI results and invalidated by broad/discovery rewinds",
+  dbTest,
+  async (t) => {
+    const db = await database(t),
+      p = provider(t);
+    const range = (await broadRangeCheckpoint(db, first, first + 2))!;
+    const registry = range.registry;
+    const group = await collectPoolEventGroup(
+      {
+        mode: "broad",
+        collectTokenUnits: true,
+        fromBlock: first,
+        toBlock: range.toBlock,
+        registry,
+        resolvePools: (ids) => resolveBroadPools(db, ids, registry),
+      },
+      p.createRpc(),
+    );
+    const expected = await ensureBroadStream(db);
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group }),
+      true,
+    );
+    assert.equal(
+      await commitPoolGroup(db, { mode: "broad", expected, group }),
+      false,
+    );
+    const conflicting = structuredClone(group);
+    conflicting.tokenUnits![0].decimalsResult = word(6);
+    conflicting.tokenUnits![0].decimals = 6;
+    await assert.rejects(
+      commitPoolGroup(db, { mode: "broad", expected, group: conflicting }),
+      /Conflicting broad replay/,
+    );
+    const mismatched = structuredClone(group);
+    mismatched.tokenUnits![0].totalSupply = "1";
+    await assert.rejects(
+      commitPoolGroup(db, { mode: "broad", expected, group: mismatched }),
+      /disagree with retained evidence/,
+    );
+    for (const mutate of [
+      (g: typeof group) => {
+        g.tokenUnits![0].block--;
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].blockHash = word(99);
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].timestamp++;
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].token = sender;
+      },
+      (g: typeof group) => {
+        g.tokenUnits!.push(g.tokenUnits![0]);
+      },
+      (g: typeof group) => {
+        g.tokenUnits = [];
+      },
+      (g: typeof group) => {
+        g.tokenUnits![0].totalSupplyResult = "0x";
+      },
+    ]) {
+      const invalid = structuredClone(group);
+      mutate(invalid);
+      await assert.rejects(
+        commitPoolGroup(db, { mode: "broad", expected, group: invalid }),
+      );
+    }
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      1,
+    );
+    await rewind(db, await getStream(db, broadStreamIdentity.key), null);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      0,
+    );
+    await commitPoolGroup(db, { mode: "broad", expected, group });
+    await rewind(db, await getStream(db, "discovery:v2"), null);
+    assert.equal(
+      (await db.query("SELECT count(*)::int AS n FROM broad_token_units"))
+        .rows[0].n,
+      0,
+    );
+    assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+  },
+);
 
 test(
   "default-off worker leaves real Postgres without broad state",

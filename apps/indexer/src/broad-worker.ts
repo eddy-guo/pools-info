@@ -126,6 +126,7 @@ export async function runBroadBatch(
     const group = await collectPoolEventGroup(
       {
         mode: "broad",
+        collectTokenUnits: true,
         fromBlock: from,
         toBlock: to,
         registry,

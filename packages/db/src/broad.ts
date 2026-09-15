@@ -194,6 +194,9 @@ async function checkedGroup(group: BroadPoolEventGroup) {
     group.evidence.swapLogs.length > broadEventPolicy.maxLogs
   )
     throw Error("Invalid broad commit group");
+  if (group.tokenUnits !== undefined && !Array.isArray(group.tokenUnits))
+    throw Error("Invalid broad token units evidence");
+  const units = new Map(group.tokenUnits?.map((u) => [u.token, u]));
   const headers = new Map(
     group.evidence.headers.map((h) => [Number(h.number), h]),
   );
@@ -210,6 +213,24 @@ async function checkedGroup(group: BroadPoolEventGroup) {
     },
     logs: async () => [...group.evidence.swapLogs],
     batch: async (method: string, params: unknown[][]) => {
+      if (method === "eth_call")
+        return params.map((p) => {
+          const call = p[0] as { to: string; data: string };
+          const block = p[1] as {
+            blockHash: string;
+            requireCanonical: boolean;
+          };
+          const observation = units.get(call.to);
+          if (
+            !observation ||
+            block.blockHash !== group.blockHash ||
+            block.requireCanonical !== true
+          )
+            throw Error("Missing broad token units evidence");
+          if (call.data === "0x313ce567") return observation.decimalsResult;
+          if (call.data === "0x18160ddd") return observation.totalSupplyResult;
+          throw Error("Unexpected broad token units call");
+        });
       if (method === "eth_getBlockByNumber")
         return params.map((p) => headers.get(Number(p[0])));
       if (method === "eth_getTransactionReceipt")
@@ -220,6 +241,7 @@ async function checkedGroup(group: BroadPoolEventGroup) {
   const verified = await collectPoolEventGroup(
     {
       mode: "broad",
+      collectTokenUnits: group.tokenUnits !== undefined,
       fromBlock: group.fromBlock,
       toBlock: group.toBlock,
       registry: group.registry,
@@ -376,6 +398,13 @@ export async function commitBroadGroupInTransaction(
        SELECT 4663,$1,$2,x."poolId",x.token,x."txHash",x."logIndex",x.block,x."blockHash",x.timestamp,x."transactionSender",x."managerSender",x.amount0,x.amount1,x."sqrtPriceX96",x.liquidity,x.tick,x.fee,x.side,x."ethWei",x."tokenRaw",x.supported,x.flags
        FROM jsonb_to_recordset($3::jsonb) AS x("poolId" text,token text,"txHash" text,"logIndex" integer,block bigint,"blockHash" text,timestamp bigint,"transactionSender" text,"managerSender" text,amount0 numeric,amount1 numeric,"sqrtPriceX96" numeric,liquidity numeric,tick integer,fee integer,side text,"ethWei" numeric,"tokenRaw" numeric,supported boolean,flags text[])`,
       [expected.key, group.toBlock, JSON.stringify(group.swaps)],
+    );
+  if (group.tokenUnits?.length)
+    await db.query(
+      `INSERT INTO broad_token_units(chain_id,stream_key,batch_end,token,block_number,block_hash,timestamp,decimals,total_supply,decimals_result,total_supply_result)
+       SELECT 4663,$1,$2,x.token,x.block,x."blockHash",x.timestamp,x.decimals,x."totalSupply",x."decimalsResult",x."totalSupplyResult"
+       FROM jsonb_to_recordset($3::jsonb) AS x(token text,block bigint,"blockHash" text,timestamp bigint,decimals integer,"totalSupply" numeric,"decimalsResult" text,"totalSupplyResult" text)`,
+      [expected.key, group.toBlock, JSON.stringify(group.tokenUnits)],
     );
   await db.query(
     "UPDATE indexer_streams SET cursor_block=$2,cursor_hash=$3,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",

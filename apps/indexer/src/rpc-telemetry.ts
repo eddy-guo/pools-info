@@ -17,6 +17,7 @@ export function trackRpcMethods(
       "eth_getBlockByNumber",
       "eth_getTransactionReceipt",
       "eth_getLogs",
+      "eth_call",
     ].includes(method)
       ? method
       : "other";

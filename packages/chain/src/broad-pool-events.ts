@@ -29,6 +29,8 @@ export interface BroadPoolIdentity {
 }
 export interface BroadPoolEventRange {
   mode: "broad";
+  /** Observe units at this range's canonical cutoff. Legacy callers opt out. */
+  collectTokenUnits?: boolean;
   fromBlock: number;
   toBlock: number;
   registry: BroadRegistryCheckpoint;
@@ -37,6 +39,16 @@ export interface BroadPoolEventRange {
   resolvePools: (
     observedIds: readonly string[],
   ) => Promise<readonly BroadPoolIdentity[]>;
+}
+export interface BroadTokenUnits {
+  token: string;
+  block: number;
+  blockHash: string;
+  timestamp: number;
+  decimals: number;
+  totalSupply: string;
+  decimalsResult: string;
+  totalSupplyResult: string;
 }
 export interface BroadIndexedSwap {
   poolId: string;
@@ -79,6 +91,8 @@ export interface BroadPoolEventGroup {
   observedSwaps: number;
   unregisteredSwaps: number;
   unsupportedSwaps: number;
+  /** Dated observations only; no validity beyond this exact cutoff is implied. */
+  tokenUnits?: BroadTokenUnits[];
   /** One shared bundle for the whole range, including unregistered manager logs.
    * Receipts are fetched only for registered swaps. No Transfer coverage claim. */
   evidence: {
@@ -123,7 +137,9 @@ export async function collectBroadPoolEvents(
     !integer(toBlock) ||
     toBlock < fromBlock ||
     toBlock - fromBlock >= broadEventPolicy.maxBlocks ||
-    typeof resolvePools !== "function"
+    typeof resolvePools !== "function" ||
+    (range.collectTokenUnits !== undefined &&
+      typeof range.collectTokenUnits !== "boolean")
   )
     throw Error("Invalid broad event range");
   if (
@@ -347,6 +363,54 @@ export async function collectBroadPoolEvents(
           : ["missing_transfer_history", "unsupported_swap_signs"],
     };
   });
+  let tokenUnits: BroadTokenUnits[] | undefined;
+  if (range.collectTokenUnits) {
+    tokenUnits = [];
+    const tokens = [...new Set([...pools.values()].map((p) => p.token))].sort();
+    for (
+      let i = 0;
+      i < tokens.length;
+      i += broadEventPolicy.evidenceChunk / 2
+    ) {
+      const slice = tokens.slice(i, i + broadEventPolicy.evidenceChunk / 2);
+      // Pin the state calls themselves to the observed fork, not just a height.
+      // Providers without canonical hash selectors fail closed; no fallback.
+      const results = await rpc.batch<string>(
+        "eth_call",
+        slice.flatMap((token) =>
+          ["0x313ce567", "0x18160ddd"].map((data) => [
+            { to: token, data },
+            { blockHash: cutoff.hash.toLowerCase(), requireCanonical: true },
+          ]),
+        ),
+      );
+      if (results.length !== slice.length * 2)
+        throw Error("Missing broad token units results");
+      retain(results);
+      for (const [j, token] of slice.entries()) {
+        const decimalsResult = results[j * 2],
+          totalSupplyResult = results[j * 2 + 1];
+        if (
+          typeof decimalsResult !== "string" ||
+          typeof totalSupplyResult !== "string" ||
+          !/^0x[\da-f]{64}$/i.test(decimalsResult) ||
+          !/^0x[\da-f]{64}$/i.test(totalSupplyResult) ||
+          BigInt(decimalsResult) > 255n
+        )
+          throw Error("Invalid broad token units results");
+        tokenUnits.push({
+          token,
+          block: toBlock,
+          blockHash: cutoff.hash.toLowerCase(),
+          timestamp: Number(cutoff.timestamp),
+          decimals: Number(BigInt(decimalsResult)),
+          totalSupply: BigInt(totalSupplyResult).toString(),
+          decimalsResult,
+          totalSupplyResult,
+        });
+      }
+    }
+  }
   const result: BroadPoolEventGroup = {
     mode: "broad",
     schemaVersion: 1,
@@ -363,6 +427,7 @@ export async function collectBroadPoolEvents(
     observedSwaps: logs.length,
     unregisteredSwaps: logs.length - selected.length,
     unsupportedSwaps: swaps.filter((s) => s.side === null).length,
+    ...(tokenUnits === undefined ? {} : { tokenUnits }),
     evidence: { swapLogs: logs, receipts, headers },
     requests: rpc.requests,
   };

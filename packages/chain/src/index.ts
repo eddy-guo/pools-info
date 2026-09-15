@@ -10,6 +10,7 @@ export {
   type BroadPoolEventRange,
   type BroadIndexedSwap,
   type BroadPoolEventGroup,
+  type BroadTokenUnits,
 } from "./broad-pool-events";
 export { Rpc, RpcRateLimitExhausted, type RpcRateLimitEvent } from "./rpc";
 
