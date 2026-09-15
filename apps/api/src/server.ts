@@ -53,6 +53,7 @@ export function createApi(
       // A rewound recent window must disappear on the very next poll.
       const cacheable =
         request.route !== "ready" &&
+        request.route !== "pool" &&
         request.route !== "live-trades" &&
         request.route !== "following" &&
         request.route !== "trade-share";

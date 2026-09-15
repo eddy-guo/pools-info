@@ -6,6 +6,7 @@ import {
   poolWindow,
   shortAddress,
   type AnalyticsPoolDetail,
+  type ObservedMarket,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
@@ -25,11 +26,15 @@ import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
 import { PoolImage } from "./pool-image";
+import {
+  ObservedPoolDetail,
+  type ObservedPoolIdentity,
+} from "./observed-pool-detail";
 export function PoolDetail({ id }: { id: string }) {
   const { params } = useQuery();
   const {
-    market: m,
-    snapshot: s,
+    market: loadedMarket,
+    snapshot: loadedSnapshot,
     error,
     loading,
     refresh,
@@ -49,9 +54,35 @@ export function PoolDetail({ id }: { id: string }) {
       imageUrl?: string | null;
     };
     analytics: AnalyticsPoolDetail | null;
+    market?: ObservedMarket;
   }>(`pools/${id}`);
   const savedIdentity = saved.data?.pool ?? saved.data;
+  const publication = saved.data?.analytics;
+  const publishedMarket = publication?.snapshot.markets.find(
+    (m) => m.id === id && m.accounting?.executions,
+  );
+  const usePublished =
+    publishedMarket &&
+    (!loadedMarket?.accounting?.executions ||
+      publication!.snapshot.toBlock >= loadedSnapshot.toBlock);
+  const m = usePublished ? publishedMarket : loadedMarket;
+  const s = usePublished ? publication!.snapshot : loadedSnapshot;
   const [tab, setTab] = useState("Top traders");
+  if (
+    saved.data?.market &&
+    saved.data.pool &&
+    !m?.accounting?.executions &&
+    !audits[id]
+  )
+    return (
+      <ObservedPoolDetail
+        pool={saved.data.pool as ObservedPoolIdentity}
+        market={saved.data.market}
+        refresh={saved.refresh}
+        loading={saved.loading}
+        error={saved.error}
+      />
+    );
   if (!m && (loading || saved.loading) && saved.data?.analytics !== null)
     return <PageSkeleton kind="pool" title={savedIdentity?.name} />;
   if (!m)

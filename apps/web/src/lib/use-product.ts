@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { validatePoolResponse } from "./pool-response";
 export type ProductDelivery = {
   source: "indexer" | "preloaded";
   notice: string | null;
@@ -38,6 +39,14 @@ export function useProduct<T>(path: string) {
         });
         if (!response.ok) throw Error("Saved data is temporarily unavailable.");
         const data = (await response.json()) as Delivered<T>;
+        if (path.startsWith("pools/")) {
+          const url = new URL(path, "http://localhost");
+          validatePoolResponse(
+            data,
+            url.pathname.slice(7),
+            url.searchParams.get("window") ?? "24h",
+          );
+        }
         if (!controller.signal.aborted)
           setState({ path, data, pending: false });
       } catch (error) {

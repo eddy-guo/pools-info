@@ -24,6 +24,8 @@ import {
   visualTheme,
   type ChainMarket,
   type ChainSnapshot,
+  type ObservedMarket,
+  type Candle,
 } from "@pools/core";
 import { Price } from "./ui";
 import { Eth, utc } from "./live-ui";
@@ -53,13 +55,46 @@ function axisPrice(value: number) {
     .map((n) => "₀₁₂₃₄₅₆₇₈₉"[Number(n)])
     .join("")}${digits}`;
 }
-export function Candles({
-  market,
-  snapshot,
-}: {
-  market: ChainMarket;
-  snapshot: ChainSnapshot;
-}) {
+function chartValue(
+  value: bigint,
+  market: ChainMarket | null,
+  metric: "Price" | "FDV",
+) {
+  return market ? candleValue(value, market, metric) : value;
+}
+function observedBars(observed: ObservedMarket, interval: number): Candle[] {
+  const bars = new Map<number, Candle>();
+  for (const c of observed.history.candles) {
+    const time = Math.floor(c.time / interval) * interval;
+    const next = {
+      time,
+      open: BigInt(c.open),
+      high: BigInt(c.high),
+      low: BigInt(c.low),
+      close: BigInt(c.close),
+      volume: BigInt(c.volume),
+    };
+    const old = bars.get(time);
+    if (old) {
+      old.high = old.high > next.high ? old.high : next.high;
+      old.low = old.low < next.low ? old.low : next.low;
+      old.close = next.close;
+      old.volume += next.volume;
+    } else bars.set(time, next);
+  }
+  return [...bars.values()];
+}
+export function Candles(
+  props:
+    | { market: ChainMarket; snapshot: ChainSnapshot }
+    | { observed: ObservedMarket },
+) {
+  const market = "market" in props ? props.market : null;
+  const snapshot = "snapshot" in props ? props.snapshot : null;
+  const observed = "observed" in props ? props.observed : null;
+  const id = market?.id ?? observed!.poolId;
+  const toTimestamp =
+    snapshot?.toTimestamp ?? observed!.coverage.cutoff?.asOf ?? 0;
   // The server preview must not accept selections before React can retain them.
   const hydrated = useSyncExternalStore(
     noHydrationUpdates,
@@ -77,11 +112,14 @@ export function Candles({
     volume: ISeriesApi<"Histogram">;
   } | null>(null);
   const bars = useMemo(
-    () => buildCandles(market, snapshot, candleIntervals[interval]),
-    [market, snapshot, interval],
+    () =>
+      market && snapshot
+        ? buildCandles(market, snapshot, candleIntervals[interval])
+        : observedBars(observed!, candleIntervals[interval]),
+    [market, snapshot, observed, interval],
   );
   const active = bars.find((b) => b.time === focused) ?? bars.at(-1);
-  const viewKey = `${market.id}:${range}:${interval}`;
+  const viewKey = `${id}:${range}:${interval}`;
   const previousView = useRef("");
   useEffect(() => {
     if (!container.current) return;
@@ -156,10 +194,10 @@ export function Candles({
     a.price.setData(
       bars.map((b) => ({
         time: b.time as UTCTimestamp,
-        open: Number(candleValue(b.open, market, metric)),
-        high: Number(candleValue(b.high, market, metric)),
-        low: Number(candleValue(b.low, market, metric)),
-        close: Number(candleValue(b.close, market, metric)),
+        open: Number(chartValue(b.open, market, metric)),
+        high: Number(chartValue(b.high, market, metric)),
+        low: Number(chartValue(b.low, market, metric)),
+        close: Number(chartValue(b.close, market, metric)),
       })),
     );
     a.volume.setData(
@@ -184,17 +222,14 @@ export function Candles({
           a.chart.timeScale().setVisibleRange({
             from: Math.max(
               bars[0].time,
-              snapshot.toTimestamp - ranges[range],
+              toTimestamp - ranges[range],
             ) as UTCTimestamp,
-            to: Math.max(
-              bars[0].time + 1,
-              snapshot.toTimestamp,
-            ) as UTCTimestamp,
+            to: Math.max(bars[0].time + 1, toTimestamp) as UTCTimestamp,
           });
       } else if (previous) a.chart.timeScale().setVisibleLogicalRange(previous);
     }
     previousView.current = viewKey;
-  }, [bars, metric, market, range, interval, snapshot.toTimestamp, viewKey]);
+  }, [bars, metric, market, range, interval, toTimestamp, viewKey]);
   return (
     <div className="live-candles">
       <div className="live-controls chart-toolbar">
@@ -206,12 +241,12 @@ export function Candles({
             Display
             <select
               aria-label="Chart display"
-              disabled={!hydrated}
+              disabled={!hydrated || !market}
               value={metric}
               onChange={(e) => setMetric(e.target.value as typeof metric)}
             >
               <option>Price</option>
-              <option>FDV</option>
+              {market && <option>FDV</option>}
             </select>
           </label>
           <label>
@@ -225,9 +260,11 @@ export function Candles({
                 setFocused(undefined);
               }}
             >
-              {Object.keys(candleIntervals).map((i) => (
-                <option key={i}>{i}</option>
-              ))}
+              {Object.keys(candleIntervals)
+                .filter((i) => !observed || i !== "1s")
+                .map((i) => (
+                  <option key={i}>{i}</option>
+                ))}
             </select>
           </label>
         </div>
@@ -249,7 +286,7 @@ export function Candles({
                 {metric === "Price" ? (
                   <Price wei={value.toString()} />
                 ) : (
-                  <Eth wei={candleValue(value, market, metric).toString()} />
+                  <Eth wei={chartValue(value, market, metric).toString()} />
                 )}
               </span>
             ))}
@@ -286,7 +323,7 @@ export function Candles({
           setFocused(b.time);
           if (api.current)
             api.current.chart.setCrosshairPosition(
-              Number(candleValue(b.close, market, metric)),
+              Number(chartValue(b.close, market, metric)),
               b.time as UTCTimestamp,
               api.current.price,
             );
@@ -324,10 +361,14 @@ export function Candles({
         </button>
       </div>
       <p className="panel-footnote">
-        {interval} candles from observed post-swap prices · volume in ETH · UTC.
-        Gaps contain no invented trades.{" "}
+        {observed
+          ? `${interval} candles in declared cutoff token units`
+          : `${interval} candles from observed post-swap prices`}{" "}
+        · volume in ETH · UTC. Gaps contain no invented trades.{" "}
         {metric === "FDV" &&
           "FDV uses contract total supply at the capture cutoff. "}
+        {observed &&
+          "Historical price states use the declared cutoff decimals; decimals were not independently observed at each swap. "}
         Panning does not fetch older history yet.
       </p>
       <p className="chart-credit">

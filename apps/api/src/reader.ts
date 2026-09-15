@@ -12,6 +12,7 @@ import { readFollowing } from "./following-read";
 import { readTradeShare } from "./trade-share-read";
 import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
+import { readObservedMarket } from "./observed-market-read";
 import {
   encodeCursor,
   isAddress,
@@ -132,6 +133,9 @@ export async function readData(
     await query("SELECT 1 FROM recent_streams WHERE false");
     await query("SELECT 1 FROM recent_pools WHERE false");
     await query("SELECT 1 FROM recent_swaps WHERE false");
+    await query("SELECT 1 FROM broad_swaps WHERE false");
+    await query("SELECT 1 FROM broad_batches WHERE false");
+    await query("SELECT 1 FROM broad_token_units WHERE false");
     await query("SELECT 1 FROM analytics_accounting_pools WHERE false");
     await query("SELECT 1 FROM analytics_accounting_positions WHERE false");
     await query("SELECT 1 FROM analytics_accounting_trades WHERE false");
@@ -312,6 +316,11 @@ export async function readData(
       [request.poolId],
     );
     if (!result.rows.length) throw new RequestError(404, "pool_not_indexed");
+    const analytics = poolAnalytics(
+      await loadAnalyticsModel(query, request.poolId!),
+      request.poolId!,
+      request.window,
+    );
     const latest = await query(
       `SELECT ${eventColumns}, ${coverageColumns} FROM indexed_events e
       JOIN indexer_streams s ON s.chain_id=e.chain_id AND s.stream_key=e.stream_key
@@ -321,10 +330,21 @@ export async function readData(
     return {
       ...base,
       pool: poolItem(result.rows[0]),
-      analytics: poolAnalytics(
-        await loadAnalyticsModel(query, request.poolId!),
-        request.poolId!,
+      analytics,
+      market: await readObservedMarket(
+        query,
+        result.rows[0],
         request.window,
+        analytics
+          ? {
+              decimals: analytics.snapshot.markets[0].decimals,
+              cutoff: {
+                block: analytics.snapshot.toBlock,
+                hash: analytics.snapshot.blockHash,
+                asOf: analytics.snapshot.toTimestamp,
+              },
+            }
+          : null,
       ),
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
