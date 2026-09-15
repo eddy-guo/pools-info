@@ -1,4 +1,39 @@
-# Status - 15 Sep 2026, 09:28 UTC
+# Status - 15 Sep 2026, 09:40 UTC
+
+## Operational update: 09:40 UTC - launch-dense ranges, persistence CI passed
+
+Independent Luna samples at 09:38:09.540 and 09:39:00.300 UTC measured:
+
+| Metric | First sample | Second sample |
+| --- | ---: | ---: |
+| v2 cursor | 28,789,668 | 28,802,168 |
+| indexed pools | 6,442 | 6,816 |
+| factory images | 3,911 | 4,216 |
+| pools with v2 evidence | 6,141 | 6,515 |
+| v1/v2 overlap | 0 | 0 |
+
+That is **246.3 blocks/sec** over 50.760 seconds, or **644.9 blocks/sec**
+since the 09:25:53.024 sample. The count increased by 5,422 pools over that
+longer interval. V1's cursor and timestamp remain unchanged; readiness is true.
+The scan reached launch-dense history: at 09:32:53 it reduced atomic batches
+from 5,000 to 2,500 blocks. At 09:38:22 a 2,500-block batch committed 77 launches
+and 64 images with 43 HTTP requests / 321 logical calls. This is additional
+launch evidence work, not evidence of throttling. No full-run ETA is asserted.
+
+Railway remains Active. Recent lag at 09:38:29 was **128 blocks**; 282 of 330
+observed swaps in that batch were still unregistered. The refreshed Alchemy
+total around 09:38 was **5,394,638 CU**, up 848,010 since the 09:22 observation,
+across all workers. Its last-hour All errors filter again returned no request
+logs around 09:39. No source identity conflicts surfaced in inspected logs.
+
+Persistence commit **23c9d34** passed full CI **34952527444**, including
+**82 browser tests**, both container builds, and container migrate/status/API
+smoke checks. It remains isolated on `phase-b-persistence`, not in production.
+Sol is still finishing the disabled broad worker and its local tests. Its
+logical method counters exclude transport retries and are not billed CU totals.
+The collector's variable cost includes headers for every observed log block and
+receipts for each distinct registered transaction; Phase B still needs measured
+historical workload data. Preserve the current evidence validation when measuring.
 
 ## Operational update: 09:28 UTC - discovery advancing, Phase B prepared separately
 
