@@ -431,13 +431,23 @@ test(
       const explore = (await reader.read(
         parseRequest("/v1/explore?sort=volume&limit=1"),
       )) as any;
-      assert.equal(explore.total, 2);
+      assert.equal(explore.total, 1);
+      assert.equal(explore.coverage.catalogPools, 2);
+      assert.equal(explore.nextOffset, null);
       assert.equal(explore.coverage.processedPools, 1);
       assert.equal(explore.items[0].stats.volumeWei, "250");
-      const unprocessed = (await reader.read(
+      const beyondMarketData = (await reader.read(
         parseRequest("/v1/explore?sort=volume&limit=1&offset=1"),
       )) as any;
-      assert.equal(unprocessed.items[0].processed, false);
+      assert.deepEqual(beyondMarketData.items, []);
+      const launches = (await reader.read(
+        parseRequest("/v1/explore?sort=launch&limit=25"),
+      )) as any;
+      assert.equal(launches.total, 2);
+      assert.equal(
+        launches.items.filter((pool: any) => !pool.processed).length,
+        1,
+      );
       const leaderboard = (await reader.read(
         parseRequest("/v1/leaderboard?minTrades=0"),
       )) as any;
@@ -480,12 +490,15 @@ test(
       const productRead = (path: string) =>
         readData(boundedQuery, parseRequest(path)) as Promise<any>;
       const large = await productRead("/v1/explore?sort=volume&limit=25");
-      assert.equal(large.total, 12003);
+      assert.equal(large.total, 1);
       assert.equal(large.coverage.catalogPools, 12003);
       assert.equal(large.coverage.processedPools, 1);
-      assert.equal(large.items.length, 25);
+      assert.equal(large.items.length, 1);
       assert.equal(large.items[0].id, word(1));
       assert.equal(large.items[0].stats.volumeWei, "250");
+      const largeLaunches = await productRead("/v1/explore?limit=25");
+      assert.equal(largeLaunches.total, 12003);
+      assert.equal(largeLaunches.items.length, 25);
       assert.deepEqual((await productRead("/v1/status")).indexedPools, {
         total: "12003",
         withFactoryImage: "1",
@@ -494,16 +507,16 @@ test(
         discoveryV1V2Overlap: "0",
       });
       const tail = await productRead(
-        "/v1/explore?sort=volume&offset=12000&limit=25",
+        "/v1/explore?sort=launch&offset=12000&limit=25",
       );
       assert.equal(tail.items.length, 3);
       assert.equal(tail.nextOffset, null);
-      assert.equal(tail.items.at(-1).id, word(22000));
+      assert.equal(tail.items.at(-1).id, word(21978));
       const needle = await productRead("/v1/explore?q=FarawayNeedle_%");
       assert.equal(needle.total, 1);
       assert.equal(needle.items[0].id, word(22000));
       const watch = await productRead(
-        `/v1/explore?view=watchlist&ids=${word(1)},${word(22000)}&limit=1&offset=1`,
+        `/v1/explore?view=watchlist&sort=launch&direction=asc&ids=${word(1)},${word(22000)}&limit=1&offset=1`,
       );
       assert.equal(watch.total, 2);
       assert.equal(watch.items[0].id, word(22000));
