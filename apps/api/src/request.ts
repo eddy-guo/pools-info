@@ -196,7 +196,7 @@ export function parseRequest(input: string): ReadRequest {
     ids,
     sort: choice(
       "sort",
-      ["volume", "change", "launch", "liquidity"] as const,
+      ["volume", "price", "trades", "change", "launch", "liquidity"] as const,
       "volume",
     ),
     direction: choice("direction", ["asc", "desc"] as const, "desc"),

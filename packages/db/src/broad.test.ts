@@ -681,3 +681,66 @@ test("oversized groups reject entirely including a single dense block; broad rec
   );
   assert.deepEqual(await cursors(db), saved);
 });
+
+test("market projection failure rolls back canonical evidence and cursor; replay and suffix rewind retain exact bucket ownership", async (t) => {
+  const { db } = await database(t);
+  await db.query(
+    "CREATE FUNCTION fail_market_projection() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'market projection failure'; END; $$",
+  );
+  await db.query(
+    "CREATE TRIGGER fail_market_projection BEFORE INSERT ON broad_market_buckets FOR EACH ROW EXECUTE FUNCTION fail_market_projection()",
+  );
+  await assert.rejects(
+    commit(db, await collect()),
+    /market projection failure/,
+  );
+  assert.equal((await getStream(db, broadStreamIdentity.key)).cursor, null);
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::integer AS count FROM broad_market_batches",
+      )
+    ).rows[0].count,
+    0,
+  );
+  assert.equal((await counts(db)).batches, 0);
+  await db.query("DROP TRIGGER fail_market_projection ON broad_market_buckets");
+  const group = await collect();
+  await commit(db, group);
+  const before = (
+    await db.query(
+      "SELECT * FROM broad_market_buckets ORDER BY pool_id,timestamp",
+    )
+  ).rows;
+  assert.equal(await commit(db, group), false);
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT * FROM broad_market_buckets ORDER BY pool_id,timestamp",
+      )
+    ).rows,
+    before,
+  );
+  assert.equal(
+    before.reduce((sum, r) => sum + BigInt(r.volume_wei), 0n),
+    20n,
+  );
+  await commit(db, await collect([], first + 3, first + 5));
+  await rewind(db, await getStream(db, broadStreamIdentity.key), null);
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::integer AS count FROM broad_market_buckets",
+      )
+    ).rows[0].count,
+    0,
+  );
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*)::integer AS count FROM broad_market_batches",
+      )
+    ).rows[0].count,
+    0,
+  );
+});

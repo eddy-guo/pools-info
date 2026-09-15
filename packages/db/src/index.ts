@@ -626,3 +626,5 @@ export {
   type RecentBatch,
   type RecentEvent,
 } from "./recent";
+
+export { rebuildBroadMarket } from "./market-rollups";

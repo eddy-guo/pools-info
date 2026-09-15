@@ -15,6 +15,7 @@ import {
   type AnalyticsLeaderboardResponse,
   type AnalyticsExploreResponse,
   type AnalyticsExploreOptions,
+  type AnalyticsPoolRow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import {
@@ -33,6 +34,23 @@ const subscribeClock = (notify: () => void) => {
 };
 const currentSeconds = () => Math.floor(Date.now() / 1000);
 const serverSeconds = () => null;
+function MarketBasis({ pool }: { pool: AnalyticsPoolRow }) {
+  const basis = pool.marketCoverage;
+  return (
+    <span
+      className="cell-sub"
+      title={
+        basis?.unitBasis
+          ? `Price units: ${basis.unitBasis.decimals} decimals at block ${basis.unitBasis.block}, ${utc(basis.unitBasis.asOf)} (${basis.unitBasis.source}).`
+          : "Normalized price units unavailable."
+      }
+    >
+      {basis
+        ? `${basis.source === "canonical_broad" ? "Broad swaps" : "Deep market"} · ${pool.stats.completeWindow ? "Covered window" : "Partial metrics"} · ${utc(basis.cutoff.asOf)}`
+        : "Market unavailable"}
+    </span>
+  );
+}
 export function ProductExplore() {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -109,12 +127,24 @@ export function ProductExplore() {
               {data.total}
             </Stat>
             <Stat
-              label="Market data"
-              note="Unprocessed pools remain searchable"
+              label="Broad cutoff"
+              note="Saved historical coverage; all launches remain searchable"
             >
-              {data.coverage.catalogPools
-                ? `${Math.round((data.coverage.processedPools / data.coverage.catalogPools) * 100)}% covered`
-                : "Pending"}
+              {data.broadMarketCutoff ? (
+                <time
+                  dateTime={new Date(
+                    data.broadMarketCutoff.asOf * 1000,
+                  ).toISOString()}
+                  title={utc(data.broadMarketCutoff.asOf)}
+                >
+                  {utc(data.broadMarketCutoff.asOf).slice(0, 10)}
+                  <small className="cell-sub">
+                    {utc(data.broadMarketCutoff.asOf).slice(11)}
+                  </small>
+                </time>
+              ) : (
+                "Pending"
+              )}
             </Stat>
           </div>
         </>
@@ -223,6 +253,8 @@ export function ProductExplore() {
                   onChange={(e) => set({ sort: e.target.value, offset: null })}
                 >
                   <option value="volume">Volume</option>
+                  <option value="price">Price</option>
+                  <option value="trades">Trade count</option>
                   <option value="change">Price change</option>
                   <option value="launch">Launch time</option>
                   <option value="liquidity">Liquidity</option>
@@ -266,6 +298,18 @@ export function ProductExplore() {
                 {error}
               </p>
             )}
+            <p className="panel-footnote">
+              Observed windows end at each row&apos;s dated market cutoff.
+              Coverage is partial across the catalog. Deep holders and verified
+              PnL use separate evidence. Missing metrics remain N/A; all
+              launches are included.
+            </p>
+            {data?.broadMarketCutoff?.rebuildPending && (
+              <p className="panel-footnote">
+                Historical market rebuild is incomplete. The broad cutoff stops
+                before the first missing batch.
+              </p>
+            )}
             {data?.message && <p className="panel-footnote">{data.message}</p>}
             {loading && !data ? (
               <RowsSkeleton label="Loading pools" />
@@ -280,6 +324,7 @@ export function ProductExplore() {
                         <th>Price</th>
                         <th>{window} change</th>
                         <th>{window} volume</th>
+                        <th>{window} trades</th>
                         <th>Liquidity</th>
                         <th>Holders</th>
                         <th>Launch sender</th>
@@ -330,6 +375,7 @@ export function ProductExplore() {
                           <td>
                             <Eth wei={p.stats.volumeWei} />
                           </td>
+                          <td>{p.stats.trades ?? <Unavailable />}</td>
                           <td>
                             <Eth wei={p.stats.liquidityWei} />
                           </td>
@@ -343,7 +389,8 @@ export function ProductExplore() {
                             </Link>
                           </td>
                           <td>
-                            {p.market?.series.length ? (
+                            {p.marketCoverage?.source !== "canonical_broad" &&
+                            p.market?.series.length ? (
                               <Sparkline
                                 points={p.market.series}
                                 positive={(p.stats.change ?? 0) >= 0}
@@ -354,11 +401,13 @@ export function ProductExplore() {
                           </td>
                           <td>
                             <span className="badge">
-                              {p.processed ? "Saved" : "Processing"}
+                              {p.processed
+                                ? "Deep saved"
+                                : p.marketCoverage
+                                  ? "Swaps only"
+                                  : "Processing"}
                             </span>
-                            {p.asOf && (
-                              <small className="cell-sub">{utc(p.asOf)}</small>
-                            )}
+                            <MarketBasis pool={p} />
                           </td>
                         </tr>
                       ))}
@@ -387,6 +436,7 @@ export function ProductExplore() {
                         </Link>
                         <WatchButton id={p.id} />
                       </div>
+                      <MarketBasis pool={p} />
                       <div className="mobile-pool-stats">
                         <span>
                           Price
@@ -403,6 +453,10 @@ export function ProductExplore() {
                           <strong>
                             <Eth wei={p.stats.volumeWei} />
                           </strong>
+                        </span>
+                        <span>
+                          Trades
+                          <strong>{p.stats.trades ?? <Unavailable />}</strong>
                         </span>
                         <span>
                           Change

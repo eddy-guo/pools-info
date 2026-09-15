@@ -52,3 +52,85 @@ budget rather than returning incomplete summary totals on timeout.
 Prerequisites: broad persistence 010, worker integration 649b985 and canonical
 token units dc603f8/migration011. Verification uses only isolated local
 Postgres schemas and mocked website API responses. No production flag is enabled.
+
+## Canonical market rollups for explore
+
+Migration 012 adds rebuildable, batch-owned `broad_market_summaries` and
+`broad_market_buckets`. Each per-pool batch summary stores exact observed trade
+count, unsupported count and integer ETH volume. One-second buckets retain
+exact time boundaries, count/volume and raw first/last sqrt-price state with
+block/hash/transaction/log provenance and independent price eligibility. This
+allows unsupported raw states to survive without becoming normalized prices.
+Raw evidence, `broad_swaps` and deep publications are retained unchanged.
+
+New broad commits project all pools inside the existing group transaction before
+the canonical cursor advances. A failed bucket write rolls back evidence,
+normalized inputs, projections and cursor. Batch ownership cascades through
+broad rewind and discovery dependency rewind, including empty ranges. Deep and
+recent contradictory copies are checked at write/rebuild time and persisted in
+small indexed conflict associations. Deep/recent rewind removes those
+associations atomically; reads fail closed on surviving identity conflicts.
+Deep/recent copies never add to broad totals or move historical coverage.
+
+Existing historical batches are not assumed to have projections. Completion
+markers in `broad_market_batches` form the durable derived progress boundary.
+Explore uses only the contiguous completed canonical prefix before the first
+missing marker, even when a newer suffix has already been projected. Rebuild
+with the normal writer stopped/lock available, using the explicitly selected
+database and one bounded invocation at a time:
+
+```sh
+DATABASE_URL=<isolated-or-approved-database> pnpm exec tsx scripts/rebuild-broad-market.ts 10
+```
+
+The command has no implicit env-file loading, migrations, RPC, deletion or loop.
+It rebuilds at most 10 retained batches in one transaction and reports `rebuilt`
+and `remaining`. Invoke again until `remaining=0`. The limit must be 1-100; dense
+batches can justify a smaller limit. Deleting only derived completion markers
+cascades to their summaries/buckets and permits a tested full reconstruction.
+Never delete canonical evidence or reset the broad cursor to force a rebuild.
+
+The existing `/v1/explore` response and screener now consume those projections.
+A pool uses canonical broad market data when its launch is covered by the pinned
+v2 registry and the derived cutoff is at least its valid deep publication's
+cutoff. During backfill, a newer deep market publication stays selected. Sources
+are selected per pool and never summed. `marketCoverage` identifies the selected
+source, actual block/hash/asOf, window start, raw last price observation, price
+baseline and separately dated unit basis. Global `coverage` still describes
+deep analytics; `processed`, `market`, `asOf`, `throughBlock`, `generatedAt`,
+`sourceKind`, holders and liquidity remain deep data. Selected market dates live
+in `marketCoverage`, so a newer broad cutoff cannot relabel an older deep market.
+Broad market activity cannot create holder balances, TVL, beneficiaries or PnL.
+The screener avoids using a deep sparkline as a broad trend when broad metrics
+are selected. Direct pool pages retain the existing richer chart read path.
+
+Complete batch summaries serve whole batches inside the selected time window;
+indexed buckets serve only intersecting edges. Latest/baseline state uses indexed
+pool bucket lookups. No global request scans raw swaps or retained JSON.
+Price normalization follows the pool adapter's dated display-unit rule: latest
+surviving eligible broad units or dated deep units, conflict detection across
+surviving observations, no default decimals, supported scale at most 36. Unit
+observations retain their own date after quiet global cutoff advancement.
+Window price change uses the latest proven pre-window price state, never a
+bounded returned trade prefix. Unsupported signs suppress affected volume and
+normalized last price while preserving observed trade counts.
+
+Volume, price, trade count, change and launch sorting use eligible exact values,
+`NULLS LAST` in both directions and `pool_id ASC` for ties. Total counts precede
+page limits. The entire catalog remains in the All view and searchable, including
+unprocessed or not-yet-covered launches. There is no default volume floor;
+zero activity is shown only for a pool whose complete canonical covered prefix
+proves no trades in that window. Uncovered metrics stay null. Each dated window
+is historical coverage, not a current-chain claim or full-catalog completeness.
+
+Local verification uses random schemas on `TEST_DATABASE_URL` and no RPC.
+`pnpm test:db` covers atomic commit/replay/rewind, partial rebuild interruption,
+a projected suffix behind a missing prefix, complete reconstruction, 21,001
+exact trades, missing/conflicting/late units, unsupported signs, broad/deep/recent
+overlap and conflicts, newer deep source selection, quiet cutoff advancement
+and deterministic full-catalog pagination. `pnpm test:e2e:market` additionally
+starts a canonical fixture API and uses the production web proxy and real
+explore page on desktop/mobile. It needs an isolated `TEST_DATABASE_URL` and
+free local ports 3117/43119, separate from the regular captured-data browser
+suite. Unrelated live browser requests are blocked, rather than supplied with
+fake live market payloads. No production flag or workload is enabled.
