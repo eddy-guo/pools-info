@@ -20,8 +20,9 @@ export async function GET(
   try {
     return Response.json(await readProduct(path, query), {
       headers: {
-        "Cache-Control":
-          path[0] === "following" ? "no-store" : "private, max-age=15",
+        "Cache-Control": ["following", "trades"].includes(path[0])
+          ? "no-store"
+          : "private, max-age=15",
       },
     });
   } catch {

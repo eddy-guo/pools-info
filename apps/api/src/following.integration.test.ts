@@ -159,6 +159,19 @@ test(
       "UPDATE analytics_accounting_trades SET side='sell',disposed_cost_wei=$1,realized_wei=eth_wei-$1::numeric WHERE transaction_hash=ANY($2::text[])",
       [cost, [word(1070), word(1071)]],
     );
+    await db.query(
+      "UPDATE analytics_accounting_trades SET disposed_cost_wei=0,realized_wei=eth_wei WHERE transaction_hash=$1",
+      [word(1071)],
+    );
+    // Populate more than the profile's 500-row display cap with newer activity.
+    // The older sale must still be individually shareable by its exact key.
+    await db.query(
+      `INSERT INTO analytics_accounting_trades(chain_id,pool_id,transaction_hash,log_index,block_number,timestamp,side,eth_wei,token_raw,wallet,execution,execution_supported)
+       SELECT 4663,$1,'0x'||lpad(to_hex(4000+n),64,'0'),10000+n,110,300,'buy',1,1,$2,
+         jsonb_build_object('trade',jsonb_build_object('trader',$2::text),'flags','[]'::jsonb),true
+       FROM generate_series(1,501) AS n`,
+      [pool.id, address(11)],
+    );
     const share = (n: number, wallet = address(11)) =>
       readData(
         query,
@@ -180,6 +193,8 @@ test(
     assert.equal(sale.trade.throughBlock, 199);
     assert.equal(sale.scope, "saved_verified_sale");
     assert.equal(sale.coverage.complete, false);
+    assert.equal((await share(71, address(12))).trade.realizedWei, exact);
+    assert.equal((await share(71, address(12))).trade.disposedCostWei, "0");
     const unavailable = { status: 404, code: "trade_share_unavailable" };
     await assert.rejects(share(70, address(12)), unavailable); // wrong beneficiary
     await assert.rejects(share(71), unavailable); // another wallet's sale
@@ -207,6 +222,15 @@ test(
       "UPDATE analytics_accounting_trades SET execution_supported=true WHERE transaction_hash=$1",
       [word(1070)],
     );
+    await db.query("UPDATE indexed_pools SET token=$1 WHERE pool_id=$2", [
+      address(99),
+      pool.id,
+    ]);
+    await assert.rejects(share(70), unavailable);
+    await db.query("UPDATE indexed_pools SET token=$1 WHERE pool_id=$2", [
+      pool.token,
+      pool.id,
+    ]);
     // A projection that no longer matches its publication is never presented as verified.
     await db.query(
       "UPDATE analytics_pool_snapshots SET generated_at=generated_at+interval '1 second'",

@@ -3,16 +3,25 @@ const wallet = /^0x[0-9a-f]{40}$/i;
 const pool = /^0x[0-9a-f]{64}$/i;
 export function productRequest(path: string[], input: URLSearchParams) {
   const endpoint = path.join("/");
+  const tradeShare =
+    path.length === 4 &&
+    path[0] === "trades" &&
+    pool.test(path[1]) &&
+    pool.test(path[2]) &&
+    /^(0|[1-9]\d{0,9})$/.test(path[3]) &&
+    Number(path[3]) <= 2147483647;
   if (!(
     ["explore", "leaderboard", "search", "following"].includes(endpoint) ||
+    tradeShare ||
     (path.length === 2 &&
       ((path[0] === "wallets" && wallet.test(path[1])) ||
         (path[0] === "pools" && pool.test(path[1]))))
   ))
     throw Error("Invalid product route");
   const output = new URLSearchParams();
-  const allowed =
-    endpoint === "following"
+  const allowed = tradeShare
+    ? ["wallet"]
+    : endpoint === "following"
       ? ["wallets", "limit"]
       : endpoint === "explore"
         ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
@@ -77,6 +86,11 @@ export function productRequest(path: string[], input: URLSearchParams) {
       output.set(key, parseFollowingWallets(value).join(","));
       continue;
     }
+    if (key === "wallet") {
+      if (!wallet.test(value)) throw Error("Invalid trade wallet");
+      output.set(key, value.toLowerCase());
+      continue;
+    }
     output.set(
       key,
       ["limit", "offset", "minTrades"].includes(key)
@@ -84,5 +98,7 @@ export function productRequest(path: string[], input: URLSearchParams) {
         : value,
     );
   }
+  if (tradeShare && !output.has("wallet"))
+    throw Error("A trade wallet is required");
   return { endpoint: endpoint.toLowerCase(), params: output };
 }

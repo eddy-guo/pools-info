@@ -330,3 +330,152 @@ test("following proxy rejects another wallet's activity and unsupported attribut
     ),
   );
 });
+
+test("trade share routes require an exact event and explicit proven wallet", () => {
+  const h = `0x${"a".repeat(64)}`;
+  const a = `0x${"b".repeat(40)}`;
+  const path = ["trades", h, h, "2147483647"];
+  assert.equal(
+    productRequest(
+      path,
+      new URLSearchParams({ wallet: a.toUpperCase().replace("0X", "0x") }),
+    ).params.get("wallet"),
+    a,
+  );
+  for (const index of ["-1", "01", "1.0", "2147483648", "9007199254740993"])
+    assert.throws(() =>
+      productRequest(
+        ["trades", h, h, index],
+        new URLSearchParams({ wallet: a }),
+      ),
+    );
+  for (const q of [
+    "",
+    "wallet=bad",
+    `wallet=${a}&wallet=${a}`,
+    `wallet=${a}&window=All`,
+  ])
+    assert.throws(() => productRequest(path, new URLSearchParams(q)));
+});
+
+test("trade share validation keeps exact proceeds minus basis and rejects misrouted evidence", async () => {
+  const { validateTradeShareResponse } = await import("./trade-share-response");
+  const h = `0x${"1".repeat(64)}`;
+  const a = `0x${"2".repeat(40)}`;
+  const params = new URLSearchParams({ wallet: a });
+  const endpoint = `trades/${h}/${h}/1`;
+  const response = {
+    scope: "saved_verified_sale",
+    coverage: { complete: false, registryExhaustive: false },
+    trade: {
+      wallet: a,
+      poolId: h,
+      token: a,
+      symbol: "TOKEN",
+      decimals: 18,
+      txHash: h,
+      logIndex: 1,
+      block: 100,
+      timestamp: 100,
+      asOf: 200,
+      throughBlock: 200,
+      supported: true,
+      side: "sell",
+      ethWei: "9007199254740993",
+      tokenRaw: "1000000000000000000",
+      disposedCostWei: "9007199254740994",
+      realizedWei: "-1",
+    },
+  };
+  assert.doesNotThrow(() =>
+    validateTradeShareResponse(response, endpoint, params),
+  );
+  for (const patch of [
+    { realizedWei: "0" },
+    { disposedCostWei: "-1" },
+    { ethWei: 9007199254740993 },
+    { wallet: `0x${"3".repeat(40)}` },
+    { logIndex: 2 },
+    { poolId: `0x${"4".repeat(64)}` },
+    { txHash: `0x${"5".repeat(64)}` },
+    { supported: false },
+    { timestamp: 201 },
+    { block: 201 },
+    { decimals: 37 },
+    { ethWei: "1e18" },
+    { tokenRaw: "0" },
+  ])
+    assert.throws(() =>
+      validateTradeShareResponse(
+        { ...response, trade: { ...response.trade, ...patch } },
+        endpoint,
+        params,
+      ),
+    );
+});
+
+test("trade sharing never revives a preloaded PnL when saved evidence disappears or is invalid", async (t) => {
+  const prior = process.env.INDEXER_API_URL;
+  const disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const h = `0x${"1".repeat(64)}`;
+  const a = `0x${"2".repeat(40)}`;
+  const params = new URLSearchParams({ wallet: a });
+  const path = ["trades", h, h, "1"];
+  const response = {
+    scope: "saved_verified_sale",
+    coverage: { complete: false, registryExhaustive: false },
+    trade: {
+      wallet: a,
+      poolId: h,
+      token: a,
+      symbol: "TOKEN",
+      decimals: 18,
+      txHash: h,
+      logIndex: 1,
+      block: 100,
+      timestamp: 100,
+      asOf: 200,
+      throughBlock: 200,
+      supported: true,
+      side: "sell",
+      ethWei: "9007199254740993",
+      tokenRaw: "1000000000000000000",
+      disposedCostWei: "9007199254740994",
+      realizedWei: "-1",
+    },
+  };
+  let next = () => Response.json(response);
+  t.mock.method(globalThis, "fetch", async () => next());
+  const saved = await readProduct<typeof response>(path, params);
+  assert.equal(saved.delivery.source, "indexer");
+  assert.equal(saved.trade.realizedWei, "-1");
+  for (const status of [404, 503]) {
+    next = () => new Response(null, { status });
+    await assert.rejects(
+      readProduct(path, params),
+      /verified sale is unavailable/,
+    );
+  }
+  next = () =>
+    Response.json({
+      ...response,
+      trade: { ...response.trade, realizedWei: "1" },
+    });
+  await assert.rejects(
+    readProduct(path, params),
+    /verified sale is unavailable/,
+  );
+  process.env.CHAIN_REFRESH_DISABLED = "1";
+  await assert.rejects(
+    readProduct(path, params),
+    /verified sale is unavailable/,
+  );
+});

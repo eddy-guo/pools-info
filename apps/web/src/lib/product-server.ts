@@ -1,4 +1,5 @@
 import { validateFollowingResponse } from "./following-response";
+import { validateTradeShareResponse } from "./trade-share-response";
 import {
   buildAnalyticsModel,
   exploreAnalytics,
@@ -182,6 +183,8 @@ export async function readProduct<T>(
         throw Error("Invalid saved profile");
       if (checked.endpoint === "following")
         validateFollowingResponse(data, checked.params);
+      if (checked.endpoint.startsWith("trades/"))
+        validateTradeShareResponse(data, checked.endpoint, checked.params);
       return {
         ...data,
         delivery: { source: "indexer", notice: null },
@@ -192,6 +195,8 @@ export async function readProduct<T>(
   }
   if (checked.endpoint === "following")
     throw Error("Saved following activity is temporarily unavailable.");
+  if (checked.endpoint.startsWith("trades/"))
+    throw Error("This verified sale is unavailable in the saved index.");
   const data = await preloadedProduct(checked.endpoint, checked.params);
   if (!data) throw Error("Outside available saved coverage");
   return {
