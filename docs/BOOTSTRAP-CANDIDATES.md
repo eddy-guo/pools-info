@@ -125,3 +125,20 @@ identity-preserving overlap with an existing pool, and the second to test creati
 a missing historical launch. Neither verification changed production data or advanced
 any discovery cursor. These observations prove two launch cases only, not complete
 catalog coverage or financial history.
+
+## Completed five-candidate batch
+
+On 2026-09-15 the serial `--limit 5` command completed all five candidates in
+206 RPC calls. Full evidence is committed in `data/registry/candidate-proofs/`.
+The exact-token production lookups immediately before verification all returned
+HTTP 200. Three candidates were absent and two were present:
+
+- Pool `0x0416043923ec3c403f630917317168eeaf4216b12133af8e7ddf0e4776b6a302`: launch block 58176498; production query returned zero pools; 41 RPC calls.
+- Pool `0x04e6573d923e3b56bece9b517d729240a6683e2249683f6820c925c3ae149026`: launch block 62687614; production query found one pool; 41 RPC calls.
+- Pool `0x06195268756e0deab12103559e8a8181a1fe199e59710d8584a0f5659d4889fa`: launch block 31696618; production query returned zero pools; 41 RPC calls.
+- Pool `0x066df1548d4dbb0469a4b515f2a20d1bdd1509cf40bde1609b68c99a5c3337b9`: launch block 59311917; production query returned zero pools; 42 RPC calls.
+- Pool `0x076c7b3819fcfb8674375a177371a69e4cab4cf7269ae426bd752e9e2608ff3d`: launch block 62812963; production query found one pool; 41 RPC calls.
+
+There are now nine local saved proofs under `.data/bootstrap`. The batch exited
+successfully and released its lock. This added evidence only, with no database
+imports or coverage-cursor changes. Revalidate canonical evidence before import.
