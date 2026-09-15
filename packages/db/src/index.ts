@@ -184,7 +184,66 @@ export interface Batch {
   token?: string;
   events?: EventRecord[];
 }
+/** Save one batch atomically, preserving the existing replay contract. */
 export async function commitBatch(
+  db: Client,
+  expected: Stream,
+  batch: Batch,
+): Promise<boolean> {
+  await db.query("BEGIN");
+  try {
+    const changed = await commitBatchInTransaction(db, expected, batch);
+    await db.query("COMMIT");
+    return changed;
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+}
+
+/** Save a complete shared-range pool group in one transaction. All per-pool
+ * evidence, events and contiguous cursors succeed together or none advance.
+ * Discovery remains separate; this does not assert global market coverage. */
+export async function commitPoolGroup(
+  db: Client,
+  entries: { expected: Stream; batch: Batch }[],
+): Promise<boolean[]> {
+  const first = entries[0]?.batch;
+  if (
+    !first ||
+    entries.length > 200 ||
+    new Set(entries.map((e) => e.expected.key)).size !== entries.length ||
+    entries.some(
+      ({ expected, batch }) =>
+        expected.kind !== "pool" ||
+        !expected.poolId ||
+        !batch.token ||
+        (batch.pools?.length ?? 0) > 0 ||
+        batch.from !== first.from ||
+        batch.to !== first.to ||
+        batch.hash !== first.hash,
+    )
+  )
+    throw Error("Invalid pool commit group");
+  // Deterministic lock order also covers overlapping groups. Keep the returned
+  // replay flags aligned with input order, not lock order.
+  const ordered = entries
+    .map((entry, index) => ({ ...entry, index }))
+    .sort((a, b) => a.expected.key.localeCompare(b.expected.key));
+  await db.query("BEGIN");
+  try {
+    const changed: boolean[] = new Array(entries.length);
+    for (const { expected, batch, index } of ordered)
+      changed[index] = await commitBatchInTransaction(db, expected, batch);
+    await db.query("COMMIT");
+    return changed;
+  } catch (error) {
+    await db.query("ROLLBACK");
+    throw error;
+  }
+}
+
+async function commitBatchInTransaction(
   db: Client,
   expected: Stream,
   batch: Batch,
@@ -214,119 +273,111 @@ export async function commitBatch(
       throw Error("Event outside batch");
   }
   const contentHash = digest(JSON.stringify(batch));
-  await db.query("BEGIN");
-  try {
-    const locked = await db.query(
-      "SELECT * FROM indexer_streams WHERE chain_id=4663 AND stream_key=$1 FOR UPDATE",
-      [expected.key],
-    );
-    if (!locked.rowCount) throw Error("Stream disappeared");
-    const current = stream(locked.rows[0]);
-    const previous = await db.query(
-      "SELECT from_block,block_hash,content_hash FROM indexer_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
-      [expected.key, batch.to],
-    );
-    if (previous.rowCount) {
-      const p = previous.rows[0];
-      if (
-        Number(p.from_block) !== batch.from ||
-        p.block_hash !== batch.hash ||
-        p.content_hash !== contentHash
-      )
-        throw Error("Conflicting replay");
-      await db.query("COMMIT");
-      return false;
-    }
+  const locked = await db.query(
+    "SELECT * FROM indexer_streams WHERE chain_id=4663 AND stream_key=$1 FOR UPDATE",
+    [expected.key],
+  );
+  if (!locked.rowCount) throw Error("Stream disappeared");
+  const current = stream(locked.rows[0]);
+  const previous = await db.query(
+    "SELECT from_block,block_hash,content_hash FROM indexer_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
+    [expected.key, batch.to],
+  );
+  if (previous.rowCount) {
+    const p = previous.rows[0];
     if (
-      current.cursor !== expected.cursor ||
-      current.hash !== expected.hash ||
-      batch.from !==
-        (current.cursor === null ? current.start : current.cursor + 1)
+      Number(p.from_block) !== batch.from ||
+      p.block_hash !== batch.hash ||
+      p.content_hash !== contentHash
     )
-      throw Error("Stale checkpoint or noncontiguous batch");
-    if (current.kind === "discovery" && (batch.events?.length || batch.token))
-      throw Error("Discovery batch has pool events");
-    if (current.kind === "pool" && (batch.pools?.length || !batch.token))
-      throw Error("Invalid pool batch");
-    if (current.kind === "pool") {
-      const identity = await db.query(
-        "SELECT token FROM indexed_pools WHERE chain_id=4663 AND pool_id=$1",
-        [current.poolId],
-      );
-      if (
-        !identity.rowCount ||
-        identity.rows[0].token !== batch.token?.toLowerCase()
-      )
-        throw Error("Pool token mismatch");
-    }
+      throw Error("Conflicting replay");
+    return false;
+  }
+  if (
+    current.cursor !== expected.cursor ||
+    current.hash !== expected.hash ||
+    batch.from !==
+      (current.cursor === null ? current.start : current.cursor + 1)
+  )
+    throw Error("Stale checkpoint or noncontiguous batch");
+  if (current.kind === "discovery" && (batch.events?.length || batch.token))
+    throw Error("Discovery batch has pool events");
+  if (current.kind === "pool" && (batch.pools?.length || !batch.token))
+    throw Error("Invalid pool batch");
+  if (current.kind === "pool") {
+    const identity = await db.query(
+      "SELECT token FROM indexed_pools WHERE chain_id=4663 AND pool_id=$1",
+      [current.poolId],
+    );
+    if (
+      !identity.rowCount ||
+      identity.rows[0].token !== batch.token?.toLowerCase()
+    )
+      throw Error("Pool token mismatch");
+  }
+  await db.query(
+    "INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence) VALUES (4663,$1,$2,$3,$4,$5,$6)",
+    [
+      expected.key,
+      batch.from,
+      batch.to,
+      batch.hash,
+      contentHash,
+      JSON.stringify(batch.evidence),
+    ],
+  );
+  for (const p of batch.pools ?? []) {
+    if (p.launchBlock < batch.from || p.launchBlock > batch.to)
+      throw Error("Launch outside batch");
     await db.query(
-      "INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence) VALUES (4663,$1,$2,$3,$4,$5,$6)",
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
       [
+        p.id.toLowerCase(),
+        p.token.toLowerCase(),
+        p.name,
+        p.symbol,
+        p.launchBlock,
+        p.launchTx.toLowerCase(),
+        p.launchSender.toLowerCase(),
+        p.launchedAt,
         expected.key,
-        batch.from,
         batch.to,
-        batch.hash,
-        contentHash,
-        JSON.stringify(batch.evidence),
       ],
     );
-    for (const p of batch.pools ?? []) {
-      if (p.launchBlock < batch.from || p.launchBlock > batch.to)
-        throw Error("Launch outside batch");
-      await db.query(
-        "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
-        [
-          p.id.toLowerCase(),
-          p.token.toLowerCase(),
-          p.name,
-          p.symbol,
-          p.launchBlock,
-          p.launchTx.toLowerCase(),
-          p.launchSender.toLowerCase(),
-          p.launchedAt,
-          expected.key,
-          batch.to,
-        ],
-      );
-      await db.query(
-        "INSERT INTO indexer_streams(chain_id,stream_key,kind,pool_id,start_block) VALUES (4663,$1,'pool',$2,$3)",
-        ["pool:" + p.id.toLowerCase(), p.id.toLowerCase(), p.launchBlock],
-      );
-    }
-    // Parameterized bulk insert preserves exact amounts in JSON as decimal strings.
-    const rows = (batch.events ?? []).map((e) => ({
-      tx_hash: e.txHash.toLowerCase(),
-      log_index: e.logIndex,
-      block_number: e.block,
-      block_hash: e.blockHash,
-      timestamp: e.timestamp,
-      kind: e.kind,
-      transaction_sender: e.transactionSender?.toLowerCase() ?? null,
-      payload: e.payload,
-    }));
-    if (rows.length)
-      await db.query(
-        `INSERT INTO indexed_events(chain_id,stream_key,batch_end,pool_id,token,tx_hash,log_index,block_number,block_hash,timestamp,kind,transaction_sender,payload)
+    await db.query(
+      "INSERT INTO indexer_streams(chain_id,stream_key,kind,pool_id,start_block) VALUES (4663,$1,'pool',$2,$3)",
+      ["pool:" + p.id.toLowerCase(), p.id.toLowerCase(), p.launchBlock],
+    );
+  }
+  // Parameterized bulk insert preserves exact amounts in JSON as decimal strings.
+  const rows = (batch.events ?? []).map((e) => ({
+    tx_hash: e.txHash.toLowerCase(),
+    log_index: e.logIndex,
+    block_number: e.block,
+    block_hash: e.blockHash,
+    timestamp: e.timestamp,
+    kind: e.kind,
+    transaction_sender: e.transactionSender?.toLowerCase() ?? null,
+    payload: e.payload,
+  }));
+  if (rows.length)
+    await db.query(
+      `INSERT INTO indexed_events(chain_id,stream_key,batch_end,pool_id,token,tx_hash,log_index,block_number,block_hash,timestamp,kind,transaction_sender,payload)
       SELECT 4663,$1,$2,$3,$4,x.tx_hash,x.log_index,x.block_number,x.block_hash,x.timestamp,x.kind,x.transaction_sender,x.payload
       FROM jsonb_to_recordset($5::jsonb) AS x(tx_hash text,log_index integer,block_number bigint,block_hash text,timestamp bigint,kind text,transaction_sender text,payload jsonb)`,
-        [
-          expected.key,
-          batch.to,
-          current.poolId,
-          batch.token,
-          JSON.stringify(rows),
-        ],
-      );
-    await db.query(
-      "UPDATE indexer_streams SET cursor_block=$2,cursor_hash=$3,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
-      [expected.key, batch.to, batch.hash],
+      [
+        expected.key,
+        batch.to,
+        current.poolId,
+        batch.token,
+        JSON.stringify(rows),
+      ],
     );
-    await db.query("COMMIT");
-    return true;
-  } catch (e) {
-    await db.query("ROLLBACK");
-    throw e;
-  }
+  await db.query(
+    "UPDATE indexer_streams SET cursor_block=$2,cursor_hash=$3,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
+    [expected.key, batch.to, batch.hash],
+  );
+  return true;
 }
 export async function checkpoints(
   db: Client,

@@ -5,6 +5,7 @@ import {
   acquireWriter,
   waitForWriter,
   commitBatch,
+  commitPoolGroup,
   createClient,
   ensureDiscovery,
   getStream,
@@ -305,4 +306,140 @@ test("replacement writer waits for old release, acquires only once, and respects
       }
     },
   );
+});
+
+test("shared pool commit rolls back the whole group, survives replay and rejects stale members", async (t) => {
+  const schema = "group_" + randomUUID().replaceAll("-", "");
+  const db = createClient(url);
+  await db.connect();
+  await db.query(`CREATE SCHEMA "${schema}"`);
+  await db.query(`SET search_path TO "${schema}"`);
+  t.after(async () => {
+    await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+    await db.end();
+  });
+  await migrate(db);
+  const secondPool = {
+    ...pool,
+    id: hash(102),
+    token: "0x" + "2".repeat(40),
+    launchTx: hash(103),
+  };
+  await commitBatch(db, await ensureDiscovery(db, 10), {
+    from: 10,
+    to: 19,
+    hash: hash(19),
+    evidence: {},
+    pools: [pool, secondPool],
+  });
+  const entries = await Promise.all(
+    [pool, secondPool].map(async (p, i) => ({
+      expected: await getStream(db, "pool:" + p.id),
+      batch: {
+        from: 10,
+        to: 19,
+        hash: hash(19),
+        token: p.token,
+        evidence: { marker: p.id },
+        events: [
+          {
+            txHash: hash(501),
+            logIndex: i,
+            block: 10,
+            blockHash: hash(10),
+            timestamp: 100,
+            transactionSender: token,
+            kind: "swap" as const,
+            payload: { amount: "123456789012345678901234567890" },
+          },
+        ],
+      },
+    })),
+  );
+  // The earlier stream is written before the later identity fails. Neither its
+  // events nor its cursor may leak out of the failed group transaction.
+  await assert.rejects(
+    commitPoolGroup(db, [
+      entries[0],
+      {
+        ...entries[1],
+        batch: { ...entries[1].batch, token },
+      },
+    ]),
+    /Pool token mismatch/,
+  );
+  for (const e of entries)
+    assert.equal((await getStream(db, e.expected.key)).cursor, null);
+  assert.equal(
+    (await db.query("SELECT count(*) AS n FROM indexed_events")).rows[0].n,
+    "0",
+  );
+  assert.deepEqual(await commitPoolGroup(db, [...entries].reverse()), [
+    true,
+    true,
+  ]);
+  const restarted = createClient(url);
+  await restarted.connect();
+  try {
+    await restarted.query(`SET search_path TO "${schema}"`);
+    assert.deepEqual(await commitPoolGroup(restarted, entries), [false, false]);
+    assert.equal(
+      (await restarted.query("SELECT count(*) AS n FROM indexed_events"))
+        .rows[0].n,
+      "2",
+    );
+    assert.equal(
+      (await restarted.query("SELECT payload FROM indexed_events LIMIT 1"))
+        .rows[0].payload.amount,
+      entries[0].batch.events[0].payload.amount,
+    );
+  } finally {
+    await restarted.end();
+  }
+  const next = await Promise.all(
+    entries.map(async (e) => ({
+      expected: await getStream(db, e.expected.key),
+      batch: { ...e.batch, from: 20, to: 29, hash: hash(29), events: [] },
+    })),
+  );
+  await assert.rejects(
+    commitPoolGroup(db, [
+      next[0],
+      {
+        ...next[1],
+        expected: { ...next[1].expected, cursor: 18 },
+      },
+    ]),
+    /Stale checkpoint/,
+  );
+  for (const e of entries)
+    assert.equal((await getStream(db, e.expected.key)).cursor, 19);
+  assert.equal(
+    (
+      await db.query(
+        "SELECT count(*) AS n FROM indexer_batches WHERE to_block=29",
+      )
+    ).rows[0].n,
+    "0",
+  );
+  await assert.rejects(
+    commitPoolGroup(db, [next[0], next[0]]),
+    /Invalid pool commit group/,
+  );
+  await assert.rejects(commitPoolGroup(db, []), /Invalid pool commit group/);
+  assert.deepEqual(await commitPoolGroup(db, next), [true, true]);
+  await rewind(db, await getStream(db, next[0].expected.key), 19);
+  assert.deepEqual(await commitPoolGroup(db, [...next].reverse()), [
+    false,
+    true,
+  ]);
+  for (const e of next)
+    await rewind(db, await getStream(db, e.expected.key), 19);
+  const replacement = next.map((e) => ({
+    ...e,
+    batch: { ...e.batch, hash: hash(999) },
+  }));
+  assert.deepEqual(await commitPoolGroup(db, replacement), [true, true]);
+  for (const e of entries)
+    assert.equal((await getStream(db, e.expected.key)).hash, hash(999));
 });
