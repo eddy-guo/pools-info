@@ -18,7 +18,8 @@ import {
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useQuery, useWatchlist } from "./state";
-import { Avatar, Change, Price, Sparkline, WatchButton } from "./ui";
+import { Change, Price, Sparkline, WatchButton } from "./ui";
+import { PoolImage } from "./pool-image";
 import { Eth, Stat, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { ProductCoverage, ProductPagination } from "./product-common";
 const subscribeClock = (notify: () => void) => {
@@ -125,7 +126,12 @@ export function ProductExplore() {
             {launches.data.items.map((p) => (
               <Link className="launch-card" key={p.id} href={poolHref(p)}>
                 <div className="launch-card-identity">
-                  <Avatar address={p.token} small />
+                  <PoolImage
+                    poolId={p.id}
+                    token={p.token}
+                    hasImage={!!p.imageUrl}
+                    size="small"
+                  />
                   <span className="launch-card-label">
                     <strong>{p.name}</strong>
                     <small>
@@ -262,7 +268,11 @@ export function ProductExplore() {
                           </td>
                           <td>
                             <Link className="token-cell" href={poolHref(p)}>
-                              <Avatar address={p.token} />
+                              <PoolImage
+                                poolId={p.id}
+                                token={p.token}
+                                hasImage={!!p.imageUrl}
+                              />
                               <span>
                                 <strong>{p.name}</strong>
                                 <small>
@@ -333,7 +343,11 @@ export function ProductExplore() {
                     <article className="mobile-pool" key={p.id}>
                       <div className="mobile-pool-top">
                         <Link className="token-cell" href={poolHref(p)}>
-                          <Avatar address={p.token} />
+                          <PoolImage
+                            poolId={p.id}
+                            token={p.token}
+                            hasImage={!!p.imageUrl}
+                          />
                           <span>
                             <strong>{p.name}</strong>
                             <small>

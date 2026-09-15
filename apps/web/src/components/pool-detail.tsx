@@ -24,6 +24,7 @@ import { PageSkeleton, SkeletonLine, RowsSkeleton } from "./skeletons";
 import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
+import { PoolImage } from "./pool-image";
 export function PoolDetail({ id }: { id: string }) {
   const { params } = useQuery();
   const {
@@ -39,16 +40,25 @@ export function PoolDetail({ id }: { id: string }) {
     name: string;
     symbol: string;
     token: string;
+    imageUrl?: string | null;
+    pool?: {
+      poolId: string;
+      name: string;
+      symbol: string;
+      token: string;
+      imageUrl?: string | null;
+    };
     analytics: AnalyticsPoolDetail | null;
   }>(`pools/${id}`);
+  const savedIdentity = saved.data?.pool ?? saved.data;
   const [tab, setTab] = useState("Top traders");
   if (!m && (loading || saved.loading) && saved.data?.analytics !== null)
-    return <PageSkeleton kind="pool" title={saved.data?.name} />;
+    return <PageSkeleton kind="pool" title={savedIdentity?.name} />;
   if (!m)
     return (
       <div className={`page ${styles.page}`}>
         <h1>
-          {saved.data?.name ??
+          {savedIdentity?.name ??
             (loading ? "Loading saved pool…" : "Pool outside current coverage")}
         </h1>
         <p>
@@ -115,9 +125,12 @@ export function PoolDetail({ id }: { id: string }) {
       </nav>
       <div className="page-heading">
         <div className={styles.identity}>
-          <span className={styles.avatar} aria-hidden="true">
-            {m.symbol.slice(0, 2)}
-          </span>
+          <PoolImage
+            poolId={m.id}
+            token={m.token}
+            hasImage={!!savedIdentity?.imageUrl}
+            size="large"
+          />
           <div>
             <div className={styles.title}>
               <h1>{m.name}</h1>
