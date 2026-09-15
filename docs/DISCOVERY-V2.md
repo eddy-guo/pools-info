@@ -4,9 +4,9 @@ Discovery is disabled by default. After the user confirms the full historical
 sweep, set `INDEXER_DISCOVERY_V2_ENABLED=1` on the indexer service to activate it.
 The flag accepts only `0` or `1`; unset means `0`. While disabled the worker logs
 `discovery_v2_disabled` once, does not create or update v2, and does not fall back
-to v1. Existing deep pool indexing, recent swaps and analytics continue. New
-launch discovery is paused until activation; deploying the code alone does not
-begin the historical scan.
+to v1. Existing deep pool indexing, recent swaps, launch discovery inside the
+recent worker's range, and analytics continue. The separate historical launch
+sweep is paused until activation; deploying the code alone does not begin it.
 
 When enabled, the persistent worker schedules `discovery:v2` from block `22754669`. Its start,
 registry revision `robinhood-instant-v2` and SDK source revision
