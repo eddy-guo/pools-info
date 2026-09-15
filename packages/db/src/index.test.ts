@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   acquireWriter,
   waitForWriter,
@@ -32,6 +33,203 @@ const pool = {
   launchSender: token,
   launchedAt: 100,
 };
+test("overlapping launch sources preserve history and reject identity conflicts", async (t) => {
+  for (const removeOriginalFirst of [true, false]) {
+    await t.test(`rewind original first: ${removeOriginalFirst}`, async (t) => {
+      const db = createClient(url);
+      await db.connect();
+      const schema = "launch_sources_" + randomUUID().replaceAll("-", "");
+      await db.query(`CREATE SCHEMA "${schema}"`);
+      await db.query(`SET search_path TO "${schema}"`);
+      t.after(async () => {
+        await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+        await db.end();
+      });
+      // Construct an actual pre-upgrade database, including an indexed launch.
+      await db.query(
+        "CREATE TABLE pools_schema_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())",
+      );
+      for (const name of [
+        "001_indexer.sql",
+        "002_read_indexes.sql",
+        "003_analytics.sql",
+        "004_recent_activity.sql",
+        "005_accounting_rows.sql",
+        "006_catalog_search.sql",
+      ]) {
+        const sql = await readFile(
+          new URL(`../migrations/${name}`, import.meta.url),
+          "utf8",
+        );
+        await db.query(sql);
+        await db.query(
+          "INSERT INTO pools_schema_migrations(name,checksum) VALUES ($1,$2)",
+          [name, createHash("sha256").update(sql).digest("hex")],
+        );
+      }
+      await ensureDiscovery(db, 10);
+      await db.query(
+        "INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence) VALUES (4663,'discovery:v1',10,19,$1,'legacy','{}')",
+        [hash(19)],
+      );
+      await db.query(
+        "INSERT INTO indexed_pools VALUES (4663,$1,$2,$3,$4,10,$5,$2,100,'discovery:v1',19)",
+        [pool.id, token, pool.name, pool.symbol, pool.launchTx],
+      );
+      await db.query(
+        "UPDATE indexer_streams SET cursor_block=19,cursor_hash=$1 WHERE stream_key='discovery:v1'",
+        [hash(19)],
+      );
+      await db.query(
+        "INSERT INTO indexer_streams(chain_id,stream_key,kind,pool_id,start_block) VALUES (4663,$1,'pool',$2,10)",
+        ["pool:" + pool.id, pool.id],
+      );
+      await migrate(db);
+      assert.equal(
+        (await db.query("SELECT count(*)::int AS n FROM pool_launch_sources"))
+          .rows[0].n,
+        1,
+      );
+      const key = "pool:" + pool.id;
+      await commitBatch(db, await getStream(db, key), {
+        from: 10,
+        to: 19,
+        hash: hash(19),
+        evidence: {},
+        token,
+        events: [
+          {
+            block: 12,
+            timestamp: 120,
+            txHash: hash(200),
+            blockHash: hash(12),
+            logIndex: 0,
+            kind: "transfer",
+            transactionSender: token,
+            payload: { value: "1" },
+          },
+        ],
+      });
+      const history = await getStream(db, key);
+      await db.query(
+        "INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,snapshot,source_kind,source_stream,source_batch) VALUES (4663,$1,19,$2,190,$3,'indexed',$4,19)",
+        [
+          pool.id,
+          hash(19),
+          JSON.stringify({
+            schemaVersion: 1,
+            chainId: 4663,
+            markets: [{ id: pool.id }],
+            toBlock: 19,
+            blockHash: hash(19),
+            toTimestamp: 190,
+          }),
+          key,
+        ],
+      );
+      await db.query(
+        "INSERT INTO analytics_accounting_pools(chain_id,pool_id,projection_version,through_block,through_hash,from_block,from_timestamp,asof_timestamp,generated_at,source_kind,market) VALUES (4663,$1,1,19,$2,10,100,190,now(),'indexed','{}')",
+        [pool.id, hash(19)],
+      );
+      await db.query(
+        "INSERT INTO analytics_accounting_positions(chain_id,pool_id,wallet,supported,flags,quantity_raw,cost_wei,invested_wei,proceeds_wei,realized_wei,buys,sells) VALUES (4663,$1,$2,true,'{}',10,100,100,0,0,1,0)",
+        [pool.id, token],
+      );
+      const position = (
+        await db.query("SELECT * FROM analytics_accounting_positions")
+      ).rows;
+      for (const source of ["candidate:test", "conflict:test"])
+        await db.query(
+          "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block) VALUES (4663,$1,'discovery',10)",
+          [source],
+        );
+      const candidate = await getStream(db, "candidate:test");
+      const batch: Batch = {
+        from: 10,
+        to: 19,
+        hash: hash(19),
+        evidence: { source: "candidate" },
+        pools: [pool],
+      };
+      assert.equal(await commitBatch(db, candidate, batch), true);
+      assert.equal(await commitBatch(db, candidate, batch), false);
+      assert.deepEqual(await getStream(db, key), history);
+      assert.deepEqual(
+        (await db.query("SELECT * FROM analytics_accounting_positions")).rows,
+        position,
+      );
+      assert.equal(
+        (await db.query("SELECT count(*)::int AS n FROM pool_launch_sources"))
+          .rows[0].n,
+        2,
+      );
+      for (const conflict of [
+        { token: "0x" + "2".repeat(40) },
+        { launchTx: hash(999) },
+        { launchSender: "0x" + "2".repeat(40) },
+        { launchedAt: 101 },
+        { launchBlock: 11 },
+      ]) {
+        await assert.rejects(
+          commitBatch(db, await getStream(db, "conflict:test"), {
+            ...batch,
+            pools: [{ ...pool, ...conflict }],
+          }),
+          /Conflicting launch identity/,
+        );
+        assert.equal((await getStream(db, "conflict:test")).cursor, null);
+        assert.equal(
+          (
+            await db.query(
+              "SELECT count(*)::int AS n FROM indexer_batches WHERE stream_key='conflict:test'",
+            )
+          ).rows[0].n,
+          0,
+        );
+      }
+      const order = removeOriginalFirst
+        ? ["discovery:v1", "candidate:test"]
+        : ["candidate:test", "discovery:v1"];
+      await rewind(db, await getStream(db, order[0]), null);
+      assert.deepEqual(await getStream(db, key), history);
+      assert.deepEqual(
+        (await db.query("SELECT * FROM analytics_accounting_positions")).rows,
+        position,
+      );
+      assert.equal(
+        (await db.query("SELECT count(*)::int AS n FROM indexed_events"))
+          .rows[0].n,
+        1,
+      );
+      assert.equal(
+        (await db.query("SELECT source_stream FROM indexed_pools")).rows[0]
+          .source_stream,
+        order[1],
+      );
+      await rewind(db, await getStream(db, order[1]), null);
+      await assert.rejects(getStream(db, key), /Stream not found/);
+      for (const table of [
+        "indexed_pools",
+        "indexed_events",
+        "pool_launch_sources",
+        "analytics_pool_snapshots",
+        "analytics_accounting_pools",
+        "analytics_accounting_positions",
+      ])
+        assert.equal(
+          (await db.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n,
+          0,
+        );
+      await commitBatch(db, await getStream(db, "candidate:test"), batch);
+      assert.equal((await getStream(db, key)).cursor, null);
+      assert.equal(
+        (await db.query("SELECT count(*)::int AS n FROM indexed_pools")).rows[0]
+          .n,
+        1,
+      );
+    });
+  }
+});
 test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", async (t) => {
   const schema = "test_" + randomUUID().replaceAll("-", "");
   const db = createClient(url);
@@ -55,6 +253,7 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
       "004_recent_activity.sql",
       "005_accounting_rows.sql",
       "006_catalog_search.sql",
+      "007_launch_sources.sql",
     ],
   );
   const readIndexes = await db.query(

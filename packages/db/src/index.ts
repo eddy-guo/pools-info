@@ -352,8 +352,8 @@ async function commitBatchInTransaction(
   for (const p of batch.pools ?? []) {
     if (p.launchBlock < batch.from || p.launchBlock > batch.to)
       throw Error("Launch outside batch");
-    await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    const inserted = await db.query(
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -367,9 +367,38 @@ async function commitBatchInTransaction(
         batch.to,
       ],
     );
+    if (inserted.rowCount) {
+      await db.query(
+        "INSERT INTO indexer_streams(chain_id,stream_key,kind,pool_id,start_block) VALUES (4663,$1,'pool',$2,$3)",
+        ["pool:" + p.id.toLowerCase(), p.id.toLowerCase(), p.launchBlock],
+      );
+    } else {
+      const existing = await db.query(
+        "SELECT * FROM indexed_pools WHERE chain_id=4663 AND pool_id=$1 FOR UPDATE",
+        [p.id.toLowerCase()],
+      );
+      const identity = existing.rows[0];
+      if (
+        !identity ||
+        identity.token !== p.token.toLowerCase() ||
+        Number(identity.launch_block) !== p.launchBlock ||
+        identity.launch_tx !== p.launchTx.toLowerCase() ||
+        identity.launch_sender !== p.launchSender.toLowerCase() ||
+        Number(identity.launched_at) !== p.launchedAt
+      )
+        throw Error("Conflicting launch identity");
+      // Matching observations add provenance, never restart a pool's history.
+      const history = await getStream(db, "pool:" + p.id.toLowerCase());
+      if (
+        history.kind !== "pool" ||
+        history.poolId !== p.id.toLowerCase() ||
+        history.start !== p.launchBlock
+      )
+        throw Error("Invalid existing pool stream");
+    }
     await db.query(
-      "INSERT INTO indexer_streams(chain_id,stream_key,kind,pool_id,start_block) VALUES (4663,$1,'pool',$2,$3)",
-      ["pool:" + p.id.toLowerCase(), p.id.toLowerCase(), p.launchBlock],
+      "INSERT INTO pool_launch_sources(chain_id,pool_id,stream_key,batch_end) VALUES (4663,$1,$2,$3) ON CONFLICT (chain_id,pool_id,stream_key,batch_end) DO NOTHING",
+      [p.id.toLowerCase(), expected.key, batch.to],
     );
   }
   // Parameterized bulk insert preserves exact amounts in JSON as decimal strings.
@@ -436,12 +465,8 @@ export async function rewind(
         throw Error("Unknown ancestor");
       hash = r.rows[0].block_hash;
     }
-    if (current.kind === "discovery") {
-      await db.query(
-        `DELETE FROM indexer_streams s USING indexed_pools p WHERE s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND p.chain_id=4663 AND p.source_stream=$1 AND ($2::bigint IS NULL OR p.source_batch>$2)`,
-        [expected.key, ancestor],
-      );
-    }
+    // Launch-source removal preserves pools observed by another valid batch;
+    // the database trigger deletes pool history only when its final source goes.
     await db.query(
       "DELETE FROM indexer_batches WHERE chain_id=4663 AND stream_key=$1 AND ($2::bigint IS NULL OR to_block>$2)",
       [expected.key, ancestor],
