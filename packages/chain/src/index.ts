@@ -28,6 +28,13 @@ export {
   decodeLaunch,
   decodeSwap,
   spotPriceWei,
+  launchEvent,
   swapEvent,
   transferEvent,
 } from "./events";
+export {
+  collectRecentEvents,
+  type RecentEventBatch,
+  type RecentPoolIdentity,
+  type VerifiedRecentSwap,
+} from "./recent-events";

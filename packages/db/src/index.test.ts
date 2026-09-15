@@ -47,7 +47,12 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
     (
       await db.query("SELECT name FROM pools_schema_migrations ORDER BY name")
     ).rows.map((r) => r.name),
-    ["001_indexer.sql", "002_read_indexes.sql", "003_analytics.sql"],
+    [
+      "001_indexer.sql",
+      "002_read_indexes.sql",
+      "003_analytics.sql",
+      "004_recent_activity.sql",
+    ],
   );
   const readIndexes = await db.query(
     "SELECT indexname FROM pg_indexes WHERE schemaname=$1 AND indexname IN ('indexed_events_global_trades','indexed_events_transfer_from','indexed_events_transfer_to','indexer_streams_pool_lookup') ORDER BY indexname",

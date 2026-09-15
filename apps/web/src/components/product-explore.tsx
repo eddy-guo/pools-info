@@ -1,6 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
+import {
+  CoverageSkeleton,
+  StatsSkeleton,
+  RowsSkeleton,
+  LaunchesSkeleton,
+} from "./skeletons";
 import { TradeStream } from "./trade-stream";
 import {
   poolHref,
@@ -66,6 +72,17 @@ export function ProductExplore() {
           Trader leaderboard ↗
         </Link>
       </div>
+      {loading && !data && (
+        <div
+          role="status"
+          aria-label="Loading pool overview"
+          aria-busy="true"
+          data-skeleton="explore"
+        >
+          <CoverageSkeleton />
+          <StatsSkeleton />
+        </div>
+      )}
       {data && (
         <>
           <ProductCoverage coverage={data.coverage} delivery={data.delivery} />
@@ -90,6 +107,7 @@ export function ProductExplore() {
           </div>
         </>
       )}
+      {launches.loading && !launches.data && <LaunchesSkeleton />}
       {!!launches.data?.items.length && (
         <section className="launch-section" aria-label="Just launched">
           <div className="section-caption">
@@ -205,10 +223,10 @@ export function ProductExplore() {
                 Refresh saved data
               </button>
             </div>
-            {loading && (
-              <p className="panel-footnote" role="status">
-                Loading saved pools…
-              </p>
+            {loading && data && (
+              <span className="sr-only" role="status">
+                Updating saved pools
+              </span>
             )}
             {error && (
               <p className="panel-footnote" role="alert">
@@ -216,144 +234,151 @@ export function ProductExplore() {
               </p>
             )}
             {data?.message && <p className="panel-footnote">{data.message}</p>}
-            <div className="table-scroll desktop-pools">
-              <table className="data-table pool-table">
-                <thead>
-                  <tr>
-                    <th aria-label="Watchlist" />
-                    <th>Token</th>
-                    <th>Price</th>
-                    <th>{window} change</th>
-                    <th>{window} volume</th>
-                    <th>Liquidity</th>
-                    <th>Holders</th>
-                    <th>Launch sender</th>
-                    <th>Trend</th>
-                    <th>Coverage</th>
-                  </tr>
-                </thead>
-                <tbody>
+            {loading && !data ? (
+              <RowsSkeleton label="Loading pools" />
+            ) : (
+              <>
+                <div className="table-scroll desktop-pools">
+                  <table className="data-table pool-table">
+                    <thead>
+                      <tr>
+                        <th aria-label="Watchlist" />
+                        <th>Token</th>
+                        <th>Price</th>
+                        <th>{window} change</th>
+                        <th>{window} volume</th>
+                        <th>Liquidity</th>
+                        <th>Holders</th>
+                        <th>Launch sender</th>
+                        <th>Trend</th>
+                        <th>Coverage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data?.items.map((p) => (
+                        <tr key={p.id}>
+                          <td>
+                            <WatchButton id={p.id} />
+                          </td>
+                          <td>
+                            <Link className="token-cell" href={poolHref(p)}>
+                              <Avatar address={p.token} />
+                              <span>
+                                <strong>{p.name}</strong>
+                                <small>
+                                  {p.symbol} ·{" "}
+                                  {new Date(
+                                    p.launchedAt * 1000,
+                                  ).toLocaleDateString("en-US", {
+                                    timeZone: "UTC",
+                                  })}
+                                </small>
+                              </span>
+                            </Link>
+                          </td>
+                          <td>
+                            {p.stats.priceWei === null ? (
+                              <Unavailable />
+                            ) : (
+                              <Price wei={p.stats.priceWei} />
+                            )}
+                          </td>
+                          <td>
+                            {p.stats.change === null ? (
+                              <Unavailable />
+                            ) : (
+                              <Change value={p.stats.change} />
+                            )}
+                          </td>
+                          <td>
+                            <Eth wei={p.stats.volumeWei} />
+                          </td>
+                          <td>
+                            <Eth wei={p.stats.liquidityWei} />
+                          </td>
+                          <td>{p.stats.holders ?? <Unavailable />}</td>
+                          <td>
+                            <Link
+                              href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                              className="mono"
+                            >
+                              {shortAddress(p.launchSender)}
+                            </Link>
+                          </td>
+                          <td>
+                            {p.market?.series.length ? (
+                              <Sparkline
+                                points={p.market.series}
+                                positive={(p.stats.change ?? 0) >= 0}
+                              />
+                            ) : (
+                              <Unavailable />
+                            )}
+                          </td>
+                          <td>
+                            <span className="badge">
+                              {p.processed ? "Saved" : "Processing"}
+                            </span>
+                            {p.asOf && (
+                              <small className="cell-sub">{utc(p.asOf)}</small>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-pools">
                   {data?.items.map((p) => (
-                    <tr key={p.id}>
-                      <td>
-                        <WatchButton id={p.id} />
-                      </td>
-                      <td>
+                    <article className="mobile-pool" key={p.id}>
+                      <div className="mobile-pool-top">
                         <Link className="token-cell" href={poolHref(p)}>
                           <Avatar address={p.token} />
                           <span>
                             <strong>{p.name}</strong>
                             <small>
                               {p.symbol} ·{" "}
-                              {new Date(p.launchedAt * 1000).toLocaleDateString(
-                                "en-US",
-                                { timeZone: "UTC" },
-                              )}
+                              {p.processed
+                                ? "Saved analytics"
+                                : "Processing analytics"}
                             </small>
                           </span>
                         </Link>
-                      </td>
-                      <td>
-                        {p.stats.priceWei === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Price wei={p.stats.priceWei} />
-                        )}
-                      </td>
-                      <td>
-                        {p.stats.change === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Change value={p.stats.change} />
-                        )}
-                      </td>
-                      <td>
-                        <Eth wei={p.stats.volumeWei} />
-                      </td>
-                      <td>
-                        <Eth wei={p.stats.liquidityWei} />
-                      </td>
-                      <td>{p.stats.holders ?? <Unavailable />}</td>
-                      <td>
-                        <Link
-                          href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                          className="mono"
-                        >
-                          {shortAddress(p.launchSender)}
-                        </Link>
-                      </td>
-                      <td>
-                        {p.market?.series.length ? (
-                          <Sparkline
-                            points={p.market.series}
-                            positive={(p.stats.change ?? 0) >= 0}
-                          />
-                        ) : (
-                          <Unavailable />
-                        )}
-                      </td>
-                      <td>
-                        <span className="badge">
-                          {p.processed ? "Saved" : "Processing"}
+                        <WatchButton id={p.id} />
+                      </div>
+                      <div className="mobile-pool-stats">
+                        <span>
+                          Price
+                          <strong>
+                            {p.stats.priceWei === null ? (
+                              <Unavailable />
+                            ) : (
+                              <Price wei={p.stats.priceWei} />
+                            )}
+                          </strong>
                         </span>
-                        {p.asOf && (
-                          <small className="cell-sub">{utc(p.asOf)}</small>
-                        )}
-                      </td>
-                    </tr>
+                        <span>
+                          {window} volume
+                          <strong>
+                            <Eth wei={p.stats.volumeWei} />
+                          </strong>
+                        </span>
+                        <span>
+                          Change
+                          <strong>
+                            {p.stats.change === null ? (
+                              <Unavailable />
+                            ) : (
+                              <Change value={p.stats.change} />
+                            )}
+                          </strong>
+                        </span>
+                      </div>
+                    </article>
                   ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mobile-pools">
-              {data?.items.map((p) => (
-                <article className="mobile-pool" key={p.id}>
-                  <div className="mobile-pool-top">
-                    <Link className="token-cell" href={poolHref(p)}>
-                      <Avatar address={p.token} />
-                      <span>
-                        <strong>{p.name}</strong>
-                        <small>
-                          {p.symbol} ·{" "}
-                          {p.processed
-                            ? "Saved analytics"
-                            : "Processing analytics"}
-                        </small>
-                      </span>
-                    </Link>
-                    <WatchButton id={p.id} />
-                  </div>
-                  <div className="mobile-pool-stats">
-                    <span>
-                      Price
-                      <strong>
-                        {p.stats.priceWei === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Price wei={p.stats.priceWei} />
-                        )}
-                      </strong>
-                    </span>
-                    <span>
-                      {window} volume
-                      <strong>
-                        <Eth wei={p.stats.volumeWei} />
-                      </strong>
-                    </span>
-                    <span>
-                      Change
-                      <strong>
-                        {p.stats.change === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Change value={p.stats.change} />
-                        )}
-                      </strong>
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
+                </div>
+              </>
+            )}
             {data && !data.items.length && !loading && (
               <div className="empty-state">
                 <h3>No pools match these filters</h3>
@@ -375,17 +400,14 @@ export function ProductExplore() {
           </section>
         </div>
         <aside className="market-sidebar">
-          {!!data?.items.some((p) => p.market) && (
-            <TradeStream
-              markets={data.items
-                .flatMap((p) => (p.market ? [p.market] : []))
-                .slice(0, 8)}
-            />
-          )}
+          <TradeStream />
           <section className="panel">
             <div className="panel-heading">
               <h2>Top traders · 24h</h2>
             </div>
+            {leaders.loading && !leaders.data && (
+              <RowsSkeleton rows={3} label="Loading top traders" />
+            )}
             {leaders.data?.items.map((w) => (
               <Link
                 className="leader-link"
@@ -398,7 +420,7 @@ export function ProductExplore() {
                 <Eth wei={w.realizedWei} signed />
               </Link>
             ))}
-            {!leaders.data?.items.length && (
+            {!leaders.loading && !leaders.data?.items.length && (
               <p className="panel-footnote">
                 No qualifying saved traders in this window yet.
               </p>

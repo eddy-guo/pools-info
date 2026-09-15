@@ -1,0 +1,70 @@
+.rail button {
+  min-height: var(--ctl-min, 32px);
+}
+.events {
+  max-height: 560px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.row {
+  transition: background-color 250ms ease;
+}
+.row[data-new="true"] {
+  animation: arrive 1.8s ease-out;
+}
+.row a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.top > :last-child {
+  margin-left: auto;
+}
+.meta {
+  justify-content: space-between;
+}
+.note {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+}
+.status {
+  font-variant-numeric: tabular-nums;
+}
+@keyframes arrive {
+  from {
+    background: color-mix(in srgb, var(--ac) 16%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row[data-new="true"] {
+    animation: none;
+  }
+}
+@container site (max-width: 767px) {
+  .row a {
+    min-height: 44px;
+  }
+  .events {
+    max-height: 520px;
+  }
+}
+.meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.row a {
+  gap: 3px;
+}

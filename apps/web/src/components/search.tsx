@@ -18,6 +18,7 @@ import {
   type SearchResponse,
 } from "@pools/core";
 import { createSearchProvider } from "@/lib/search-provider";
+import { SearchSkeleton, SkeletonLine } from "./skeletons";
 import { useLive } from "./live-provider";
 const icons = {
   Tokens: Coins,
@@ -43,6 +44,7 @@ export function Search() {
     provider: typeof provider;
     data?: SearchResponse & { indexNotice?: string };
     error?: string;
+    pending?: boolean;
   }>();
   const current =
     result?.query === query &&
@@ -51,6 +53,9 @@ export function Search() {
       ? result
       : undefined;
   const data = current?.data;
+  const waiting =
+    !current ||
+    (!current.error && (!data || (!data.entries.length && current.pending)));
   function open() {
     if (!dialog.current?.open) dialog.current?.showModal();
     setOpen(true);
@@ -87,23 +92,36 @@ export function Search() {
           .search(query, { group, signal: controller.signal })
           .then(async (data) => {
             if (controller.signal.aborted) return;
-            setResult({ query, group, provider, data });
+            setResult({ query, group, provider, data, pending: true });
             const extended = await provider.extend(
               query,
               { group, signal: controller.signal },
               data,
             );
             if (!controller.signal.aborted)
-              setResult({ query, group, provider, data: extended });
-          })
-          .catch(() => {
-            if (!controller.signal.aborted)
               setResult({
                 query,
                 group,
                 provider,
-                error: "Search is unavailable. Try again shortly.",
+                data: extended,
+                pending: false,
               });
+          })
+          .catch(() => {
+            if (!controller.signal.aborted)
+              setResult((previous) => ({
+                query,
+                group,
+                provider,
+                data:
+                  previous?.query === query &&
+                  previous?.group === group &&
+                  previous?.provider === provider
+                    ? previous.data
+                    : undefined,
+                pending: false,
+                error: "Search is unavailable. Try again shortly.",
+              }));
           });
       },
       query ? 100 : 0,
@@ -212,11 +230,13 @@ export function Search() {
             </button>
           ))}
         </div>
-        <div className="search-results" aria-busy={!current}>
+        <div className="search-results" aria-busy={Boolean(waiting)}>
           <p className="search-hint">
-            {data
-              ? `${data.coverage.pools} covered pools + audited activity · partial coverage`
-              : "Searching current coverage…"}
+            {data ? (
+              `${data.coverage.pools} covered pools + audited activity · partial coverage`
+            ) : waiting ? (
+              <SkeletonLine width={220} height={10} />
+            ) : null}
           </p>
           {data?.indexNotice && (
             <p className="search-help">{data.indexNotice}</p>
@@ -233,6 +253,7 @@ export function Search() {
                 ? `${data.total} results in current coverage`
                 : "Searching")}
           </span>
+          {waiting && <SearchSkeleton />}
           {data?.kind === "ens" && !data.entries.length && (
             <div className="search-explainer">
               <span className="preview-label">ENS LOOKUP</span>
@@ -278,15 +299,18 @@ export function Search() {
               </section>
             ) : null;
           })}
-          {data && !data.entries.length && data.kind !== "ens" && (
-            <div className="empty-state">
-              <h3>No matches in current coverage</h3>
-              <p>
-                This does not mean the token or wallet does not exist. Try its
-                full address or a shorter name.
-              </p>
-            </div>
-          )}
+          {data &&
+            !data.entries.length &&
+            data.kind !== "ens" &&
+            !current?.pending && (
+              <div className="empty-state">
+                <h3>No matches in current coverage</h3>
+                <p>
+                  This does not mean the token or wallet does not exist. Try its
+                  full address or a shorter name.
+                </p>
+              </div>
+            )}
           {current?.error && (
             <p role="alert" className="search-help">
               {current.error}

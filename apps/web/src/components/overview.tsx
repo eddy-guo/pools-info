@@ -430,7 +430,7 @@ export function PreloadedOverview() {
           </details>
         </section>
         <aside className="market-sidebar">
-          <TradeStream markets={s.markets} />
+          <TradeStream />
           <section className="panel top-traders-rail">
             <div className="panel-heading">
               <h2>Top traders</h2>

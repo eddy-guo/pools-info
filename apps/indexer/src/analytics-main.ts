@@ -19,7 +19,8 @@ function rpc() {
     timeoutMs: 300000,
     maxRequests: 500,
     minIntervalMs: 1000,
-    maxBatchSize: 5,
+    // Leave room for historical and recent collection on the shared account.
+    maxBatchSize: 2,
     logRangeBlocks: range,
   });
 }

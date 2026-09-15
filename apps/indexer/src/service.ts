@@ -2,8 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 // One Railway container runs independent collection and analytics processes.
-// Each owns its own DB connection and advisory lock. If either exits, drain
-// its sibling and let Railway restart the unit rather than silently going stale.
+// Each owns its own DB connection and advisory lock. If any exits, drain
+// its siblings and let Railway restart the unit rather than silently going stale.
 const children = new Set<ChildProcess>();
 let stopping = false;
 function stop(code: number) {
@@ -35,5 +35,6 @@ function start(file: string, args: string[]) {
   });
   return child;
 }
+if (process.env.RECENT_ENABLED === "1") start("./recent-main.ts", ["run"]);
 start("./main.ts", ["run"]);
 start("./analytics-main.ts", ["run"]);

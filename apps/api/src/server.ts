@@ -50,8 +50,11 @@ export function createApi(
         );
         throw new RequestError(429, "request_limit");
       }
+      // A rewound recent window must disappear on the very next poll.
+      const cacheable =
+        request.route !== "ready" && request.route !== "live-trades";
       const hit = cache.get(request.cacheKey);
-      if (request.route !== "ready" && hit && hit.expires > now()) {
+      if (cacheable && hit && hit.expires > now()) {
         res.setHeader("X-Data-Cache", "HIT");
         send(200, hit.body);
         return;
@@ -65,7 +68,7 @@ export function createApi(
             const body = JSON.stringify(await reader.read(request));
             const bytes = Buffer.byteLength(body);
             if (bytes > 8 * 1024 * 1024) throw Error("Response exceeds bound");
-            if (request.route !== "ready") {
+            if (cacheable) {
               evict(request.cacheKey);
               while (cache.size >= 256 || cacheBytes + bytes > 16 * 1024 * 1024)
                 evict(cache.keys().next().value!);

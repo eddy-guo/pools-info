@@ -2,6 +2,7 @@
 import { FeaturePreview } from "./feature-preview";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { FollowedWallets } from "./following";
 export function WalletLookup() {
   const [address, setAddress] = useState(""),
     [error, setError] = useState("");
@@ -58,6 +59,7 @@ export function WalletLookup() {
         <button className="button">Open wallet profile</button>
         {error && <p role="alert">{error}</p>}
       </form>
+      <FollowedWallets />
     </div>
   );
 }

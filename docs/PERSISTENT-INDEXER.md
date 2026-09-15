@@ -1,28 +1,28 @@
 # Persistent Pools indexer
 
-Decision: 14 September 2026. Keep one repository, the existing Vercel website,
-and add a Railway project containing Postgres and one long-running indexer.
-The Postgres service and worker are now deployed in the same Railway project.
-The website still reads its existing snapshots and RPC refresh endpoints.
+The project uses one repository, a Vercel Next.js website, and a Railway
+project containing private Postgres, a read API and a background worker service.
 
 ## Responsibilities
 
-- `apps/web` (existing): Next.js UI and server-side read endpoints. Its future
-  indexed read path must preserve private-only Postgres, for example through a
-  small Railway read service. That integration is not implemented yet.
-- `apps/indexer` (implemented foundation): background discovery and resumable
-  swap/transfer ingestion. Holder snapshots and trader accounting remain planned;
-  they will reuse the chain decoders and core calculations.
-- `packages/db` (implemented foundation): versioned SQL migrations, connection
-  handling and checkpoint queries. Separate reader permissions remain future work.
-- `packages/chain` and `packages/core` (existing): RPC access, event validation,
-  exact arithmetic and accounting rules.
-- `docs` stays at the repository root.
+- `apps/web`: UI and server-side proxies to the Railway read API. Product views
+  read saved analytics, with a labeled committed capture as an outage fallback.
+- `apps/api`: bounded database reads for catalog, pool analytics, cross-pool
+  leaderboard, public wallet/creator profiles, search and recent trades. No RPC
+  requests run in this process.
+- `apps/indexer`: independently scheduled historical discovery/events, analytics
+  projection and recent activity collection. They share one container and RPC
+  account, but keep separate checkpoints and database locks.
+- `packages/db`: versioned SQL migrations, atomic publication, checkpoints and
+  reorg invalidation. Separate reader permissions remain future work.
+- `packages/chain` and `packages/core`: RPC validation, exact arithmetic and
+  accounting rules. `docs` stays at the repository root.
 
-Current ingestion: Robinhood RPC -> indexer -> private Postgres. Planned reads:
-Postgres -> Railway read service -> Next.js server -> browser.
-Alchemy remains the configured RPC provider, not the database or indexer.
-ENS remains an Ethereum lookup separate from the Robinhood market catalog.
+Market ingestion: Alchemy Robinhood RPC -> indexer -> private Postgres.
+Product reads: Postgres -> Railway read API -> Next.js server -> browser.
+ENS is a separate Ethereum lookup. There is no account database: public wallet
+profiles are derived from chain evidence; watchlists and follows stay in the
+visitor's browser.
 
 ## Collection and correctness
 
@@ -36,8 +36,8 @@ ENS remains an Ethereum lookup separate from the Robinhood market catalog.
    competing writers during restarts or overlapping deployments.
 4. Verify saved block hashes, rewind and rebuild affected derived data on a
    detected reorg. Retain a conservative head lag and publish exact cutoffs.
-5. Run historical backfill separately from following new activity, within a
-   shared RPC budget. Persist gaps and progress; never label partial history
+5. Run historical backfill separately from following new activity, with bounded per-process
+   RPC budgets. Their combined usage consumes the same provider allowance. Persist gaps and progress; never label partial history
    complete. Measure Alchemy's observed 10-block log limit before expanding
    backfill volume; batching does not eliminate per-call provider usage.
 6. Reconstruct holders from birth-to-cutoff Transfer coverage, reconcile against
@@ -125,8 +125,9 @@ Optional tuning: `INDEXER_BATCH_BLOCKS=1000` (maximum 2000),
 `INDEXER_POLL_MS=15000`, `INDEXER_POOLS_PER_CYCLE=2`. These are conservative starting
 values, not a guarantee of keeping up with chain activity. Logs report HTTP and
 logical RPC counts separately; retries can increase billable provider calls.
-The worker sends at most five calls per batch, with at least one second between
-HTTP requests. Per-call rate limits inside HTTP-success responses retry only
+Each worker sends at most two calls per batch, with at least one second between
+HTTP requests. All workers consume the same provider account allowance; these
+per-process caps are conservative pacing, not a global rate-limit guarantee. Per-call rate limits inside HTTP-success responses retry only
 the throttled calls, preserving successful replies. One slow or broken pool
 retains its old checkpoint.
 
@@ -148,7 +149,7 @@ learn a smaller advertised limit. It does not increase throughput or quota.
    connected to this deployment. Use these settings:
    - Builder: Dockerfile; path: `apps/indexer/Dockerfile`.
    - Pre-deploy command: `node --import tsx src/main.ts migrate`.
-   - Start command: `node --import tsx src/service.ts` (collector and analytics).
+   - Start command: `node --import tsx src/service.ts` (historical collector, analytics and recent activity).
    - Watch paths: `/apps/indexer/**`, `/packages/**`, `/pnpm-lock.yaml`,
      `/pnpm-workspace.yaml`, `/package.json`.
    - Wait for CI enabled; one replica, serverless disabled.
@@ -194,26 +195,86 @@ wallet activity are exposed with explicit coverage. Wallet activity means
 transaction initiator or token-transfer participation, not verified profit.
 The API contract and deployment settings are in `apps/api/README.md`.
 
-The Next `/api/trades/` route supports a server-only `INDEXER_API_URL` origin.
-When configured, it reads `/v1/feed` from the read service; on failure it keeps
-the last visible feed rather than starting extra RPC scans. Without the setting,
-the current bounded RPC feed continues. The database feed uses the shared
-indexed interval of the requested pools and a saved canonical header timestamp.
-It refuses unknown or unstarted pool streams and never calls a recent database
-write proof of recent chain coverage. Enable this origin only after verifying
-coverage for the selected pools. This adapter does not yet switch the screener,
-charts or wallet PnL away from their existing captured/audited data providers.
+The product adapters use `INDEXER_API_URL` for `/v1/explore`, `/v1/pools`,
+`/v1/leaderboard`, `/v1/wallets` and `/v1/search`. Financial values carry their
+saved observation cutoff. Unsupported positions and incomplete histories remain
+excluded from PnL. See [ANALYTICS-VALIDATION.md](ANALYTICS-VALIDATION.md) for an
+independent integer reconciliation of the first full-history capture.
 
-Public wallet and creator views should share the wallet address as identity.
-Launch records provide the creator activity section; trade positions and
-accounting provide trading activity. No account table, login or user preferences
-are needed for that public profile. Derived positions, realized sales, candle
-buckets and holder balances are subsequent read models, rebuilt from verified
-source events with their own coverage/version. They must not interpret a
-transaction initiator alone as the beneficiary or treat incomplete cost basis
-as zero. Current cross-pool ranking and persistent derived PnL remain unfinished.
+The live rail uses `/api/live-trades/` -> `/v1/live-trades`. It reads the newest
+50 saved swaps, optionally scoped to one pool. It never calls RPC on a page view.
+The browser checks every 15 seconds while visible, stops when paused or hidden,
+and replaces the complete returned window so reorg removals disappear. Failed
+requests retain the previous rows with a delayed label.
 
-Fresh block following and historical backfill need independent scheduling before
-claiming continuously current, all-Pools coverage. Adding a database or the read
-service alone does not increase collection throughput. Until that work is
-verified, the website must keep showing the actual observation cutoff.
+Recent launches and swaps have their own tables and independent checkpoints.
+Only launches verified against the configured Pools strategies enter the
+catalog. Recent discoveries join historical discoveries in search and pool
+pages, but do not create financial analytics or complete-history claims.
+Transactions identify their initiator, which may differ from the beneficiary.
+A stale or empty recent checkpoint never falls back to historical activity and
+pretends it is live. The API reports head, cutoff, lag and discovery coverage.
+
+The recent lane starts with a bounded lookback and resumes from its saved cursor.
+It does not discover every older launch. Historical coverage and recent worker
+throughput still need to be measured before claiming current, all-Pools coverage.
+The database stores public chain evidence, not account sign-ins or preferences.
+
+### Independent recent activity worker
+
+The service supervisor starts the third process only when `RECENT_ENABLED=1`.
+The existing history collector and analytics projector continue independently.
+Use `pnpm recent:once` for one bounded cycle or `pnpm recent:run` for continuous
+collection. Both require the existing `ROBINHOOD_RPC_URL` and `DATABASE_URL`.
+No new key or external integration is required. The worker intentionally ignores
+`INDEXER_LOG_RPC_URL`; the public endpoint rejected Railway requests with HTTP 403.
+
+Settings:
+
+- `RECENT_ENABLED=1`: enable the recent child in `indexer:service`; default off.
+- `RECENT_BOOTSTRAP_BLOCKS=6000`: initial lookback, saved once. Restarting or
+  changing this value never moves an existing checkpoint forward or skips a gap.
+- `RECENT_BATCH_BLOCKS=1000`: maximum blocks per cycle, inclusive, maximum 2000.
+- `RECENT_LOG_RANGE_BLOCKS=10`: provider request range, matching Alchemy Free.
+
+One combined query reads registered strategy launch events plus PoolManager
+Swap events. Unknown pool IDs are discarded before receipt/header enrichment.
+The registry combines verified historical and recent launches. The swap cursor
+never passes discovery, so a newly discovered launch cannot be skipped within
+this recent window. Every published swap has a matching successful receipt,
+canonical event header and rechecked cutoff. Transaction sender means initiator,
+not necessarily token beneficiary. Recent rows cannot enter complete-history PnL.
+
+Migration 004 stores separate recent streams, evidence batches, launches and swaps.
+A single advisory lock 19004 prevents duplicate recent writers. Batch replay is
+idempotent, parent links enforce contiguous coverage, and a discovery reorg
+atomically removes affected discoveries and swaps. Reorgs deeper than the 256
+retained checkpoint candidates reset this lane to its original saved start.
+Evidence is currently retained rather than pruned; large-scale retention policy
+is future work and must preserve the launch evidence that the registry depends on.
+
+Each process now uses two calls per batch and a minimum 1000 ms interval, allowing
+headroom when history, analytics and recent jobs share the same Alchemy key.
+This is conservative local pacing, not a distributed provider-wide rate limiter.
+The recent cycle budget remains 120 seconds / 300 HTTP requests. Explicit work-budget
+failures halve the next range down to 10 blocks, preserving the cursor. Five good
+cycles gradually restore the configured maximum; network/authentication/evidence
+errors never trigger this size reduction. Repeated failures back off and restart
+through the supervisor rather than pretending coverage advanced.
+
+A local Alchemy-only pilot with isolated PostgreSQL measured two 200-block cycles
+at 21.043 s and 23.048 s, slower than the observed chain rate of about 10 blocks/second.
+A 1000-block cycle measured 61.054 s, or 16.38 blocks/second, so 1000 is the default.
+That cycle saw 5,132 manager swaps and zero matching verified launches in its
+window; all unknown swaps were excluded. This is throughput evidence for that
+sample, not a claim that the hosted cursor is current. Receipt-heavy windows and
+concurrent provider traffic can be slower. Inspect `recent_batch` logs for actual
+head, cutoff, lag, duration and omitted-swap counts before claiming live coverage.
+
+A positive real-data pilot also ran the entire recent worker over PEPE launch
+blocks62625935-62625944 using Alchemy and an isolated local PostgreSQL schema:
+one verified launch, two receipt-backed swaps,14 unrelated manager swaps omitted,
+and16.048seconds/17HTTP requests/21logical calls. The `/v1/live-trades` API reader
+returned both swaps with exact integer amounts, normalized token address and
+explicit `stale` coverage (asOf1789370420). This caught and fixed checksummed ABI
+address normalization before deployment; a regression test now covers it.

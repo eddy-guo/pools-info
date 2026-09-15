@@ -71,6 +71,22 @@ export function safeError(e: unknown) {
     )
   )
     return `configuration_invalid: ${message}`;
+  if (/^Invalid recent (configuration|command)$/.test(message))
+    return "recent_configuration_invalid: inspect RECENT settings";
+  if (
+    /^(Missing recent (header|receipt)|Unexpected recent (event source or range|combined source)|Duplicate recent event evidence|Inconsistent recent receipt or canonical block|Recent event precedes verified launch)$/.test(
+      message,
+    )
+  )
+    return "recent_evidence_rejected: check canonical headers, receipts and verified launch registry";
+  if (
+    /^(Recent (cutoff changed during collection|boundary changed)|Noncontiguous recent checkpoint|Conflicting recent replay|Conflicting recent pool identity|Recent swaps exceed discovery coverage)$/.test(
+      message,
+    )
+  )
+    return "recent_checkpoint_conflict: reconcile canonical discovery and swap checkpoints";
+  if (/^Recent batch exceeds 10000 logs$/.test(message))
+    return "recent_batch_too_large: reduce RECENT_BATCH_BLOCKS";
   const details = errorDetails(e);
   if (details.networkCode)
     return `network_failed: ${details.networkCode}; retry the provider connection`;

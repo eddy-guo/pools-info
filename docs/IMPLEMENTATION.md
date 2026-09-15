@@ -1,32 +1,67 @@
 # Implementation status
 
-14 September 2026. The product scope is preserved in [PRODUCT-SCOPE.md](PRODUCT-SCOPE.md). Removing demos means replacing their data, not dropping pages.
+15 September 2026. The product scope is preserved in [PRODUCT-SCOPE.md](PRODUCT-SCOPE.md).
 
-## Current implementation
+## Saved-data product
 
-Next.js in one pnpm workspace. The UI's source is a real committed Robinhood Chain sample plus cached runtime refresh. There is no demo dataset, simulated price conversion, fictional identity, SnapshotReader, or demo generator in the running app.
+One pnpm workspace contains the Next.js website, Railway read API, background
+indexer and shared chain/accounting/database packages. Postgres is private to
+Railway. Production page reads use saved database analytics through the API;
+a clearly dated committed capture remains available as an outage fallback.
+No fictional identities, financial values or simulated price conversion are used.
 
-Explore, pool detail, traders, arbitrary wallet profiles, cards, creators/detail, search and methodology are all routed. Pool details retain a launch transaction in their URL for bounded retrieval after the recent list rotates. The data provider shares a market snapshot and independent audited pool results across client navigation. Production builds stay independent of RPC availability.
+Explore, token/pool detail, a cross-pool PnL leaderboard, public wallet profiles,
+creator launches, PnL cards, typed search and methodology are routed. Local
+watchlists and wallet follows need no account. Wallet connection, profile edits
+and copy-trade execution remain design previews.
 
-Pure read models in `packages/core/src/live-analytics.ts` derive windowed volume and price changes, carried-basis realized PnL, net ETH, disposed-cost ROI, closed-cycle records and hold times, cumulative PnL, open inventory marks and early-entry observations. Unknown-basis positions remain excluded in every window. Card parameters identify a wallet/pool/window; they cannot inject metrics. Cards independently use the server audit and display a scoped rank.
+The indexer saves verified launch provenance, swap/transfer evidence and
+per-stream checkpoints. The analytics worker reconstructs holders and supported
+positions from complete birth-to-cutoff evidence, then publishes saved pool
+analytics. Exact integer average-cost accounting carries cost basis into selected
+windows and excludes unsupported attribution or unknown inventory cost.
+Cross-pool ranking combines supported saved positions, not every wallet's full
+on-chain history. The first real capture was independently reconciled; see
+[ANALYTICS-VALIDATION.md](ANALYTICS-VALIDATION.md).
 
-All ranking and wallet accounting currently covers one audited pool at a time. The full product still needs multi-pool indexing. Creators are grouped by observed launch sender, with a clear attribution qualification. N/A means an input has not been collected or a metric is not meaningful; it is never converted to zero.
+## Recent activity iteration
 
-## Sources and boundaries
+Initial page loads use content-shaped skeletons for metrics, charts, lists and
+search results, with a subdued pulse and reduced-motion support. Background
+refresh retains existing matching data. Loading is distinct from a completed
+request with no results or unavailable analytics.
 
-Only public Robinhood RPC is used for market ingestion. The collector checks chain, deployments, launch receipt and pool identity, token metadata, canonical event/block relationships, and the final cutoff hash. Audits additionally check full swap receipts, supported router/token flows, transfers and cutoff balances. Envio is removed. pools.xyz was inspected for reconciliation and presentation research only.
+A separate recent collector follows verified Pools launch events and relevant
+PoolManager swaps while historical collection continues. Recent tables do not
+claim complete PnL history. New launches can appear in catalog/search before
+financial metrics are available. Explore and pool details show a saved-trade
+rail, including newly discovered pools that are still awaiting analytics.
 
-The build sample includes 8 recent pools and their audits, collected from RPC with `CHAIN_INCLUDE_ACCOUNTING=1 pnpm snapshot:chain`. Market-only runtime polling remains cheaper. An older retained audit is visibly labeled with its own cutoff; it does not become current because the market list refreshed.
+The browser refreshes the latest 50 trades every 15 seconds while visible, can
+pause, preserves old rows on an error, and replaces rewound windows. Coverage
+shows the actual block cutoff and delayed states. Read APIs perform no RPC
+requests. See [PERSISTENT-INDEXER.md](PERSISTENT-INDEXER.md) and
+[the API contract](../apps/api/README.md).
 
-## Still in scope
+## Limits that remain
 
-Holder concentration, liquidity, fee compounding, validated permanent-lock evidence, full wallet/creator history, global rankings, known-bad-token filters, ENS, wallet connection, CCA accounting and persistent indexing. See the scope matrix. No extra repo or database is required for this first real-data pass.
+The catalog covers observed launches from verified Pools contracts, not all
+Robinhood tokens or every historical Pools launch. Historical and recent scans
+have explicit start points. A deployed process is not proof that its cutoff is
+current. The existing Alchemy key's query limits and shared allowance constrain
+catch-up speed; provider upgrades must be verified before increasing range sizes.
+
+Complete market coverage, uniformly fresh full-history PnL, some liquidity/fee
+metrics and production-scale read models remain ongoing work. No missing metric
+is silently converted to zero. ENS resolution uses Ethereum separately from
+Robinhood market ingestion. Envio is not used.
 
 ## Development and release workflow
 
-`pnpm dev` runs the hot-reloading app at 127.0.0.1:3100. `pnpm check` builds the production server; Playwright uses port 3101 so local development can remain running. CI repeats frozen installation, validation and desktop/mobile flows on pushes. Main deploys through the existing Vercel connection. Verify the actual deployment as well as localhost before calling a release complete.
-
-
-## Validation for this migration
-
-Lint and strict typechecks, 29 accounting/ingestion/read-model tests, production build and frozen installation pass. Twelve desktop/mobile browser checks cover real routes, watchlists and filters, refresh failure/recovery, pool-scoped ranking gates, wallet navigation, share-card PNG dimensions, creator lookup, typed search and direct candle-chart hydration. The card was also generated through actual public RPC and visually inspected; an independent receipt-word calculation matched a real wallet's closed-cycle result exactly. See LIVE-DATA.md for hashes and amounts.
+`pnpm dev` serves port 3100. Production builds and Playwright use port 3101.
+`pnpm check` runs lint, strict typechecks, accounting/ingestion/read tests and the
+production build. `TEST_DATABASE_URL=... pnpm test:db` runs isolated Postgres
+integration tests, while `pnpm test:e2e` checks desktop and mobile product flows.
+Main pushes deploy through existing Vercel/Railway connections after CI. Verify
+actual live service checkpoints and product responses before declaring a rollout
+successful; test fixtures alone do not establish production data coverage.

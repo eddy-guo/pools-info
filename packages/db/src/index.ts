@@ -391,3 +391,15 @@ export async function status(db: Client) {
   );
   return { counts: counts.rows[0], streams: s.rows, streamLimit: 100 };
 }
+export {
+  ensureRecentStreams,
+  recentStream,
+  observeRecentHead,
+  knownRecentPools,
+  commitRecentBatch,
+  recentCheckpoints,
+  rewindRecent,
+  type RecentStream,
+  type RecentBatch,
+  type RecentEvent,
+} from "./recent";

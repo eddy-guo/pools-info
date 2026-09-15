@@ -8,6 +8,8 @@ import type {
   AnalyticsPoolDetail,
   AnalyticsLeaderboardResponse,
   AnalyticsWalletResponse,
+  LiveTradeFeedResponse,
+  LiveTradeEvent,
 } from "@pools/core";
 import {
   buildHolderLedger,
@@ -442,54 +444,206 @@ test("chart separates interval from range, switches FDV and keeps seven trade pa
   ).toBe(true);
 });
 
-test("live feed deduplicates overlapping checks, retains data on failure, and pauses", async ({
-  page,
-}) => {
-  await page.clock.install();
-  let count = 0;
-  const event = {
+function liveEvent(
+  index: number,
+  timestamp: number,
+  patch: Partial<LiveTradeEvent> = {},
+): LiveTradeEvent {
+  const hash = `0x${index.toString(16).padStart(64, "0")}`;
+  return {
+    id: `${hash}:0`,
     poolId: market.id,
-    txHash: chain.trades[0].txHash,
+    token: market.token,
+    name: market.name,
+    symbol: market.symbol,
+    launchTx: market.launchTx,
+    transactionHash: hash,
     logIndex: 0,
-    block: chain.toBlock,
-    timestamp: Math.floor(Date.now() / 1000),
-    amount0: "-100000000000000000",
-    amount1: "1000000",
-    transactionSender: wallet,
+    block: chain.toBlock + index,
+    blockHash: `0x${"a".repeat(64)}`,
+    timestamp,
+    side: "buy",
+    ethWei: "100000000000000000",
+    tokenRaw: "1000000",
+    transactionInitiator: wallet,
+    attribution: "transaction_initiator_only",
+    ...patch,
   };
-  const batch = {
-    fromBlock: chain.toBlock - 999,
-    toBlock: chain.toBlock,
-    toTimestamp: Math.floor(Date.now() / 1000),
-    events: [event],
+}
+function liveBatch(
+  events: LiveTradeEvent[],
+  timestamp: number,
+  poolId: string | null = null,
+  throughBlock = chain.toBlock + 100,
+): LiveTradeFeedResponse {
+  return {
+    source: "indexed_recent_chain_events",
+    generatedAt: new Date(timestamp * 1000).toISOString(),
+    poolId,
+    events,
     truncated: false,
-    generatedAt: new Date().toISOString(),
+    replacement: true,
+    coverage: {
+      state: "current",
+      scope: "verified_pools_launches_only",
+      registryExhaustive: false,
+      pnlAvailable: false,
+      startBlock: chain.toBlock,
+      headBlock: throughBlock + 128,
+      throughBlock,
+      throughHash: `0x${"a".repeat(64)}`,
+      asOf: timestamp,
+      checkedAt: new Date(timestamp * 1000).toISOString(),
+      lagBlocks: 128,
+      discoveryThroughBlock: throughBlock,
+      discoveryLagBlocks: 128,
+      knownPools: 165,
+      staleAfterSeconds: 180,
+    },
   };
-  await page.route("**/api/trades/**", (r) => {
-    count++;
-    return r.fulfill(
-      count === 3
-        ? { status: 503, json: { error: "unavailable" } }
-        : { json: batch },
-    );
+}
+
+test("live feed highlights new identities, retains stale trades, pauses, and replaces reorg and empty windows", async ({
+  page,
+}, testInfo) => {
+  const timestamp = chain.toTimestamp;
+  await page.clock.install({ time: new Date(timestamp * 1000) });
+  const a = liveEvent(1, timestamp),
+    b = liveEvent(2, timestamp, { side: "sell" }),
+    c = liveEvent(3, timestamp);
+  let calls = 0;
+  await page.route("**/api/live-trades/**", (route) => {
+    calls++;
+    if (calls === 3)
+      return route.fulfill({ status: 503, json: { error: "Unavailable" } });
+    const events =
+      calls === 1 ? [a, a] : calls === 2 ? [b, a] : calls === 4 ? [c] : [];
+    return route.fulfill({
+      json: liveBatch(
+        events,
+        timestamp,
+        null,
+        calls >= 4 ? chain.toBlock + 3 : chain.toBlock + 100,
+      ),
+    });
   });
   await page.goto("/");
-  const feed = page.locator(".trade-stream");
+  const feed = page.getByRole("region", { name: "Recent trades" });
   await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await expect(feed.locator('[data-new="true"]')).toHaveCount(0);
   await expect(feed.getByText("0.1 ETH", { exact: true })).toBeVisible();
+  await expect(feed.getByRole("link", { name: "0x1111…1111" })).toHaveAttribute(
+    "href",
+    `/wallet/${wallet}/?window=All`,
+  );
+  await expect(
+    feed.getByRole("link", { name: market.symbol, exact: true }),
+  ).toHaveAttribute("href", poolHref(market));
   await page.clock.fastForward(16000);
-  await expect.poll(() => count).toBe(2);
-  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await expect.poll(() => calls).toBe(2);
+  await expect(feed.locator(".stream-event")).toHaveCount(2);
+  await expect(feed.locator(`[data-event-id="${b.id}"]`)).toHaveAttribute(
+    "data-new",
+    "true",
+  );
+  await expect(feed.locator(`[data-event-id="${a.id}"]`)).toHaveAttribute(
+    "data-new",
+    "false",
+  );
+  await feed.screenshot({ path: testInfo.outputPath("live-trades-rail.png") });
+  await expect(
+    feed
+      .locator(`[data-event-id="${b.id}"]`)
+      .getByText("Sell", { exact: true }),
+  ).toHaveCSS("color", "rgb(255, 97, 105)");
   await page.clock.fastForward(16000);
   await expect(feed.getByText(/Updates delayed/)).toBeVisible();
-  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await expect(feed.locator(".stream-event")).toHaveCount(2);
   await feed.getByRole("button", { name: "Pause feed" }).click();
-  const before = count;
-  await page.clock.fastForward(32000);
-  expect(count).toBe(before);
+  await page.clock.fastForward(45000);
+  expect(calls).toBe(3);
+  await expect(feed.getByText("Paused", { exact: true })).toBeVisible();
   await feed.getByRole("button", { name: "Resume feed" }).click();
-  await expect.poll(() => count).toBe(before + 1);
+  await expect.poll(() => calls).toBe(4);
   await expect(feed.locator(".stream-event")).toHaveCount(1);
+  await expect(feed.locator(`[data-event-id="${c.id}"]`)).toBeVisible();
+  await expect(feed.locator(`[data-event-id="${c.id}"]`)).toHaveAttribute(
+    "data-new",
+    "true",
+  );
+  await expect(feed).toContainText(
+    `Checked through block ${(chain.toBlock + 3).toLocaleString("en-US")}`,
+  );
+  await page.clock.fastForward(16000);
+  await expect.poll(() => calls).toBe(5);
+  await expect(feed.locator(".stream-event")).toHaveCount(0);
+  await expect(
+    feed.getByText(/No swaps in the saved recent window/),
+  ).toBeVisible();
+});
+
+test("pool live feed has bounded rows, no overlapping polls, stops when hidden, and rejects another pool", async ({
+  page,
+}) => {
+  const timestamp = chain.toTimestamp;
+  await page.clock.install({ time: new Date(timestamp * 1000) });
+  let release: () => void = () => {},
+    calls = 0;
+  const filters: string[] = [];
+  await page.route("**/api/live-trades/**", async (route) => {
+    filters.push(
+      new URL(route.request().url()).searchParams.get("poolId") ?? "",
+    );
+    calls++;
+    if (calls === 1)
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    const events =
+      calls === 1
+        ? Array.from({ length: 50 }, (_, i) => liveEvent(i + 1, timestamp))
+        : calls === 2
+          ? [liveEvent(1, timestamp, { poolId: `0x${"f".repeat(64)}` })]
+          : [liveEvent(51, timestamp)];
+    await route.fulfill({ json: liveBatch(events, timestamp, market.id) });
+  });
+  await page.goto(poolHref(market), { waitUntil: "domcontentloaded" });
+  const feed = page.getByRole("region", { name: "Recent trades" });
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward(9000);
+  expect(calls).toBe(1);
+  release();
+  await expect(feed.locator(".stream-event")).toHaveCount(50);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(45000);
+  expect(calls).toBe(1);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => calls).toBe(2);
+  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed.locator(".stream-event")).toHaveCount(50);
+  await feed.getByRole("button", { name: "Retry feed" }).click();
+  await expect.poll(() => calls).toBe(3);
+  await expect(feed.locator(".stream-event")).toHaveCount(1);
+  expect(filters).toEqual([market.id, market.id, market.id]);
+  await page.clock.fastForward(181000);
+  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("catalog token search opens a verified pool link and loads its details on demand", async ({
@@ -680,6 +834,23 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   const all = (await response.json()) as AnalyticsExploreResponse;
   expect(all.total).toBeGreaterThan(25);
   const unprocessed = all.items.find((p) => !p.processed)!;
+  await page.route(`**/api/live-trades/?poolId=${unprocessed.id}`, (route) =>
+    route.fulfill({
+      json: liveBatch(
+        [
+          liveEvent(1, chain.toTimestamp, {
+            poolId: unprocessed.id,
+            token: unprocessed.token,
+            name: unprocessed.name,
+            symbol: unprocessed.symbol,
+            launchTx: unprocessed.launchTx,
+          }),
+        ],
+        chain.toTimestamp,
+        unprocessed.id,
+      ),
+    }),
+  );
   await page.goto("/?sort=launch&window=All");
   await expect(page.locator(".pagination")).toContainText(
     `1-25 of ${all.total}`,
@@ -710,6 +881,11 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   await expect(
     page.getByText(/background analytics are still processing/),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Recent trades" })
+      .locator(".stream-event"),
+  ).toHaveCount(1);
 });
 
 test("default saved leaderboard opens matching global wallet positions, trades and card without audits", async ({

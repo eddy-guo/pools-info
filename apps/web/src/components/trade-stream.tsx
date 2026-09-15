@@ -1,206 +1,236 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { shortAddress, walletHref, type ChainMarket } from "@pools/core";
-import type { RecentSwap, RecentSwaps } from "@pools/chain";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
+import { validateLiveFeed } from "@/lib/live-feed";
+import { RowsSkeleton } from "./skeletons";
 import { Eth, explorer, utc } from "./live-ui";
-export function TradeStream({ markets }: { markets: ChainMarket[] }) {
-  const ids = markets
-    .slice(0, 8)
-    .map((m) => m.id.toLowerCase())
-    .sort()
-    .join(",");
+import styles from "./trade-stream.module.css";
+const subscribeClock = (notify: () => void) => {
+  const timer = setInterval(notify, 15000);
+  return () => clearInterval(timer);
+};
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const serverSeconds = () => 0;
+function age(timestamp: number, now: number) {
+  if (!now) return utc(timestamp);
+  const seconds = now - timestamp;
+  if (seconds < 0) return "timestamp ahead of device clock";
+  return seconds < 60
+    ? `${seconds}s ago`
+    : seconds < 3600
+      ? `${Math.floor(seconds / 60)}m ago`
+      : seconds < 86400
+        ? `${Math.floor(seconds / 3600)}h ago`
+        : `${Math.floor(seconds / 86400)}d ago`;
+}
+export function TradeStream({ poolId }: { poolId?: string }) {
+  const scope = poolId?.toLowerCase() ?? "all";
+  const now = useSyncExternalStore(subscribeClock, nowSeconds, serverSeconds);
   const [enabled, setEnabled] = useState(true),
     [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
-    ids: string;
-    events: RecentSwap[];
-    data?: RecentSwaps;
-    status: "loading" | "ready" | "delayed";
-  }>({ ids, events: [], status: "loading" });
-  const current = state.ids === ids ? state : undefined;
+    scope: string;
+    data?: LiveTradeFeedResponse;
+    error: boolean;
+    fresh: Set<string>;
+  }>({ scope, error: false, fresh: new Set() });
+  const current = state.scope === scope ? state : undefined;
+  const history = useRef({
+    scope,
+    seen: new Set<string>(),
+    initialized: false,
+  });
   useEffect(() => {
-    if (!enabled || !ids) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    if (!enabled) return;
+    if (history.current.scope !== scope)
+      history.current = { scope, seen: new Set(), initialized: false };
+    let stopped = false,
+      timer: ReturnType<typeof setTimeout> | undefined,
+      active: AbortController | null = null;
+    // Retain identities across pause/retry, with a fixed memory bound.
+    const remembered = history.current,
+      seen = remembered.seen;
     async function tick() {
-      if (controller.signal.aborted) return;
-      if (document.hidden) {
-        timer = setTimeout(tick, 15000);
-        return;
-      }
+      if (stopped || document.hidden || active) return;
+      const controller = new AbortController();
+      active = controller;
       try {
         const response = await fetch(
-          `/api/trades/?pools=${encodeURIComponent(ids)}`,
+          `/api/live-trades/${scope === "all" ? "" : `?poolId=${scope}`}`,
           {
             signal: AbortSignal.any([
               controller.signal,
-              AbortSignal.timeout(18000),
+              AbortSignal.timeout(10000),
             ]),
             cache: "no-store",
           },
         );
         if (!response.ok) throw Error("Unavailable");
-        const data: RecentSwaps = await response.json();
-        if (
-          !Array.isArray(data.events) ||
-          !Number.isSafeInteger(data.fromBlock) ||
-          !Number.isSafeInteger(data.toBlock) ||
-          data.fromBlock > data.toBlock ||
-          !Number.isFinite(data.toTimestamp) ||
-          !data.events.every(
-            (e) =>
-              ids.split(",").includes(e.poolId.toLowerCase()) &&
-              /^0x[0-9a-f]{64}$/i.test(e.txHash) &&
-              /^-?\d+$/.test(e.amount0) &&
-              /^-?\d+$/.test(e.amount1) &&
-              Number.isSafeInteger(e.logIndex) &&
-              e.block >= data.fromBlock &&
-              e.block <= data.toBlock,
-          )
-        )
-          throw Error("Invalid events");
-        if (!controller.signal.aborted)
-          setState((previous) => {
-            if (
-              previous.ids === ids &&
-              previous.data &&
-              previous.data.toBlock > data.toBlock
-            )
-              return previous;
-            const retained =
-              previous.ids === ids
-                ? previous.events.filter((e) => e.block < data.fromBlock)
-                : [];
-            const all = new Map(
-              [...retained, ...data.events].map((e) => [
-                `${e.txHash}:${e.logIndex}`,
-                e,
-              ]),
-            );
-            return {
-              ids,
-              events: [...all.values()]
-                .sort((a, b) => b.block - a.block || b.logIndex - a.logIndex)
-                .slice(0, 100),
-              data,
-              status:
-                Date.now() / 1000 - data.toTimestamp > 180
-                  ? "delayed"
-                  : "ready",
-            };
-          });
+        const data = validateLiveFeed(
+          await response.json(),
+          scope === "all" ? undefined : scope,
+        );
+        if (stopped || controller.signal.aborted) return;
+        const events = [
+          ...new Map(data.events.map((event) => [event.id, event])).values(),
+        ]
+          .sort((a, b) => b.block - a.block || b.logIndex - a.logIndex)
+          .slice(0, 50);
+        const fresh = new Set(
+          remembered.initialized
+            ? events
+                .filter((event) => !seen.has(event.id))
+                .map((event) => event.id)
+            : [],
+        );
+        for (const event of events) seen.add(event.id);
+        while (seen.size > 1000) seen.delete(seen.values().next().value!);
+        remembered.initialized = true;
+        // This is the entire canonical recent window, including rollback/removal.
+        setState({ scope, data: { ...data, events }, error: false, fresh });
       } catch {
-        if (!controller.signal.aborted)
+        if (!stopped && !controller.signal.aborted)
           setState((previous) =>
-            previous.ids === ids
-              ? { ...previous, status: "delayed" }
-              : { ids, events: [], status: "delayed" },
+            previous.scope === scope
+              ? { ...previous, error: true, fresh: new Set() }
+              : { scope, error: true, fresh: new Set() },
           );
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(tick, 15000);
+        if (active === controller) active = null;
+        if (!stopped && !document.hidden) timer = setTimeout(tick, 15000);
       }
     }
+    function visibility() {
+      clearTimeout(timer);
+      if (document.hidden) active?.abort();
+      else void tick();
+    }
+    document.addEventListener("visibilitychange", visibility);
     void tick();
     return () => {
-      controller.abort();
+      stopped = true;
       clearTimeout(timer);
+      active?.abort();
+      document.removeEventListener("visibilitychange", visibility);
     };
-  }, [ids, enabled, attempt]);
+  }, [scope, enabled, attempt]);
+  const data = current?.data,
+    coverage = data?.coverage;
+  const stale =
+    current?.error ||
+    coverage?.state === "stale" ||
+    (coverage?.asOf && now && now - coverage.asOf > coverage.staleAfterSeconds);
+  const status = !enabled
+    ? "Paused"
+    : stale
+      ? data
+        ? "Updates delayed · showing last received trades"
+        : "Recent trades are temporarily unavailable"
+      : coverage?.state === "uninitialized"
+        ? "Waiting for the first live capture"
+        : data
+          ? "Checking every 15s"
+          : "Loading recent trades…";
   return (
-    <section className="panel trade-stream">
+    <section
+      className={`panel trade-stream ${styles.rail}`}
+      aria-label="Recent trades"
+    >
       <div className="panel-heading">
         <h2>Live trades</h2>
-        <button className="text-button" onClick={() => setEnabled((v) => !v)}>
+        <button
+          className="text-button"
+          onClick={() => setEnabled((value) => !value)}
+        >
           {enabled ? "Pause feed" : "Resume feed"}
         </button>
       </div>
-      <div className="feed-status" role="status">
-        <span
-          className={current?.status === "ready" && enabled ? "positive" : ""}
-        >
-          {!enabled
-            ? "Paused"
-            : current?.status === "ready"
-              ? "Checking for new swaps every 15s"
-              : current?.status === "delayed"
-                ? "Updates delayed · last events retained"
-                : "Loading recent swaps…"}
-        </span>
-        {current?.status === "delayed" && (
+      <div className={`feed-status ${styles.status}`} role="status">
+        <span>{status}</span>
+        {current?.error && enabled && (
           <button
             className="text-button"
-            onClick={() => {
-              setEnabled(true);
-              setAttempt((v) => v + 1);
-            }}
+            onClick={() => setAttempt((value) => value + 1)}
           >
             Retry feed
           </button>
         )}
       </div>
-      <div className="activity-list">
-        {current?.events.slice(0, 12).map((t) => {
-          const m = markets.find(
-            (m) => m.id.toLowerCase() === t.poolId.toLowerCase(),
-          );
-          if (!m) return null;
-          const buy = BigInt(t.amount0) < 0n;
-          return (
-            <div className="stream-event" key={`${t.txHash}:${t.logIndex}`}>
-              <div>
-                <Link href={`/pool/${m.id}/?launch=${m.launchTx}`}>
-                  <strong>{m.symbol}</strong>
-                </Link>
-                <span className={buy ? "positive" : "negative"}>
-                  {buy ? "Buy" : "Sell"}
-                </span>
-                <Eth
-                  wei={(BigInt(t.amount0) < 0n
-                    ? -BigInt(t.amount0)
-                    : BigInt(t.amount0)
-                  ).toString()}
-                />
-              </div>
-              <div>
-                <span>
-                  Tx sender{" "}
-                  {t.transactionSender ? (
-                    <Link
-                      className="mono"
-                      href={walletHref(t.transactionSender, m)}
-                    >
-                      {shortAddress(t.transactionSender)}
-                    </Link>
-                  ) : (
-                    "unavailable"
-                  )}
-                </span>
-                <a
-                  href={`${explorer}/tx/${t.txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {utc(t.timestamp).slice(11, 19)} UTC ↗
-                </a>
-              </div>
+      {!data && !current?.error && (
+        <RowsSkeleton rows={3} label="Loading recent trades" />
+      )}
+      <div className={`activity-list ${styles.events}`}>
+        {data?.events.map((event) => (
+          <div
+            className={`stream-event ${styles.row}`}
+            key={event.id}
+            data-event-id={event.id}
+            data-new={current?.fresh.has(event.id) ? "true" : "false"}
+          >
+            <div className={styles.top}>
+              <Link
+                href={`/pool/${event.poolId}/?launch=${event.launchTx}`}
+                title={event.name}
+              >
+                <strong>{event.symbol}</strong>
+              </Link>
+              <span className={event.side === "buy" ? "positive" : "negative"}>
+                {event.side === "buy" ? "Buy" : "Sell"}
+              </span>
+              <Eth wei={event.ethWei} />
             </div>
-          );
-        })}
+            <div className={styles.meta}>
+              <span>
+                Tx initiator{" "}
+                {event.transactionInitiator ? (
+                  <Link
+                    className="mono"
+                    href={`/wallet/${event.transactionInitiator}/?window=All`}
+                  >
+                    {shortAddress(event.transactionInitiator)}
+                  </Link>
+                ) : (
+                  "unavailable"
+                )}
+              </span>
+              <a
+                href={`${explorer}/tx/${event.transactionHash}`}
+                target="_blank"
+                rel="noreferrer"
+                title={utc(event.timestamp)}
+              >
+                <time dateTime={new Date(event.timestamp * 1000).toISOString()}>
+                  {age(event.timestamp, now)}
+                </time>{" "}
+                ↗
+              </a>
+            </div>
+          </div>
+        ))}
       </div>
-      {current?.status === "ready" && !current.events.length && (
-        <p className="panel-footnote">
-          No swaps for these pools in the latest checked blocks. The feed is
-          still checking.
+      {data && !data.events.length && (
+        <p className={styles.note}>
+          {coverage?.state === "uninitialized"
+            ? "The collector is starting. Trades appear after the first saved capture."
+            : "No swaps in the saved recent window. Checking continues while this page is visible."}
         </p>
       )}
-      <p className="panel-footnote">
-        Up to 8 loaded pools · newest 50 events per check · 128-block safety
-        lag, not L1 finality. Transaction sender may differ from the trader.{" "}
-        {current?.data &&
-          `Checked through block ${current.data.toBlock.toLocaleString("en-US")} · ${utc(current.data.toTimestamp)}. `}
-        {current?.data?.truncated && "Busy window: some events omitted. "}This
-        feed is not a complete trade history.
+      <p className={styles.note}>
+        {coverage?.throughBlock != null && coverage?.asOf ? (
+          <>
+            Checked through block{" "}
+            {coverage.throughBlock.toLocaleString("en-US")} · block{" "}
+            {age(coverage.asOf, now)}.{" "}
+          </>
+        ) : null}
+        {poolId
+          ? "This pool"
+          : coverage
+            ? `${coverage.knownPools.toLocaleString("en-US")} tracked pools`
+            : "Tracked pools"}{" "}
+        · newest 50 observed swaps. Transaction initiator may differ from the
+        trader. Saved with a safety lag; not L1 finality.
       </p>
     </section>
   );

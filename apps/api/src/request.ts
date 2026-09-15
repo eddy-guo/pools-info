@@ -29,7 +29,8 @@ export type Route =
   | "leaderboard"
   | "profile"
   | "search"
-  | "feed";
+  | "feed"
+  | "live-trades";
 export interface ReadRequest {
   route: Route;
   limit: number;
@@ -68,6 +69,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/status") route = "status";
   else if (url.pathname === "/v1/pools") route = "pools";
   else if (url.pathname === "/v1/trades") route = "trades";
+  else if (url.pathname === "/v1/live-trades") route = "live-trades";
   else if (url.pathname === "/v1/feed") route = "feed";
   else if (url.pathname === "/v1/explore") route = "explore";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
@@ -93,13 +95,15 @@ export function parseRequest(input: string): ReadRequest {
             ? ["q", "group"]
             : route === "pools"
               ? ["q", "limit", "cursor"]
-              : route === "trades"
-                ? ["poolId", "limit", "cursor"]
-                : route === "wallet"
-                  ? ["limit", "cursor"]
-                  : route === "feed"
-                    ? ["pools"]
-                    : [];
+              : route === "live-trades"
+                ? ["poolId"]
+                : route === "trades"
+                  ? ["poolId", "limit", "cursor"]
+                  : route === "wallet"
+                    ? ["limit", "cursor"]
+                    : route === "feed"
+                      ? ["pools"]
+                      : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
@@ -169,7 +173,10 @@ export function parseRequest(input: string): ReadRequest {
         "Tokens",
       )
     : undefined;
-  if (route === "trades" && url.searchParams.has("poolId")) {
+  if (
+    (route === "trades" || route === "live-trades") &&
+    url.searchParams.has("poolId")
+  ) {
     poolId = url.searchParams.get("poolId")!.toLowerCase();
     if (!hash.test(poolId)) throw new RequestError(400, "invalid_pool_id");
   }

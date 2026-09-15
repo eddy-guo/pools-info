@@ -1,4 +1,6 @@
 import pg from "pg";
+import { assertCatalogIdentity, catalogCte } from "./catalog-read";
+import { readLiveTrades } from "./live-read";
 import {
   exploreAnalytics,
   leaderboardAnalytics,
@@ -36,7 +38,7 @@ export const limitations = {
 const coverageColumns =
   "s.start_block, s.cursor_block, s.cursor_hash, s.updated_at";
 const poolColumns =
-  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch";
+  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch, p.discovery_source";
 const eventColumns =
   "e.stream_key, e.pool_id, e.token, e.tx_hash, e.log_index, e.block_number, e.block_hash, e.timestamp, e.kind, e.transaction_sender, e.payload";
 const eventOrder =
@@ -63,6 +65,7 @@ function poolItem(r: Row) {
       transactionInitiator: r.launch_sender,
       timestamp: r.launched_at,
       sourceStream: r.source_stream,
+      discoverySource: r.discovery_source,
       sourceBatchThroughBlock: r.source_batch,
     },
     coverage: coverage(r),
@@ -121,8 +124,13 @@ export async function readData(
     await query("SELECT 1 FROM indexed_pools WHERE false");
     await query("SELECT 1 FROM indexer_streams WHERE false");
     await query("SELECT 1 FROM analytics_pool_snapshots WHERE false");
+    await query("SELECT 1 FROM recent_streams WHERE false");
+    await query("SELECT 1 FROM recent_pools WHERE false");
+    await query("SELECT 1 FROM recent_swaps WHERE false");
     return { ready: true };
   }
+  if (request.route === "live-trades")
+    return readLiveTrades(query, request.poolId);
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
   if (request.route === "explore")
     return exploreAnalytics(await getModel(), request.explore);
@@ -234,6 +242,7 @@ export async function readData(
     };
   }
   if (request.route === "pools") {
+    await assertCatalogIdentity(query);
     const params: unknown[] = [];
     const conditions = ["p.chain_id=4663"];
     if (request.q) {
@@ -252,7 +261,7 @@ export async function readData(
     }
     params.push(request.limit + 1);
     const result = await query(
-      `SELECT ${poolColumns}, ${coverageColumns} FROM indexed_pools p
+      `${catalogCte} SELECT ${poolColumns}, ${coverageColumns} FROM catalog p
       LEFT JOIN indexer_streams s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.kind='pool'
       WHERE ${conditions.join(" AND ")} ORDER BY p.launch_block DESC,p.pool_id DESC LIMIT $${params.length}`,
       params,
@@ -260,8 +269,9 @@ export async function readData(
     return { ...base, ...paginate(result.rows, request, "pools") };
   }
   if (request.route === "pool") {
+    await assertCatalogIdentity(query);
     const result = await query(
-      `SELECT ${poolColumns}, ${coverageColumns} FROM indexed_pools p
+      `${catalogCte} SELECT ${poolColumns}, ${coverageColumns} FROM catalog p
       LEFT JOIN indexer_streams s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.kind='pool'
       WHERE p.chain_id=4663 AND p.pool_id=$1`,
       [request.poolId],
@@ -347,7 +357,11 @@ export function createReader(
   pool.on("error", () =>
     process.stderr.write('{"event":"idle_database_connection_error"}\n'),
   );
-  let cachedModel: { model: AnalyticsModel; expires: number } | null = null;
+  let cachedModel: {
+    model: AnalyticsModel;
+    expires: number;
+    catalogRevision: string;
+  } | null = null;
   return {
     async read(request) {
       const client = await pool.connect();
@@ -359,12 +373,26 @@ export function createReader(
           (sql, values) => client.query(sql, values),
           request,
           async () => {
-            if (cachedModel && cachedModel.expires > Date.now())
+            // Recent discovery can rewind independently of historical analytics.
+            // A changed membership invalidates the product catalog cache too.
+            const revision = await client.query(
+              `SELECT md5(coalesce(string_agg(r::text, ',' ORDER BY pool_id),'')) AS revision FROM recent_pools r WHERE chain_id=4663`,
+            );
+            const catalogRevision = revision.rows[0].revision;
+            if (
+              cachedModel &&
+              cachedModel.expires > Date.now() &&
+              cachedModel.catalogRevision === catalogRevision
+            )
               return cachedModel.model;
             const model = await loadAnalyticsModel((sql, values) =>
               client.query(sql, values),
             );
-            cachedModel = { model, expires: Date.now() + 15000 };
+            cachedModel = {
+              model,
+              expires: Date.now() + 15000,
+              catalogRevision,
+            };
             return model;
           },
         );

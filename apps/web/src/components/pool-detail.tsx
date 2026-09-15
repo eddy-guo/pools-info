@@ -20,6 +20,7 @@ import {
   useMarket,
   utc,
 } from "./live-ui";
+import { PageSkeleton, SkeletonLine, RowsSkeleton } from "./skeletons";
 import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
@@ -41,6 +42,8 @@ export function PoolDetail({ id }: { id: string }) {
     analytics: AnalyticsPoolDetail | null;
   }>(`pools/${id}`);
   const [tab, setTab] = useState("Top traders");
+  if (!m && (loading || saved.loading) && saved.data?.analytics !== null)
+    return <PageSkeleton kind="pool" title={saved.data?.name} />;
   if (!m)
     return (
       <div className={`page ${styles.page}`}>
@@ -59,6 +62,11 @@ export function PoolDetail({ id }: { id: string }) {
         <Link className="button" href="/">
           Explore pools
         </Link>
+        {saved.data && (
+          <div className="live-section" style={{ maxWidth: 420 }}>
+            <TradeStream poolId={id} />
+          </div>
+        )}
       </div>
     );
   const a = m.accounting?.executions
@@ -222,7 +230,9 @@ export function PoolDetail({ id }: { id: string }) {
               <Eth wei={stats.volumeWei} />
             </Stat>
             <Stat label="Holders">
-              {holders?.complete ? (
+              {saved.loading && !saved.data ? (
+                <SkeletonLine width={48} height={24} />
+              ) : holders?.complete ? (
                 holders.positiveHoldersExcludingInfrastructure
               ) : (
                 <Unavailable />
@@ -271,6 +281,8 @@ export function PoolDetail({ id }: { id: string }) {
                   </p>
                 )}
               </>
+            ) : saved.loading && !saved.data ? (
+              <RowsSkeleton label="Loading holder balances" />
             ) : holders ? (
               <>
                 <p className="panel-footnote">
@@ -332,7 +344,7 @@ export function PoolDetail({ id }: { id: string }) {
           </section>
         </div>
         <aside className="market-sidebar">
-          <TradeStream markets={[m]} />
+          <TradeStream poolId={m.id} />
           <section className="panel">
             <div className="panel-heading">
               <h2>Concentration</h2>

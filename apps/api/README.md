@@ -197,3 +197,53 @@ silently truncated leaderboard. Larger corpora should publish relational
 position/stat summaries before increasing the limits. In-process response
 caching can add up to another five seconds before a corrected publication is
 visible.
+
+## Recent trade stream
+
+`GET /v1/live-trades` returns the latest 50 saved swaps across verified Pools
+markets. `?poolId=0x...` optionally restricts the same bounded window to one pool.
+No other parameters or unbounded pagination are accepted. This requires migration
+`004_recent_activity.sql` and SELECT access to its recent tables before the new
+API version is deployed. `/ready` checks that access. The existing historical
+`/v1/feed` and PnL captures keep their separate meaning.
+
+The shared `LiveTradeFeedResponse` type in `@pools/core` defines the response:
+
+- `source: "indexed_recent_chain_events"`, `generatedAt` (ISO), `poolId`,
+  `replacement: true`, `events`, and `truncated`.
+- Each event includes stable `id: "transactionHash:logIndex"`, pool/token identity,
+  name/symbol, verified `launchTx`, transaction hash/log index, canonical block
+  number/hash/time, `side`, exact positive `ethWei`/`tokenRaw` integer strings,
+  and `transactionInitiator` with `attribution: "transaction_initiator_only"`.
+  Raw token amounts are not formatted using assumed decimals.
+- Coverage includes `state: "uninitialized" | "current" | "stale"`, saved
+  `startBlock`, `throughBlock`, `throughHash`, `asOf` (Unix seconds), the worker's
+  last observed `headBlock` and `checkedAt` (ISO), `lagBlocks`, discovery cutoff
+  and lag, `knownPools`, and `staleAfterSeconds: 120`. Missing evidence is null.
+  Current requires recent successful head checks and recent chain cutoff/header
+  times for both discovery and swap streams. This allows the worker's deliberate
+  confirmation delay; the precise lag is still visible. A stalled chain or
+  stalled worker becomes stale even if the last trade was recent.
+
+An uninitialized recent stream returns 200 with an empty replacement window and
+explicit state. It never substitutes older historical events. A quiet but
+caught-up pool also returns an empty window, with current header coverage.
+Stale saved rows remain inspectable and explicitly labelled stale. These are
+observations within the recent worker's saved range, not complete lifetime
+history or new evidence for PnL. `registryExhaustive` and `pnlAvailable` are false.
+
+Poll every 15 seconds while visible. Replace the entire prior event array on each
+successful response, even when empty or the cutoff moves backward. Never merge
+old rows across a rewind. This route has no response cache; concurrent identical
+requests can still share one read. Each read obtains rows and checkpoints in one
+repeatable-read transaction. Batch deletion cascades invalidated swaps, so the
+next poll reflects the canonical replacement. Ordinary API request limits still
+apply, and no RPC request runs on an API read.
+
+The product/raw catalog combines `indexed_pools` and `recent_pools`. Matching
+identities appear once; conflicting token/launch identities fail closed with
+`catalog_identity_conflict`. A recently discovered pool immediately becomes
+searchable and navigable with null analytics until a separate historical capture
+is published. Raw historical coverage stays null for a recent-only launch.
+Changes or rewinds in recent membership invalidate the product-model cache;
+ordinary catalog response caching can still add up to five seconds of delay.

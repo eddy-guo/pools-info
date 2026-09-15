@@ -32,7 +32,8 @@ function rpc() {
     // Pace provider work by RPC calls, not just HTTP requests. A large JSON-RPC
     // batch can exceed the free provider's throughput even over one connection.
     minIntervalMs: 1000,
-    maxBatchSize: 5,
+    // Three supervised workers share the provider account.
+    maxBatchSize: 2,
     // The current provider plan permits ten blocks per eth_getLogs request.
     // Start at that known limit instead of issuing a rejected probe every batch.
     logRangeBlocks: integer("INDEXER_LOG_RANGE_BLOCKS", 10, 1, 10000),

@@ -1,0 +1,79 @@
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.error {
+  color: var(--loss, #ff6169);
+  font-size: 12px;
+  max-width: 240px;
+}
+.section {
+  margin-top: 32px;
+}
+.section h2 {
+  font-size: 20px;
+  font-weight: 600;
+}
+.section h2 span,
+.section p {
+  color: var(--muted, #8b8b96);
+}
+.section p {
+  font-size: 13px;
+  margin: 8px 0 16px;
+}
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 8px 24px;
+}
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border, #222227);
+}
+.list a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+}
+.list a > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.list strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.list small {
+  font-size: 11px;
+  color: var(--muted, #8b8b96);
+  overflow-wrap: anywhere;
+}
+.list button {
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 760px) {
+  .control {
+    flex-basis: 100%;
+    width: 100%;
+  }
+  .control button {
+    justify-content: center;
+    min-height: 44px;
+  }
+}

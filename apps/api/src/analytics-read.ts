@@ -4,6 +4,7 @@ import {
   type AnalyticsPublication,
   type CatalogPool,
 } from "@pools/core";
+import { assertCatalogIdentity, catalogCte } from "./catalog-read";
 import { RequestError } from "./request";
 type Query = (
   sql: string,
@@ -15,8 +16,9 @@ type Query = (
 export async function loadAnalyticsModel(
   query: Query,
 ): Promise<AnalyticsModel> {
+  await assertCatalogIdentity(query);
   const catalogCount = await query(
-    "SELECT count(*)::text AS count FROM indexed_pools WHERE chain_id=4663",
+    `${catalogCte} SELECT count(*)::text AS count FROM catalog`,
   );
   const savedCount = await query(
     "SELECT count(*)::text AS count,coalesce(sum(octet_length(snapshot::text)+coalesce(octet_length(holders::text),0)),0)::text AS bytes FROM analytics_pool_snapshots WHERE chain_id=4663",
@@ -28,7 +30,7 @@ export async function loadAnalyticsModel(
   )
     throw new RequestError(503, "analytics_materialization_limit");
   const pools = await query(
-    "SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM indexed_pools WHERE chain_id=4663 ORDER BY pool_id",
+    `${catalogCte} SELECT pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at FROM catalog ORDER BY pool_id`,
   );
   const saved = await query(
     "SELECT pool_id,through_block,through_hash,asof_timestamp,generated_at,snapshot,holders,liquidity_wei,source_kind FROM analytics_pool_snapshots WHERE chain_id=4663 ORDER BY pool_id",

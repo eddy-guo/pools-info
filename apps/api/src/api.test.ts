@@ -47,8 +47,8 @@ test("SQL text search is parameterized and wildcards are escaped", async () => {
     calls.push({ sql, values });
     return { rows: [] };
   }, parseRequest("/v1/pools?q=%27%3Bdrop%20table%20x--%25"));
-  assert(!calls[0].sql.includes("drop table"));
-  assert.deepEqual(calls[0].values, ["%';drop table x--\\%%", 26]);
+  assert(!calls.at(-1)!.sql.includes("drop table"));
+  assert.deepEqual(calls.at(-1)!.values, ["%';drop table x--\\%%", 26]);
 });
 
 test("HTTP rejects mutations, coalesces/caches reads, limits traffic and hides DB errors", async (t) => {
