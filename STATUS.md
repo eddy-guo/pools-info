@@ -1,5 +1,38 @@
 # Status - 15 Sep 2026, current settling pass
 
+## Resumed goal: tier-2 serving candidate
+
+The prior settling pass is deployed at **b985105**, full CI **34966065169 passed**.
+Live verification: launch sorting includes the entire discovered catalog; volume
+sorting returns exactly 488 measured pools (offset 480 yields 8 rows, no missing
+volume, no next page). Liquidity sorting correctly returns no rows when the
+column is unavailable. The existing 7-day verified board shows 367 wallets.
+
+The resumed goal is focused only on the tier-2 read blocker. No new sweep,
+coverage job, schema, infrastructure, billing change or worktree is authorized by
+this work. The 50M CU cap and all source/cursor/accounting invariants stay intact.
+
+Local baseline reproduced the complete 115k-swap/52k-pool read at **2,939ms**.
+Profiling isolated unnecessary per-row SQL numeric normalization. Keeping exact
+stored strings until duplicate comparison and validating every execution with
+BigInt reduced complete cold/warm 7-day/All reads to **1,026/862/860ms**. All
+11,500 fixture wallets remain ranked, with 285 observed pools and exact gains.
+The runtime 2.8-second budget is unchanged; the regression requires under 2s.
+These are local fixture measurements, not production latency claims.
+
+Source tests exposed a real conflict bug: changing a duplicate's pool could hide
+it behind eligibility filtering. Reconciliation now checks surviving raw source
+collisions first; both directions reject incompatible copies. Tests also verify
+identical/leading-zero duplicates, source identity drift, invalid tips, suffix
+rewind, and whole-pool precedence over verified histories. Mixed wallet PnL,
+net flow, volume, flags, curve and pre-window basis agree. Full local Postgres
+suite: **103 passed, zero skips**. `pnpm check` passed; final copy changes passed
+lint and build, followed by **102 browser tests with no retries** (53.2s).
+
+The historical blocker below is superseded locally, but production deployment
+and actual tier-2 leaderboard rows are **not yet verified**. Do not call Task 3
+or the full goal complete until those live checks pass.
+
 ## Current priority and blocker
 
 The user requested a ranked deep scheduler, launch-first screener with metric-only
