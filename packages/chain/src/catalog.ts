@@ -106,6 +106,7 @@ export async function collectCatalog(
     "eth_getTransactionReceipt",
     hashes.map((h) => [h]),
   );
+  if (receipts.length !== hashes.length) throw Error("Missing catalog receipt");
   const receiptMap = new Map(
     receipts.map((r, i) => {
       if (!r || r.transactionHash !== hashes[i]) throw Error("Missing receipt");

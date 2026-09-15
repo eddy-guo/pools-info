@@ -11,6 +11,10 @@ export {
 } from "./recent-swaps";
 
 export { collectCatalog } from "./catalog";
+export {
+  verifyLaunchCandidate,
+  type LaunchCandidate,
+} from "./launch-candidate";
 export type { CatalogRange } from "./catalog";
 export {
   collectPoolEvents,

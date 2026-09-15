@@ -37,13 +37,37 @@ RPC calls, with one-request batches and1second pacing. It verified only the32-bl
 range, not the intervening history. An exact-token production explore query returned
 HTTP200 with total0, confirming that this candidate fills a real catalog gap.
 
+## Implemented verifier
+
+`packages/chain/src/launch-candidate.ts` now exposes `verifyLaunchCandidate`.
+It validates the candidate and chain, locates a confirmed timestamp range, invokes
+`collectCatalog`, and requires exact pool/token/creator/time agreement. Unsupported
+CCA candidates fail before RPC work. Missing receipts, identity conflicts and changed
+canonical cutoff hashes fail closed.
+
+From the repository root, verify one saved candidate:
+
+```sh
+node --env-file-if-exists=.env.local --import tsx scripts/verify-launch-candidate.ts 0x8651e656738064177752a395dbde2b2a9e3fc469edc2a9212e6060c0990bb7eb
+```
+
+This reads the existing ignored `.env.local` RPC configuration, uses one-second
+pacing and a 100-request budget, and atomically writes evidence under ignored
+`.data/bootstrap/<pool-id>.json`. It makes no database changes. A fresh real run
+verified PROLOGUE in 41 RPC calls at block 38994659. The earlier captured experiment
+used 40 calls. No new service or key is required.
+
+Validation: three focused verifier tests, full unit suite (128 passed, six skipped
+across two suites), all 30 isolated Postgres tests and all workspace typechecks passed.
+The skipped unit cases are database-gated; the separate database suite ran them.
+
 ## Next implementation
 
-Build a bounded candidate verifier around this proven lookup path. Treat timestamps
-only as locators: wrong or imprecise hints must fail verification, never create a
-launch. Validate canonical cutoff, receipts, deployed strategy/launcher and PoolKey
-using the existing collector, then require exact candidate identity agreement.
-Persist per-candidate progress and evidence so restarts do not repeat successful work.
+Add a bounded multi-candidate runner with durable success/failure progress and
+canonical revalidation before reusing saved evidence. The current explicit CLI
+re-verifies its candidate on every run; a resumable scheduler is not implemented.
+The fixed 32-block search window can reject imprecise timestamp hints or unusually
+many blocks sharing a timestamp. That is a safe rejection, not evidence of no launch.
 
 Promotion into the database still needs explicit provenance and reorg reconciliation.
 Do not advance the broad discovery cursor across the gaps between candidates. Do
