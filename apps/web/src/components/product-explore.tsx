@@ -20,7 +20,14 @@ import {
 } from "@/lib/watchlist";
 import { useDebouncedInput, useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
-import { Change, EmptyState, Price, Sparkline, WatchButton } from "./ui";
+import {
+  AddressChip,
+  Change,
+  EmptyState,
+  Price,
+  Sparkline,
+  WatchButton,
+} from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { ProductPagination } from "./product-common";
@@ -532,12 +539,11 @@ export function ProductExplore() {
                             </td>
                             <td data-pending={!p && !data}>
                               {p ? (
-                                <Link
+                                <AddressChip
+                                  address={p.launchSender}
                                   href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                  className="mono"
-                                >
-                                  {shortAddress(p.launchSender)}
-                                </Link>
+                                  stacked
+                                />
                               ) : data ? (
                                 "\u00a0"
                               ) : (
@@ -618,12 +624,10 @@ export function ProductExplore() {
                             <span>
                               Sender
                               <strong>
-                                <Link
+                                <AddressChip
+                                  address={p.launchSender}
                                   href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                  className="mono"
-                                >
-                                  {shortAddress(p.launchSender)}
-                                </Link>
+                                />
                               </strong>
                             </span>
                             <span>

@@ -4353,6 +4353,100 @@ main {
   height: 26px;
   border-radius: 8px;
 }
+/* Address chip: an address inside a table cell at the row's own height. The
+   identicon and both-end truncation open the address's page; copy and
+   explorer follow as 16px icon buttons rather than the 32px controls, so a
+   62px row keeps its height. The copy confirmation is the floating status
+   the header label uses, so it never reflows the row. `data-stacked` puts
+   the two actions under the address, past the identicon, for the screener's
+   sender column: 92px holds the address but not the actions beside it. */
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.address-chip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--color-text-2);
+}
+.address-chip-link:hover {
+  color: var(--text);
+}
+.address-chip .avatar {
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+  border-radius: 4px;
+}
+.address-chip-actions {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.address-chip .icon-button {
+  min-height: 0;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--color-text-3);
+}
+.address-chip .icon-button:hover {
+  color: var(--text);
+}
+/* The confirmation floats beside both actions rather than above the copy
+   button: a cell that clips its overflow (creators) would hide it there,
+   and a sticky header would cover it on the first row. */
+.address-chip .copy-wrap {
+  position: static;
+}
+.address-chip .copy-status {
+  top: 50%;
+  bottom: auto;
+  left: calc(100% + 6px);
+  transform: translateY(-50%);
+}
+.address-chip[data-stacked] {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.address-chip[data-stacked] .address-chip-actions {
+  flex-basis: 100%;
+  padding-left: 20px;
+}
+/* Under a stacked address the confirmation sits over the address line, which
+   is inside the cell, rather than beside the icons in the next column. */
+.address-chip[data-stacked] .copy-status {
+  top: auto;
+  bottom: calc(100% + 1px);
+  left: 20px;
+  transform: none;
+}
+@container site (max-width: 767px) {
+  /* Touch targets: the chip's link and actions reach 44px inside the 44px
+     trader heading, and inside the launch card's 16px sender line by the
+     negative margin its link already carries. The creators table is the
+     same table on a phone, so its link keeps the 44px the bare link had. */
+  .mobile-trader-heading .address-chip-link,
+  .mobile-trader-heading .address-chip .icon-button,
+  .creators-page .address-chip-link,
+  .creators-page .address-chip .icon-button {
+    min-height: 44px;
+  }
+  .mobile-pool-stats[data-launch-row] .address-chip .icon-button {
+    min-height: 44px;
+    margin: -14px 0;
+    color: var(--color-text-3);
+  }
+  .address-chip .icon-button {
+    min-width: 28px;
+  }
+}
 .mobile-traders,
 .mobile-pools {
   display: none;

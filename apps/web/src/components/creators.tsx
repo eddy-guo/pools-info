@@ -10,7 +10,7 @@ import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
 import { Eth, Unavailable, utc } from "./live-ui";
 import { useQuery } from "./state";
-import { AddressLabel } from "./ui";
+import { AddressChip, AddressLabel } from "./ui";
 
 /** The explore API pages at most 100 rows; one batch streams 20 pages before pausing on Load more. */
 const PAGE_SIZE = 100;
@@ -278,9 +278,10 @@ function CreatorDirectory() {
                     </td>
                     <td data-pending={pending}>
                       {g ? (
-                        <Link href={`/creators/${g.sender}/`} className="mono">
-                          {shortAddress(g.sender)}
-                        </Link>
+                        <AddressChip
+                          address={g.sender}
+                          href={`/creators/${g.sender}/`}
+                        />
                       ) : pending ? (
                         "Creator pending"
                       ) : (

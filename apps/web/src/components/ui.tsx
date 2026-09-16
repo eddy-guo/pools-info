@@ -1,5 +1,6 @@
 "use client";
 import { useId, useState } from "react";
+import Link from "next/link";
 import {
   Check,
   ChevronLeft,
@@ -76,9 +77,11 @@ export function Avatar({
 export function CopyButton({
   value,
   label = "Copy address",
+  size = 14,
 }: {
   value: string;
   label?: string;
+  size?: number;
 }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
   async function copy() {
@@ -99,7 +102,7 @@ export function CopyButton({
         aria-label={label}
         onClick={copy}
       >
-        {status === "copied" ? <Check size={14} /> : <Copy size={14} />}
+        {status === "copied" ? <Check size={size} /> : <Copy size={size} />}
       </button>
       <span
         role="status"
@@ -114,6 +117,31 @@ export function CopyButton({
     </span>
   );
 }
+/** Transactions live under a different explorer path than accounts do. */
+type ExplorerKind = "address" | "tx";
+function ExplorerLink({
+  address,
+  kind = "address",
+  size = 14,
+  className,
+}: {
+  address: string;
+  kind?: ExplorerKind;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <a
+      className={className}
+      aria-label={`Open ${kind === "tx" ? "transaction" : "address"} on explorer`}
+      href={`https://robinhoodchain.blockscout.com/${kind}/${address}`}
+      target="_blank"
+      rel="noreferrer"
+    >
+      <ExternalLink size={size} />
+    </a>
+  );
+}
 export function AddressLabel({
   address,
   full = false,
@@ -121,24 +149,40 @@ export function AddressLabel({
 }: {
   address: string;
   full?: boolean;
-  /** Transactions live under a different explorer path than accounts do. */
-  kind?: "address" | "tx";
+  kind?: ExplorerKind;
 }) {
   const subject = kind === "tx" ? "transaction" : "address";
   return (
     <span className="address-label">
       <span className="mono">{full ? address : shortAddress(address)}</span>
       <CopyButton value={address} label={`Copy ${subject}`} />
-      {
-        <a
-          aria-label={`Open ${subject} on explorer`}
-          href={`https://robinhoodchain.blockscout.com/${kind}/${address}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <ExternalLink size={14} />
-        </a>
-      }
+      <ExplorerLink address={address} kind={kind} />
+    </span>
+  );
+}
+/** An address in a table cell: identicon and both-end truncation opening
+    `href`, then copy and explorer, at the row's own height. `stacked` puts
+    the two actions under the address for a column too narrow to hold them
+    beside it. */
+export function AddressChip({
+  address,
+  href,
+  stacked = false,
+}: {
+  address: string;
+  href: string;
+  stacked?: boolean;
+}) {
+  return (
+    <span className="address-chip" data-stacked={stacked || undefined}>
+      <Link className="address-chip-link" href={href} title={address}>
+        <Avatar address={address} />
+        <span className="mono">{shortAddress(address)}</span>
+      </Link>
+      <span className="address-chip-actions">
+        <CopyButton value={address} size={12} />
+        <ExplorerLink address={address} size={12} className="icon-button" />
+      </span>
     </span>
   );
 }
