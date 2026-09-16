@@ -4671,6 +4671,45 @@ main {
     font-size: 11px;
     color: var(--muted);
   }
+  /* Same hierarchy as the desktop rows: ROI and W/L lead, the rest support. */
+  .mobile-trader-key,
+  .mobile-trader-stats {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .mobile-trader-key {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mobile-trader-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mobile-trader-key > span,
+  .mobile-trader-stats > span {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .mobile-trader-key strong,
+  .mobile-trader-stats strong {
+    display: block;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .mobile-trader-key strong {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mobile-trader-stats strong,
+  .mobile-trader-stats .number {
+    font-size: var(--text-base);
+    font-weight: 400;
+    color: var(--color-text-2);
+  }
+  .mobile-trader > .panel-footnote {
+    font-weight: 400;
+  }
   .mobile-trader > .record-cell {
     margin-top: 14px;
   }
@@ -4806,22 +4845,65 @@ main {
 .leaderboard-panel .data-table {
   table-layout: fixed;
 }
+/* Leaderboard columns follow the reference: rank, trader, then right-aligned
+   numerics with fixed widths so every row shares the same column edges. */
 .leaderboard-panel .data-table th:nth-child(1) {
-  width: 6ch;
+  width: 58px;
 }
-.leaderboard-panel .data-table th:nth-child(2) {
-  width: 24ch;
+.leaderboard-panel .data-table th:nth-child(3) {
+  width: 150px;
 }
-.leaderboard-panel .data-table th:nth-child(3),
-.leaderboard-panel .data-table th:nth-child(7),
+.leaderboard-panel .data-table th:nth-child(4) {
+  width: 104px;
+}
+.leaderboard-panel .data-table th:nth-child(5),
+.leaderboard-panel .data-table th:nth-child(6) {
+  width: 92px;
+}
+.leaderboard-panel .data-table th:nth-child(7) {
+  width: 124px;
+}
+.leaderboard-panel .data-table th:nth-child(8) {
+  width: 110px;
+}
 .leaderboard-panel .data-table th:nth-child(9) {
-  width: 16ch;
+  width: 134px;
 }
 .leaderboard-panel .data-table th:nth-child(10) {
-  width: 24ch;
+  width: 186px;
+}
+.leaderboard-panel .data-table th:nth-child(n + 3),
+.leaderboard-panel .data-table td:nth-child(n + 3) {
+  text-align: right;
 }
 .leaderboard-panel .data-table td {
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+/* Right-aligned values fill their cell so the pending-to-value swap changes
+   only the text, never the box (a resized inline-block would move its edge). */
+.leaderboard-panel .data-table td .number,
+.leaderboard-panel .data-table td .change {
+  display: block;
+  min-width: 0;
+}
+/* Realized, ROI and W/L lead the row; the supporting columns read smaller in
+   the secondary tone so the eye lands on the ranking figures first. */
+.leaderboard-panel .data-table td:nth-child(1) {
+  color: var(--color-text-3);
+}
+.leaderboard-panel .data-table td:nth-child(n + 3):nth-child(-n + 5) {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+.leaderboard-panel .data-table td:nth-child(n + 6) {
+  font-size: var(--text-base);
+  font-weight: 400;
+  color: var(--color-text-2);
+}
+.leaderboard-panel .data-table td:nth-child(n + 6) .positive,
+.leaderboard-panel .data-table td:nth-child(n + 6) .negative {
+  color: inherit;
 }
 .wallet-summary-note {
   display: block;

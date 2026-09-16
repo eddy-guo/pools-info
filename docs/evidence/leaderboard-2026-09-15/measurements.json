@@ -1,0 +1,137 @@
+{
+  "mode": "production build at 1440x1000 and 390x844 (2x), preloaded saved data with chain refresh disabled",
+  "reference": {
+    "source": "design/poolsinfo.html trader row at 1440x1000",
+    "gridTemplateColumns": "42px 464px 118px 82px 116px 78px 108px 92px 84px 68px",
+    "rowHeight": 60,
+    "realized": {
+      "fontSize": "14px",
+      "fontWeight": 600,
+      "color": "rgb(63, 214, 140)"
+    },
+    "roi": {
+      "fontSize": "14px",
+      "fontWeight": 400,
+      "color": "rgb(63, 214, 140)"
+    },
+    "trades": {
+      "fontSize": "14px",
+      "fontWeight": 400,
+      "color": "rgb(180, 180, 190)"
+    },
+    "volume": {
+      "fontSize": "14px",
+      "fontWeight": 400,
+      "color": "rgb(180, 180, 190)"
+    }
+  },
+  "desktop": {
+    "rowHeight": { "before": 74, "after": 74 },
+    "columnWidths": {
+      "before": [40, 159, 106, 174, 174, 174, 106, 174, 106, 159],
+      "after": [58, 324, 150, 104, 92, 92, 124, 110, 134, 186]
+    },
+    "before": {
+      "everyCell": {
+        "fontSize": "12px",
+        "fontWeight": 600,
+        "textAlign": "left"
+      },
+      "roi": "23.03% (unsigned)",
+      "last": "2026-09-14 07:37:52 UTC overflowed its 159px cell"
+    },
+    "after": {
+      "realized": {
+        "fontSize": "14px",
+        "fontWeight": 600,
+        "color": "rgb(63, 214, 140)",
+        "textAlign": "right"
+      },
+      "roi": {
+        "text": "+23.03%",
+        "fontSize": "14px",
+        "fontWeight": 600,
+        "color": "rgb(63, 214, 140)"
+      },
+      "roiNegative": { "text": "-8.54%", "color": "rgb(255, 97, 105)" },
+      "record": {
+        "fontSize": "14px",
+        "fontWeight": 600,
+        "color": "rgb(242, 242, 245)"
+      },
+      "trades": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "volume": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "positions": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "bestSale": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "last": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)",
+        "overflow": false
+      },
+      "fontVariantNumeric": "tabular-nums"
+    }
+  },
+  "mobile": {
+    "cardHeight": { "before": 268, "after": 268 },
+    "cardContentBottom": { "before": 262.7, "after": 263.7 },
+    "after": {
+      "realized": { "fontSize": "22px", "fontWeight": 600 },
+      "roi": {
+        "text": "+23.03%",
+        "fontSize": "14px",
+        "fontWeight": 600,
+        "color": "rgb(63, 214, 140)"
+      },
+      "record": { "fontSize": "14px", "fontWeight": 600 },
+      "trades": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "volume": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      },
+      "bestSale": {
+        "fontSize": "12px",
+        "fontWeight": 400,
+        "color": "rgb(180, 180, 190)"
+      }
+    }
+  },
+  "layoutStability": {
+    "spec": "tests/e2e/layout-stability.spec.ts",
+    "traders": {
+      "desktop": {
+        "sentinel": {
+          "x": 32,
+          "y": 433.0625,
+          "width": 1376,
+          "height": 2312.125
+        },
+        "cls": 0
+      },
+      "mobile": { "cls": 0 }
+    },
+    "allRoutesCls": 0,
+    "note": "A first pass measured cls 0.0000097 on desktop traders: the right-aligned Realized inline-block grew from its 12ch reservation to the value width on resolution. Numeric spans now fill their cells as blocks."
+  }
+}
