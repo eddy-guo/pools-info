@@ -3405,6 +3405,13 @@ main {
 .page-heading .eyebrow {
   margin-bottom: 10px;
 }
+/* Leaderboard ranking controls sit beside the title, as in the design. */
+.traders-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .button {
   min-height: var(--ctl-min);
   border-radius: 10px;
@@ -4466,6 +4473,9 @@ main {
   .page-heading .button {
     min-height: 44px;
   }
+  .traders-controls {
+    flex-basis: 100%;
+  }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -5165,7 +5175,8 @@ main {
   height: 74px;
 }
 .leaderboard-panel .live-podium {
-  height: 220px;
+  height: 236px;
+  padding-top: 16px;
 }
 .leaderboard-panel .live-podium > * {
   height: 204px;
@@ -5218,7 +5229,8 @@ main {
     height: 330px;
   }
   .leaderboard-panel .live-podium {
-    height: 400px;
+    height: 412px;
+    padding-top: 12px;
   }
   .leaderboard-panel .live-podium > * {
     height: 120px;

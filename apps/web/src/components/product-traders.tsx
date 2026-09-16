@@ -5,18 +5,16 @@ import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { Avatar, Change } from "./ui";
-import { PersonalRankPreview } from "./feature-preview";
-import { ProductCoverage, ProductPagination } from "./product-common";
+import { ProductPagination } from "./product-common";
 import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
-  const minimum = Number(params.get("minTrades") ?? 10),
-    metric = params.get("metric") ?? "realized",
+  const metric = params.get("metric") ?? "realized",
     offset = Number(params.get("offset") ?? 0);
+  // The read API applies its own minimum-trade gate; the page exposes no control.
   const query = new URLSearchParams({
     window,
-    minTrades: String(minimum),
     metric,
     offset: String(offset),
     limit: "25",
@@ -26,33 +24,11 @@ export function ProductTraders() {
   return (
     <div className="page traders-page">
       <div className="page-heading">
-        <div>
-          <h1>
-            Trader leaderboard<span className="title-dot">.</span>
-          </h1>
-          <p>Follow the wallets. Understand the performance.</p>
-        </div>
-        <Link className="button secondary" href="/wallet/">
-          Look up your wallet ↗
-        </Link>
-      </div>
-      <PersonalRankPreview />
-      <ProductCoverage coverage={data?.coverage} delivery={data?.delivery} />
-      <section className="panel leaderboard-panel">
-        <div className="live-controls">
-          <label>
-            Minimum swaps
-            <select
-              aria-label="Minimum swaps"
-              value={minimum}
-              onChange={(e) => set({ minTrades: e.target.value, offset: null })}
-            >
-              {[1, 10, 25, 100].map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          <div className="segmented">
+        <h1>
+          Trader leaderboard<span className="title-dot">.</span>
+        </h1>
+        <div className="traders-controls">
+          <div className="segmented" aria-label="Ranking metric">
             {[
               ["realized", "Realized PnL"],
               ["net", "Net ETH"],
@@ -81,13 +57,8 @@ export function ProductTraders() {
             Refresh saved rankings
           </button>
         </div>
-        <p className="panel-footnote">
-          Ranked before pagination using transfer-verified positions with known
-          purchase basis. Swap-based estimates are not enabled yet. Unknown
-          basis is excluded from realized PnL. Net ETH includes purchases of
-          unsold inventory. Coverage varies by pool; these are not complete
-          wallet returns.
-        </p>
+      </div>
+      <section className="panel leaderboard-panel">
         {loading && data && (
           <span className="sr-only" role="status">
             Updating saved rankings
@@ -399,9 +370,8 @@ export function ProductTraders() {
           <div className="empty-state">
             <h3>No qualifying traders in this window</h3>
             <p>
-              Try a wider window or a lower minimum. Realized PnL requires
-              observed purchase basis; missing history is not assigned zero
-              cost.
+              Try a wider window. Realized PnL requires observed purchase basis;
+              missing history is not assigned zero cost.
             </p>
           </div>
         )}
