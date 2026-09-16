@@ -314,3 +314,60 @@ searchable and navigable with null analytics until a separate historical capture
 is published. Raw historical coverage stays null for a recent-only launch.
 Changes or rewinds in recent membership invalidate the product-model cache;
 ordinary catalog response caching can still add up to five seconds of delay.
+
+## Explorer wallet history (Blockscout)
+
+`GET /v1/wallets/:address/history?kind=transactions|token-transfers&cursor=`
+serves one page of a wallet's complete on-chain activity on demand from the
+Blockscout PRO API (`https://api.blockscout.com/4663/api/v2`, the chain's
+official explorer). This is display data only: it never joins accounting or
+PnL tables, carries no evidence, and is not mixed into any verified figure. The
+indexed `/v1/wallets/:address/activity` route keeps serving our own verified
+activity unchanged. Blockscout returns 50 items per page, newest first, and
+this service reads no database table on this route.
+
+The response is the shared `WalletHistoryResponse` type in `@pools/core`:
+`source:"blockscout"`, `chainId:4663`, `wallet` (lowercase), `kind`, `items`,
+`nextCursor` (opaque, null at the end), `fetchedAt` (ISO), `stale`, and a fixed
+`note`. A transaction item has `hash`, `block` (number, null while pending),
+`timestamp` (Unix seconds, null while pending), `from`, `to` (null for contract
+creation), `method` (decoded name, 4-byte selector, or null), `status`
+(`ok`, `error`, or `pending`), `value` and `fee` (wei as decimal strings, fee
+null while pending). A token transfer item has `transactionHash`, `logIndex`,
+`block`, `timestamp`, `from`, `to`, `token` (`address`, `symbol`, `name`,
+`decimals`, `type`, each nullable except the address), `value` (raw integer
+string, null for ERC-721), `tokenId` (null for ERC-20), and `method`. Transfer
+logs exist only in successful transactions, so they carry no status. Addresses
+and hashes are lowercase. Cursors bind to the wallet and kind, wrap Blockscout's
+own `next_page_params`, and are validated before they reach the explorer.
+
+Configuration, read from the environment at startup:
+
+| Variable                            | Default  | Meaning                                                                                                         |
+| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs. |
+| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers page).             |
+| `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                           |
+| `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                             |
+| `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                            |
+
+Budget and failure behaviour. Every upstream call passes a sliding-window
+limiter (at most five starts in any second, the free tier's rate; a call that
+would wait longer than two seconds fails instead of queueing) and a per-process
+credit counter that resets at UTC midnight. The explorer's `x-credits-remaining`
+header is a backstop: when the key itself is nearly out, calls pause for an
+hour regardless of the local count. The counter is per process: during a
+Railway rolling deploy the old and new instance each keep their own, so the
+day's real spend can briefly count from zero again; the default cap of 30,000
+keeps three process lifetimes in one day (two such deploys) inside the 100,000
+daily allowance, and the header backstop covers anything beyond. Upstream
+calls time out after five seconds and bodies above 4 MiB are rejected. There is
+no retry. Pages are cached in process by wallet, kind, and cursor (2,000 entries,
+32 MiB); a page past its TTL is still served with `stale:true` for up to a day
+whenever the explorer or the budget cannot answer, otherwise the route returns
+503 `{error:"wallet_history_unavailable", reason}` with `Retry-After`, where
+`reason` is `not_configured`, `budget_exhausted` (seconds to UTC midnight),
+`upstream_unavailable` (timeouts, 429, 5xx, or an unreadable page), or
+`key_rejected` (401, 402, or 403 from the explorer). Ordinary request limits
+and coalescing apply, the key never appears in any response or log line, and
+the route makes no chain RPC call.

@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./accounting";
+export * from "./tier2-accounting";
 export * from "./format";
 export * from "./chain-types";
 export * from "./chain-accounting";
@@ -20,3 +21,4 @@ export * from "./analytics";
 export * from "./live-feed-types";
 export * from "./visual-theme";
 export * from "./observed-market";
+export * from "./wallet-history-types";

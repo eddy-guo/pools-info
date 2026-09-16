@@ -14,6 +14,7 @@ import {
 } from "./catalog-read";
 import { catalogPool, catalogSummary } from "./explore-read";
 import { RequestError } from "./request";
+import { readTier2, type Tier2Result } from "./tier2-read";
 
 export async function accountingCoverage(
   query: ReadQuery,
@@ -27,7 +28,9 @@ export async function accountingCoverage(
   const catalog = await catalogSummary(query);
   const r = (
     await query(
-      `SELECT count(*)::text AS count,coalesce(max(asof_timestamp),0)::text AS asof,min(asof_timestamp)::text AS oldest FROM analytics_accounting_pools WHERE chain_id=4663`,
+      `SELECT count(*)::text AS count,coalesce(max(asof_timestamp),0)::text AS asof,min(asof_timestamp)::text AS oldest,
+        count(*) FILTER(WHERE EXISTS(SELECT 1 FROM analytics_accounting_positions p WHERE p.chain_id=a.chain_id AND p.pool_id=a.pool_id AND p.supported))::text AS realized
+        FROM analytics_accounting_pools a WHERE chain_id=4663`,
     )
   ).rows[0];
   return {
@@ -39,6 +42,234 @@ export async function accountingCoverage(
     complete: false,
     registryExhaustive: false,
     pnlScope: "supported_pool_positions_only",
+    tier2Pools: 0,
+    tier3Pools: Number(r.count),
+    realizedPools: Number(r.realized),
+  };
+}
+function combinedCoverage(
+  coverage: AnalyticsCoverage,
+  tier2: Tier2Result,
+): AnalyticsCoverage {
+  return {
+    ...coverage,
+    asOf: tier2.asOf,
+    pnlScope: "observed_initiator_and_verified_positions",
+    tier2Pools: tier2.pools,
+    tier3Pools: coverage.processedPools,
+    realizedPools: (coverage.realizedPools ?? 0) + tier2.realizedPools,
+  };
+}
+function composeWallet(
+  deep: AnalyticsWalletSummary,
+  observed?: AnalyticsWalletSummary,
+  deepCost = 0n,
+  observedCost = 0n,
+): AnalyticsWalletSummary {
+  const tier3 = deep.supportedPositionCount + deep.excludedPositionCount,
+    tier2 = observed?.tier2PositionCount ?? 0;
+  if (!observed) return deep;
+  const realized =
+    deep.realizedWei === null && observed.realizedWei === null
+      ? null
+      : (
+          BigInt(deep.realizedWei ?? "0") + BigInt(observed.realizedWei ?? "0")
+        ).toString();
+  const cost = deepCost + observedCost,
+    wins = deep.wins + observed.wins,
+    losses = deep.losses + observed.losses;
+  const best =
+    [deep.bestWei, observed.bestWei]
+      .filter((v): v is string => v !== null)
+      .sort((a, b) =>
+        BigInt(a) > BigInt(b) ? -1 : BigInt(a) < BigInt(b) ? 1 : 0,
+      )[0] ?? null;
+  return {
+    ...deep,
+    accountingTier: tier3 ? "mixed" : "tier2",
+    attribution: tier3 ? "mixed" : "transaction_initiator_only",
+    flags: [...new Set([...(deep.flags ?? []), ...(observed.flags ?? [])])],
+    tier2PositionCount: tier2,
+    tier3PositionCount: tier3,
+    realizedPositionCount:
+      deep.supportedPositionCount + (observed.realizedPositionCount ?? 0),
+    rankingTradeCount:
+      deep.supportedTradeCount + (observed.rankingTradeCount ?? 0),
+    realizedWei: realized,
+    netWei: (
+      BigInt(deep.netWei ?? "0") + BigInt(observed.netWei ?? "0")
+    ).toString(),
+    unrealizedWei: deep.unrealizedWei,
+    verifiedUnrealizedWei: deep.unrealizedWei,
+    unrealizedScope:
+      deep.unrealizedWei === null ? "unavailable" : "verified_positions_only",
+    volumeWei: (BigInt(deep.volumeWei) + BigInt(observed.volumeWei)).toString(),
+    roi:
+      realized !== null && cost > 0n
+        ? Number((BigInt(realized) * 1000000n) / cost) / 10000
+        : null,
+    wins,
+    losses,
+    winRate: wins + losses ? (wins / (wins + losses)) * 100 : null,
+    tradeCount: deep.tradeCount + observed.tradeCount,
+    excludedPositionCount:
+      deep.excludedPositionCount + observed.excludedPositionCount,
+    bestWei: best,
+    last: Math.max(deep.last ?? 0, observed.last ?? 0) || null,
+    asOf: Math.max(deep.asOf ?? 0, observed.asOf ?? 0) || null,
+    oldestAsOf: Math.min(
+      deep.oldestAsOf ?? Infinity,
+      observed.oldestAsOf ?? Infinity,
+    ),
+    completeWindow:
+      (!deep.tradeCount || deep.completeWindow) && observed.completeWindow,
+  };
+}
+async function combinedSummaries(
+  query: ReadQuery,
+  coverage: AnalyticsCoverage,
+  tier2: Tier2Result,
+  window: LiveWindow,
+) {
+  const rows = (
+    await query(`${accountingCte} SELECT * FROM summaries`, [
+      windowFrom(coverage, window),
+      coverage.asOf,
+    ])
+  ).rows;
+  const wallets = new Map<string, AnalyticsWalletSummary>();
+  for (const r of rows)
+    wallets.set(
+      r.wallet,
+      composeWallet(
+        walletSummary(r, r.wallet),
+        tier2.summaries.get(r.wallet),
+        BigInt(r.disposed_cost ?? "0"),
+        tier2.costs.get(r.wallet),
+      ),
+    );
+  for (const [address, s] of tier2.summaries)
+    if (!wallets.has(address))
+      wallets.set(
+        address,
+        composeWallet(
+          walletSummary(undefined, address),
+          s,
+          0n,
+          tier2.costs.get(address),
+        ),
+      );
+  return wallets;
+}
+function rankWallets(
+  wallets: Map<string, AnalyticsWalletSummary>,
+  metric: "realized" | "net",
+  minTrades: number,
+) {
+  const eligible = [...wallets.values()].filter(
+    (s) =>
+      (s.realizedPositionCount ?? 0) > 0 &&
+      (s.rankingTradeCount ?? 0) >= minTrades &&
+      (metric === "net" ? s.netWei : s.realizedWei) !== null,
+  );
+  eligible.sort((a, b) => {
+    const x = BigInt((metric === "net" ? a.netWei : a.realizedWei)!),
+      y = BigInt((metric === "net" ? b.netWei : b.realizedWei)!);
+    return x > y ? -1 : x < y ? 1 : a.address.localeCompare(b.address);
+  });
+  eligible.forEach((s, i) => (s.rank = i + 1));
+  return eligible;
+}
+async function combinedLeaderboard(
+  query: ReadQuery,
+  original: AnalyticsCoverage,
+  tier2: Tier2Result,
+  options: Required<AnalyticsLeaderboardOptions>,
+): Promise<AnalyticsLeaderboardResponse> {
+  const coverage = combinedCoverage(original, tier2),
+    wallets = await combinedSummaries(query, coverage, tier2, options.window),
+    ranked = rankWallets(wallets, options.metric, options.minTrades);
+  return {
+    coverage,
+    window: options.window,
+    metric: options.metric,
+    minTrades: options.minTrades,
+    items: ranked.slice(options.offset, options.offset + options.limit),
+    total: ranked.length,
+    nextOffset:
+      options.offset + options.limit < ranked.length
+        ? options.offset + options.limit
+        : null,
+  };
+}
+export async function readWallet(
+  query: ReadQuery,
+  address: string,
+  window: LiveWindow,
+): Promise<AnalyticsWalletResponse> {
+  const original = await accountingCoverage(query),
+    tier2 = await readTier2(query, original, window, address);
+  if (!tier2.pools) return readVerifiedWallet(query, address, window, original);
+  const coverage = combinedCoverage(original, tier2),
+    deep = await readVerifiedWallet(query, address, window, coverage),
+    wallets = await combinedSummaries(query, coverage, tier2, window);
+  rankWallets(wallets, "realized", 10);
+  const wallet = wallets.get(address) ?? composeWallet(deep.wallet);
+  const positions = [
+    ...deep.positions.map((p) => ({
+      ...p,
+      accountingTier: "tier3" as const,
+      attribution: "transfer_verified" as const,
+    })),
+    ...tier2.positions,
+  ].sort((a, b) => a.poolId.localeCompare(b.poolId));
+  const trades = [...deep.trades, ...tier2.trades].sort(
+    (a, b) =>
+      b.trade.block - a.trade.block || b.trade.logIndex - a.trade.logIndex,
+  );
+  const gains = [...tier2.gains];
+  // Convert the verified cumulative samples back to increments before merging
+  // with the initiator series. Both series disclose their sampling limits.
+  let previous = 0n;
+  for (const p of deep.curve) {
+    const current = BigInt(p.wei);
+    gains.push({ time: p.time, wei: (current - previous).toString() });
+    previous = current;
+  }
+  gains.sort((a, b) => a.time - b.time);
+  let cumulative = 0n;
+  const curve = gains.map((p) => ({
+    time: p.time,
+    wei: (cumulative += BigInt(p.wei)).toString(),
+  }));
+  const sampled = curve.length > 498,
+    step = Math.max(1, Math.ceil(curve.length / 498));
+  const points = curve.filter(
+    (_, i) => i % step === 0 || i === curve.length - 1,
+  );
+  if (wallet.realizedWei !== null) {
+    points.unshift({
+      time:
+        windowFrom(coverage, window) === -1
+          ? Math.min(
+              tier2.startTimestamp ?? coverage.asOf,
+              ...deep.curve.map((p) => p.time),
+            )
+          : Math.max(0, windowFrom(coverage, window)),
+      wei: "0",
+    });
+    points.push({ time: coverage.asOf, wei: wallet.realizedWei });
+  }
+  return {
+    ...deep,
+    coverage,
+    wallet,
+    positions: positions.slice(0, 500),
+    positionsTruncated: deep.positionsTruncated || positions.length > 500,
+    trades: trades.slice(0, 500),
+    tradesTruncated: deep.tradesTruncated || trades.length > 500,
+    curve: points,
+    curveSampled: deep.curveSampled || sampled || tier2.curveSampled,
   };
 }
 export const windowFrom = (coverage: AnalyticsCoverage, window: LiveWindow) =>
@@ -71,7 +302,7 @@ export const accountingCte = `WITH flows AS (
     sum(trade_count) AS trade_count,coalesce(sum(trade_count) FILTER(WHERE supported),0) AS supported_trades,
     sum(hold_seconds) FILTER(WHERE supported) AS hold_seconds,sum(closures) FILTER(WHERE supported) AS closures,
     max(best) FILTER(WHERE supported) AS best,max(last) AS last,max(asof_timestamp) AS asof,min(asof_timestamp) AS oldest,
-    bool_and(complete_window) AS complete_window FROM positions GROUP BY wallet
+    bool_and(complete_window) AS complete_window,jsonb_agg(flags) AS position_flags FROM positions GROUP BY wallet
 )`;
 const int = (v: unknown) => Number(v ?? 0);
 const amount = (v: unknown) =>
@@ -85,6 +316,18 @@ export function walletSummary(
     wins = int(r?.wins),
     losses = int(r?.losses);
   return {
+    accountingTier: r ? "tier3" : "unavailable",
+    attribution: r ? "transfer_verified" : "unavailable",
+    flags: [...new Set<string>((r?.position_flags ?? []).flat())],
+    tier2PositionCount: 0,
+    tier3PositionCount: int(r?.supported_count) + int(r?.excluded_count),
+    realizedPositionCount: int(r?.supported_count),
+    rankingTradeCount: int(r?.supported_trades),
+    verifiedUnrealizedWei: amount(r?.unrealized),
+    unrealizedScope:
+      amount(r?.unrealized) === null
+        ? "unavailable"
+        : "verified_positions_only",
     address,
     rank: r?.rank ? int(r.rank) : null,
     realizedWei: realized,
@@ -115,11 +358,21 @@ export async function readLeaderboard(
   options: AnalyticsLeaderboardOptions,
 ): Promise<AnalyticsLeaderboardResponse> {
   const coverage = await accountingCoverage(query),
-    window = options.window ?? "All",
+    window = options.window ?? "7d",
     metric = options.metric ?? "realized",
     minTrades = options.minTrades ?? 10,
     offset = options.offset ?? 0,
     limit = options.limit ?? 25;
+  const tier2 = await readTier2(query, coverage, window);
+  if (tier2.pools)
+    return combinedLeaderboard(query, coverage, tier2, {
+      ...options,
+      window,
+      metric,
+      minTrades,
+      offset,
+      limit,
+    });
   const values = [windowFrom(coverage, window), coverage.asOf, minTrades];
   const filtered = `${accountingCte} SELECT *,row_number() OVER(ORDER BY ${metric === "net" ? "net" : "realized"} DESC,wallet) AS rank FROM summaries WHERE supported_count>0 AND supported_trades >= $3`;
   const count = (
@@ -145,12 +398,13 @@ export async function readLeaderboard(
     nextOffset: offset + limit < total ? offset + limit : null,
   };
 }
-export async function readWallet(
+async function readVerifiedWallet(
   query: ReadQuery,
   address: string,
   window: LiveWindow,
+  suppliedCoverage?: AnalyticsCoverage,
 ): Promise<AnalyticsWalletResponse> {
-  const coverage = await accountingCoverage(query),
+  const coverage = suppliedCoverage ?? (await accountingCoverage(query)),
     from = windowFrom(coverage, window),
     values = [from, coverage.asOf, address];
   const r = (
@@ -215,6 +469,8 @@ export async function readWallet(
     window,
     wallet,
     positions: positions.slice(0, 500).map((p) => ({
+      accountingTier: "tier3",
+      attribution: "transfer_verified",
       poolId: p.pool_id,
       token: p.market.token,
       symbol: p.market.symbol,

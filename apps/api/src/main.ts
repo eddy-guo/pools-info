@@ -5,6 +5,7 @@ import {
   createTokenImageStore,
   tokenImageSettings,
 } from "./token-image-store";
+import { createWalletHistoryFromEnv } from "./wallet-history";
 
 const port = Number(process.env.PORT ?? "3102");
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
@@ -13,7 +14,10 @@ const reader = createReader();
 const images = createTokenImageService(createTokenImageStore(), {
   settings: tokenImageSettings(),
 });
-const server = createApi(reader, { images });
+const server = createApi(reader, {
+  images,
+  history: createWalletHistoryFromEnv(),
+});
 server.listen(port, "0.0.0.0", () =>
   process.stdout.write(JSON.stringify({ event: "listening", port }) + "\n"),
 );
