@@ -244,3 +244,188 @@ test("recent streams preserve restart start, contiguous discovery bounds, exact 
   );
   assert.equal((await recentStream(db, "discovery")).hash, hash(919));
 });
+
+import {
+  HyperSyncClient,
+  Rpc,
+  collectRecentPages,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  instantDeployments,
+  observedRecentPoolIds,
+  recentLaunchesFromPages,
+  recentSwapsFromPages,
+} from "@pools/chain";
+import {
+  FakeHyperSync,
+  fakeLaunch,
+  fakeSwap,
+  word,
+} from "@pools/chain/testing";
+type Hex = `0x${string}`;
+/** A short ABI-encoded string reply, as name() and symbol() return. */
+const abiString = (v: string): Hex =>
+  `0x${"20".padStart(64, "0")}${v.length.toString(16).padStart(64, "0")}${Buffer.from(v).toString("hex").padEnd(64, "0")}`;
+import { recentBatchSources } from "./index";
+test("the writer replays HyperSync evidence inside the commit, refuses a forged row, count, label or unregistered claim, and records the source", async (t) => {
+  const db = createClient(url);
+  await db.connect();
+  const schema = `recent_${randomUUID().replaceAll("-", "")}`;
+  await db.query(`CREATE SCHEMA "${schema}"`);
+  await db.query(`SET search_path TO "${schema}"`);
+  t.after(async () => {
+    await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+    await db.end();
+  });
+  await migrate(db);
+  const base = instantDeployments[0].deployedAtBlock + 1000;
+  const initiator = `0x${"2".repeat(40)}`;
+  const launch = fakeLaunch({
+    block: base + 2,
+    token: `0x${"1".repeat(40)}`,
+    sender: `0x${"3".repeat(40)}`,
+    transactionHash: word(9001),
+  });
+  const fake = new FakeHyperSync({
+    height: base + 9 + 128,
+    logs: [
+      ...launch.logs,
+      fakeSwap({
+        block: base + 4,
+        logIndex: 0,
+        poolId: launch.poolId,
+        from: initiator,
+      }),
+      fakeSwap({
+        block: base + 4,
+        logIndex: 1,
+        poolId: word(7),
+        from: initiator,
+      }),
+    ],
+  });
+  const pages = await collectRecentPages(
+    new HyperSyncClient({
+      token: "x".repeat(16),
+      minIntervalMs: 0,
+      fetch: fake.fetch,
+    }),
+    { fromBlock: base, toBlock: base + 9, height: base + 9 + 128 },
+  );
+  const rpc = new Rpc();
+  rpc.call = async <T>() => "0x1237" as T;
+  rpc.batch = async <T>(_m: string, ps: unknown[][]) =>
+    ps.map((p) =>
+      encodeAggregateReply(
+        decodeAggregateRequest((p[0] as { data: Hex }).data).map((_, i) => ({
+          success: true,
+          returnData: abiString(i % 2 ? "S" : "N"),
+        })),
+      ),
+    ) as T[];
+  const launches = await recentLaunchesFromPages(pages, rpc);
+  const discoveryBatch = (): RecentBatch => ({
+    from: base,
+    to: base + 9,
+    hash: launches.blockHash,
+    parentHash: launches.fromBlockParentHash,
+    timestamp: launches.toTimestamp,
+    pools: structuredClone(launches.pools),
+    evidence: structuredClone(launches.evidence),
+    source: recentBatchSources.hypersync,
+  });
+  await ensureRecentStreams(db, base);
+  const discovery = await recentStream(db, "discovery");
+  for (const [name, forge, error] of [
+    [
+      "an unlabelled HyperSync batch",
+      (b: RecentBatch) => delete b.source,
+      /Invalid recent batch/,
+    ],
+    [
+      "a launch sender",
+      (b: RecentBatch) => (b.pools![0].launchSender = initiator),
+      /disagree/,
+    ],
+    ["a dropped launch", (b: RecentBatch) => (b.pools = []), /disagree/],
+    ["a cutoff time", (b: RecentBatch) => (b.timestamp += 1), /disagree/],
+  ] as const) {
+    const b = discoveryBatch();
+    forge(b);
+    await assert.rejects(commitRecentBatch(db, discovery, b), error, name);
+  }
+  // Receipt-shaped evidence cannot carry the HyperSync label.
+  await assert.rejects(
+    commitRecentBatch(db, discovery, {
+      ...batch(base, base + 9),
+      source: recentBatchSources.hypersync,
+    }),
+    /Invalid recent batch/,
+  );
+  assert.equal((await recentStream(db, "discovery")).cursor, null);
+  assert.equal(await commitRecentBatch(db, discovery, discoveryBatch()), true);
+  // An identical replay is a no-op under the same content hash.
+  assert.equal(await commitRecentBatch(db, discovery, discoveryBatch()), false);
+
+  // The launch is registered now. A swap batch built as if it were not claims
+  // the registered pool as unregistered; the writer resolves it and refuses.
+  const forged = recentSwapsFromPages(pages, []);
+  assert.ok(forged.evidence.unregistered.poolIds.includes(launch.poolId));
+  const swapBatch = (s: typeof forged): RecentBatch => ({
+    from: base,
+    to: base + 9,
+    hash: s.blockHash,
+    parentHash: s.fromBlockParentHash,
+    timestamp: s.toTimestamp,
+    events: structuredClone(s.events),
+    evidence: structuredClone(s.evidence),
+    observedSwaps: s.observedSwaps,
+    unregisteredSwaps: s.unregisteredSwaps,
+    unsupportedSwaps: s.unsupportedSwaps,
+    source: recentBatchSources.hypersync,
+  });
+  const swaps = await recentStream(db, "swaps");
+  await assert.rejects(
+    commitRecentBatch(db, swaps, swapBatch(forged)),
+    /Invalid HyperSync unregistered pool ids/,
+  );
+  const honest = recentSwapsFromPages(
+    pages,
+    await knownRecentPools(db, observedRecentPoolIds(pages)),
+  );
+  for (const [name, forge, error] of [
+    [
+      "a sender",
+      (b: RecentBatch) =>
+        (b.events![0].transactionSender = `0x${"9".repeat(40)}`),
+      /disagree/,
+    ],
+    [
+      "an observed count",
+      (b: RecentBatch) => (b.observedSwaps = 1),
+      /disagree/,
+    ],
+    ["a dropped row", (b: RecentBatch) => (b.events = []), /disagree/],
+  ] as const) {
+    const b = swapBatch(honest);
+    forge(b);
+    await assert.rejects(commitRecentBatch(db, swaps, b), error, name);
+  }
+  assert.equal((await recentStream(db, "swaps")).cursor, null);
+  assert.equal(await commitRecentBatch(db, swaps, swapBatch(honest)), true);
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT stream_key,source FROM recent_batches ORDER BY stream_key",
+      )
+    ).rows,
+    [
+      { stream_key: "discovery", source: "recent:hypersync:v1" },
+      { stream_key: "swaps", source: "recent:hypersync:v1" },
+    ],
+  );
+  assert.deepEqual(
+    (await db.query("SELECT transaction_sender FROM recent_swaps")).rows,
+    [{ transaction_sender: initiator }],
+  );
+});

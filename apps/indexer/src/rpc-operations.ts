@@ -1,4 +1,8 @@
-import { RpcRateLimitExhausted, type RpcRateLimitEvent } from "@pools/chain";
+import {
+  HyperSyncRateLimitExhausted,
+  RpcRateLimitExhausted,
+  type RpcRateLimitEvent,
+} from "@pools/chain";
 import { BroadSingleBlockOverflow } from "./broad-budget";
 
 // Process-local and deliberately sticky. A failed DB close must not replace a
@@ -15,9 +19,13 @@ export function rpcRateLimitObserver(worker: "main" | "recent" | "analytics") {
   };
 }
 
-/** A fresh client, smaller batch or pool fallback must not restart exhausted work. */
+const exhausted = (error: unknown) =>
+  error instanceof RpcRateLimitExhausted ||
+  error instanceof HyperSyncRateLimitExhausted;
+/** A fresh client, smaller batch or pool fallback must not restart exhausted
+ * work. HyperSync's sustained 429s stop the live worker the same way. */
 export function throwIfRateLimitExhausted(error: unknown): void {
-  if (error instanceof RpcRateLimitExhausted) {
+  if (exhausted(error)) {
     rateLimitStopped = true;
     throw error;
   }
@@ -39,7 +47,7 @@ export function throwIfBroadCapacityOverflow(error: unknown): void {
 
 /** service.ts maps this reserved exit to a clean, non-restarting stop. */
 export function workerFailureExitCode(error: unknown): number {
-  if (rateLimitStopped || error instanceof RpcRateLimitExhausted) return 75;
+  if (rateLimitStopped || exhausted(error)) return 75;
   return broadCapacityStopped || error instanceof BroadSingleBlockOverflow
     ? 76
     : 1;

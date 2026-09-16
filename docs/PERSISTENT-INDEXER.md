@@ -272,6 +272,9 @@ Settings:
 - `RECENT_LOG_RANGE_BLOCKS=10`: provider request range, matching Alchemy Free.
 - `RECENT_TIP_POLL_MS=30000`: pause after a cycle that reached the confirmed
   head. Every cycle pays the same fixed reads whether or not blocks arrived.
+- `RECENT_SOURCE=rpc`: where the worker reads the chain. `hypersync` reads logs,
+  transactions and headers from Envio HyperSync and JSON-RPC only for a new
+  launch's name and symbol; see [HYPERSYNC-TIP.md](HYPERSYNC-TIP.md).
 
 Each cycle observes one chain view: the chain id, the head and every canonical
 header are fetched at most once, and one combined log query serves both the

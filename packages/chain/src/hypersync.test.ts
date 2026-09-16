@@ -291,6 +291,19 @@ test("selections are chunked and bounded by the measured request limit", () => {
     () => transferLogQuery({ fromBlock: from, toBlock: to }, ["0x12"]),
     /Invalid HyperSync token selection/,
   );
+  const tokens = Array.from(
+    { length: hypersyncPolicy.topicValuesPerSelection * 2 + 1 },
+    (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  );
+  assert.equal(
+    transferLogQuery({ fromBlock: from, toBlock: to }, tokens.slice(1)).logs
+      ?.length,
+    2,
+  );
+  assert.throws(
+    () => transferLogQuery({ fromBlock: from, toBlock: to }, tokens),
+    /Invalid HyperSync query/,
+  );
   assert.throws(
     () => swapLogQuery({ fromBlock: to, toBlock: from }),
     /Invalid HyperSync block range/,

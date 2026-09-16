@@ -5,7 +5,7 @@ import {
   workerFailureExitCode,
 } from "./rpc-operations";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Rpc } from "@pools/chain";
+import { HyperSyncPacer, HyperSyncUnauthorized, Rpc } from "@pools/chain";
 import { createClient, migrate, recentResumeBatchBlocks } from "@pools/db";
 import {
   smallerRecentBatch,
@@ -13,7 +13,13 @@ import {
   RECENT_TIMEOUT_MS,
   RECENT_MAX_REQUESTS,
 } from "./recent-budget";
-import { runRecentCycle } from "./recent-worker";
+import { runRecentCycle, runRecentHyperSyncCycle } from "./recent-worker";
+import {
+  RecentGapProgress,
+  recentHyperSyncClient,
+  recentHyperSyncSafeError,
+  recentSourceConfig,
+} from "./recent-source";
 import { safeError, errorDetails } from "./errors";
 const stop = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const)
@@ -34,9 +40,17 @@ async function main() {
   if (!["once", "run"].includes(mode)) throw Error("Invalid recent command");
   if (!process.env.ROBINHOOD_RPC_URL)
     throw Error("ROBINHOOD_RPC_URL is required for the persistent worker");
+  // The JSON-RPC cycle unless RECENT_SOURCE=hypersync; see docs/HYPERSYNC-TIP.md.
+  const source = recentSourceConfig();
+  const hs = source.source === "hypersync" ? source : null;
   const options = {
     bootstrapBlocks: integer("RECENT_BOOTSTRAP_BLOCKS", 6000, 1, 100000),
-    batchBlocks: integer("RECENT_BATCH_BLOCKS", 1000, 1, 2000),
+    batchBlocks: integer(
+      "RECENT_BATCH_BLOCKS",
+      source.defaultBatchBlocks,
+      1,
+      2000,
+    ),
     signal: stop.signal,
   };
   const logRangeBlocks = integer("RECENT_LOG_RANGE_BLOCKS", 10, 1, 10000);
@@ -66,18 +80,35 @@ async function main() {
     if (!acquired) throw Error("Another worker holds the writer lock");
     let failures = 0;
     let goodCycles = 0;
-    let batchBlocks = await recentResumeBatchBlocks(db, options.batchBlocks);
+    // HyperSync pages cut a dense range short at a block boundary instead of
+    // failing it, so that source starts at its configured width.
+    let batchBlocks = hs
+      ? options.batchBlocks
+      : await recentResumeBatchBlocks(db, options.batchBlocks);
     console.log(
       JSON.stringify({
         event: "recent_configuration",
+        source: source.source,
         bootstrapBlocks: options.bootstrapBlocks,
         batchBlocks: options.batchBlocks,
         resumeBatchBlocks: batchBlocks,
         logRangeBlocks,
         tipPollMs,
         ...rpcPacing(),
+        ...(hs
+          ? {
+              hypersyncUrl: hs.url,
+              hypersyncMinIntervalMs: hs.minIntervalMs,
+              hypersyncMaxPages: hs.maxPages,
+              hypersyncMaxRequestsPerCycle: hs.maxRequestsPerCycle,
+            }
+          : {}),
       }),
     );
+    // One pacer for the worker's life: cycles run back to back during a gap
+    // fill, and the spacing must hold across them, not only within one.
+    const pacer = new HyperSyncPacer();
+    const gap = new RecentGapProgress();
     do {
       if (stop.signal.aborted) break;
       // Always use the configured authenticated RPC. The public provider blocks
@@ -89,9 +120,33 @@ async function main() {
         onRateLimit: rpcRateLimitObserver("recent"),
         logRangeBlocks,
       });
+      const client = hs
+        ? recentHyperSyncClient(hs, pacer, {
+            signal: stop.signal,
+            onRetry: (event) =>
+              console.error(
+                JSON.stringify({
+                  event: "hypersync_retry",
+                  worker: "recent",
+                  ...event,
+                }),
+              ),
+          })
+        : null;
+      const hypersync = () =>
+        client
+          ? { hypersyncRequests: client.requests, hypersyncBytes: client.bytes }
+          : {};
       const started = performance.now();
       try {
-        const r = await runRecentCycle(db, rpc, { ...options, batchBlocks });
+        const r =
+          hs && client
+            ? await runRecentHyperSyncCycle(db, client, rpc, {
+                ...options,
+                batchBlocks,
+                maxPages: hs.maxPages,
+              })
+            : await runRecentCycle(db, rpc, { ...options, batchBlocks });
         failures = 0;
         const requestedBatchBlocks = batchBlocks;
         const elapsedMs = Math.round(performance.now() - started);
@@ -101,24 +156,41 @@ async function main() {
           goodCycles,
           advanced: r.advanced,
           elapsedMs,
-          httpRequests: rpc.requests,
+          httpRequests: client ? client.requests : rpc.requests,
         }));
         console.log(
           JSON.stringify({
             event: "recent_batch",
+            source: source.source,
             ...r,
             lagBlocks: r.through === null ? null : r.head - r.through,
             elapsedMs,
             requestedBatchBlocks,
             nextBatchBlocks: batchBlocks,
+            // JSON-RPC provider (Alchemy) requests and logical calls.
             httpRequests: rpc.requests,
             rpcCalls: rpc.calls,
+            ...hypersync(),
           }),
         );
+        if (hs && client) {
+          const progress = gap.observe({
+            head: r.head,
+            through: r.through,
+            advanced: r.advanced,
+            batchBlocks: requestedBatchBlocks,
+            requests: client.requests,
+            minIntervalMs: hs.minIntervalMs,
+          });
+          if (progress) console.log(JSON.stringify(progress));
+        }
         if (mode === "once" || stop.signal.aborted) break;
         if (!r.advanced || r.through === r.head - 128) await pause(tipPollMs);
       } catch (e) {
+        if (stop.signal.aborted) break;
         throwIfRateLimitExhausted(e);
+        // A rejected token cannot recover by retrying.
+        if (e instanceof HyperSyncUnauthorized) throw e;
         goodCycles = 0;
         const smaller = smallerRecentBatch(e, batchBlocks);
         if (smaller < batchBlocks) {
@@ -128,12 +200,14 @@ async function main() {
         console.error(
           JSON.stringify({
             event: "recent_batch_failed",
+            source: source.source,
             failures,
             nextBatchBlocks: batchBlocks,
-            error: safeError(e),
+            error: client ? recentHyperSyncSafeError(e) : safeError(e),
             ...errorDetails(e),
             httpRequests: rpc.requests,
             rpcCalls: rpc.calls,
+            ...hypersync(),
           }),
         );
         if (mode === "once" || failures >= 5) throw e;
@@ -149,7 +223,10 @@ main().catch((e) => {
   console.error(
     JSON.stringify({
       event: "recent_failed",
-      error: safeError(e),
+      error:
+        process.env.RECENT_SOURCE === "hypersync"
+          ? recentHyperSyncSafeError(e)
+          : safeError(e),
       ...errorDetails(e),
     }),
   );

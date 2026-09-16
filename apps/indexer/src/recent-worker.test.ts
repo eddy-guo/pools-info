@@ -335,3 +335,263 @@ test("recent work splits only bounded size failures without skipping or retrying
   ])
     assert.equal(smallerRecentBatch(Error(error), 1000), 1000);
 });
+
+import {
+  HyperSyncClient,
+  HyperSyncPacer,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  instantDeployments,
+} from "@pools/chain";
+import { FakeHyperSync, fakeLaunch, fakeSwap } from "@pools/chain/testing";
+import { runRecentHyperSyncCycle } from "./recent-worker";
+test(
+  "HyperSync source: a 10,000-block gap fills in paced 2,000-block batches, the tip pays no receipt, header or log call to JSON-RPC, launches register before their swaps, and a reorg inside the saved window rewinds both lanes and replays",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const db = createClient(process.env.TEST_DATABASE_URL!);
+    await db.connect();
+    const schema = `worker_hs_${randomUUID().replaceAll("-", "")}`;
+    await db.query(`CREATE SCHEMA "${schema}"`);
+    await db.query(`SET search_path TO "${schema}"`);
+    t.after(async () => {
+      await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await db.end();
+    });
+    await migrate(db);
+    const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
+    const base = instantDeployments[0].deployedAtBlock + 1000;
+    const initiator = `0x${"2".repeat(40)}`,
+      creator = `0x${"3".repeat(40)}`;
+    const first = fakeLaunch({
+      block: base + 5,
+      token: `0x${"1".repeat(40)}`,
+      sender: creator,
+      transactionHash: word(9001),
+    });
+    const swap = (block: number, logIndex: number, poolId: string) =>
+      fakeSwap({ block, logIndex, poolId, from: initiator });
+    // The confirmed tip starts 10,000 blocks after the stream's start.
+    const fake = new FakeHyperSync({
+      height: base + 9999 + 128,
+      logs: [
+        ...first.logs,
+        swap(base + 6, 0, first.poolId),
+        swap(base + 6, 1, word(7)), // not a Pools market
+        swap(base + 4100, 0, first.poolId),
+        swap(base + 9999, 0, first.poolId),
+      ],
+    });
+    // Each request's scheduled start (the shared pacer has already moved one
+    // interval past it when the request leaves) and its actual send time,
+    // across every cycle, to prove the spacing spans cycles.
+    const minIntervalMs = 20;
+    const pacer = new HyperSyncPacer();
+    const sent: { scheduled: number; at: number }[] = [];
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      sent.push({
+        scheduled: pacer.nextRequestAt - minIntervalMs,
+        at: Date.now(),
+      });
+      return fake.fetch(input, init);
+    };
+    /** JSON-RPC calls by method; only a launch's name and symbol are served. */
+    function rpc(counts: Counts) {
+      const r = new Rpc();
+      const count = (m: string, n = 1) => (counts[m] = (counts[m] ?? 0) + n);
+      r.call = async <T>(m: string) => {
+        count(m);
+        if (m === "eth_chainId") return hex(4663) as T;
+        throw Error(`Unexpected JSON-RPC ${m}`);
+      };
+      r.logs = async () => {
+        count("eth_getLogs");
+        throw Error("Unexpected JSON-RPC eth_getLogs");
+      };
+      r.batch = async <T>(m: string, ps: unknown[][]) => {
+        count(m, ps.length);
+        if (m !== "eth_call") throw Error(`Unexpected JSON-RPC ${m}`);
+        return ps.map((p) =>
+          encodeAggregateReply(
+            decodeAggregateRequest((p[0] as { data: Hex }).data).map(
+              (member, i) => ({
+                success: true,
+                returnData: encodeAbiParameters(
+                  [{ type: "string" }],
+                  [i % 2 ? "SYM" : "Name"],
+                ),
+              }),
+            ),
+          ),
+        ) as T[];
+      };
+      return r;
+    }
+    const hex = (n: number): Hex => `0x${n.toString(16)}`;
+    async function cycle() {
+      const counts: Counts = {};
+      const client = new HyperSyncClient({
+        token: "x".repeat(16),
+        fetch,
+        pacer,
+        minIntervalMs,
+        maxRequests: 300,
+      });
+      const result = await runRecentHyperSyncCycle(db, client, rpc(counts), {
+        bootstrapBlocks: 10000,
+        batchBlocks: 2000,
+        maxPages: 4,
+      });
+      return { result, counts, requests: client.requests };
+    }
+    const receiptOrHeader = (counts: Counts) =>
+      (counts.eth_getTransactionReceipt ?? 0) +
+      (counts.eth_getBlockReceipts ?? 0) +
+      (counts.eth_getBlockByNumber ?? 0) +
+      (counts.eth_getLogs ?? 0) +
+      (counts.eth_blockNumber ?? 0);
+
+    // Gap fill: five full batches, one page each, back to back.
+    const fill = [];
+    do fill.push(await cycle());
+    while (fill.at(-1)!.result.through !== base + 9999);
+    assert.deepEqual(
+      fill.map((c) => [c.result.through, c.result.advanced, c.result.pages]),
+      [
+        [base + 1999, 2000, 1],
+        [base + 3999, 2000, 1],
+        [base + 5999, 2000, 1],
+        [base + 7999, 2000, 1],
+        [base + 9999, 2000, 1],
+      ],
+    );
+    // Height, head header, one page; then also the shared cursor's header.
+    assert.deepEqual(
+      fill.map((c) => c.requests),
+      [3, 4, 4, 4, 4],
+    );
+    for (const c of fill) assert.equal(receiptOrHeader(c.counts), 0);
+    // The launch batch reads name and symbol in one aggregate; no other cycle
+    // reaches the JSON-RPC provider at all.
+    assert.deepEqual(fill[0].counts, { eth_chainId: 1, eth_call: 1 });
+    for (const c of fill.slice(1)) assert.deepEqual(c.counts, {});
+    for (const [i, request] of sent.entries()) {
+      assert.ok(request.at >= request.scheduled - 1, `request ${i} left early`);
+      if (i)
+        assert.ok(
+          request.scheduled - sent[i - 1].scheduled >= minIntervalMs,
+          `request ${i} was scheduled too soon after the previous one`,
+        );
+    }
+    assert.equal(fill[0].result.pools, 1);
+    assert.deepEqual(
+      (
+        await db.query(
+          "SELECT stream_key,count(*)::int AS batches,min(source) AS source,max(source) AS last FROM recent_batches GROUP BY stream_key ORDER BY stream_key",
+        )
+      ).rows,
+      [
+        {
+          stream_key: "discovery",
+          batches: 5,
+          source: "recent:hypersync:v1",
+          last: "recent:hypersync:v1",
+        },
+        {
+          stream_key: "swaps",
+          batches: 5,
+          source: "recent:hypersync:v1",
+          last: "recent:hypersync:v1",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await db.query(
+          "SELECT block_number::int AS block,transaction_sender,side,eth_wei FROM recent_swaps ORDER BY block_number",
+        )
+      ).rows,
+      [base + 6, base + 4100, base + 9999].map((block) => ({
+        block,
+        transaction_sender: initiator,
+        side: "buy",
+        eth_wei: "10",
+      })),
+    );
+    const firstSwaps = (
+      await db.query(
+        "SELECT observed_swaps,unregistered_swaps FROM recent_batches WHERE stream_key='swaps' ORDER BY to_block LIMIT 1",
+      )
+    ).rows[0];
+    assert.deepEqual(firstSwaps, { observed_swaps: 2, unregistered_swaps: 1 });
+
+    // At the confirmed tip: height, head header and the cursor, nothing else.
+    const idle = await cycle();
+    assert.equal(idle.result.advanced, 0);
+    assert.equal(idle.requests, 3);
+    assert.deepEqual(idle.counts, {});
+
+    // The tip moves 300 blocks with a new launch and a swap in its pool in the
+    // same range: the launch commits first, so the swap is registered.
+    const second = fakeLaunch({
+      block: base + 10100,
+      token: `0x${"4".repeat(40)}`,
+      sender: creator,
+      transactionHash: word(9002),
+    });
+    fake.logs.push(
+      ...second.logs,
+      swap(base + 10150, 0, second.poolId),
+      swap(base + 10200, 0, first.poolId),
+    );
+    fake.height += 300;
+    const tip = await cycle();
+    assert.equal(tip.result.through, base + 10299);
+    assert.equal(tip.result.swaps, 2);
+    assert.equal(tip.result.pools, 1);
+    assert.deepEqual(tip.counts, { eth_chainId: 1, eth_call: 1 });
+    assert.equal(tip.requests, 4);
+    const quiet = await (async () => {
+      fake.height += 300;
+      return cycle();
+    })();
+    assert.equal(quiet.result.through, base + 10599);
+    assert.deepEqual(quiet.counts, {});
+
+    // History ahead of the fork: a swap at base + 10700 commits normally.
+    const old = fake.logs.push(swap(base + 10700, 0, second.poolId)) - 1;
+    fake.height += 300;
+    await cycle();
+    assert.equal((await recentStream(db, "swaps")).cursor, base + 10899);
+    // A reorg from base + 10650 replaces that transaction. The saved cursor
+    // (base + 10899) no longer matches, the newest matching checkpoint is
+    // base + 10599, both lanes rewind to it and the same cycle recollects.
+    fake.reorgFrom = base + 10650;
+    fake.logs[old] = { ...fake.logs[old], transactionHash: word(424242) };
+    const rewound = await cycle();
+    assert.equal(rewound.result.through, base + 10899);
+    assert.equal((await recentStream(db, "discovery")).cursor, base + 10899);
+    // Height, head, the cursor (also the newest checkpoint), checkpoint
+    // base + 10599, then one page.
+    assert.equal(rewound.requests, 5);
+    assert.deepEqual(rewound.counts, {});
+    const rows = (
+      await db.query(
+        "SELECT block_number::int AS block,tx_hash,block_hash FROM recent_swaps WHERE block_number>=$1 ORDER BY block_number",
+        [base + 10600],
+      )
+    ).rows;
+    assert.deepEqual(rows, [
+      {
+        block: base + 10700,
+        tx_hash: word(424242),
+        block_hash: fake.hashOf(base + 10700),
+      },
+    ]);
+    assert.notEqual(fake.hashOf(base + 10700), word(base + 10700));
+    assert.equal(
+      (await recentStream(db, "swaps")).hash,
+      fake.hashOf(base + 10899),
+    );
+  },
+);

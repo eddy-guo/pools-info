@@ -1,4 +1,12 @@
 import { createHash } from "node:crypto";
+import {
+  hypersyncRecentStream,
+  isHyperSyncRecentEvidence,
+  verifyHyperSyncRecentLaunches,
+  verifyHyperSyncRecentSwaps,
+  type HyperSyncRecentLaunchEvidence,
+  type HyperSyncRecentSwapEvidence,
+} from "@pools/chain";
 import type { Client, PoolRecord } from "./index";
 export interface RecentStream {
   key: "discovery" | "swaps";
@@ -22,6 +30,15 @@ export interface RecentEvent {
   tokenRaw: string;
   side: "buy" | "sell";
 }
+/** Evidence provenance of a recent batch (migration 016). The JSON-RPC
+ * collector retains logs, receipts and headers; the HyperSync collector
+ * retains logs, transactions and blocks. Same rows, same stream. */
+export const recentBatchSources = Object.freeze({
+  rpc: "recent:rpc:v1",
+  hypersync: hypersyncRecentStream,
+} as const);
+export type RecentBatchSource =
+  (typeof recentBatchSources)[keyof typeof recentBatchSources];
 export interface RecentBatch {
   from: number;
   to: number;
@@ -29,6 +46,8 @@ export interface RecentBatch {
   parentHash: string;
   timestamp: number;
   evidence: unknown;
+  /** Omitted means the JSON-RPC collector, as for every batch before 016. */
+  source?: RecentBatchSource;
   pools?: PoolRecord[];
   events?: RecentEvent[];
   observedSwaps?: number;
@@ -185,7 +204,9 @@ export async function commitRecentBatch(
       b.observedSwaps ?? 0,
       b.unregisteredSwaps ?? 0,
       b.unsupportedSwaps ?? 0,
-    ].some((n) => !integer(n))
+    ].some((n) => !integer(n)) ||
+    (b.source !== undefined &&
+      !Object.values(recentBatchSources).includes(b.source))
   )
     throw Error("Invalid recent batch");
   if (
@@ -193,6 +214,21 @@ export async function commitRecentBatch(
     (expected.key === "swaps" && b.pools?.length)
   )
     throw Error("Invalid recent batch kind");
+  // The label and the evidence variant must agree; a HyperSync batch is then
+  // re-derived from its retained rows before anything is written.
+  const hypersync = b.source === recentBatchSources.hypersync;
+  if (hypersync !== isHyperSyncRecentEvidence(b.evidence))
+    throw Error("Invalid recent batch");
+  if (hypersync && expected.key === "discovery")
+    verifyHyperSyncRecentLaunches({
+      fromBlock: b.from,
+      toBlock: b.to,
+      blockHash: b.hash,
+      fromBlockParentHash: b.parentHash,
+      toTimestamp: b.timestamp,
+      pools: b.pools ?? [],
+      evidence: b.evidence as HyperSyncRecentLaunchEvidence,
+    });
   // ABI decoders can return checksummed addresses. Persist a canonical identity
   // just like the historical writer, without altering the original evidence.
   if (b.pools)
@@ -300,9 +336,41 @@ export async function commitRecentBatch(
       if (!p || p.token !== e.token || p.launchBlock > e.block)
         throw Error("Unregistered recent pool");
     }
+    if (hypersync && s.key === "swaps") {
+      // Resolve every observed id, registered and unregistered alike, against
+      // the registry this transaction sees: a registered pool counted as
+      // unregistered, or a row the retained logs do not support, is refused.
+      const evidence = b.evidence as HyperSyncRecentSwapEvidence;
+      const observed = [
+        ...new Set([
+          ...(Array.isArray(evidence.logs) ? evidence.logs : []).map((l) =>
+            String(l.topic1).toLowerCase(),
+          ),
+          ...(Array.isArray(evidence.unregistered?.poolIds)
+            ? evidence.unregistered.poolIds
+            : []),
+        ]),
+      ];
+      if (observed.some((id) => !hash(id))) throw Error("Invalid recent batch");
+      verifyHyperSyncRecentSwaps(
+        {
+          fromBlock: b.from,
+          toBlock: b.to,
+          blockHash: b.hash,
+          fromBlockParentHash: b.parentHash,
+          toTimestamp: b.timestamp,
+          events: b.events ?? [],
+          observedSwaps: b.observedSwaps ?? 0,
+          unregisteredSwaps: b.unregisteredSwaps ?? 0,
+          unsupportedSwaps: b.unsupportedSwaps ?? 0,
+          evidence,
+        },
+        await knownRecentPools(db, observed),
+      );
+    }
     await db.query(
-      `INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence,observed_swaps,unregistered_swaps,unsupported_swaps)
-      VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      `INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence,observed_swaps,unregistered_swaps,unsupported_swaps,source)
+      VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         s.key,
         b.from,
@@ -314,6 +382,7 @@ export async function commitRecentBatch(
         b.observedSwaps ?? 0,
         b.unregisteredSwaps ?? 0,
         b.unsupportedSwaps ?? 0,
+        b.source ?? recentBatchSources.rpc,
       ],
     );
     for (const p of b.pools ?? [])

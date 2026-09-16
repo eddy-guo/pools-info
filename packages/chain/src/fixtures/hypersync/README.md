@@ -35,3 +35,21 @@ Two further live observations were not kept as fixtures because of size:
 - Selection size: 62,265 pool ids in one topics[1] list (4,296,814-byte body)
   were rejected with HTTP 413 `request body exceeds 2097152 bytes`; 10,000 ids
   (690,529 bytes) were accepted and returned the same 5 logs as the 4-id query.
+
+## Tip fixtures (2026-09-16, 09:53 UTC)
+
+Recorded the same way for the live worker's HyperSync source
+(`docs/HYPERSYNC-TIP.md`), at the confirmed tip, with the height at 64,416,467:
+
+| Fixture                                          | HTTP |  Time |  Bytes | Logs / transactions / blocks | next_block | archive_height |
+| ------------------------------------------------ | ---: | ----: | -----: | ---------------------------- | ---------: | -------------: |
+| recent-tip (64,413,742 to 64,413,766, 25 blocks) |  200 | 65 ms | 74,132 | 60 / 42 / 25                 | 64,413,767 |     64,416,556 |
+| header-tip (the head block, include_all_blocks)  |  200 |     - |    562 | 0 / 0 / 1                    | 64,416,468 |     64,416,515 |
+
+- `recent-tip` is `recentLogQuery`'s body: manager swaps, strategy launches with
+  factory metadata, and the launchers' logs, with `include_all_blocks`. It holds
+  55 manager swaps over 37 pools and the launch at 64,413,754 with its metadata
+  and three launcher logs; all 25 blocks come back with the logs, including
+  blocks without a selected log.
+- `rollback_guard` is null on the tip page (2,800 blocks below the archive
+  height) and present on the head block's header response.

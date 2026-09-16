@@ -1,4 +1,8 @@
+import { encodeAbiParameters, keccak256, toEventSelector } from "viem";
 import type { HyperSyncQuery } from "./hypersync";
+import { contracts, launchEvent, swapEvent } from "./events";
+import { instantDeployments } from "./deployments";
+import { tokenMetadataEvent, tokenMetadataFactory } from "./token-metadata";
 
 /** In-memory stand-in for the HyperSync JSON API, shaped exactly like the
  * responses recorded under fixtures/hypersync: `data` is an array of chunks,
@@ -36,6 +40,107 @@ export interface FakeHyperSyncOptions {
 }
 export const word = (n: number): `0x${string}` =>
   `0x${n.toString(16).padStart(64, "0")}`;
+/** One verified instant launch as the chain emits it in one transaction: the
+ * launcher's log, the factory's metadata and the strategy's TokenLaunched. */
+export function fakeLaunch(options: {
+  block: number;
+  token: string;
+  sender: string;
+  transactionHash: string;
+  metadata?: { description: string; website: string; image: string };
+}) {
+  const deployment = instantDeployments[0];
+  const zero = "0x0000000000000000000000000000000000000000";
+  const key = encodeAbiParameters(
+    [
+      { type: "address" },
+      { type: "address" },
+      { type: "uint24" },
+      { type: "int24" },
+      { type: "address" },
+    ],
+    [
+      zero,
+      options.token as `0x${string}`,
+      deployment.fee,
+      deployment.tickSpacing,
+      zero,
+    ],
+  );
+  const poolId = keccak256(key);
+  const shared = {
+    block: options.block,
+    transactionHash: options.transactionHash,
+    from: options.sender,
+  };
+  const logs: FakeHyperSyncLog[] = [
+    {
+      ...shared,
+      logIndex: 0,
+      address: deployment.launcher,
+      topics: [word(1)],
+      data: "0x",
+    },
+    ...(options.metadata
+      ? [
+          {
+            ...shared,
+            logIndex: 1,
+            address: tokenMetadataFactory,
+            topics: [toEventSelector(tokenMetadataEvent)],
+            data: encodeAbiParameters(tokenMetadataEvent.inputs, [
+              options.token as `0x${string}`,
+              { ...options.metadata, extraData: "0x" },
+            ]),
+          },
+        ]
+      : []),
+    {
+      ...shared,
+      logIndex: 2,
+      address: deployment.strategy,
+      topics: [
+        toEventSelector(launchEvent),
+        poolId,
+        `0x${options.token.slice(2).padStart(64, "0")}`,
+        `0x${deployment.feeSplitter.slice(2).padStart(64, "0")}`,
+      ],
+      data: key,
+    },
+  ];
+  return { poolId, logs, deployment };
+}
+/** One PoolManager swap; amounts are the caller's BalanceDelta legs. */
+export function fakeSwap(options: {
+  block: number;
+  logIndex: number;
+  poolId: string;
+  from: string;
+  amounts?: [bigint, bigint];
+  transactionHash?: string;
+}): FakeHyperSyncLog {
+  const [amount0, amount1] = options.amounts ?? [-10n, 200n];
+  return {
+    block: options.block,
+    logIndex: options.logIndex,
+    transactionHash:
+      options.transactionHash ?? word(options.block * 100 + options.logIndex),
+    address: contracts.manager,
+    topics: [toEventSelector(swapEvent), options.poolId, word(4)],
+    data: encodeAbiParameters(
+      [
+        { type: "int128" },
+        { type: "int128" },
+        { type: "uint160" },
+        { type: "uint128" },
+        { type: "int24" },
+        { type: "uint24" },
+      ],
+      [amount0, amount1, 1n << 96n, 1n, 0, 2500],
+    ),
+    from: options.from,
+  };
+}
 export class FakeHyperSync {
   requests: FakeHyperSyncRequest[] = [];
   height: number;
