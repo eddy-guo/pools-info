@@ -4080,12 +4080,17 @@ main {
   line-height: 1.75;
 }
 .empty-symbol {
+  /* The fixed 46px box replaces the base padding, which would otherwise leave
+     a 16px content box for a 25px icon and push it out of the square. */
   background: #14141a;
   border: 1px solid var(--color-line-strong);
   color: var(--ac);
   border-radius: 12px;
   width: 46px;
   height: 46px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
 }
 .live-controls {
   padding: 14px 16px;
@@ -4914,6 +4919,26 @@ main {
 .leaderboard-panel .data-table td:nth-child(n + 6) .negative {
   color: inherit;
 }
+/* A view that resolves to no rows keeps its reserved table geometry, so nothing
+   below the panel moves; the empty state overlays the top of that area, under
+   the header row, instead of rendering a screen and a half further down. */
+.table-region {
+  position: relative;
+}
+.table-region > .empty-state {
+  position: absolute;
+  inset: 44px 0 auto;
+}
+.table-region[data-empty="true"] tbody,
+.table-region[data-empty="true"] .mobile-pool {
+  visibility: hidden;
+}
+/* Collapsed borders are painted by the table rather than the row group, so
+   hiding the rows leaves their rules behind; clear the colour and keep the
+   width so the reserved height is unchanged. */
+.table-region[data-empty="true"] tbody td {
+  border-color: transparent;
+}
 .explore-page .desktop-pools {
   min-height: calc(25 * 62px + 44px);
 }
@@ -5447,6 +5472,10 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .mobile-trader {
     height: 268px;
     overflow: auto;
+  }
+  /* Mobile pools are cards with no header row, so the message starts flush. */
+  .explore-page .table-region > .empty-state {
+    inset: 0 0 auto;
   }
   .explore-page .mobile-pools {
     min-height: calc(25 * 192px);
