@@ -123,8 +123,8 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       url: `/wallet/${topWallet}/`,
       api: `wallets/${topWallet}`,
       label: "Loading wallet analytics",
-      skeleton: ".product-coverage[aria-busy=true]",
-      loaded: "Positions across covered pools",
+      skeleton: ".wallet-top-pools[aria-busy=true]",
+      loaded: "Positions by pool",
     },
     {
       url: "/traders/?window=All",
@@ -151,9 +151,7 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
     await expect(skeleton.first()).toBeVisible();
     await expect(
       page
-        .getByText("No supported realized history in this window.", {
-          exact: true,
-        })
+        .getByText("No realized PnL in this window.", { exact: true })
         .filter({ visible: true }),
     ).toHaveCount(0);
     await page.screenshot({

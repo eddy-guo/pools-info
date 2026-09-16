@@ -18,14 +18,7 @@ import {
   explorer,
 } from "./live-ui";
 import { AddressLabel, Avatar, Change, Chart } from "./ui";
-import { FeaturePreview, TradingPreviewPanels } from "./feature-preview";
-import { PendingValue, ProductCoverage } from "./product-common";
-import { AccountingBadge } from "./accounting-badge";
-import {
-  accountingExplanation,
-  accountingLabel,
-  hasInitiatorModel,
-} from "@/lib/accounting-evidence";
+import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import styles from "./detail-design.module.css";
 export function ProductWallet({ address }: { address: string }) {
@@ -46,6 +39,10 @@ export function ProductWallet({ address }: { address: string }) {
   }, [card]);
   const w = data?.wallet,
     cardUrl = `/cards/${address.toLowerCase()}.png?window=${period}`;
+  const topPools = (data?.positions ?? [])
+    .slice()
+    .sort((a, b) => (BigInt(b.volumeWei) > BigInt(a.volumeWei) ? 1 : -1))
+    .slice(0, 5);
   const pct = (n: number | null | undefined) =>
     n == null ? <Unavailable /> : <span>{n.toFixed(1)}%</span>;
   return (
@@ -68,23 +65,19 @@ export function ProductWallet({ address }: { address: string }) {
                     ? "UNRANKED"
                     : "RANK PENDING"}
               </span>
-              <span className="wallet-accounting-slot">
-                {w ? (
-                  <AccountingBadge wallet={w} />
-                ) : (
-                  <span className="evidence-badge" data-pending="true">
-                    Accounting pending
-                  </span>
-                )}
-              </span>
             </div>
             <AddressLabel address={address} full />
-            <div className={styles.meta}>
-              Public wallet · no account required
-            </div>
           </div>
         </div>
         <div className={styles.actions}>
+          <button
+            className="button"
+            aria-expanded={showSignals}
+            aria-controls="wallet-signals"
+            onClick={() => setShowSignals(!showSignals)}
+          >
+            {showSignals ? "Hide copy signals" : "View copy signals"}
+          </button>
           <FollowButton address={address} />
           <a
             className="button secondary"
@@ -103,21 +96,11 @@ export function ProductWallet({ address }: { address: string }) {
           >
             Share PnL card
           </button>
-          <FeaturePreview feature="profile">Edit profile</FeaturePreview>
-          <button
-            className="button"
-            aria-expanded={showSignals}
-            aria-controls="wallet-signals"
-            onClick={() => setShowSignals(!showSignals)}
-          >
-            {showSignals ? "Hide copy signals" : "View copy signals"}
-          </button>
         </div>
       </div>
       {showSignals && (
         <FollowActivity addresses={[address.toLowerCase()]} mode="wallet" />
       )}
-      <ProductCoverage coverage={data?.coverage} delivery={data?.delivery} />
       <div className="live-controls">
         <WindowTabs value={period} onChange={setWindow} />
         <button
@@ -143,19 +126,11 @@ export function ProductWallet({ address }: { address: string }) {
           <Stat
             pending={loading && !data}
             label="Realized PnL"
-            note={
-              w
-                ? `${accountingLabel(w)} · before gas`
-                : "Saved positions · before gas"
-            }
+            note="Before gas"
           >
             <Eth pending={!data} wei={w?.realizedWei} signed />
           </Stat>
-          <Stat
-            pending={loading && !data}
-            label="Unrealized PnL"
-            note="Transfer-verified positions only"
-          >
+          <Stat pending={loading && !data} label="Unrealized PnL">
             <Eth pending={!data} wei={w?.unrealizedWei} signed />
           </Stat>
           <Stat
@@ -189,19 +164,6 @@ export function ProductWallet({ address }: { address: string }) {
             <Eth pending={!data} wei={w?.bestWei} signed />
           </Stat>
         </div>
-        <p className="page-intro-note wallet-summary-note">
-          <PendingValue pending={!data}>
-            {w && (
-              <>
-                {w.tier3PositionCount ?? w.supportedPositionCount}{" "}
-                transfer-verified positions · {w.tier2PositionCount ?? 0}{" "}
-                swap-based positions · {w.excludedPositionCount} excluded.{" "}
-                {accountingExplanation(w)} Unknown cost basis is never assigned
-                zero cost.
-              </>
-            )}
-          </PendingValue>
-        </p>
         <div className="workspace-grid">
           <div>
             <section className="panel">
@@ -216,17 +178,6 @@ export function ProductWallet({ address }: { address: string }) {
                   label="Cumulative realized PnL"
                 />
               </div>
-              <p className="panel-footnote wallet-curve-note">
-                {data?.curveSampled ? (
-                  <>
-                    Chart points are sampled for readability. PnL totals include
-                    all eligible sales in this window, including their earlier
-                    purchase basis.
-                  </>
-                ) : (
-                  "\u00a0"
-                )}
-              </p>
             </section>
             <section className="panel live-section">
               <div
@@ -248,7 +199,7 @@ export function ProductWallet({ address }: { address: string }) {
               {tab === "Positions" && (
                 <>
                   <div className="panel-heading">
-                    <h2>Positions across covered pools</h2>
+                    <h2>Positions by pool</h2>
                   </div>
                   <div
                     className="table-scroll wallet-list-region"
@@ -263,7 +214,6 @@ export function ProductWallet({ address }: { address: string }) {
                           <th>Cost</th>
                           <th>Realized</th>
                           <th>Unrealized</th>
-                          <th>Coverage</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -326,36 +276,6 @@ export function ProductWallet({ address }: { address: string }) {
                                 signed
                               />
                             </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>
-                                  {p.accountingTier === "tier2"
-                                    ? "Swap-based estimate"
-                                    : p.supported
-                                      ? "Transfer-verified"
-                                      : "History incomplete"}
-                                  {!!p.flags.length && (
-                                    <small className="cell-sub">
-                                      {p.flags.join(", ")}
-                                    </small>
-                                  )}
-                                  {p.modeledPosition && (
-                                    <small className="cell-sub">
-                                      Observed swap book:{" "}
-                                      {p.modeledPosition.quantity} raw token
-                                      units; not a verified wallet balance.
-                                    </small>
-                                  )}
-                                  <small className="cell-sub">
-                                    {utc(p.asOf)}
-                                  </small>
-                                </>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -363,14 +283,12 @@ export function ProductWallet({ address }: { address: string }) {
                   </div>
                   {data && !data.positions.length && (
                     <div className="empty-state">
-                      No saved positions for this wallet. This does not imply
-                      inactivity outside coverage.
+                      No positions in this window.
                     </div>
                   )}
                   {data?.positionsTruncated && (
                     <p className="panel-footnote">
-                      Showing {data.positions.length} positions. Summary metrics
-                      include all saved positions.
+                      Showing the first {data.positions.length} positions.
                     </p>
                   )}
                 </>
@@ -378,7 +296,7 @@ export function ProductWallet({ address }: { address: string }) {
               {tab === "Trades" && (
                 <>
                   <div className="panel-heading">
-                    <h2>Observed trade history</h2>
+                    <h2>Trade history</h2>
                   </div>
                   <div
                     className="table-scroll wallet-list-region"
@@ -392,7 +310,6 @@ export function ProductWallet({ address }: { address: string }) {
                           <th>Pool</th>
                           <th>Side</th>
                           <th>ETH</th>
-                          <th>Attribution</th>
                           <th>Transaction</th>
                         </tr>
                       </thead>
@@ -414,11 +331,6 @@ export function ProductWallet({ address }: { address: string }) {
                               <Eth wei={e.trade.ethWei} />
                             </td>
                             <td>
-                              {e.flags.length
-                                ? e.flags.join(", ")
-                                : "Supported"}
-                            </td>
-                            <td>
                               <a
                                 href={`${explorer}/tx/${e.trade.txHash}`}
                                 target="_blank"
@@ -434,8 +346,7 @@ export function ProductWallet({ address }: { address: string }) {
                   </div>
                   {data?.tradesTruncated && (
                     <p className="panel-footnote">
-                      Showing a bounded trade list. Aggregate metrics use the
-                      full saved histories.
+                      Showing the latest {data.trades.length} trades.
                     </p>
                   )}
                 </>
@@ -443,10 +354,7 @@ export function ProductWallet({ address }: { address: string }) {
               {tab === "Launches" && (
                 <>
                   <div className="panel-heading">
-                    <h2>
-                      Launches · {data?.launches.length ?? 0}{" "}
-                      {data?.launchesTruncated ? "shown" : "covered"}
-                    </h2>
+                    <h2>Launches · {data?.launches.length ?? 0}</h2>
                   </div>
                   <div
                     className="table-scroll wallet-list-region"
@@ -486,56 +394,61 @@ export function ProductWallet({ address }: { address: string }) {
                   </div>
                   {data?.launchesTruncated && (
                     <p className="panel-footnote">
-                      Showing the latest {data.launches.length} launches. Search
-                      can find older launches in the saved catalog.
+                      Showing the latest {data.launches.length} launches.
                     </p>
                   )}
-                  <p className="panel-footnote">
-                    Grouped by launch transaction sender. This does not
-                    independently verify creator identity.
-                  </p>
                 </>
               )}
             </section>
           </div>
           <aside className="market-sidebar">
-            <TradingPreviewPanels />
             <section className="panel">
               <div className="panel-heading">
-                <h2>Profile coverage</h2>
+                <h2>Most traded pools</h2>
               </div>
-              <dl className="live-facts">
-                <div>
-                  <dt>Transfer-verified positions</dt>
-                  <dd>{w?.supportedPositionCount ?? <Unavailable />}</dd>
-                </div>
-                <div>
-                  <dt>Swap-based positions</dt>
-                  <dd>{w?.tier2PositionCount ?? 0}</dd>
-                </div>
-                <div>
-                  <dt>Excluded positions</dt>
-                  <dd>{w?.excludedPositionCount ?? <Unavailable />}</dd>
-                </div>
-                <div>
-                  <dt>Saved wallet cutoff</dt>
-                  <dd>{w?.asOf ? utc(w.asOf) : <Unavailable />}</dd>
-                </div>
-                <div>
-                  <dt>Oldest position cutoff</dt>
-                  <dd>{w?.oldestAsOf ? utc(w.oldestAsOf) : <Unavailable />}</dd>
-                </div>
-                <div>
-                  <dt>Last observed trade</dt>
-                  <dd>{w?.last ? utc(w.last) : <Unavailable />}</dd>
-                </div>
-              </dl>
-              <p className="panel-footnote">
-                {w && hasInitiatorModel(w)
-                  ? "Swap-based inventory is a model of observed buys and sells, not a verified wallet balance."
-                  : "Holdings are marked at each pool’s saved cutoff. Spot marks are not guaranteed exit proceeds."}
-              </p>
+              <div
+                className="wallet-top-pools"
+                aria-busy={!data || stale}
+                data-stale-rows={stale}
+              >
+                {!data &&
+                  Array.from({ length: 5 }, (_, index) => (
+                    <div
+                      className="wallet-top-pool"
+                      key={index}
+                      aria-hidden="true"
+                    >
+                      <span data-pending="true">Pool pending</span>
+                      <span className="number" data-pending="true">
+                        Pending
+                      </span>
+                    </div>
+                  ))}
+                {topPools.map((p) => (
+                  <Link
+                    className="wallet-top-pool"
+                    key={p.poolId}
+                    href={poolHref({ id: p.poolId, launchTx: p.launchTx })}
+                  >
+                    <span>
+                      <strong>{p.symbol}</strong>
+                      <small>
+                        <Eth wei={p.volumeWei} /> traded
+                      </small>
+                    </span>
+                    <Eth wei={p.realizedWei} signed />
+                  </Link>
+                ))}
+                {data && !topPools.length && (
+                  <p className="panel-footnote">
+                    No pool activity in this window.
+                  </p>
+                )}
+              </div>
             </section>
+            <ComingSoonRow
+              items={["Copy trading", "Alerts", "Profile editing"]}
+            />
           </aside>
         </div>
       </>
