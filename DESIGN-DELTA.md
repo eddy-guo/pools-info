@@ -92,6 +92,13 @@ that row into the page, and hydration cannot read it, so a direct URL always
 reserves the chart). A pool whose detail the read API does not publish keeps
 whichever height it painted with.
 
+Under 768px the pool heading stacks into one column that never wraps, and its
+slots are sized for a 390px phone: the title holds two rows (the name beside
+its fixed-width symbol, then the launch mode and evidence badges), the address
+slot holds the short address at the 44px control height (the full one is in
+the DOM for wider layouts), and the launch meta holds two lines; the heading
+is the sum of those, the avatar and the two-row action grid.
+
 Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
 (`screener-before-desktop.png` / `screener-after-desktop.png`, and mobile peers).
 They use the same real preloaded fixture with chain refresh disabled. Current

@@ -150,3 +150,175 @@ test("a pool opened by URL alone states plain unavailable values", async ({
   await expect(page.locator("body")).not.toContainText(explanations);
   await expect(page.getByText("Price chart unavailable")).toBeVisible();
 });
+
+/* The header at the product viewports. The phone is the 390px the design's
+   mobile frames use, narrower than the mobile project's device. */
+const viewports = {
+  desktop: { width: 1440, height: 1000 },
+  mobile: { width: 390, height: 844 },
+} as const;
+type Project = keyof typeof viewports;
+
+async function trackShifts(page: Page) {
+  await page.addInitScript(() => {
+    const state = { cls: 0 };
+    Object.assign(window, { poolHeaderShifts: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+}
+/** Shift entries arrive after the frame that moved, so two frames settle first. */
+const shifts = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<number>((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            resolve(
+              (window as unknown as { poolHeaderShifts: { cls: number } })
+                .poolHeaderShifts.cls,
+            ),
+          ),
+        ),
+      ),
+  );
+const resetShifts = (page: Page) =>
+  page.evaluate(() => {
+    (
+      window as unknown as { poolHeaderShifts: { cls: number } }
+    ).poolHeaderShifts.cls = 0;
+  });
+
+/** Nothing scrolls sideways, every control is on screen, each reserved slot
+    holds its content, the badges share the name's row on desktop and wrap
+    under it on the phone, and the address shows the form that fits. */
+async function expectHeaderFits(page: Page, token: string, project: Project) {
+  const { width } = viewports[project];
+  const header = await page.evaluate(() => {
+    const rect = (node: Element) => node.getBoundingClientRect().toJSON();
+    const slot = (selector: string) => {
+      const node = document.querySelector(selector)!;
+      return {
+        selector,
+        fits:
+          node.scrollWidth <= node.clientWidth &&
+          node.scrollHeight <= node.clientHeight,
+      };
+    };
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      controls: [
+        ...document.querySelectorAll(".page-heading a, .page-heading button"),
+      ].map(rect),
+      name: rect(document.querySelector(".pool-identity-title h1")!),
+      /* The launch mode and the evidence badge follow the symbol. */
+      badges: [...document.querySelectorAll(".pool-identity-title > span")]
+        .slice(1)
+        .map(rect),
+      slots: [
+        ".pool-identity-title",
+        ".pool-address-slot",
+        ".pool-launch-meta",
+      ].map(slot),
+    };
+  });
+  expect(header.scrollWidth, "the page is the viewport's width").toBe(width);
+  expect(header.controls.length).toBeGreaterThanOrEqual(5);
+  for (const control of header.controls) {
+    expect(control.left, "control inside the viewport").toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(control.right, "control inside the viewport").toBeLessThanOrEqual(
+      width,
+    );
+  }
+  for (const slot of header.slots)
+    expect(slot.fits, `${slot.selector} holds its content`).toBe(true);
+  expect(header.badges).toHaveLength(2);
+  for (const badge of header.badges)
+    if (project === "desktop")
+      expect(badge.top, "badges share the name's row").toBeLessThan(
+        header.name.bottom,
+      );
+    else
+      expect(badge.top, "badges wrap under the name").toBeGreaterThanOrEqual(
+        header.name.bottom,
+      );
+  const address = page.locator(".pool-address-slot");
+  await expect(address.locator(".mono").filter({ visible: true })).toHaveText(
+    new RegExp(`^${project === "desktop" ? token : shortAddress(token)}$`, "i"),
+  );
+  await expect(
+    address.getByRole("button", { name: "Copy address" }),
+  ).toBeVisible();
+  await expect(
+    address.getByRole("link", { name: "Open address on explorer" }),
+  ).toBeVisible();
+}
+
+test.describe("the pool header fits the viewport", () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await page.setViewportSize(viewports[testInfo.project.name as Project]);
+    await trackShifts(page);
+  });
+
+  test("on a served pool", async ({ page }, testInfo) => {
+    await page.goto(`/pool/${measured.id}/`);
+    await expect(
+      page.getByRole("heading", { name: measured.name, exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+    await expectHeaderFits(
+      page,
+      measured.token,
+      testInfo.project.name as Project,
+    );
+    expect(await shifts(page), "layout shift").toBe(0);
+  });
+
+  test("on a measured row whose detail is unpublished", async ({
+    page,
+  }, testInfo) => {
+    await page.route("**/api/markets/**", (route) =>
+      route.fulfill({ status: 503, json: notPublished }),
+    );
+    const release = await withheldDetail(page, measured.id);
+    await openFromScreener(page, measured);
+    await resetShifts(page);
+    release();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
+    ).toBeVisible();
+    await expectHeaderFits(
+      page,
+      measured.token,
+      testInfo.project.name as Project,
+    );
+    expect(await shifts(page), "layout shift as the response lands").toBe(0);
+  });
+
+  test("on a launch-only row whose detail is unpublished", async ({
+    page,
+  }, testInfo) => {
+    const release = await withheldDetail(page, launchOnly.id);
+    await openFromScreener(page, launchOnly);
+    await resetShifts(page);
+    release();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
+    ).toBeVisible();
+    await expectHeaderFits(
+      page,
+      launchOnly.token,
+      testInfo.project.name as Project,
+    );
+    expect(await shifts(page), "layout shift as the response lands").toBe(0);
+  });
+});
