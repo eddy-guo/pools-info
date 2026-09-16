@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { RefreshCw } from "lucide-react";
 import {
   poolWindow,
   shortAddress,
@@ -48,8 +49,6 @@ export function ObservedPoolDetail({
   loading,
   pending = false,
   chart = true,
-  published = true,
-  error,
 }: {
   id: string;
   pool?: NullableIdentity;
@@ -63,17 +62,10 @@ export function ObservedPoolDetail({
   pending?: boolean;
   /** A chart can still arrive, so its region holds that height from first paint. */
   chart?: boolean;
-  /** The read API answered for this pool; a failed market refresh has not. */
-  published?: boolean;
-  error?: string;
 }) {
   const [tab, setTab] = useState("Top traders");
-  /** Nothing about this pool is published, so the page states no evidence. */
-  const unpublished =
-    !published && !market && !accountedMarket && !publication;
   const candles =
     !!(accountedMarket && snapshot) || !!market?.history.candles.length;
-  const c = accountedMarket ? undefined : market?.coverage;
   const stat =
     accountedMarket && snapshot
       ? poolWindow(accountedMarket, snapshot, "24h")
@@ -153,20 +145,6 @@ export function ObservedPoolDetail({
                 {pool?.symbol ?? (pending ? "Pending" : <Unavailable />)}
               </span>
               <span className={styles.mode}>INSTANT</span>
-              <span
-                className="evidence-badge"
-                data-pending={pending && !unpublished}
-              >
-                {publication?.holders?.complete && audit
-                  ? "Verified history"
-                  : unpublished
-                    ? ""
-                    : pending
-                      ? "Evidence pending"
-                      : market || accountedMarket
-                        ? "Market evidence"
-                        : "Launch only"}
-              </span>
             </div>
             <div className="pool-address-slot">
               {pool?.token ? (
@@ -201,6 +179,15 @@ export function ObservedPoolDetail({
         </div>
         <div className={styles.actions}>
           <WatchButton id={id} />
+          <button
+            className="icon-button"
+            title="Refresh"
+            aria-label="Refresh"
+            onClick={refresh}
+            disabled={loading}
+          >
+            <RefreshCw size={14} />
+          </button>
           <a
             className="button secondary"
             href={pool?.token ? `${explorer}/token/${pool.token}` : undefined}
@@ -225,71 +212,9 @@ export function ObservedPoolDetail({
           </a>
         </div>
       </div>
-      <div className="live-controls">
-        <button
-          className="button secondary"
-          onClick={refresh}
-          disabled={loading}
-        >
-          Refresh pool data
-        </button>
-        <p className="pool-refresh-status" role="status">
-          {error
-            ? accountedMarket
-              ? "Refresh unavailable. The captured pool data remains visible."
-              : market
-                ? "Saved refresh is unavailable. Showing the last dated observation."
-                : "Pool data is unavailable."
-            : loading
-              ? "Loading saved market data"
-              : "Saved market data loaded"}
-        </p>
-      </div>
-      <p className="page-intro-note pool-coverage-note">
-        {/* A pool the read API does not publish says nothing here: its slot
-            keeps the height, and the page does not explain the absence. */}
-        <PendingValue pending={pending && !unpublished}>
-          {unpublished ? null : c?.cutoff ? (
-            <>
-              Observed market coverage: blocks {c.startBlock?.toLocaleString()}{" "}
-              to {c.cutoff.block.toLocaleString()} · {utc(c.cutoff.asOf)} ·
-              cutoff <span className="mono">{shortAddress(c.cutoff.hash)}</span>
-              . {c.completeWindow ? "Covered window" : "Incomplete window"}
-              .{" "}
-            </>
-          ) : snapshot && accountedMarket ? (
-            <>
-              This pool’s market data is through block{" "}
-              {snapshot.toBlock.toLocaleString()} · {utc(snapshot.toTimestamp)}.
-              Audit results below have their own cutoff.{" "}
-            </>
-          ) : pool ? (
-            "Market history has not been processed. This verified launch's background analytics are still processing; values remain unavailable. "
-          ) : null}
-          {unpublished
-            ? null
-            : audit
-              ? "Accounting uses supported positions with observed purchase basis. Unknown basis stays excluded. "
-              : "Accounting coverage is unavailable. Swaps do not establish holders, balances, beneficiaries or PnL. "}
-          {c?.unitBasis && (
-            <>
-              Prices use token units verified at block{" "}
-              {c.unitBasis.block.toLocaleString()} · {utc(c.unitBasis.asOf)} ·{" "}
-              <span className="mono">{shortAddress(c.unitBasis.hash)}</span>
-              .{" "}
-            </>
-          )}
-          {c?.unitsConflict &&
-            "Conflicting observed token units make price normalization unavailable."}
-        </PendingValue>
-      </p>
       <div className="workspace-grid">
         <div>
           <section className="panel">
-            <div className={styles.context}>
-              <strong>Price context</strong>
-              <span>ETH · Robinhood Chain</span>
-            </div>
             <div className={styles.chartHeader}>
               <div className="live-price-heading">
                 <Price wei={price} pending={pending} />
@@ -297,7 +222,6 @@ export function ObservedPoolDetail({
                   <span>
                     <b>{market?.window ?? "24h"}</b>{" "}
                     <Change value={change} pending={pending} />
-                    <small>at cutoff</small>
                   </span>
                 </div>
               </div>
@@ -323,37 +247,16 @@ export function ObservedPoolDetail({
                 </div>
               )}
             </div>
-            <p className="panel-footnote pool-truncation-note">
-              {market?.history.truncated
-                ? "Showing the latest 1,000 observed minute candles. Earlier loaded history is omitted."
-                : "\u00a0"}
-            </p>
           </section>
           <div className="stats-grid live-six-stats">
-            <Stat
-              label="FDV"
-              pending={pending}
-              note="Spot price × contract total supply"
-            >
+            <Stat label="FDV" pending={pending}>
               <Eth wei={fdv} pending={pending} />
             </Stat>
-            <Stat
-              label="Liquidity"
-              note="Manager active liquidity is not TVL"
-              pending={pending}
-            >
+            <Stat label="Liquidity" pending={pending}>
               <Eth wei={publication?.liquidityWei} pending={pending} />
             </Stat>
             <Stat
               label={`Observed ${market?.window ?? "24h"} volume`}
-              /* An unpublished pool has no window to describe as incomplete. */
-              note={
-                unpublished
-                  ? undefined
-                  : c?.completeWindow
-                    ? "Within covered history"
-                    : "Incomplete covered window"
-              }
               pending={pending}
             >
               <Eth wei={volume} pending={pending} />
@@ -365,11 +268,7 @@ export function ObservedPoolDetail({
                 <Unavailable />
               )}
             </Stat>
-            <Stat
-              label="Observed trades"
-              note="Canonical transaction/log identities"
-              pending={pending}
-            >
+            <Stat label="Observed trades" pending={pending}>
               {market?.trades ?? stat?.trades.length ?? <Unavailable />}
             </Stat>
             <Stat label="Fees compounded" pending={pending}>
@@ -399,11 +298,6 @@ export function ObservedPoolDetail({
                         ? "Trader accounting pending"
                         : "Trader PnL unavailable"}
                     </h3>
-                    <p>
-                      Verified transfer history and supported accounting have
-                      not been published for this pool. No positions or balances
-                      are estimated from swaps.
-                    </p>
                   </div>
                 ))}
               {tab === "Holders" &&
@@ -439,11 +333,6 @@ export function ObservedPoolDetail({
                         ? "Holder accounting pending"
                         : "Holder accounting unavailable"}
                     </h3>
-                    <p>
-                      Verified transfer history and supported accounting have
-                      not been published for this pool. No positions or balances
-                      are estimated from swaps.
-                    </p>
                   </div>
                 ))}
               {tab === "Trades" &&
@@ -453,51 +342,45 @@ export function ObservedPoolDetail({
                     markets={snapshot.markets}
                   />
                 ) : (
-                  <>
-                    <p className="panel-footnote">
-                      Observed historical swaps through the market cutoff. No
-                      beneficiary attribution is inferred. Latest 50 identities.
-                    </p>
-                    <div className="table-scroll">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Time</th>
-                            <th>Side</th>
-                            <th>ETH</th>
-                            <th>Transaction</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows?.slice(0, 50).map((trade, index) => {
-                            const observed = "transactionHash" in trade;
-                            const tx = observed
-                              ? trade.transactionHash
-                              : trade.txHash;
-                            return (
-                              <tr key={index}>
-                                <td>{utc(trade.timestamp)}</td>
-                                <td>{trade.side ?? "Unsupported"}</td>
-                                <td>
-                                  <Eth wei={trade.ethWei} />
-                                </td>
-                                <td>
-                                  <a
-                                    className="mono"
-                                    href={`${explorer}/tx/${tx}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {shortAddress(tx)} ↗
-                                  </a>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Time</th>
+                          <th>Side</th>
+                          <th>ETH</th>
+                          <th>Transaction</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows?.slice(0, 50).map((trade, index) => {
+                          const observed = "transactionHash" in trade;
+                          const tx = observed
+                            ? trade.transactionHash
+                            : trade.txHash;
+                          return (
+                            <tr key={index}>
+                              <td>{utc(trade.timestamp)}</td>
+                              <td>{trade.side ?? "Unsupported"}</td>
+                              <td>
+                                <Eth wei={trade.ethWei} />
+                              </td>
+                              <td>
+                                <a
+                                  className="mono"
+                                  href={`${explorer}/tx/${tx}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {shortAddress(tx)} ↗
+                                </a>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 ))}
             </div>
           </section>
@@ -526,9 +409,6 @@ export function ObservedPoolDetail({
                 </div>
               ))}
             </dl>
-            <p className="panel-footnote">
-              These figures need a reconciled holder snapshot.
-            </p>
           </section>
           <section className="panel">
             <div className="panel-heading">

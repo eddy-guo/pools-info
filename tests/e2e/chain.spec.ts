@@ -3,6 +3,7 @@ import chain from "../../data/snapshots/chain.json";
 import catalog from "../../data/catalog/chain.json";
 import captured from "../../data/pools/index.json";
 import { preloadedProduct } from "../../apps/web/src/lib/product-server";
+import { methodologyCopy } from "../support/pool-copy";
 import type {
   AnalyticsExploreResponse,
   AnalyticsPoolDetail,
@@ -123,7 +124,7 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   await page.getByRole("button", { name: "Holders", exact: true }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Holder snapshot is processing",
+      name: "Holder accounting unavailable",
     }),
   ).toBeVisible();
   expect(
@@ -883,23 +884,18 @@ test("captured pool history loads without RPC and survives a failed refresh", as
     `7 / ${Math.ceil(saved.trades.length / 20)}`,
   );
   expect(marketRequests).toBe(initialRequests);
-  await page.route(`**/api/markets/${pool.id}/**`, (r) =>
-    r.fulfill({ status: 503, json: { error: "Unavailable" } }),
-  );
-  await page
-    .getByRole("button", { name: "Refresh pool data", exact: true })
-    .click();
-  await expect(
-    page.getByText(
-      "Refresh unavailable. The captured pool data remains visible.",
-    ),
-  ).toBeVisible();
+  let failed = 0;
+  await page.route(`**/api/markets/${pool.id}/**`, (r) => {
+    failed++;
+    return r.fulfill({ status: 503, json: { error: "Unavailable" } });
+  });
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true });
+  await refresh.click();
+  await expect.poll(() => failed).toBe(1);
+  await expect(refresh).toBeEnabled();
   await expect(page.locator(".pagination")).toContainText(
     `${saved.trades.length} swap events`,
   );
-  await expect(
-    page.getByRole("button", { name: "Refresh pool data", exact: true }),
-  ).toBeEnabled();
   // The expanded capture includes saved accounting, available without a network audit.
   const audit = await page.request.get(
     `/api/markets/${pool.id}/accounting/?launch=${pool.launchTx}`,
@@ -1060,9 +1056,11 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   await expect(
     page.getByRole("heading", { name: unprocessed.name, exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByText(/background analytics are still processing/),
-  ).toBeVisible();
+  await expect(page.locator(".nullable-pool-page")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(
     page
       .getByRole("region", { name: "Recent trades" })
@@ -1369,7 +1367,6 @@ test("saved pool details show reconciled holders and label infrastructure separa
   });
   await page.goto(poolHref(market));
   await page.getByRole("button", { name: "Holders", exact: true }).click();
-  await expect(page.getByText(/Reconciled holder snapshot/)).toBeVisible();
   await expect(page.locator("main tbody tr")).toHaveCount(2);
   await expect(
     page.getByRole("cell", { name: "PoolManager", exact: true }),
@@ -1380,13 +1377,12 @@ test("saved pool details show reconciled holders and label infrastructure separa
   await expect(holders.locator("strong").filter({ visible: true })).toHaveText(
     "1",
   );
-  await page
-    .getByRole("button", { name: "Refresh pool data", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect.poll(() => savedReads).toBe(2);
-  await expect(
-    page.getByText(/Balances do not establish cost basis or PnL/),
-  ).toBeVisible();
+  await expect(page.locator("main tbody tr")).toHaveCount(2);
+  await expect(holders.locator("strong").filter({ visible: true })).toHaveText(
+    "1",
+  );
 });
 
 test("real preloaded leaderboard opens its profitable top wallet and generates the same global card", async ({

@@ -1431,10 +1431,6 @@ main {
   font-size: 14px;
   font-weight: 500;
 }
-.podium-identity small {
-  font-size: 12px;
-  color: var(--faint);
-}
 .podium-amount {
   font-size: 27px;
   margin-bottom: 4px;
@@ -2667,11 +2663,6 @@ main {
   padding: 10px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-}
-.live-changes small {
-  display: block;
-  color: var(--muted);
-  font-size: 10px;
 }
 .live-six-stats {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4190,12 +4181,6 @@ main {
   font-size: 13px;
   font-weight: 500;
 }
-.podium-identity small {
-  display: block;
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 10px;
-}
 .podium-value {
   font-size: 26px;
   font-weight: 600;
@@ -5182,14 +5167,6 @@ main {
   min-width: 0;
   white-space: nowrap;
 }
-.pool-identity-title > .evidence-badge {
-  width: 144px;
-  flex-shrink: 0;
-}
-/* A pool the read API does not publish names no evidence; its slot stays. */
-.pool-identity-title > .evidence-badge:empty {
-  visibility: hidden;
-}
 .pool-identity-title > span:first-of-type {
   width: 12ch;
   flex-shrink: 0;
@@ -5208,17 +5185,6 @@ main {
   height: 36px;
   overflow: auto;
 }
-.pool-refresh-status {
-  width: 40ch;
-  height: 36px;
-  overflow: auto;
-  margin: 0;
-}
-.pool-coverage-note {
-  display: block;
-  height: 92px;
-  overflow: auto;
-}
 /* The region holds a chart's height while one can still arrive. A page opened
    from a row with no market evidence knows at first paint that none can, and
    takes the empty state's height instead of reserving a chart of nothing. */
@@ -5235,23 +5201,16 @@ main {
   height: 100%;
   padding: 0 24px;
 }
-.pool-truncation-note {
-  height: 36px;
-  overflow: auto;
-}
 .nullable-pool-page .live-six-stats .stat {
-  height: 144px;
+  height: 106px;
 }
 .nullable-pool-page .live-six-stats .stat > strong {
   height: 47px;
   overflow: auto;
 }
-.nullable-pool-page .live-six-stats .stat > small {
-  height: 32px;
-  overflow: auto;
-}
+/* The price line plus the box a subscript digit hangs below it. */
 .nullable-pool-page .live-price-heading {
-  height: 66px;
+  height: 49px;
   overflow: auto;
 }
 .nullable-pool-page .live-price-heading > .price {
@@ -5261,6 +5220,11 @@ main {
 .nullable-pool-page .live-changes .change {
   display: inline-block;
   width: 8ch;
+}
+/* A concentration share keeps its width when the value replaces the mark. */
+.nullable-pool-page .live-facts dd > .number {
+  display: inline-block;
+  width: 7ch;
 }
 .pool-activity-region {
   height: calc(25 * 74px + 420px);
@@ -5579,13 +5543,17 @@ a.wallet-top-pool:hover {
     overflow: auto;
   }
   /* The stacked heading: a two-row title (name and symbol, then the launch
-     mode and evidence badges), the short address at the 44px control height
-     and the two-line launch meta, then the two-column action grid. */
+     mode badge), the short address at the 44px control height and the
+     two-line launch meta, then the two-column action grid. */
   .nullable-pool-page .page-heading {
     height: 265px;
   }
-  .pool-coverage-note {
-    height: 168px;
+  /* The price and its change box stack on a phone. */
+  .nullable-pool-page .live-price-heading {
+    height: 97px;
+  }
+  .nullable-pool-page .live-six-stats .stat {
+    height: 104px;
   }
   .pool-chart-region {
     height: 720px;
@@ -5596,8 +5564,8 @@ a.wallet-top-pool:hover {
     row-gap: 0;
     height: 58px;
   }
-  /* A full-width break after the symbol puts both badges on the second row;
-     its height is the row gap. */
+  /* A full-width break after the symbol puts the launch mode badge on the
+     second row; its height is the row gap. */
   .nullable-pool-page .pool-identity-title::before {
     content: "";
     flex-basis: 100%;
@@ -5610,9 +5578,6 @@ a.wallet-top-pool:hover {
   .nullable-pool-page .pool-identity-title > h1 {
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .pool-identity-title > .evidence-badge {
-    width: 104px;
   }
   .pool-address-slot {
     height: 44px;

@@ -286,9 +286,10 @@ for (const entry of routes) {
           ).toBeVisible();
         else
           await expect(
-            page
-              .getByRole("status")
-              .filter({ hasText: "Pool data is unavailable." }),
+            page.getByRole("heading", {
+              name: "Pool name unavailable",
+              exact: true,
+            }),
           ).toBeVisible();
       }
       await page.screenshot({

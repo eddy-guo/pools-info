@@ -111,9 +111,6 @@ export function AuditLeaderboard({
                 <span className={`podium-rank place-${i + 1}`}>{i + 1}</span>
                 <span>
                   <strong>{shortAddress(w.row.address)}</strong>
-                  <small>
-                    {audit.market.symbol} · {window} · this pool
-                  </small>
                 </span>
                 <ArrowUpRight size={15} />
               </div>
