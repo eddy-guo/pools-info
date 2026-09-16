@@ -19,7 +19,7 @@ import {
 } from "@/lib/watchlist";
 import { useDebouncedInput, useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
-import { Change, Price, Sparkline, WatchButton } from "./ui";
+import { Change, EmptyState, Price, Sparkline, WatchButton } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { ProductPagination } from "./product-common";
@@ -146,6 +146,7 @@ export function ProductExplore() {
   const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsExploreResponse>(`explore?${query}`);
   const launchPage = !!data?.items.length && data.items.every(launchOnly);
+  const empty = !!data && !data.items.length && !loading;
   return (
     <div className="page explore-page">
       <div className="page-heading">
@@ -375,7 +376,11 @@ export function ProductExplore() {
                 before the first missing batch.
               </p>
             )}
-            <>
+            {/* The reserved row geometry stays put when a filter matches
+                nothing; the empty state overlays the top of that area so the
+                message reads directly under the toolbar instead of below a
+                screen and a half of blank rows. */}
+            <div className="table-region" data-empty={empty}>
               <div
                 className="table-scroll desktop-pools"
                 aria-busy={stale}
@@ -673,29 +678,29 @@ export function ProductExplore() {
                   </article>
                 ))}
               </div>
-            </>
-            {data && !data.items.length && !loading && (
-              <div className="empty-state">
-                <h3>
-                  {view === "watchlist" && !watched.length
-                    ? shared
-                      ? "This shared watchlist cannot be displayed"
-                      : "Your watchlist starts here"
-                    : shared
-                      ? "No shared pools match these filters"
-                      : "No pools match these filters"}
-                </h3>
-                <p>
-                  {view === "watchlist" && !watched.length
-                    ? shared
-                      ? "Ask for a new link, or open your own watchlist."
-                      : "Star pools on Explore to save them in this browser."
-                    : shared
-                      ? "Try clearing the filter. Shared pools must be in the saved catalog to appear here."
-                      : "Try another token or select All. Unprocessed launches are included in the catalog."}
-                </p>
-              </div>
-            )}
+              {empty && (
+                <EmptyState
+                  title={
+                    view === "watchlist" && !watched.length
+                      ? shared
+                        ? "This shared watchlist cannot be displayed"
+                        : "Your watchlist starts here"
+                      : shared
+                        ? "No shared pools match these filters"
+                        : "No pools match these filters"
+                  }
+                  description={
+                    view === "watchlist" && !watched.length
+                      ? shared
+                        ? "Ask for a new link, or open your own watchlist."
+                        : "Star pools on Explore to save them in this browser."
+                      : shared
+                        ? "Try clearing the filter, or open your own watchlist."
+                        : "Try another token, or select All."
+                  }
+                />
+              )}
+            </div>
             <ProductPagination
               offset={offset}
               total={data?.total ?? 0}

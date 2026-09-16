@@ -17,7 +17,7 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-import { AddressLabel, Avatar, Change, Chart } from "./ui";
+import { AddressLabel, Avatar, Change, Chart, EmptyState } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import styles from "./detail-design.module.css";
@@ -202,90 +202,101 @@ export function ProductWallet({ address }: { address: string }) {
                     <h2>Positions by pool</h2>
                   </div>
                   <div
-                    className="table-scroll wallet-list-region"
-                    aria-busy={stale}
-                    data-stale-rows={stale}
+                    className="table-region"
+                    data-empty={!!data && !data.positions.length}
                   >
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Token</th>
-                          <th>Inventory</th>
-                          <th>Cost</th>
-                          <th>Realized</th>
-                          <th>Unrealized</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from(
-                          { length: Math.max(25, data?.positions.length ?? 0) },
-                          (_, index) => data?.positions[index],
-                        ).map((p, index) => (
-                          <tr
-                            key={index}
-                            aria-hidden={!p}
-                            data-row={p ? "resolved" : "reserved"}
-                          >
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>
-                                  <Link
-                                    href={poolHref({
-                                      id: p.poolId,
-                                      launchTx: p.launchTx,
-                                    })}
-                                  >
-                                    {p.symbol}
-                                  </Link>
-                                </>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>
-                                  {p.position && p.decimals !== null ? (
-                                    `${new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(Number(p.position.quantity) / 10 ** p.decimals)} ${p.symbol}`
-                                  ) : (
-                                    <Unavailable />
-                                  )}
-                                </>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              <Eth pending={!data} wei={p?.position?.costWei} />
-                            </td>
-                            <td data-pending={!p && !data}>
-                              <Eth
-                                pending={!data}
-                                wei={p?.realizedWei}
-                                signed
-                              />
-                            </td>
-                            <td data-pending={!p && !data}>
-                              <Eth
-                                pending={!data}
-                                wei={p?.unrealizedWei}
-                                signed
-                              />
-                            </td>
+                    <div
+                      className="table-scroll wallet-list-region"
+                      aria-busy={stale}
+                      data-stale-rows={stale}
+                    >
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Token</th>
+                            <th>Inventory</th>
+                            <th>Cost</th>
+                            <th>Realized</th>
+                            <th>Unrealized</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {data && !data.positions.length && (
-                    <div className="empty-state">
-                      No positions in this window.
+                        </thead>
+                        <tbody>
+                          {Array.from(
+                            {
+                              length: Math.max(25, data?.positions.length ?? 0),
+                            },
+                            (_, index) => data?.positions[index],
+                          ).map((p, index) => (
+                            <tr
+                              key={index}
+                              aria-hidden={!p}
+                              data-row={p ? "resolved" : "reserved"}
+                            >
+                              <td data-pending={!p && !data}>
+                                {p ? (
+                                  <>
+                                    <Link
+                                      href={poolHref({
+                                        id: p.poolId,
+                                        launchTx: p.launchTx,
+                                      })}
+                                    >
+                                      {p.symbol}
+                                    </Link>
+                                  </>
+                                ) : data ? (
+                                  "\u00a0"
+                                ) : (
+                                  "Pending"
+                                )}
+                              </td>
+                              <td data-pending={!p && !data}>
+                                {p ? (
+                                  <>
+                                    {p.position && p.decimals !== null ? (
+                                      `${new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(Number(p.position.quantity) / 10 ** p.decimals)} ${p.symbol}`
+                                    ) : (
+                                      <Unavailable />
+                                    )}
+                                  </>
+                                ) : data ? (
+                                  "\u00a0"
+                                ) : (
+                                  "Pending"
+                                )}
+                              </td>
+                              <td data-pending={!p && !data}>
+                                <Eth
+                                  pending={!data}
+                                  wei={p?.position?.costWei}
+                                />
+                              </td>
+                              <td data-pending={!p && !data}>
+                                <Eth
+                                  pending={!data}
+                                  wei={p?.realizedWei}
+                                  signed
+                                />
+                              </td>
+                              <td data-pending={!p && !data}>
+                                <Eth
+                                  pending={!data}
+                                  wei={p?.unrealizedWei}
+                                  signed
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
+                    {data && !data.positions.length && (
+                      <EmptyState
+                        title="No positions in this window"
+                        description="Select All to see this wallet's full history."
+                      />
+                    )}
+                  </div>
                   {data?.positionsTruncated && (
                     <p className="panel-footnote">
                       Showing the first {data.positions.length} positions.
