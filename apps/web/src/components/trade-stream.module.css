@@ -42,28 +42,6 @@
   overflow: auto;
   font-variant-numeric: tabular-nums;
 }
-.rail > .note {
-  height: 96px;
-  overflow: auto;
-}
-/* Each stamp value keeps the width of its resolved form, so the note's four
-   lines are laid out at first paint and the feed response only fills them in.
-   Widths hold block 999,999,999, "999d ago." and 999,999 tracked pools. */
-.cutoff,
-.since,
-.catalog {
-  display: inline-block;
-  white-space: nowrap;
-}
-.cutoff {
-  width: 10ch;
-}
-.since {
-  width: 8ch;
-}
-.catalog {
-  width: 17.5ch;
-}
 @keyframes arrive {
   from {
     opacity: 0;
@@ -91,9 +69,6 @@
   }
   .row {
     min-height: 120px;
-  }
-  .rail > .note {
-    height: 130px;
   }
 }
 .meta > span {

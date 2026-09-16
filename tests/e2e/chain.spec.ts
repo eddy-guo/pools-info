@@ -499,6 +499,9 @@ function liveBatch(
   };
 }
 
+// The rail shows trades and their status, never a coverage stamp.
+const coverageStamp = /Checked through block|· block|tracked pools/i;
+
 test("live feed highlights new identities, retains stale trades, pauses, and replaces reorg and empty windows", async ({
   page,
 }, testInfo) => {
@@ -528,6 +531,7 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
   await expect(feed.locator(".stream-event")).toHaveCount(1);
   await expect(feed.locator('[data-new="true"]')).toHaveCount(0);
   await expect(feed.getByText("0.1 ETH", { exact: true })).toBeVisible();
+  await expect(feed).not.toContainText(coverageStamp);
   await expect(feed.getByRole("link", { name: "0x1111…1111" })).toHaveAttribute(
     "href",
     `/wallet/${wallet}/?window=All`,
@@ -554,6 +558,7 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
   ).toHaveCSS("color", "rgb(255, 97, 105)");
   await page.clock.fastForward(16000);
   await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed).not.toContainText(coverageStamp);
   await expect(feed.locator(".stream-event")).toHaveCount(2);
   await feed.getByRole("button", { name: "Pause feed" }).click();
   await page.clock.fastForward(45000);
@@ -567,9 +572,7 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
     "data-new",
     "true",
   );
-  await expect(feed).toContainText(
-    `Checked through block ${(chain.toBlock + 3).toLocaleString("en-US")}`,
-  );
+  await expect(feed).not.toContainText(coverageStamp);
   await page.clock.fastForward(16000);
   await expect.poll(() => calls).toBe(5);
   await expect(feed.locator(".stream-event")).toHaveCount(0);
@@ -606,6 +609,8 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   await page.goto(poolHref(market), { waitUntil: "domcontentloaded" });
   const feed = page.getByRole("region", { name: "Recent trades" });
   await expect.poll(() => calls).toBe(1);
+  await expect(feed.getByText("Loading recent trades…")).toBeVisible();
+  await expect(feed).not.toContainText(coverageStamp);
   await page.clock.fastForward(9000);
   expect(calls).toBe(1);
   release();
@@ -628,6 +633,7 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   });
   await expect.poll(() => calls).toBe(2);
   await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed).not.toContainText(coverageStamp);
   await expect(feed.locator(".stream-event")).toHaveCount(50);
   await feed.getByRole("button", { name: "Retry feed" }).click();
   await expect.poll(() => calls).toBe(3);
@@ -686,6 +692,9 @@ test("live feed slides arriving trades into place with transform and opacity onl
     }),
   );
   await page.goto("/");
+  // Jumping the clock past the screener's saved-read timeout while those reads
+  // are in flight aborts them into an error line that moves the table.
+  await page.waitForLoadState("networkidle");
   const feed = page.getByRole("region", { name: "Recent trades" });
   const rows = feed.locator(".stream-event");
   await expect(rows).toHaveCount(1);
@@ -700,7 +709,7 @@ test("live feed slides arriving trades into place with transform and opacity onl
       return {
         region: [top(node), node.getBoundingClientRect().height],
         surface: [top(surface), surface.getBoundingClientRect().height],
-        footnote: top(surface.nextElementSibling),
+        below: top(node.nextElementSibling),
         retained: surface.querySelector<HTMLElement>(
           `[data-event-id="${retained}"]`,
         )!.offsetTop,
@@ -733,12 +742,12 @@ test("live feed slides arriving trades into place with transform and opacity onl
     "the retained row moved down two slots in layout",
   ).toBeGreaterThan(0);
   expect(
-    { region: after.region, surface: after.surface, footnote: after.footnote },
+    { region: after.region, surface: after.surface, below: after.below },
     "nothing outside the scroll surface moved",
   ).toEqual({
     region: before.region,
     surface: before.surface,
-    footnote: before.footnote,
+    below: before.below,
   });
   expect(
     (await shifts()).slice(shiftsBefore),

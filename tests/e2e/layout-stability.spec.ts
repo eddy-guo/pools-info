@@ -9,12 +9,11 @@ const savedPool = Object.values(captures.snapshots).find(
     !chain.markets.some((market) => market.id === snapshot.markets[0].id),
 )!.markets[0];
 const unknownPool = `0x${"f".repeat(64)}`;
-// The live rail carries the only text on these pages that is written by a
-// second request, so the suite serves it the shape production serves: resolved
-// coverage whose block, age and catalog size are longer than the first paint.
+// Chain refresh is disabled in the suite, so the live rail would never resolve;
+// serve it the shape production serves so its rows and status are measured.
 const liveFeed = (poolId: string | null): LiveTradeFeedResponse => {
-  // The stamp reads the cutoff against the device clock, so a live capture is
-  // dated from now rather than from the fixture's own capture time.
+  // The rail reads the cutoff against the device clock to judge staleness, so a
+  // live capture is dated from now rather than from the fixture's capture time.
   const asOf = Math.floor(Date.now() / 1000) - 30;
   return {
     source: "indexed_recent_chain_events",

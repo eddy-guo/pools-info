@@ -9,7 +9,7 @@ import {
 } from "react";
 import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
-import { Eth, Unavailable, explorer, utc } from "./live-ui";
+import { Eth, explorer, utc } from "./live-ui";
 import styles from "./trade-stream.module.css";
 const subscribeClock = (notify: () => void) => {
   const timer = setInterval(notify, 15000);
@@ -29,8 +29,8 @@ function rowOffsets(list: HTMLElement | null) {
 }
 function age(timestamp: number, now: number) {
   if (!now) return utc(timestamp);
-  // A device clock behind the saved cutoff reports the freshest age it can
-  // rather than a sentence, so the reserved stamp slots always hold it.
+  // A device clock behind the trade reports the freshest age it can rather
+  // than a sentence.
   const seconds = Math.max(0, now - timestamp);
   return seconds < 60
     ? `${seconds}s ago`
@@ -39,31 +39,6 @@ function age(timestamp: number, now: number) {
       : seconds < 86400
         ? `${Math.floor(seconds / 3600)}h ago`
         : `${Math.floor(seconds / 86400)}d ago`;
-}
-/**
- * One value of the rail's coverage stamp. The stamp is written by the feed
- * response, so each value holds its resolved width from first paint and the
- * note's wrap never changes as the response lands.
- */
-function Stamp({
-  className,
-  value,
-  answered,
-}: {
-  className: string;
-  value: string | null;
-  answered: boolean;
-}) {
-  return (
-    <span className={className} data-pending={value === null && !answered}>
-      {value ??
-        (answered ? (
-          <Unavailable reason="The saved feed reported no cutoff" />
-        ) : (
-          "pending"
-        ))}
-    </span>
-  );
 }
 export function TradeStream({ poolId }: { poolId?: string }) {
   const scope = poolId?.toLowerCase() ?? "all";
@@ -198,7 +173,6 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     current?.error ||
     coverage?.state === "stale" ||
     (coverage?.asOf && now && now - coverage.asOf > coverage.staleAfterSeconds);
-  const answered = !!coverage || !!current?.error;
   const status = !enabled
     ? "Paused"
     : stale
@@ -312,39 +286,6 @@ export function TradeStream({ poolId }: { poolId?: string }) {
           </div>
         ))}
       </div>
-      <p className={styles.note}>
-        Checked through block{" "}
-        <Stamp
-          className={styles.cutoff}
-          answered={answered}
-          value={
-            coverage?.throughBlock != null
-              ? coverage.throughBlock.toLocaleString("en-US")
-              : null
-          }
-        />{" "}
-        · block{" "}
-        <Stamp
-          className={styles.since}
-          answered={answered}
-          value={coverage?.asOf && now ? `${age(coverage.asOf, now)}.` : null}
-        />{" "}
-        {poolId ? (
-          "This pool"
-        ) : (
-          <Stamp
-            className={styles.catalog}
-            answered={answered}
-            value={
-              coverage
-                ? `${coverage.knownPools.toLocaleString("en-US")} tracked pools`
-                : null
-            }
-          />
-        )}{" "}
-        · newest 50 observed swaps. Transaction initiator may differ from the
-        trader. Saved with a safety lag; not L1 finality.
-      </p>
     </section>
   );
 }
