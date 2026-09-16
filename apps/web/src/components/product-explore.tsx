@@ -105,6 +105,7 @@ function MarketBasis({ pool }: { pool: AnalyticsPoolRow }) {
     </span>
   );
 }
+type ExploreSort = NonNullable<AnalyticsExploreOptions["sort"]>;
 export function ProductExplore() {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -130,6 +131,41 @@ export function ProductExplore() {
       params.get("sort") ?? (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = params.get("dir") ?? "desc";
   const filter = useDebouncedInput(q, (next) => set({ q: next, offset: null }));
+  /* Both read paths pin the launches view to launch order, so no header
+     claims it there. */
+  const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
+    ascending = direction === "asc";
+  const sortBy = (key: ExploreSort) => {
+    if (activeSort !== key)
+      set({
+        sort: key,
+        dir: "desc",
+        offset: null,
+        ...(view === LAUNCH_VIEW ? { view: "all" } : null),
+      });
+    else if (!ascending) set({ sort: key, dir: "asc", offset: null });
+    else set({ sort: null, dir: null, offset: null });
+  };
+  /* Three states per column: descending, ascending, then back to the default. */
+  const sortable = (label: string, key: ExploreSort) => (
+    <th
+      aria-sort={
+        activeSort === key ? (ascending ? "ascending" : "descending") : "none"
+      }
+    >
+      <button
+        className={activeSort === key ? "sort-active" : ""}
+        onClick={() => sortBy(key)}
+      >
+        {label}
+        {activeSort === key && (
+          <span className="sort-arrow" aria-hidden="true">
+            {ascending ? "↑" : "↓"}
+          </span>
+        )}
+      </button>
+    </th>
+  );
   const query = new URLSearchParams({
     window,
     view: view ?? "all",
@@ -303,28 +339,6 @@ export function ProductExplore() {
                     }}
                   />
                 </label>
-                <select
-                  aria-label="Sort all pools"
-                  value={sort}
-                  onChange={(e) => set({ sort: e.target.value, offset: null })}
-                >
-                  <option value="volume">Volume</option>
-                  <option value="trades">Trade count</option>
-                  <option value="change">Price change</option>
-                  <option value="launch">Launch time</option>
-                  <option value="liquidity">Liquidity</option>
-                </select>
-                <button
-                  className="button secondary"
-                  onClick={() =>
-                    set({
-                      dir: direction === "desc" ? "asc" : "desc",
-                      offset: null,
-                    })
-                  }
-                >
-                  {direction === "desc" ? "High to low ↓" : "Low to high ↑"}
-                </button>
                 <button
                   className="icon-button"
                   title="Refresh saved data"
@@ -405,10 +419,10 @@ export function ProductExplore() {
                       ) : (
                         <>
                           <th>Price</th>
-                          <th>{window} change</th>
-                          <th>{window} volume</th>
-                          <th>{window} trades</th>
-                          <th>Liquidity</th>
+                          {sortable("Change", "change")}
+                          {sortable("Volume", "volume")}
+                          {sortable("Trades", "trades")}
+                          {sortable("Liquidity", "liquidity")}
                           <th>Holders</th>
                           <th>Launch sender</th>
                           <th>Trend</th>

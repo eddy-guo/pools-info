@@ -88,9 +88,10 @@ test("copied watchlists open in a fresh browser and import only with an explicit
         localStorage.getItem("pools:watchlist"),
       ]),
     ).toEqual([null, null]);
-    await expect(
-      recipient.getByRole("combobox", { name: "Sort all pools", exact: true }),
-    ).toHaveValue("launch");
+    expect(
+      new URL(recipient.url()).searchParams.get("sort"),
+      "the shared order survives the recipient opening the link",
+    ).toBe("launch");
     await recipient
       .getByRole("textbox", { name: "Filter pools", exact: true })
       .fill("");
