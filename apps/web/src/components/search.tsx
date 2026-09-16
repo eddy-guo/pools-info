@@ -18,7 +18,7 @@ import {
   type SearchResponse,
 } from "@pools/core";
 import { createSearchProvider } from "@/lib/search-provider";
-import { SearchSkeleton, SkeletonLine } from "./skeletons";
+import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
 const icons = {
   Tokens: Coins,
@@ -232,13 +232,6 @@ export function Search() {
           ))}
         </div>
         <div className="search-results" aria-busy={Boolean(waiting)}>
-          <p className="search-hint">
-            {data ? (
-              `${data.coverage.pools} covered pools + audited activity · partial coverage`
-            ) : waiting ? (
-              <SkeletonLine width={220} height={10} />
-            ) : null}
-          </p>
           {data?.indexNotice && (
             <p className="search-help">{data.indexNotice}</p>
           )}
@@ -249,10 +242,7 @@ export function Search() {
             </p>
           )}
           <span className="sr-only" role="status">
-            {current?.error ??
-              (data
-                ? `${data.total} results in current coverage`
-                : "Searching")}
+            {current?.error ?? (data ? `${data.total} results` : "Searching")}
           </span>
           {waiting && <SearchSkeleton />}
           {data?.kind === "ens" && !data.entries.length && (
@@ -291,7 +281,6 @@ export function Search() {
                     </span>
                     <span className="search-result-copy">
                       <strong>{r.title}</strong>
-                      <small>{r.context}</small>
                       <small className="mono">{r.address}</small>
                     </span>
                     {r.external && <ArrowUpRight size={15} />}
@@ -305,7 +294,7 @@ export function Search() {
             data.kind !== "ens" &&
             !current?.pending && (
               <div className="empty-state">
-                <h3>No matches in current coverage</h3>
+                <h3>No matches</h3>
                 <p>
                   This does not mean the token or wallet does not exist. Try its
                   full address or a shorter name.

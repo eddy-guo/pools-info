@@ -40,7 +40,7 @@ test("ENS wallet remains one result when the saved index adds a different query 
         total: 1,
         kind: "address",
         coverage,
-        delivery: { source: "indexer", notice: "Saved wallet loaded" },
+        delivery: { source: "indexer", notice: null },
       },
     });
   });
@@ -56,13 +56,13 @@ test("ENS wallet remains one result when the saved index adds a different query 
   await expect(dialog.getByRole("link", { name: /example.eth/ })).toHaveCount(
     1,
   );
+  const saved = page.waitForResponse((response) =>
+    response.url().includes(encodeURIComponent(`wallet:${address}`)),
+  );
   release();
-  await expect(dialog.getByText("Saved wallet loaded")).toBeVisible();
+  await saved;
   await expect(dialog.getByRole("link", { name: /example.eth/ })).toHaveCount(
     1,
-  );
-  await expect(dialog.getByRole("link", { name: /example.eth/ })).toContainText(
-    "Saved wallet across processed pools",
   );
   await expect(
     dialog.getByRole("link", { name: /example.eth/ }),
@@ -105,7 +105,7 @@ test("address search merges equivalent wallets but retains a distinct creator re
         total: entries.length,
         kind: "address",
         coverage,
-        delivery: { source: "indexer", notice: "Identity matches loaded" },
+        delivery: { source: "indexer", notice: null },
       },
     });
   });
@@ -118,7 +118,9 @@ test("address search merges equivalent wallets but retains a distinct creator re
   const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
   const input = dialog.getByRole("textbox");
   await input.fill(address);
-  await expect(dialog.getByText("Identity matches loaded")).toBeVisible();
+  await expect(
+    dialog.getByRole("link", { name: /Saved wallet/ }),
+  ).toBeVisible();
   await expect(dialog.locator(`a[href^="/wallet/${address}/"]`)).toHaveCount(1);
   await expect(dialog.locator(`a[href^="/creators/${address}/"]`)).toHaveCount(
     1,
