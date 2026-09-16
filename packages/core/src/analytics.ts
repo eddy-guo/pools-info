@@ -288,6 +288,32 @@ export function exploreAnalytics(
       const saved = model.publications.get(p.id);
       return {
         ...p,
+        marketCoverage: saved
+          ? {
+              source: "deep_publication" as const,
+              startBlock: saved.snapshot.fromBlock,
+              cutoff: {
+                block: saved.snapshot.toBlock,
+                hash: saved.snapshot.blockHash,
+                asOf: saved.snapshot.toTimestamp,
+              },
+              windowStart:
+                window === "All"
+                  ? p.launchedAt
+                  : model.coverage.asOf - windows[window],
+              indexedAt: saved.generatedAt,
+              unitsConflict: false,
+              unitBasis: {
+                block: saved.snapshot.toBlock,
+                hash: saved.snapshot.blockHash,
+                asOf: saved.snapshot.toTimestamp,
+                decimals: saved.snapshot.markets[0].decimals,
+                source: "verified_deep_snapshot" as const,
+              },
+              rawPrice: null,
+              priceBaseline: null,
+            }
+          : null,
         processed: !!saved,
         market: saved
           ? {
@@ -332,9 +358,10 @@ export function exploreAnalytics(
   if (sort !== "launch") {
     const metric = {
       volume: "volumeWei",
+      trades: "trades",
       liquidity: "liquidityWei",
       change: "change",
-    }[sort] as "volumeWei" | "liquidityWei" | "change";
+    }[sort] as "volumeWei" | "trades" | "liquidityWei" | "change";
     rows = rows.filter((pool) => pool.stats[metric] !== null);
   }
   rows = rows.sort((a, b) => {
@@ -343,17 +370,21 @@ export function exploreAnalytics(
         ? a.launchBlock
         : sort === "change"
           ? a.stats.change
-          : sort === "volume"
-            ? a.stats.volumeWei
-            : a.stats.liquidityWei;
+          : sort === "trades"
+            ? a.stats.trades
+            : sort === "volume"
+              ? a.stats.volumeWei
+              : a.stats.liquidityWei;
     const y =
       sort === "launch"
         ? b.launchBlock
         : sort === "change"
           ? b.stats.change
-          : sort === "volume"
-            ? b.stats.volumeWei
-            : b.stats.liquidityWei;
+          : sort === "trades"
+            ? b.stats.trades
+            : sort === "volume"
+              ? b.stats.volumeWei
+              : b.stats.liquidityWei;
     if (x === null) return y === null ? a.id.localeCompare(b.id) : 1;
     if (y === null) return -1;
     const bx = typeof x === "string" ? BigInt(x) : x,

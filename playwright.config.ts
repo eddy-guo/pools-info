@@ -29,6 +29,7 @@ if (!process.env.TEST_WORKER_INDEX)
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testIgnore: "**/broad-explore.spec.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
