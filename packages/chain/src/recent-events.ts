@@ -200,17 +200,11 @@ export async function collectRecentEvents(
       side: d.side,
     });
   }
+  // The cutoff header is not re-read here: every header above was fetched at
+  // most 128 blocks behind the head, each log was matched against its block's
+  // header and receipt, and the caller's next cycle re-verifies the saved
+  // cursor against the chain before extending it.
   const cutoff = blocks.get(toBlock)!;
-  const final = await rpc.call<EventHeader>("eth_getBlockByNumber", [
-    hex(toBlock),
-    false,
-  ]);
-  if (
-    !final ||
-    Number(final.number) !== toBlock ||
-    !same(final.hash, cutoff.hash)
-  )
-    throw Error("Recent cutoff changed during collection");
   return {
     fromBlock,
     toBlock,

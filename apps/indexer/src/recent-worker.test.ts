@@ -6,52 +6,110 @@ import {
   contracts,
   launchEvent,
   swapEvent,
+  tokenMetadataFactory,
+  tokenMetadataTopic,
   type RawLog,
 } from "@pools/chain";
-import { prepareRecentCycleRpc } from "./recent-worker";
-test("combined recent query is reused only for exact source/topic/range; canonical headers stay live", async () => {
+import { prepareRecentCycleRpc, recentCycleRpc } from "./recent-worker";
+test("one chain view per cycle: chain id, head and each canonical header reach the provider once; the combined log query serves both collectors exactly", async () => {
   const rpc = new Rpc();
-  const queries: unknown[] = [];
-  let headerCalls = 0;
+  const provider: string[] = [];
+  const header = (n: number) => ({
+    number: `0x${n.toString(16)}`,
+    hash: `0x${n.toString(16).padStart(64, "0")}`,
+  });
+  rpc.call = async <T>(m: string, p: unknown[]) => {
+    provider.push(p.length ? `${m}:${p[0]}` : m);
+    if (m === "eth_chainId") return "0x1237" as T;
+    if (m === "eth_blockNumber") return "0x3e8" as T;
+    return header(Number(p[0])) as T;
+  };
+  rpc.batch = async <T>(m: string, ps: unknown[][]) => {
+    provider.push(`${m}x${ps.map((p) => p[0]).join(",")}`);
+    return ps.map((p) =>
+      m === "eth_getBlockByNumber"
+        ? header(Number(p[0]))
+        : { transactionHash: p[0] },
+    ) as T[];
+  };
+  recentCycleRpc(rpc);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(await rpc.call("eth_chainId", []), "0x1237");
+    assert.equal(await rpc.call("eth_blockNumber", []), "0x3e8");
+    assert.deepEqual(
+      await rpc.call("eth_getBlockByNumber", ["0x12b", false]),
+      header(299),
+    );
+  }
+  assert.deepEqual(
+    await rpc.batch("eth_getBlockByNumber", [
+      ["0x12b", false],
+      ["0x12c", false],
+      ["0x12b", false],
+    ]),
+    [header(299), header(300), header(299)],
+  );
+  assert.deepEqual(
+    await rpc.batch("eth_getBlockByNumber", [["0x12c", false]]),
+    [header(300)],
+  );
+  // Full-transaction blocks, receipts and code are not canonical header reads.
+  await rpc.batch("eth_getBlockByNumber", [["0x12c", true]]);
+  await rpc.batch("eth_getTransactionReceipt", [["0xabc"]]);
+  await rpc.call("eth_getCode", ["0xabc", "0x12c"]);
+  assert.deepEqual(provider, [
+    "eth_chainId",
+    "eth_blockNumber",
+    "eth_getBlockByNumber:0x12b",
+    "eth_getBlockByNumberx0x12c",
+    "eth_getBlockByNumberx0x12c",
+    "eth_getTransactionReceiptx0xabc",
+    "eth_getCode:0xabc",
+  ]);
+  const swapTopic = toEventSelector(swapEvent),
+    launchTopic = toEventSelector(launchEvent);
   const swap = {
     address: contracts.manager,
-    topics: [toEventSelector(swapEvent)],
+    topics: [swapTopic],
   } as unknown as RawLog;
   const launch = {
     address: contracts.strategies[0],
-    topics: [toEventSelector(launchEvent)],
+    topics: [launchTopic],
   } as unknown as RawLog;
+  const metadata = {
+    address: tokenMetadataFactory,
+    topics: [tokenMetadataTopic],
+  } as unknown as RawLog;
+  const queries: unknown[] = [];
   rpc.logs = async (...args) => {
     queries.push(args);
-    return [swap, launch];
+    return [swap, metadata, launch];
   };
-  rpc.call = async <T>() => {
-    headerCalls++;
-    return `call${headerCalls}` as T;
-  };
-  await prepareRecentCycleRpc(rpc, 1000, 100, 299);
-  assert.equal(queries.length, 1);
-  assert.deepEqual(
-    await rpc.logs(contracts.manager, [toEventSelector(swapEvent)], 100, 299),
-    [swap],
-  );
+  await prepareRecentCycleRpc(rpc, 100, 299);
+  assert.deepEqual(queries, [
+    [
+      [contracts.manager, ...contracts.strategies, tokenMetadataFactory],
+      [[swapTopic, launchTopic, tokenMetadataTopic]],
+      100,
+      299,
+    ],
+  ]);
+  assert.deepEqual(await rpc.logs(contracts.manager, [swapTopic], 100, 299), [
+    swap,
+  ]);
   assert.deepEqual(
     await rpc.logs(
-      contracts.strategies,
-      [toEventSelector(launchEvent)],
+      [...contracts.strategies, tokenMetadataFactory],
+      [[launchTopic, tokenMetadataTopic]],
       100,
       299,
     ),
-    [launch],
+    [metadata, launch],
   );
   assert.equal(queries.length, 1);
-  assert.equal(await rpc.call("eth_blockNumber", []), "0x3e8");
-  assert.equal(await rpc.call("eth_chainId", []), "0x1237");
-  await rpc.call("eth_getBlockByNumber", ["0x12b", false]);
-  await rpc.call("eth_getBlockByNumber", ["0x12b", false]);
-  assert.equal(headerCalls, 2);
-  await rpc.logs(contracts.manager, [toEventSelector(swapEvent)], 101, 299);
-  assert.equal(queries.length, 2);
+  await rpc.logs(contracts.manager, [swapTopic], 101, 299);
+  await rpc.logs(contracts.strategies, [launchTopic], 100, 299);
+  assert.equal(queries.length, 3);
 });
 test("combined query rejects inconsistent address and event identity", async () => {
   const rpc = new Rpc();
@@ -59,10 +117,7 @@ test("combined query rejects inconsistent address and event identity", async () 
     [
       { address: contracts.manager, topics: [toEventSelector(launchEvent)] },
     ] as unknown as RawLog[];
-  await assert.rejects(
-    prepareRecentCycleRpc(rpc, 1000, 100, 299),
-    /combined source/,
-  );
+  await assert.rejects(prepareRecentCycleRpc(rpc, 100, 299), /combined source/);
 });
 
 import { randomUUID } from "node:crypto";
@@ -75,8 +130,9 @@ import {
   commitRecentBatch,
 } from "@pools/db";
 import { runRecentCycle } from "./recent-worker";
+type Counts = Record<string, number>;
 test(
-  "recent worker handles a catalog above 10000 pools, commits canonical swaps, restarts and rewinds both cursors",
+  "recent worker handles a catalog above 10000 pools, commits canonical swaps, restarts and rewinds both cursors, reading each canonical header once per cycle",
   { skip: !process.env.TEST_DATABASE_URL },
   async (t) => {
     const db = createClient(process.env.TEST_DATABASE_URL!);
@@ -124,22 +180,30 @@ test(
         'Other '||n,'OTHER',10,'0x'||lpad(to_hex(n),64,'0'),
         '0x'||repeat('ab',20),100,19 FROM generate_series(1000,11000) n`);
     let changed = false;
+    let head = 2000;
     const h = (n: number) => ({
       number: hex(n),
       hash: word(n + (changed && n >= 20 ? 10000 : 0)),
       parentHash: word(n - 1 + (changed && n > 20 ? 10000 : 0)),
       timestamp: hex(n * 10),
     });
-    function rpc() {
+    /** Provider calls by method, counting every member of a batch. */
+    function rpc(counts: Counts) {
       const r = new Rpc();
       let logs: RawLog[] = [];
-      r.call = async <T>(m: string, ps: unknown[]) =>
-        m === "eth_chainId"
+      const count = (m: string, n = 1) => {
+        if (n) counts[m] = (counts[m] ?? 0) + n;
+      };
+      r.call = async <T>(m: string, ps: unknown[]) => {
+        count(m);
+        return m === "eth_chainId"
           ? (hex(4663) as T)
           : m === "eth_blockNumber"
-            ? (hex(2000) as T)
+            ? (hex(head) as T)
             : (h(Number(ps[0])) as T);
+      };
       r.logs = async (_a, _t, from, to) => {
+        count("eth_getLogs");
         logs =
           from <= 25 && to >= 25
             ? [
@@ -167,8 +231,9 @@ test(
             : [];
         return logs;
       };
-      r.batch = async <T>(m: string, ps: unknown[][]) =>
-        ps.map((v) =>
+      r.batch = async <T>(m: string, ps: unknown[][]) => {
+        count(m, ps.length);
+        return ps.map((v) =>
           m === "eth_getBlockByNumber"
             ? h(Number(v[0]))
             : {
@@ -180,35 +245,67 @@ test(
                 logs,
               },
         ) as T[];
+      };
       return r;
     }
-    const first = await runRecentCycle(db, rpc(), {
-      bootstrapBlocks: 100,
-      batchBlocks: 10,
+    const options = { bootstrapBlocks: 100, batchBlocks: 10 };
+    // Before the per-cycle chain view this cycle read 14 canonical headers and
+    // ran 2 log queries: head, both cursors, from three times, to twice, the
+    // catalog's cutoff twice, the event batch and its cutoff recheck.
+    const first: Counts = {};
+    const r1 = await runRecentCycle(db, rpc(first), options);
+    assert.equal(r1.swaps, 1);
+    assert.equal(r1.through, 29);
+    assert.deepEqual(first, {
+      eth_chainId: 1,
+      eth_blockNumber: 1,
+      eth_getBlockByNumber: 5, // head, the shared cursor, from, to, the swap block
+      eth_getLogs: 1,
+      eth_getTransactionReceipt: 1,
     });
-    assert.equal(first.swaps, 1);
-    assert.equal(first.through, 29);
-    const next = await runRecentCycle(db, rpc(), {
-      bootstrapBlocks: 100,
-      batchBlocks: 10,
-    });
+    const second: Counts = {};
+    const next = await runRecentCycle(db, rpc(second), options);
     assert.equal(next.through, 39);
+    assert.deepEqual(second, {
+      eth_chainId: 1,
+      eth_blockNumber: 1,
+      eth_getBlockByNumber: 4, // previously 13 with 2 log queries
+      eth_getLogs: 1,
+    });
     assert.equal(
       Number(
         (await db.query("SELECT count(*) FROM recent_swaps")).rows[0].count,
       ),
       1,
     );
+    // A reorg below both cursors: the reconcile walks the saved checkpoints
+    // back to the matching ancestor (19), rewinds both lanes and re-collects.
     changed = true;
-    const replaced = await runRecentCycle(db, rpc(), {
-      bootstrapBlocks: 100,
-      batchBlocks: 10,
-    });
+    const rewound: Counts = {};
+    const replaced = await runRecentCycle(db, rpc(rewound), options);
     assert.equal(replaced.through, 29);
+    assert.deepEqual(rewound, {
+      eth_chainId: 1,
+      eth_blockNumber: 1,
+      eth_getBlockByNumber: 6, // head, cursor 39, checkpoints 29 and 19, from, the swap block
+      eth_getLogs: 1,
+      eth_getTransactionReceipt: 1,
+    });
     const rows = (await db.query("SELECT tx_hash FROM recent_swaps")).rows;
     assert.deepEqual(rows, [{ tx_hash: word(501) }]);
     assert.equal((await recentStream(db, "discovery")).cursor, 29);
     assert.equal((await recentStream(db, "swaps")).cursor, 29);
+    // Caught up at the confirmed tip: only the head and the shared cursor.
+    head = 29 + 128;
+    const idle: Counts = {};
+    const caughtUp = await runRecentCycle(db, rpc(idle), options);
+    assert.equal(caughtUp.advanced, 0);
+    assert.equal(caughtUp.through, 29);
+    assert.deepEqual(idle, {
+      eth_chainId: 1,
+      eth_blockNumber: 1,
+      eth_getBlockByNumber: 2, // previously 3
+    });
   },
 );
 

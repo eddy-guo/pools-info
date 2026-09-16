@@ -11,6 +11,11 @@ import { contracts, decodeLaunch, launchEvent } from "./events";
 import { Rpc, hex } from "./rpc";
 import type { Receipt } from "./audit";
 import {
+  multicallConfig,
+  readContracts,
+  type MulticallConfig,
+} from "./multicall";
+import {
   decodeTokenMetadata,
   tokenMetadataFactory,
   tokenMetadataTopic,
@@ -26,6 +31,7 @@ export async function collectCatalog(
   previous?: ChainCatalog,
   rpc = new Rpc(undefined, { timeoutMs: 120000, maxRequests: 1000 }),
   range?: CatalogRange,
+  multicall: MulticallConfig = multicallConfig(),
 ) {
   if (
     range &&
@@ -218,18 +224,20 @@ export async function collectCatalog(
     } else matchingMetadata.set(key, metadata);
   }
   const fields = ["name", "symbol"] as const;
-  const metadata = await rpc.batch<Hex>(
-    "eth_call",
+  // Every launch's name and symbol in bounded aggregate reads; the raw replies
+  // are retained as call evidence beside the logs, receipts and headers.
+  const metadataReads = await readContracts(
+    rpc,
     decoded.flatMap((d) =>
-      fields.map((functionName) => [
-        {
-          to: d.token,
-          data: encodeFunctionData({ abi: erc20Abi, functionName }),
-        },
-        hex(toBlock),
-      ]),
+      fields.map((functionName) => ({
+        to: d.token,
+        data: encodeFunctionData({ abi: erc20Abi, functionName }),
+      })),
     ),
+    toBlock,
+    multicall,
   );
+  const metadata = metadataReads.results;
   const pools: CatalogPool[] = decoded.map((d, i) => ({
     ...presentationMetadata(
       matchingMetadata.get(
@@ -284,6 +292,7 @@ export async function collectCatalog(
       headers,
       tokenMetadataLogs,
       tokenMetadataIssues,
+      calls: metadataReads.evidence,
     },
     requests: rpc.requests,
   };

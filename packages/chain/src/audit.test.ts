@@ -13,18 +13,13 @@ const log = receipt.logs.find(
 )!;
 const token = "0x4636e0604cd1d0f638a6512c1c32e1cd25e2af02";
 test("actual official-router buy reconciles exactly to the EOA's token receipt", () => {
-  const result = attributeSwap(log, receipt, token, "0x");
+  const result = attributeSwap(log, receipt, token, false);
   assert.equal(result.sender, receipt.from);
   assert.deepEqual(result.flags, []);
   assert.ok(result.matchedTransfer);
 });
 test("other routers and code-bearing senders remain unsupported", () => {
-  const result = attributeSwap(
-    log,
-    { ...receipt, to: "0x1234" },
-    token,
-    "0xabcd",
-  );
+  const result = attributeSwap(log, { ...receipt, to: "0x1234" }, token, true);
   assert.ok(result.flags.includes("unsupported_route"));
   assert.ok(result.flags.includes("contract_sender"));
 });
@@ -33,7 +28,7 @@ test("netting multiple swap legs does not falsely prove a simple direct route", 
     log,
     { ...receipt, logs: [...receipt.logs, { ...log, logIndex: "0xff" }] },
     token,
-    "0x",
+    false,
   );
   assert.ok(result.flags.includes("multiple_swap_route"));
 });
@@ -49,13 +44,13 @@ test("a transfer to a different recipient cannot be attributed to tx.from", () =
         : l,
     ),
   };
-  const result = attributeSwap(log, altered, token, "0x");
+  const result = attributeSwap(log, altered, token, false);
   assert.ok(result.flags.includes("token_flow_mismatch"));
   assert.equal(result.matchedTransfer, null);
 });
 test("receipts from a different block fail instead of polluting accounting", () => {
   assert.throws(
-    () => attributeSwap(log, { ...receipt, blockHash: "0x0000" }, token, "0x"),
+    () => attributeSwap(log, { ...receipt, blockHash: "0x0000" }, token, false),
     /canonical/,
   );
 });
@@ -64,5 +59,5 @@ test("a matching transaction hash is insufficient when its receipt has a differe
     ...receipt,
     logs: receipt.logs.filter((entry) => entry !== log),
   };
-  assert.throws(() => attributeSwap(log, altered, token, "0x"), /canonical/);
+  assert.throws(() => attributeSwap(log, altered, token, false), /canonical/);
 });

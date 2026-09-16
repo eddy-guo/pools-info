@@ -6,6 +6,11 @@ import { collectCatalog } from "./catalog";
 import { contracts, launchEvent, type RawLog } from "./events";
 import { Rpc, hex } from "./rpc";
 import {
+  canonicalMulticall3Address,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+} from "./multicall";
+import {
   decodeTokenMetadata,
   tokenMetadataEvent,
   tokenMetadataFactory,
@@ -177,9 +182,20 @@ function collector(
       ] as T[];
     }
     assert.equal(method, "eth_call");
-    return [proof.catalog.pools[0].name, proof.catalog.pools[0].symbol].map(
-      (s) => encodeAbiParameters([{ type: "string" }], [s]),
-    ) as T[];
+    const text = [
+      proof.catalog.pools[0].name,
+      proof.catalog.pools[0].symbol,
+    ].map((s) => encodeAbiParameters([{ type: "string" }], [s]));
+    return params.map((p, i) => {
+      const call = p[0] as { to: string; data: Hex };
+      if (call.to !== canonicalMulticall3Address) return text[i];
+      return encodeAggregateReply(
+        decodeAggregateRequest(call.data).map((_, j) => ({
+          success: true,
+          returnData: text[j],
+        })),
+      );
+    }) as T[];
   };
   return {
     queries,

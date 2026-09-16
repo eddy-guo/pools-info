@@ -212,6 +212,44 @@ startup logs report configured `logRangeBlocks`, `minIntervalMs` and
 `maxBatchSize`. This section records validated code; confirm its new Railway
 deployment and continued cursor movement before claiming it is live.
 
+## Operating notes: idle cost controls
+
+After the historical sweep reached the tip, the idle burn was measured at about
+1.19M CU per hour (cost study, 2026-09-16): the live feed 35%, the tier-3 deep
+sweeps 34%, analytics 29%, discovery at the tip 2%. Four controls now exist;
+their per-cycle effect is proven against the mock transport, and the hourly
+figures below are derived from the measured method mix, to be verified from one
+hour of the Alchemy hourly series after a captain-approved resume.
+
+- **Live feed cadence.** `RECENT_TIP_POLL_MS` (default 30000) replaces the fixed
+  2-second pause after a cycle that reached the confirmed head. Within a cycle
+  every canonical header is read once (head, the shared cursor, both boundaries,
+  each swap block) and one combined log query serves discovery and swaps; the
+  mock cycle dropped from 14 headers and 2 log queries to 5 and 1. Reorg
+  reconciliation and the `head - 128` buffer are unchanged.
+- **Multicall3.** `MULTICALL3_ADDRESS` (unset = the canonical deployment,
+  `0` = off) aggregates name/symbol per launch, decimals/totalSupply per pool
+  and balanceOf per trader into one `eth_call` per bounded batch of 200 members,
+  with `allowFailure` per member: a failed member is re-read on its own and
+  fails exactly as an individual read would. If the address has no code or the
+  aggregate call fails, that transport reads individually for the rest of its
+  life. The raw aggregate replies are retained as `calls` evidence beside the
+  logs, receipts and headers, and expand back to every member for verification.
+- **Sender code cache.** `sender_code_observations` (migration 013) keeps one
+  `eth_getCode` observation per transaction sender. `SENDER_CODE_RECHECK_BLOCKS`
+  (default 1,000,000, about a day) bounds how far an observation may answer
+  for; the reuse rule is documented on `senderCodeReusable` in
+  `packages/db/src/sender-code.ts`. The accounting rule is unchanged: a sender
+  with code at the pool cutoff is flagged `contract_sender`.
+- **Deep tier switch.** `INDEXER_DEEP_TIER_ENABLED=0` keeps the tier-3
+  per-pool sweeps paused with their cursors intact while discovery, the broad
+  range, the live feed and analytics keep running. `pnpm indexer:status` shows
+  the value in effect. The default is 1, so nothing changes until it is set on
+  Railway; the captain's decision D4 keeps the deep tier off after the resume.
+
+None of these variables is set on Railway by this change, and the indexer stays
+stopped until the captain resumes it through the main firstmate.
+
 ## Paused product work
 
 Trade-card UI, font, metadata and browser-test work was safely saved in

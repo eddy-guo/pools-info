@@ -6,6 +6,8 @@ import {
   contracts,
   launchEvent,
   swapEvent,
+  tokenMetadataFactory,
+  tokenMetadataTopic,
   type EventHeader,
   type RawLog,
 } from "@pools/chain";
@@ -61,52 +63,100 @@ async function reconcile(db: Client, key: RecentStream["key"], rpc: Rpc) {
   );
   return recentStream(db, key);
 }
-/** Share only immutable scope-filtered log evidence and the conservative head
- * observed at cycle start. Canonical header rechecks always hit the provider. */
+const height = (params: unknown[]) =>
+  typeof params[0] === "string" &&
+  /^0x[\da-f]+$/i.test(params[0]) &&
+  params[1] === false
+    ? Number(params[0])
+    : null;
+/** One chain view per cycle: the chain id, the head and every canonical header
+ * are fetched at most once per transport, and the worker creates one transport
+ * per cycle. Every height the cycle touches (head, saved cursors, both
+ * boundaries, each event block) is observed at most 128 blocks behind the
+ * head, so the observations are mutually consistent. Consistency across cycles
+ * is the reconcile's job: the next cycle re-reads the saved cursor's header
+ * and walks checkpoints back to a matching ancestor before extending it. */
+export function recentCycleRpc(rpc: Rpc) {
+  const call = rpc.call.bind(rpc),
+    batch = rpc.batch.bind(rpc);
+  const once = new Map<string, unknown>();
+  const headers = new Map<number, unknown>();
+  rpc.call = async <T>(method: string, params: unknown[]) => {
+    if (method === "eth_chainId" || method === "eth_blockNumber") {
+      if (!once.has(method)) once.set(method, await call<T>(method, params));
+      return once.get(method) as T;
+    }
+    const n = method === "eth_getBlockByNumber" ? height(params) : null;
+    if (n === null) return call<T>(method, params);
+    if (!headers.has(n)) headers.set(n, await call<T>(method, params));
+    return headers.get(n) as T;
+  };
+  rpc.batch = async <T>(method: string, paramsList: unknown[][]) => {
+    if (method !== "eth_getBlockByNumber") return batch<T>(method, paramsList);
+    const heights = paramsList.map(height);
+    if (heights.some((n) => n === null)) return batch<T>(method, paramsList);
+    const missing = [
+      ...new Set(heights.filter((n) => !headers.has(n!)) as number[]),
+    ];
+    if (missing.length) {
+      const fetched = await batch<T>(
+        method,
+        missing.map((n) => [hex(n), false]),
+      );
+      if (fetched.length !== missing.length)
+        throw Error("Missing recent header");
+      missing.forEach((n, i) => headers.set(n, fetched[i]));
+    }
+    return heights.map((n) => headers.get(n!) as T);
+  };
+  return rpc;
+}
+/** Share one scope-filtered log query for the exact range between the
+ * discovery collector (strategy launches plus factory metadata) and the swap
+ * collector (PoolManager swaps). Each is served precisely what the provider
+ * would return for its own query; anything else still hits the provider. */
 export async function prepareRecentCycleRpc(
   rpc: Rpc,
-  head: number,
   from: number,
   to: number,
 ) {
   const swapTopic = toEventSelector(swapEvent),
     launchTopic = toEventSelector(launchEvent);
+  const discoverySources: string[] = [
+      ...contracts.strategies,
+      tokenMetadataFactory,
+    ],
+    discoveryTopics: string[][] = [[launchTopic, tokenMetadataTopic]];
   const logs = await rpc.logs(
-    [contracts.manager, ...contracts.strategies],
-    [[swapTopic, launchTopic]],
+    [contracts.manager, ...discoverySources],
+    [[swapTopic, launchTopic, tokenMetadataTopic]],
     from,
     to,
   );
   if (logs.length > 10000) throw Error("Recent batch exceeds 10000 logs");
-  const launch: RawLog[] = [],
+  const discovery: RawLog[] = [],
     swap: RawLog[] = [];
   for (const log of logs) {
     const addr = log.address.toLowerCase(),
       topic = log.topics[0]?.toLowerCase();
     if (addr === contracts.manager && topic === swapTopic) swap.push(log);
     else if (
-      (contracts.strategies as readonly string[]).includes(addr) &&
-      topic === launchTopic
+      topic !== undefined &&
+      discoverySources.includes(addr) &&
+      discoveryTopics[0].includes(topic)
     )
-      launch.push(log);
+      discovery.push(log);
     else throw Error("Unexpected recent combined source");
   }
-  const call = rpc.call.bind(rpc),
-    query = rpc.logs.bind(rpc);
-  rpc.call = async <T>(method: string, params: unknown[]) => {
-    if (method === "eth_chainId") return hex(4663) as T;
-    if (method === "eth_blockNumber") return hex(head) as T;
-    return call<T>(method, params);
-  };
+  const query = rpc.logs.bind(rpc);
+  const same = (a: unknown, b: unknown) =>
+    JSON.stringify(a) === JSON.stringify(b);
   rpc.logs = async (address, topics, a, b) => {
-    if (a === from && b === to && topics.length === 1) {
-      if (address === contracts.manager && topics[0] === swapTopic) return swap;
-      if (
-        Array.isArray(address) &&
-        JSON.stringify(address) === JSON.stringify(contracts.strategies) &&
-        topics[0] === launchTopic
-      )
-        return launch;
+    if (a === from && b === to) {
+      if (address === contracts.manager && same(topics, [swapTopic]))
+        return swap;
+      if (same(address, discoverySources) && same(topics, discoveryTopics))
+        return discovery;
     }
     return query(address, topics, a, b);
   };
@@ -121,6 +171,7 @@ export async function runRecentCycle(
     signal?: AbortSignal;
   },
 ) {
+  recentCycleRpc(rpc);
   if (Number(await rpc.call<string>("eth_chainId", [])) !== 4663)
     throw Error("Wrong chain");
   const head = Number(await rpc.call<string>("eth_blockNumber", []));
@@ -146,21 +197,21 @@ export async function runRecentCycle(
   );
   if (from > to || options.signal?.aborted)
     return { head, through: swaps.cursor, advanced: 0, swaps: 0, pools: 0 };
-  await prepareRecentCycleRpc(rpc, head, from, to);
+  await prepareRecentCycleRpc(rpc, from, to);
+  // Both boundaries are pinned here; the collectors below observe these same
+  // headers, so their cutoffs can only agree. The saved history is linked by
+  // the first header's parent hash, here for discovery and at commit for both.
+  const first = await recentHeader(rpc, from);
+  const cutoff = await recentHeader(rpc, to);
   let pools = 0;
   if (!behindDiscovery) {
-    const first = await recentHeader(rpc, from);
     if (discovery.hash && first.parentHash.toLowerCase() !== discovery.hash)
       throw Error("Checkpoint parent changed");
     const result = await collectCatalog(undefined, rpc, {
       fromBlock: from,
       toBlock: to,
     });
-    const cutoff = await recentHeader(rpc, to);
-    if (
-      cutoff.hash.toLowerCase() !== result.catalog.blockHash.toLowerCase() ||
-      (await recentHeader(rpc, from)).hash !== first.hash
-    )
+    if (cutoff.hash.toLowerCase() !== result.catalog.blockHash.toLowerCase())
       throw Error("Discovery boundary changed");
     await commitRecentBatch(db, discovery, {
       from,
@@ -192,19 +243,9 @@ export async function runRecentCycle(
     { fromBlock: from, toBlock: to, pools: await knownRecentPools(db, ids) },
     rpc,
   );
-  // Pin the common discovery cutoff as well as the swap result, even when
-  // discovery advanced in an earlier cycle that was interrupted before swaps.
   if (
-    discovery.cursor !== null &&
-    (await recentHeader(rpc, discovery.cursor)).hash.toLowerCase() !==
-      discovery.hash
-  )
-    throw Error("Discovery boundary changed");
-  if (
-    (await recentHeader(rpc, from)).hash.toLowerCase() !==
-    result.evidence.headers
-      .find((h) => Number(h.number) === from)!
-      .hash.toLowerCase()
+    result.blockHash !== cutoff.hash.toLowerCase() ||
+    result.fromBlockParentHash !== first.parentHash.toLowerCase()
   )
     throw Error("Recent boundary changed");
   await commitRecentBatch(db, swaps, {

@@ -14,10 +14,26 @@ export {
 } from "./broad-pool-events";
 export {
   Rpc,
+  RpcCallError,
   RpcRateLimitExhausted,
   RpcResponseCapacity,
   type RpcRateLimitEvent,
 } from "./rpc";
+export {
+  canonicalMulticall3Address,
+  multicallConfig,
+  multicallPolicy,
+  readContracts,
+  expandContractReads,
+  aggregateRequestData,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  type MulticallConfig,
+  type ContractRead,
+  type ContractReadEvidence,
+  type ContractReads,
+  type ExpandedContractRead,
+} from "./multicall";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
 

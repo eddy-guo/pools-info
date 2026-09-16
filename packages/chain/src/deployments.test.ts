@@ -15,6 +15,25 @@ import { contracts, decodeLaunch, launchEvent, type RawLog } from "./events";
 import { collectCatalog } from "./catalog";
 import { Rpc, hex } from "./rpc";
 import { tokenMetadataFactory } from "./token-metadata";
+import {
+  canonicalMulticall3Address,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  expandContractReads,
+} from "./multicall";
+/** Name for even members, symbol for odd ones, whether asked one call at a
+ * time or through one Multicall3 aggregate. */
+function metadataReply(call: { to: string; data: `0x${string}` }, i: number) {
+  const text = (n: number) =>
+    encodeAbiParameters([{ type: "string" }], [n % 2 ? "T" : "Token"]);
+  if (call.to !== canonicalMulticall3Address) return text(i);
+  return encodeAggregateReply(
+    decodeAggregateRequest(call.data).map((_, j) => ({
+      success: true,
+      returnData: text(j),
+    })),
+  );
+}
 const word = (n: number): Hex => `0x${n.toString(16).padStart(64, "0")}`;
 const zero = `0x${"0".repeat(40)}` as const;
 const keyTypes = [
@@ -124,7 +143,7 @@ test("valid pool IDs with the wrong generation spacing and unregistered Crowd so
     /source/,
   );
 });
-function mock(wrongHistoricalLauncher = false) {
+function mock(wrongHistoricalLauncher = false, calls: unknown[][] = []) {
   const rpc = new Rpc(),
     logs = instantDeployments.map((_, i) => launch(i));
   const height = instantRegistryVerifiedAtBlock;
@@ -146,11 +165,10 @@ function mock(wrongHistoricalLauncher = false) {
   rpc.batch = async <T>(method: string, params: unknown[][]) =>
     params.map((p, i) => {
       if (method === "eth_getBlockByNumber") return header;
-      if (method === "eth_call")
-        return encodeAbiParameters(
-          [{ type: "string" }],
-          [i % 2 ? "T" : "Token"],
-        );
+      if (method === "eth_call") {
+        calls.push(p);
+        return metadataReply(p[0] as { to: string; data: `0x${string}` }, i);
+      }
       const log = logs.find((l) => l.transactionHash === p[0])!,
         d = getInstantDeployment(log.address)!;
       return {
@@ -174,8 +192,29 @@ test("catalog accepts historical/current launches only with their mapped launche
     fromBlock: instantRegistryVerifiedAtBlock,
     toBlock: instantRegistryVerifiedAtBlock,
   };
-  const result = await collectCatalog(undefined, mock(), range);
+  const calls: unknown[][] = [];
+  const result = await collectCatalog(undefined, mock(false, calls), range);
   assert.equal(result.catalog.pools.length, 12);
+  assert.deepEqual(
+    result.catalog.pools.map((p) => [p.name, p.symbol]),
+    instantDeployments.map(() => ["Token", "T"]),
+  );
+  // 24 name/symbol reads travel as one aggregate whose raw reply is retained
+  // and expands back to every member; before batching they were 24 eth_calls.
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0][0] as { to: string }).to, canonicalMulticall3Address);
+  assert.equal(result.evidence.calls.length, 1);
+  assert.equal(result.evidence.calls[0].kind, "multicall3");
+  const rows = expandContractReads(result.evidence.calls);
+  assert.equal(rows.length, 24);
+  assert.deepEqual(
+    rows.slice(0, 2).map((r) => r.to),
+    [decodeLaunch(launch(0)).token, decodeLaunch(launch(0)).token],
+  );
+  assert.equal(
+    rows[1].result,
+    encodeAbiParameters([{ type: "string" }], ["T"]),
+  );
   await assert.rejects(
     collectCatalog(undefined, mock(true), range),
     /Unverified catalog launch/,
@@ -201,6 +240,20 @@ import { readFileSync } from "node:fs";
 import { collectRecentEvents } from "./recent-events";
 import type { Receipt } from "./audit";
 import type { EventHeader } from "./pool-events";
+function proofMetadata(call: { to: string; data: `0x${string}` }, i: number) {
+  const text = (n: number) =>
+    encodeAbiParameters(
+      [{ type: "string" }],
+      [n % 2 ? "POOLS" : "pools.trade"],
+    );
+  if (call.to !== canonicalMulticall3Address) return text(i);
+  return encodeAggregateReply(
+    decodeAggregateRequest(call.data).map((_, j) => ({
+      success: true,
+      returnData: text(j),
+    })),
+  );
+}
 test("actual previously omitted 60-tick Pools launch and sixteen receipt-backed swaps survive replay", async () => {
   const proof = JSON.parse(
     readFileSync(
@@ -253,10 +306,7 @@ test("actual previously omitted 60-tick Pools launch and sixteen receipt-backed 
         ? headers.find((h) => Number(h.number) === Number(p[0]))
         : method === "eth_getTransactionReceipt"
           ? receipts.find((r) => r.transactionHash === p[0])
-          : encodeAbiParameters(
-              [{ type: "string" }],
-              [i % 2 ? "POOLS" : "pools.trade"],
-            ),
+          : proofMetadata(p[0] as { to: string; data: `0x${string}` }, i),
     ) as T[];
   const block = Number(log.blockNumber),
     catalog = await collectCatalog(undefined, rpc, {

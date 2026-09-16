@@ -21,6 +21,7 @@ import {
 } from "./events";
 import { Rpc, hex } from "./rpc";
 import { auditPool, type Receipt } from "./audit";
+import type { ContractReadEvidence } from "./multicall";
 import { discoverRecentLaunches } from "./discovery";
 import type { ChainMarket, ChainSnapshot, ChainTrade } from "@pools/core";
 
@@ -137,11 +138,12 @@ export async function collectSnapshot(
     swaps: RawLog[];
     transfers: RawLog[];
     receipts: unknown[];
+    calls: ContractReadEvidence[];
     blocks?: Block[];
-  } = { launches, swaps: [], transfers: [], receipts: [] };
+  } = { launches, swaps: [], transfers: [], receipts: [], calls: [] };
   let reconciliation: ChainSnapshot["reconciliation"] = null;
   const receiptCache = new Map<Hex, Promise<Receipt>>();
-  const codeCache = new Map<Hex, Promise<Hex>>();
+  const codeCache = new Map<Hex, Promise<boolean>>();
   function getReceipt(hash: Hex) {
     let pending = receiptCache.get(hash);
     if (!pending) {
@@ -159,7 +161,9 @@ export async function collectSnapshot(
   function code(address: Hex) {
     let pending = codeCache.get(address);
     if (!pending) {
-      pending = rpc.call<Hex>("eth_getCode", [address, hex(toBlock)]);
+      pending = rpc
+        .call<Hex>("eth_getCode", [address, hex(toBlock)])
+        .then((value) => value !== "0x");
       codeCache.set(address, pending);
     }
     return pending;
@@ -295,7 +299,7 @@ export async function collectSnapshot(
         senders.map((sender) => [sender, hex(toBlock)]),
       );
       codes.forEach((value, i) =>
-        codeCache.set(senders[i], Promise.resolve(value)),
+        codeCache.set(senders[i], Promise.resolve(value !== "0x")),
       );
     }
     for (const transfer of transfers) {
@@ -378,19 +382,22 @@ export async function collectSnapshot(
         l.topics[1] ===
           `0x${launch.token.toLowerCase().slice(2).padStart(64, "0")}`,
     );
-    const accounting = options.includeAccounting
-      ? await auditPool({
-          rpc,
-          token: launch.token,
-          rawSwaps,
-          transfers,
-          trades: trades.filter((t) => t.poolId === launch.poolId),
-          toBlock,
-          tokenBornAtLaunch,
-          receipt: getReceipt,
-          code,
-        })
-      : undefined;
+    let accounting: ChainMarket["accounting"];
+    if (options.includeAccounting) {
+      const { calls, ...audited } = await auditPool({
+        rpc,
+        token: launch.token,
+        rawSwaps,
+        transfers,
+        trades: trades.filter((t) => t.poolId === launch.poolId),
+        toBlock,
+        tokenBornAtLaunch,
+        receipt: getReceipt,
+        code,
+      });
+      accounting = audited;
+      evidence.calls.push(...calls);
+    }
     markets.push({
       accounting,
       id: launch.poolId,

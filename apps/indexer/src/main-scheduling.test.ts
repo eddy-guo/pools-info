@@ -10,6 +10,7 @@ test("actual main gives discovery catch-up priority and resumes deep work after 
     "disabled",
     "failed",
     "catchup-run",
+    "deep-off",
   ] as const) {
     const script = `
       import {createClient} from "./packages/db/src/index.ts";
@@ -19,6 +20,7 @@ test("actual main gives discovery catch-up priority and resumes deep work after 
       process.env.ROBINHOOD_RPC_URL="http://127.0.0.1:1/private_key";
       delete process.env.INDEXER_LOG_RPC_URL;
       delete process.env.INDEXER_BROAD_V1_ENABLED;
+      process.env.INDEXER_DEEP_TIER_ENABLED=state==="deep-off"?"0":"1";
       process.env.INDEXER_DISCOVERY_V2_ENABLED=state==="disabled"?"0":"1";
       process.env.INDEXER_DISCOVERY_BATCH_BLOCKS="10000";
       process.env.INDEXER_LOG_RANGE_BLOCKS="1000";
@@ -72,6 +74,12 @@ test("actual main gives discovery catch-up priority and resumes deep work after 
     assert.equal(
       events.filter((e) => e.event === "discovery_attempt").length,
       state === "catchup-run" ? 2 : 1,
+    );
+    // The paused deep tier is announced once and selects no pool, while
+    // discovery still ran above and the process still exits cleanly.
+    assert.equal(
+      events.filter((e) => e.event === "deep_tier_disabled").length,
+      state === "deep-off" ? 1 : 0,
     );
     assert.equal(events.filter((e) => e.event === "db_closed").length, 1);
     const config = events.find((e) => e.event === "worker_rpc_configuration");
