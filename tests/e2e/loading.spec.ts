@@ -121,12 +121,14 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       url: `/wallet/${topWallet}/`,
       api: `wallets/${topWallet}`,
       label: "Loading wallet analytics",
+      skeleton: ".product-coverage[aria-busy=true]",
       loaded: "Positions across covered pools",
     },
     {
       url: "/traders/?window=All",
       api: "leaderboard",
       label: "Loading trader rankings",
+      skeleton: ".leaderboard-panel [data-pending=true]",
       loaded: null,
     },
   ]) {
@@ -143,8 +145,8 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       await route.fulfill({ json: payload });
     });
     await page.goto(entry.url);
-    const skeleton = page.locator(".product-coverage[aria-busy=true]");
-    await expect(skeleton).toBeVisible();
+    const skeleton = page.locator(entry.skeleton);
+    await expect(skeleton.first()).toBeVisible();
     await expect(
       page
         .getByText("No supported realized history in this window.", {

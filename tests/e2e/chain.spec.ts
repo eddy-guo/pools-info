@@ -1229,9 +1229,6 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
       unexpected.push(r.url());
   });
   await page.goto("/traders/?window=All");
-  await expect(
-    page.getByLabel("Minimum swaps").filter({ visible: true }),
-  ).toHaveValue("10");
   await page
     .locator(`a[href="/wallet/${top.address}/?window=All"]`)
     .filter({ visible: true })

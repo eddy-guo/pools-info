@@ -3405,6 +3405,13 @@ main {
 .page-heading .eyebrow {
   margin-bottom: 10px;
 }
+/* Leaderboard ranking controls sit beside the title, as in the design. */
+.traders-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .button {
   min-height: var(--ctl-min);
   border-radius: 10px;
@@ -4466,6 +4473,9 @@ main {
   .page-heading .button {
     min-height: 44px;
   }
+  .traders-controls {
+    flex-basis: 100%;
+  }
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -5165,7 +5175,8 @@ main {
   height: 74px;
 }
 .leaderboard-panel .live-podium {
-  height: 220px;
+  height: 236px;
+  padding-top: 16px;
 }
 .leaderboard-panel .live-podium > * {
   height: 204px;
@@ -5218,10 +5229,39 @@ main {
     height: 330px;
   }
   .leaderboard-panel .live-podium {
-    height: 400px;
+    height: 412px;
+    padding-top: 12px;
   }
   .leaderboard-panel .live-podium > * {
     height: 120px;
+  }
+  /* Fixed tracks with start-aligned text: a resolved address or value cannot move
+     its neighbours now that the podium sits inside the first mobile screen. */
+  .leaderboard-panel .live-podium a {
+    display: grid;
+    grid-template-columns: 35px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "avatar label label"
+      "avatar name name"
+      "badge badge value";
+    column-gap: 12px;
+    row-gap: 8px;
+    align-items: center;
+  }
+  .leaderboard-panel .live-podium a > small {
+    grid-area: label;
+  }
+  .leaderboard-panel .live-podium a > .avatar {
+    grid-area: avatar;
+  }
+  .leaderboard-panel .live-podium a > strong {
+    grid-area: name;
+  }
+  .leaderboard-panel .live-podium a > strong + span {
+    grid-area: badge;
+  }
+  .leaderboard-panel .live-podium a > .number {
+    grid-area: value;
   }
   .leaderboard-panel .mobile-traders {
     min-height: calc(25 * 268px);
