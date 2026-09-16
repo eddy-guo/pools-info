@@ -416,7 +416,6 @@ export function PreloadedOverview() {
               Showing <strong>{pools.length}</strong> of{" "}
               <strong>{s.markets.length}</strong> covered pools
             </span>
-            <Link href="/methodology/">Coverage & methodology ↗</Link>
           </div>
           <details className="coverage-disclosure">
             <summary>About this sample</summary>

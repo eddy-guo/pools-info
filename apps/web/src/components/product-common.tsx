@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import type { AnalyticsCoverage } from "@pools/core";
 import type { ProductDelivery } from "@/lib/use-product";
 export function ProductCoverage({
@@ -42,8 +41,7 @@ export function ProductCoverage({
             {coverage.pnlScope === "observed_initiator_and_verified_positions"
               ? "PnL combines flagged initiator estimates and transfer-verified positions. Unknown basis stays excluded."
               : "PnL covers supported pool positions, not all wallet activity."}
-            {delivery?.notice ? ` ${delivery.notice}` : ""}{" "}
-            <Link href="/methodology/">Coverage and methodology ↗</Link>
+            {delivery?.notice ? ` ${delivery.notice}` : ""}
           </>
         ) : (
           "Coverage and dated capture details are pending."
