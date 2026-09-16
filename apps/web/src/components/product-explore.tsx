@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
+import { RefreshCw, Search } from "lucide-react";
 import { TradeStream } from "./trade-stream";
 import {
   poolHref,
@@ -19,8 +20,8 @@ import { useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
 import { Change, Price, Sparkline, WatchButton } from "./ui";
 import { PoolImage } from "./pool-image";
-import { Eth, Stat, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { ProductCoverage, ProductPagination } from "./product-common";
+import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
+import { ProductPagination } from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -68,51 +69,9 @@ export function ProductExplore() {
   return (
     <div className="page explore-page">
       <div className="page-heading">
-        <div>
-          <h1>
-            Pools<span className="title-dot">.</span>
-          </h1>
-          <p>
-            Explore every discovered Pools launch. Market data covers the
-            evidence subset.
-          </p>
-        </div>
-        <Link className="button" href="/traders/">
-          Trader leaderboard ↗
-        </Link>
-      </div>
-      <ProductCoverage coverage={data?.coverage} delivery={data?.delivery} />
-      <div className="stats-grid">
-        <Stat
-          pending={!data}
-          label="Pools discovered"
-          note="All discovered launches"
-        >
-          {data?.coverage.catalogPools}
-        </Stat>
-        <Stat
-          pending={!data}
-          label="Market evidence"
-          note="Pools with saved market data"
-        >
-          {data?.coverage.processedPools}
-        </Stat>
-        <Stat
-          pending={!data}
-          label="Matching pools"
-          note="Across the entire saved catalog"
-        >
-          {data?.total}
-        </Stat>
-        <Stat
-          pending={!data}
-          label="Market data"
-          note="Leaderboard uses the evidence subset"
-        >
-          {data?.coverage.catalogPools
-            ? `${Math.round((data.coverage.processedPools / data.coverage.catalogPools) * 100)}% covered`
-            : "Pending"}
-        </Stat>
+        <h1>
+          Pools<span className="title-dot">.</span>
+        </h1>
       </div>
       <section className="launch-section" aria-label="Just launched">
         <div className="section-caption">
@@ -195,90 +154,84 @@ export function ProductExplore() {
       <div className="workspace-grid">
         <div>
           <section className="panel">
-            <div className="table-tabs live-controls">
-              {(
-                [
-                  ["all", "All"],
-                  ["gainers", "Gainers"],
-                  ["new", "New"],
-                  ["crowd", "Crowd"],
-                  ["watchlist", "Watchlist"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  className={view === key ? "active" : ""}
-                  onClick={() =>
-                    set({
-                      view: key,
-                      watchlist: null,
-                      offset: null,
-                      sort: null,
-                    })
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-              <WindowTabs
-                value={window}
-                onChange={(value) => {
-                  setWindow(value);
-                  set({ offset: null });
-                }}
-                options={["1h", "24h", "7d", "30d", "All"]}
-              />
-            </div>
-            <div className="live-controls explore-controls">
-              <input
-                aria-label="Filter pools"
-                placeholder="Filter tokens or paste an address"
-                value={q}
-                maxLength={100}
-                onChange={(e) => set({ q: e.target.value, offset: null })}
-              />
-              <label>
-                Sort
+            <div className="table-toolbar explore-toolbar">
+              <div className="table-tabs" aria-label="Pool views">
+                {(
+                  [
+                    ["all", "All"],
+                    ["gainers", "Gainers"],
+                    ["new", "New"],
+                    ["crowd", "Crowd"],
+                    ["watchlist", "Watchlist"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={view === key ? "active" : ""}
+                    aria-pressed={view === key}
+                    onClick={() =>
+                      set({
+                        view: key,
+                        watchlist: null,
+                        offset: null,
+                        sort: null,
+                      })
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="market-filter-actions">
+                <label className="filter-input">
+                  <Search size={13} aria-hidden="true" />
+                  <input
+                    aria-label="Filter pools"
+                    placeholder="Filter tokens or address"
+                    value={q}
+                    maxLength={100}
+                    onChange={(e) => set({ q: e.target.value, offset: null })}
+                  />
+                </label>
                 <select
                   aria-label="Sort all pools"
                   value={sort}
                   onChange={(e) => set({ sort: e.target.value, offset: null })}
                 >
-                  <option value="volume">Volume - market data only</option>
-                  <option value="change">
-                    Price change - market data only
-                  </option>
+                  <option value="volume">Volume</option>
+                  <option value="change">Price change</option>
                   <option value="launch">Launch time</option>
-                  <option value="liquidity">
-                    Liquidity - market data only
-                  </option>
+                  <option value="liquidity">Liquidity</option>
                 </select>
-              </label>
-              <span className="sort-coverage" data-pending={!data || undefined}>
-                {data
-                  ? sort === "launch" || view === "new"
-                    ? `${data.total.toLocaleString("en-US")} discovered pools`
-                    : `${data.total.toLocaleString("en-US")} pools with ${sort === "liquidity" ? "liquidity" : sort === "change" ? "price-change" : "market"} data`
-                  : "Pool coverage pending"}
-              </span>
-              <button
-                className="button secondary"
-                onClick={() =>
-                  set({
-                    dir: direction === "desc" ? "asc" : "desc",
-                    offset: null,
-                  })
-                }
-              >
-                {direction === "desc" ? "High to low ↓" : "Low to high ↑"}
-              </button>
-              <button
-                className="button secondary"
-                onClick={refresh}
-                disabled={loading}
-              >
-                Refresh saved data
-              </button>
+                <button
+                  className="button secondary"
+                  onClick={() =>
+                    set({
+                      dir: direction === "desc" ? "asc" : "desc",
+                      offset: null,
+                    })
+                  }
+                >
+                  {direction === "desc" ? "High to low ↓" : "Low to high ↑"}
+                </button>
+                <button
+                  className="icon-button"
+                  title="Refresh saved data"
+                  aria-label="Refresh saved data"
+                  onClick={refresh}
+                  disabled={loading}
+                >
+                  <RefreshCw size={12} />
+                </button>
+                <WindowTabs
+                  value={window}
+                  onChange={(value) => {
+                    setWindow(value);
+                    set({ offset: null });
+                  }}
+                  options={["1h", "24h", "7d", "30d", "All"]}
+                />
+              </div>
             </div>
             {view === "watchlist" && (
               <WatchlistControls
@@ -299,9 +252,6 @@ export function ProductExplore() {
                 {error}
               </p>
             )}
-            <p className="panel-footnote explore-message">
-              {data?.message ?? "\u00a0"}
-            </p>
             <>
               <div
                 className="table-scroll desktop-pools"
