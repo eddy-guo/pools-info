@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { validatePoolResponse } from "./pool-response";
+import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 export type ProductDelivery = {
   source: "indexer" | "preloaded";
   notice: string | null;
@@ -49,6 +49,7 @@ export function useProduct<T>(path: string) {
             url.pathname.slice(7),
             url.searchParams.get("window") ?? "24h",
           );
+          normalizePoolLaunch(data);
         }
         if (!controller.signal.aborted)
           setState({ path, data, pending: false });

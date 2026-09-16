@@ -1,5 +1,39 @@
 import { assertObservedMarket } from "@pools/core";
 
+/**
+ * A launch height or time, from either serialisation: the read API publishes
+ * JSON numbers, but a bigint column read as text still arrives as a decimal
+ * string. Anything else is null, and the caller rejects it.
+ */
+const whole = (value: unknown): number | null => {
+  const parsed =
+    typeof value === "string" && /^(0|[1-9][0-9]*)$/.test(value)
+      ? Number(value)
+      : value;
+  return typeof parsed === "number" &&
+    Number.isSafeInteger(parsed) &&
+    parsed >= 0
+    ? parsed
+    : null;
+};
+
+/**
+ * Give the page numbers whichever serialisation arrived. This is deliberately
+ * separate from validation: `apps/api` asserts its own JSON types against the
+ * raw body after calling the validator, so coercing there would let an API
+ * regression back to strings pass that contract test unnoticed.
+ */
+export function normalizePoolLaunch(data: unknown) {
+  const value = data as Record<string, unknown> | null | undefined;
+  const pool = (value?.pool ?? value) as Record<string, unknown> | undefined;
+  const launch = pool?.launch as Record<string, unknown> | undefined;
+  if (!launch || typeof launch !== "object") return;
+  for (const field of ["block", "timestamp", "sourceBatchThroughBlock"]) {
+    const parsed = whole(launch[field]);
+    if (parsed !== null) launch[field] = parsed;
+  }
+}
+
 export function validatePoolResponse(
   data: unknown,
   id: string,
@@ -54,13 +88,18 @@ export function validatePoolResponse(
       throw Error("Invalid published pool identity");
   }
   if (value.market !== undefined && value.market !== null) {
-    const launch = pool.launch as Record<string, unknown>;
+    const launch = pool.launch as Record<string, unknown> | undefined;
+    const block = whole(launch?.block);
+    const timestamp = whole(launch?.timestamp);
+    const batch = launch?.sourceBatchThroughBlock;
+    // An absent source batch stays absent; a present one must be a whole number.
+    const through =
+      batch === undefined || batch === null ? undefined : whole(batch);
     if (
       !launch ||
-      !Number.isSafeInteger(launch.block) ||
-      (launch.block as number) < 0 ||
-      !Number.isSafeInteger(launch.timestamp) ||
-      (launch.timestamp as number) < 0 ||
+      block === null ||
+      timestamp === null ||
+      through === null ||
       typeof launch.transactionHash !== "string" ||
       !/^0x[0-9a-f]{64}$/.test(launch.transactionHash) ||
       typeof launch.transactionInitiator !== "string" ||
