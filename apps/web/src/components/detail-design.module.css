@@ -299,10 +299,14 @@
   margin: 2px 8px;
   padding: 11px 12px;
 }
-.search :global(.search-result:focus),
 .search :global(.search-result:hover) {
   background: #16161c;
   outline: 1px solid #292931;
+}
+.search :global(.search-result:focus) {
+  background: #16161c;
+  outline: 1px solid var(--ac);
+  outline-offset: -1px;
 }
 .search :global(.search-type-icon) {
   color: var(--ac);
