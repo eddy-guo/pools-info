@@ -54,8 +54,9 @@ export function Search() {
       : undefined;
   const data = current?.data;
   const waiting =
-    !current ||
-    (!current.error && (!data || (!data.entries.length && current.pending)));
+    isOpen &&
+    (!current ||
+      (!current.error && (!data || (!data.entries.length && current.pending))));
   function open() {
     if (!dialog.current?.open) dialog.current?.showModal();
     setOpen(true);

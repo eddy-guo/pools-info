@@ -3085,11 +3085,6 @@ main {
 .search-result small {
   white-space: nowrap;
 }
-.search-result:focus {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-  background: #2b252d;
-}
 .search-results {
   max-height: calc(72dvh - 175px);
 }
