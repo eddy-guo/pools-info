@@ -17,7 +17,7 @@ import {
   MAX_WATCHLIST_QUERY_POOLS,
   parseSharedWatchlist,
 } from "@/lib/watchlist";
-import { useQuery, useWatchlist } from "./state";
+import { useDebouncedInput, useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
 import { Change, Price, Sparkline, WatchButton } from "./ui";
 import { PoolImage } from "./pool-image";
@@ -69,6 +69,7 @@ export function ProductExplore() {
     q = params.get("q") ?? "";
   const sort = params.get("sort") ?? "launch",
     direction = params.get("dir") ?? "desc";
+  const filter = useDebouncedInput(q, (next) => set({ q: next, offset: null }));
   const query = new URLSearchParams({
     window,
     view: view ?? "all",
@@ -206,9 +207,13 @@ export function ProductExplore() {
                   <input
                     aria-label="Filter pools"
                     placeholder="Filter tokens or address"
-                    value={q}
+                    value={filter.value}
                     maxLength={100}
-                    onChange={(e) => set({ q: e.target.value, offset: null })}
+                    onChange={(e) => filter.set(e.target.value)}
+                    onBlur={filter.flush}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") filter.flush();
+                    }}
                   />
                 </label>
                 <select
