@@ -87,10 +87,10 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   await expect(page.getByRole("heading", { name: "Pools." })).toBeVisible();
   await expect(
     page
-      .locator(".stat")
-      .filter({ has: page.getByText("Pools discovered", { exact: true }) })
-      .locator("strong")
-      .filter({ visible: true }),
+      .locator(".desktop-pools, .mobile-pools")
+      .locator(".token-cell strong")
+      .filter({ visible: true })
+      .first(),
   ).toBeVisible();
   await expect(page.getByText("DEMO SNAPSHOT", { exact: true })).toHaveCount(0);
   await page.getByRole("textbox", { name: "Filter pools" }).fill(market.token);
@@ -1307,9 +1307,7 @@ test("an empty saved analytics publication shows processing instead of the Unix 
   );
   await page.goto("/");
   await expect(
-    page.getByText("Analytics processing has not completed yet", {
-      exact: false,
-    }),
+    page.getByRole("heading", { name: "No pools match these filters" }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText("1970");
   await expect(page.locator(".network-subnav")).toHaveText(
