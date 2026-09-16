@@ -217,9 +217,9 @@ deployment and continued cursor movement before claiming it is live.
 After the historical sweep reached the tip, the idle burn was measured at about
 1.19M CU per hour (cost study, 2026-09-16): the live feed 35%, the tier-3 deep
 sweeps 34%, analytics 29%, discovery at the tip 2%. Four controls now exist;
-their per-cycle effect is proven against the mock transport, and the hourly
-figures below are derived from the measured method mix, to be verified from one
-hour of the Alchemy hourly series after a captain-approved resume.
+their per-cycle effect is proven against the mock transport. The hourly figures
+below were derived from the measured method mix; the 16 Sep resume (next
+section) measured what they achieve.
 
 - **Live feed cadence.** `RECENT_TIP_POLL_MS` (default 30000) replaces the fixed
   2-second pause after a cycle that reached the confirmed head. Within a cycle
@@ -247,8 +247,42 @@ hour of the Alchemy hourly series after a captain-approved resume.
   the value in effect. The default is 1, so nothing changes until it is set on
   Railway; the captain's decision D4 keeps the deep tier off after the resume.
 
-None of these variables is set on Railway by this change, and the indexer stays
-stopped until the captain resumes it through the main firstmate.
+## Resume measurement, 16 Sep 2026
+
+The captain resumed the indexer at 06:13 UTC with `INDEXER_DEEP_TIER_ENABLED=0`
+on Railway (deployment of `ee2f7b9`, source reconnected to `main`; four merges
+auto-deployed during the run). The controls worked as designed: in the 08:00
+UTC hour `eth_call` cost 1,872 CU and `eth_getCode` 4,960 CU (Multicall3 and
+the sender cache), the live feed polled every 30 seconds at the tip, and no
+deep sweep ran. The burn did not fall: the 07:00 and 08:00 clock hours cost
+1,167,842 and 1,047,642 CU against the 208,000 target and the 500,000 stop
+criterion, so the service was stopped again at 09:32 UTC and its source
+disconnected. 3.86M CU (about 2.03 USD) went to Alchemy in 3.3 hours, about
+846,000 of it in the 20-minute catch-up of a 43,000-block gap.
+
+The cost is the live feed's per-swap evidence: every registered swap needs one
+receipt (20 CU) plus a header shared per block, about 34 CU per swap, and
+`eth_getTransactionReceipt` plus `eth_getBlockByNumber` were 97% of the 08:00
+hour. That hour saw about 29,500 registered swaps, four times the 7,600 per
+hour the 208,000 figure assumed. At that volume the tip worker alone costs
+about 1.0M CU per hour (13 USD per day) on Alchemy whatever the other workers
+do; the remedy is the tip worker's move to HyperSync, not another switch. An
+hour of downtime costs about 850,000 CU to catch up, so stop/start cycles are
+not free either.
+
+Resume is `railway service source connect --repo eddy-guo/pools-info --branch
+main --service indexer`, which deploys the head of `main`. Stop is
+`railway down --service indexer -y` followed by
+`railway service source disconnect --service indexer` so a merge cannot
+redeploy it. The full HyperSync backfill needs the indexer stopped, as it is
+now; the writer lock is free while the backfill's temporary service is idle.
+
+Reading a closed hour from `alchemy --json --no-interactive usage timeseries
+--start-time <hour> --granularity hour`: take the row's `amount` once
+`freshness.dataThrough` is past the end of the hour. Do not gate on
+`isPartial`; the unattended guard for this measurement did, and a jq
+`.isPartial // empty` dropped the `false` value, so it never accepted a final
+reading and left the service running for another hour and a half.
 
 ## Paused product work
 

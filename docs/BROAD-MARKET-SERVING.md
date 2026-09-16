@@ -156,3 +156,55 @@ explore page on desktop/mobile. It needs an isolated `TEST_DATABASE_URL` and
 free local ports 3117/43119, separate from the regular captured-data browser
 suite. Unrelated live browser requests are blocked, rather than supplied with
 fake live market payloads. No production flag or workload is enabled. The 52k-pool serving check (`apps/api/src/broad-explore.scale.test.ts`) runs as the serial second phase of `pnpm test:db`, after the concurrent files, so its first-read bound measures the query on an idle database.
+
+## Production rebuild record (2026-09-16)
+
+The one-time rebuild of the historical broad batches ran against production
+Postgres 18.6 at 09:49:48-09:49:54 UTC, with the indexer stopped and the writer
+lock free. It ran on a temporary Railway service, `rollup-rebuild`, built from
+main `c1781de` with `apps/indexer/Dockerfile` by `railway up` of a `git archive`
+(no GitHub source, no pre-deploy migration, restart policy never), with only
+`DATABASE_URL=${{Postgres.DATABASE_URL}}` and no chain keys. The service was
+deleted at 09:51:53. The indexer image has no `scripts/`, so the job imported
+`acquireWriter` and `rebuildBroadMarket` from `packages/db` and repeated the
+documented invocation (`limit=10`) on one writer-locked connection until
+`remaining=0`. Between invocations, a guard stopped the run if actual or
+projected database plus WAL growth passed 480 MB, the most the 5 GB volume
+allowed while keeping 1 GB free.
+
+A read-only preflight ran first. Migrations were applied through 015, and no
+indexer connection was open. The stream held 147 broad batches (73 with swaps,
+the largest 5,303) and 165,417 swaps through block 23,794,671, which projected
+53,020 buckets and 1,853 summaries. It found 17,448 deep copies, all
+consistent, and no recent copies. There were no invalid discovery dependencies,
+accounting cutoff mismatches, incomplete batches or provenance violations, and
+the cursor hash matched. Check these before any rebuild: a conflict or mismatch
+at or below the served cutoff makes every `/v1/explore` request answer 503.
+
+| Measure                                      | Before             | After                                    |
+| -------------------------------------------- | ------------------ | ---------------------------------------- |
+| `broad_market_batches` / buckets / summaries | 0 / 0 / 0          | 147 / 53,020 / 1,853 (conflicts 0 and 0) |
+| Rollup tables with indexes                   | 0.1 MB             | 78.3 MB (buckets 77.2, summaries 1.0)    |
+| All databases / WAL                          | 3,361.6 / 100.7 MB | 3,439.8 / 117.4 MB (+95.0 MB in total)   |
+| `broadMarketCutoff`                          | null               | block 23,794,671, `rebuildPending` false |
+| Explore total, `sort=launch` (All and 7d)    | 62,464             | 62,464                                   |
+| Explore total, `sort=volume` (All and 7d)    | 1,364              | 1,406                                    |
+| Explore total, `sort=trades` (All and 7d)    | 1,364              | 1,412                                    |
+| First volume and trades page source          | `deep_publication` | `canonical_broad`                        |
+
+The rebuild took 6 s over 15 invocations; the slowest took 901 ms. The volume
+read 3,465.9 of 5,000 MB used before the run, and Railway's reading had not
+refreshed by 09:52, so about 1.44 GB stays free. Metric totals rose only by the
+launches the broad history covers: its cursor is block 23,794,671, while
+discovery:v2 has reached 64,403,385.
+
+Public API timings, 50 rows per page, measured from outside Railway (an `/health`
+round trip took 0.11 s): before, 0.21-0.62 s per page. After, every combination
+of sort (launch, volume, trades), window (All, 7d) and offset (first page and
+last full page) took 0.14-0.58 s, including 36 requests that bypassed the API's
+5-second cache. The first read of `sort=launch&window=All&offset=62400` after
+the rebuild took 2.12 s, which is the latency risk to watch; four later reads
+of it took 0.26-0.32 s. `scripts/check-indexed-health.mjs` reported no issues
+and a matching consistency check. It exited 2 only because the recent feed is
+`stale` with the indexer stopped. The website's `/`, `/traders/`, `/creators/`,
+a broad pool page and the API's `/health` answered 200.
