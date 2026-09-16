@@ -11,7 +11,10 @@ import { RequestError } from "./request";
 
 // Only surviving own ranges participate. A deep publication owns its entire
 // pool book, so tx.from and Transfer beneficiary basis are never blended.
-const evidenceCte = `${catalogCte}, ranges AS MATERIALIZED (
+// The coverage statement carries only the CTEs it reads: PostgreSQL initializes
+// every subplan of a statement, so unreferenced evidence CTEs would still add
+// their expressions to its plan.
+const booksCte = `${catalogCte}, ranges AS MATERIALIZED (
   SELECT b.from_block,b.to_block,b.block_hash,b.to_timestamp AS timestamp,'recent' AS source,b.stream_key,
     b.block_hash ~ '^0x[0-9a-f]{64}$' AND b.to_timestamp>=0
       AND (b.unsupported_swaps=0 OR jsonb_array_length(coalesce(b.evidence->'logs','[]'::jsonb))>0) AS valid
@@ -55,11 +58,15 @@ books AS MATERIALIZED (
       AND c.launch_block BETWEEN source.from_block AND source.to_block AND c.launched_at<=source.to_timestamp)
     ELSE EXISTS(SELECT 1 FROM indexer_batches source WHERE source.chain_id=c.chain_id AND source.stream_key=c.source_stream AND source.to_block=c.source_batch
       AND c.launch_block BETWEEN source.from_block AND source.to_block) END) AS catalog_valid
-  FROM activity_pools activity JOIN catalog c USING(pool_id) JOIN merged m ON upper(m.span)>c.launch_block
-  JOIN boundaries r ON r.to_block=upper(m.span)-1
+  FROM activity_pools activity JOIN LATERAL (SELECT * FROM catalog c WHERE c.pool_id=activity.pool_id OFFSET 0) c ON true
+  JOIN merged m ON upper(m.span)>c.launch_block JOIN boundaries r ON r.to_block=upper(m.span)-1
   WHERE NOT EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=c.chain_id AND a.pool_id=c.pool_id)
     AND NOT EXISTS(SELECT 1 FROM merged newer WHERE upper(newer.span)>upper(m.span) AND upper(newer.span)>c.launch_block)
-), copies AS MATERIALIZED (
+)`;
+// Broad copies are read three times and stay materialized. Recent copies, the
+// bulk of the evidence, stream once into the canonical ordering; conflicts
+// re-derive only the recent copies sharing a key with a surviving broad swap.
+const evidenceCte = `${booksCte}, broad_copies AS MATERIALIZED (
   SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
     e.eth_wei::text,e.token_raw::text,e.amount0::text,e.amount1::text,
     b.catalog_valid AND e.token=b.token AND e.block_number BETWEEN greatest(b.launch_block,r.from_block) AND r.to_block
@@ -72,7 +79,7 @@ books AS MATERIALIZED (
   LEFT JOIN pool_launch_sources ps ON ps.chain_id=e.chain_id AND ps.pool_id=e.pool_id AND ps.stream_key='discovery:v2' AND ps.batch_end::text=member.identity->>'source_batch'
   LEFT JOIN indexer_batches source ON source.chain_id=ps.chain_id AND source.stream_key=ps.stream_key AND source.to_block=ps.batch_end
   WHERE e.chain_id=4663 AND e.block_number BETWEEN b.start_block AND b.through_block
-  UNION ALL
+), recent_copies AS NOT MATERIALIZED (
   SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
     -- Keep exact stored strings on the hot path. JavaScript validates every
     -- amount before folding; numeric normalization is only needed for the
@@ -82,8 +89,7 @@ books AS MATERIALIZED (
       AND e.timestamp BETWEEN b.launched_at AND r.timestamp AND (e.block_number<>r.to_block OR e.block_hash=r.block_hash) AS valid,'recent' AS source
   FROM recent_swaps e JOIN books b USING(chain_id,pool_id) JOIN ranges r ON r.source='recent' AND r.stream_key=e.source_stream AND r.to_block=e.batch_end
   WHERE e.chain_id=4663 AND e.block_number BETWEEN b.start_block AND b.through_block
-), broad_copies AS MATERIALIZED (SELECT * FROM copies WHERE source='broad'),
-conflicts AS MATERIALIZED (
+), conflicts AS MATERIALIZED (
   -- Reconcile surviving source identities before eligibility can discard a
   -- changed pool. A collision affecting an eligible book must have both valid
   -- copies; otherwise a moved/invalid copy could conceal the conflict.
@@ -92,7 +98,7 @@ conflicts AS MATERIALIZED (
   JOIN recent_swaps raw_r ON raw_r.chain_id=raw_b.chain_id AND raw_r.tx_hash=raw_b.tx_hash AND raw_r.log_index=raw_b.log_index
   JOIN ranges recent_range ON recent_range.source='recent' AND recent_range.stream_key=raw_r.source_stream AND recent_range.to_block=raw_r.batch_end
   LEFT JOIN broad_copies b ON b.tx_hash=raw_b.tx_hash AND b.log_index=raw_b.log_index
-  LEFT JOIN copies r ON r.source='recent' AND r.tx_hash=raw_r.tx_hash AND r.log_index=raw_r.log_index
+  LEFT JOIN recent_copies r ON r.tx_hash=raw_r.tx_hash AND r.log_index=raw_r.log_index
   WHERE raw_b.chain_id=4663 AND (b.tx_hash IS NOT NULL OR r.tx_hash IS NOT NULL)
     AND (b.tx_hash IS NULL OR r.tx_hash IS NULL OR r.valid IS NOT TRUE OR b.valid IS NOT TRUE OR
     ROW(b.pool_id,b.token,b.block_number,b.block_hash,b.timestamp,b.transaction_sender,b.side,b.eth_wei,b.token_raw,b.amount0,b.amount1)
@@ -103,9 +109,15 @@ conflicts AS MATERIALIZED (
       CASE WHEN r.amount1 ~ '^-?[0-9]{1,96}$' THEN r.amount1::numeric::text ELSE r.amount1 END))
 ), canonical AS (
   -- Each normalized source has a unique (chain,tx,log) key. Only cross-source
-  -- copies require reconciliation, avoiding a whole-history GROUP BY.
-  SELECT c.*,c.transaction_sender AS wallet,EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict
-  FROM copies c WHERE c.source='broad' OR NOT EXISTS(SELECT 1 FROM broad_copies b WHERE b.tx_hash=c.tx_hash AND b.log_index=c.log_index)
+  -- copies require reconciliation, avoiding a whole-history GROUP BY. The
+  -- ordered rows carry only what the ledger reads.
+  SELECT c.pool_id,c.tx_hash,c.log_index,c.block_number,c.block_hash,c.timestamp,c.transaction_sender AS wallet,c.side,c.eth_wei,c.token_raw,c.amount0,c.amount1,c.valid,
+    EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict
+  FROM broad_copies c
+  UNION ALL
+  SELECT c.pool_id,c.tx_hash,c.log_index,c.block_number,c.block_hash,c.timestamp,c.transaction_sender AS wallet,c.side,c.eth_wei,c.token_raw,c.amount0,c.amount1,c.valid,
+    EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict
+  FROM recent_copies c WHERE NOT EXISTS(SELECT 1 FROM broad_copies b WHERE b.tx_hash=c.tx_hash AND b.log_index=c.log_index)
 )`;
 export interface Tier2Result {
   summaries: Map<string, AnalyticsWalletSummary>;
@@ -140,7 +152,7 @@ export async function readTier2(
 ): Promise<Tier2Result> {
   const started = Date.now();
   const rangeInfo = (
-    await query(`${evidenceCte} SELECT count(DISTINCT pool_id)::integer AS pools,coalesce(max(asof),0)::text AS asof,
+    await query(`${booksCte} SELECT count(DISTINCT pool_id)::integer AS pools,coalesce(max(asof),0)::text AS asof,
     EXISTS(SELECT 1 FROM ranges GROUP BY to_block HAVING count(DISTINCT ROW(block_hash,timestamp))>1) AS cutoff_conflict,
     EXISTS(SELECT 1 FROM ranges WHERE valid IS NOT TRUE) AS source_invalid,
     jsonb_agg(jsonb_build_object('pool_id',pool_id,'start_block',start_block,'through_block',through_block,'asof',asof,

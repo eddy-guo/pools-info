@@ -389,6 +389,19 @@ export async function readData(
   };
 }
 
+/** Every response reads one snapshot under the unchanged 3-second statement
+ * contract. JIT stays off: these are short latency-bound reads, and on builds
+ * with LLVM (the Debian images CI and Railway run) PostgreSQL would otherwise
+ * compile the tier-2 evidence plans on every request, which cost 2.9 seconds
+ * per statement in CI while Homebrew builds without LLVM never showed it.
+ * Tests measure through this same preamble so their timings describe the
+ * production read path rather than an approximation of it. */
+export async function beginRead(query: Query): Promise<void> {
+  await query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+  await query("SET LOCAL statement_timeout = '3000ms'");
+  await query("SET LOCAL jit = off");
+}
+
 export function createReader(
   url = process.env.DATABASE_URL,
   testSchema?: string,
@@ -417,12 +430,9 @@ export function createReader(
       const client = await pool.connect();
       let broken = false;
       try {
-        await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        await client.query("SET LOCAL statement_timeout = '3000ms'");
-        const result = await readData(
-          (sql, values) => client.query(sql, values),
-          request,
-        );
+        const query: Query = (sql, values) => client.query(sql, values);
+        await beginRead(query);
+        const result = await readData(query, request);
         await client.query("COMMIT");
         return result;
       } catch (error) {

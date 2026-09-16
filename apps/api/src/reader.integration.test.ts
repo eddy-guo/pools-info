@@ -6,7 +6,7 @@ import pg from "pg";
 import { createReader } from "./reader";
 import { parseRequest } from "./request";
 import type { ChainSnapshot } from "@pools/core";
-import { readData } from "./reader";
+import { beginRead, readData } from "./reader";
 
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
@@ -623,6 +623,38 @@ test(
     } finally {
       await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);
+      await db.end();
+    }
+  },
+);
+
+// The read contract is one statement-bounded snapshot without JIT. Every build
+// can check the settings, including Homebrew ones that cannot exercise JIT.
+test(
+  "Postgres: read transactions are read-only snapshots with the 3s statement contract and JIT off",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const db = new pg.Client({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    await db.connect();
+    try {
+      const settings = () =>
+        db.query(
+          "SELECT current_setting('transaction_isolation') AS isolation,current_setting('transaction_read_only') AS read_only,current_setting('statement_timeout') AS statement_timeout,current_setting('jit') AS jit",
+        );
+      const sessionDefault = (await settings()).rows[0];
+      await beginRead((sql) => db.query(sql));
+      assert.deepEqual((await settings()).rows[0], {
+        isolation: "repeatable read",
+        read_only: "on",
+        statement_timeout: "3s",
+        jit: "off",
+      });
+      await db.query("ROLLBACK");
+      // SET LOCAL scopes the contract to the read; the session is untouched.
+      assert.deepEqual((await settings()).rows[0], sessionDefault);
+    } finally {
       await db.end();
     }
   },

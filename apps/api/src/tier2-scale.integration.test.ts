@@ -3,8 +3,58 @@ import { randomBytes } from "node:crypto";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import test from "node:test";
 import pg from "pg";
-import { createReader, readData } from "./reader";
+import { beginRead, readData } from "./reader";
 import { parseRequest } from "./request";
+
+// Tier-2 read cost depends on the server as much as the data: Debian postgres
+// images compile large plans with LLVM while Homebrew builds cannot, which hid
+// the 2026-09-15 CI statement timeout from every local run. Each log therefore
+// states the server facts, plan costs and per-phase timings as single lines.
+// Opt-in switches: TIER2_JIT=on,off first runs every listed mode with the
+// statement timeout lifted and only reports it; TIER2_EXPLAIN=1 prints one
+// EXPLAIN ANALYZE summary per statement and mode, and any other value is a
+// path prefix that also receives the JSON plans.
+
+const facts = (fields: Record<string, unknown>) =>
+  Object.entries(fields)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+const ms = (n: number) => `${Math.round(n)}ms`;
+const serverFacts = `SELECT current_setting('server_version') AS server_version,current_setting('jit') AS jit,pg_jit_available() AS jit_available,
+  current_setting('jit_above_cost') AS jit_above_cost,current_setting('jit_inline_above_cost') AS jit_inline_above_cost,
+  current_setting('jit_optimize_above_cost') AS jit_optimize_above_cost,current_setting('shared_buffers') AS shared_buffers,
+  current_setting('work_mem') AS work_mem,current_setting('max_parallel_workers_per_gather') AS parallel_workers`;
+
+function planSummary(plan: any) {
+  const root = Array.isArray(plan) ? plan[0] : plan;
+  let tempBlocks = 0;
+  const walk = (node: any) => {
+    tempBlocks +=
+      (node["Temp Read Blocks"] ?? 0) + (node["Temp Written Blocks"] ?? 0);
+    for (const child of node.Plans ?? []) walk(child);
+  };
+  walk(root.Plan);
+  // PostgreSQL 17 nests generation timing as {Deform, Total}.
+  const timing = (value: any) =>
+    ms(typeof value === "number" ? value : (value?.Total ?? 0));
+  const jit = root.JIT;
+  return facts({
+    cost: root.Plan["Total Cost"],
+    planning: ms(root["Planning Time"] ?? 0),
+    execution: ms(root["Execution Time"] ?? 0),
+    temp_blocks: tempBlocks,
+    jit_functions: jit?.Functions ?? 0,
+    ...(jit
+      ? {
+          jit_generation: timing(jit.Timing.Generation),
+          jit_inlining: timing(jit.Timing.Inlining),
+          jit_optimization: timing(jit.Timing.Optimization),
+          jit_emission: timing(jit.Timing.Emission),
+          jit_total: timing(jit.Timing.Total),
+        }
+      : {}),
+  });
+}
 
 test(
   "tier2 complete ranking stays bounded over 115k swaps and 52k registry pools",
@@ -13,7 +63,12 @@ test(
     const schema = "api_test_tier2_scale_" + randomBytes(8).toString("hex"),
       db = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
     await db.connect();
-    const reader = createReader(process.env.TEST_DATABASE_URL, schema);
+    const modes = (process.env.TIER2_JIT?.split(",") ?? []).map((mode) => {
+      if (mode !== "on" && mode !== "off")
+        throw Error(`TIER2_JIT accepts on and off, not ${mode}`);
+      return mode;
+    });
+    const explain = process.env.TIER2_EXPLAIN;
     try {
       await db.query(`CREATE SCHEMA ${schema}`);
       await db.query(`SET search_path TO ${schema}`);
@@ -50,27 +105,35 @@ test(
     FROM generate_series(0,114999) i`);
       await db.query("ANALYZE indexed_pools");
       await db.query("ANALYZE recent_swaps");
-      const timings = new Map<
-        string,
-        { milliseconds: number; rows: number; calls: number }
-      >();
-      let cursorSql = "";
-      const measuredRead = async (request: ReturnType<typeof parseRequest>) => {
-        await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        try {
-          return await readData(async (sql, values) => {
-            const phase = sql.startsWith("FETCH")
+      console.log("tier2 server", facts((await db.query(serverFacts)).rows[0]));
+      const statements = new Map<string, string>();
+      // Both windows include the full fixture. Three complete requests expose
+      // first-read and warm behavior without hiding monetary work in a cache.
+      // Every read runs through the production transaction preamble.
+      const urls = [
+        "/v1/leaderboard?limit=25",
+        "/v1/leaderboard?limit=25",
+        "/v1/leaderboard?window=All&limit=25",
+      ];
+      for (const mode of [...modes, null])
+        for (const [index, url] of urls.entries()) {
+          const request = parseRequest(url);
+          const timings = new Map<
+            string,
+            { milliseconds: number; rows: number; calls: number }
+          >();
+          const phaseOf = (sql: string) =>
+            sql.startsWith("FETCH")
               ? "fetch"
               : sql.startsWith("DECLARE")
                 ? "declare"
                 : sql.includes("AS metadata FROM books")
                   ? "metadata"
                   : "other";
-            if (phase === "declare")
-              cursorSql = sql.replace(
-                /^DECLARE tier2_ledger NO SCROLL CURSOR FOR /,
-                "",
-              );
+          const query = async (sql: string, values?: unknown[]) => {
+            const phase = phaseOf(sql);
+            if (phase === "metadata" || phase === "declare")
+              statements.set(phase, sql);
             const start = performance.now();
             const result = await db.query(sql, values);
             const timing = timings.get(phase) ?? {
@@ -83,64 +146,100 @@ test(
             timing.calls++;
             timings.set(phase, timing);
             return result;
-          }, request);
+          };
+          const phase = (name: string) =>
+            timings.get(name) ?? { milliseconds: 0, rows: 0, calls: 0 };
+          let board: any = null,
+            failure: string | null = null;
+          const started = performance.now();
+          try {
+            await beginRead((sql) => db.query(sql));
+            if (mode) {
+              await db.query(`SET LOCAL jit = ${mode}`);
+              await db.query("SET LOCAL statement_timeout = 0");
+            }
+            board = await readData(query, request);
+          } catch (error: any) {
+            failure = error.code ?? error.message;
+          } finally {
+            await db.query("ROLLBACK");
+          }
+          const elapsed = performance.now() - started;
+          const measured = [...timings.values()].reduce(
+            (sum, t) => sum + t.milliseconds,
+            0,
+          );
+          console.log(
+            `tier2 read ${index + 1}`,
+            facts({
+              window: request.leaderboard?.window,
+              jit: mode ?? "default",
+              total: ms(elapsed),
+              other: ms(phase("other").milliseconds),
+              metadata: ms(phase("metadata").milliseconds),
+              declare: ms(phase("declare").milliseconds),
+              fetch: ms(phase("fetch").milliseconds),
+              fetch_rows: phase("fetch").rows,
+              fetch_calls: phase("fetch").calls,
+              fold: ms(elapsed - measured),
+              ...(failure ? { error: failure } : {}),
+            }),
+          );
+          if (mode) continue;
+          assert.equal(failure, null, `Complete read ${index + 1}: ${failure}`);
+          assert.equal(board.total, 11500);
+          assert.equal(board.items.length, 25);
+          for (const wallet of board.items) {
+            assert.equal(wallet.realizedWei, "10");
+            assert.equal(wallet.rankingTradeCount, 10);
+            assert.equal(wallet.accountingTier, "tier2");
+          }
+          assert.equal(board.coverage.catalogPools, 52000);
+          assert.equal(board.coverage.tier2Pools, 285);
+          assert.equal(phase("fetch").rows, 115000);
+          // Keep 800ms headroom below the unchanged runtime accounting budget.
+          assert.ok(
+            elapsed < 2000,
+            `Complete 115k accounting request ${index + 1} took ${Math.round(elapsed)}ms`,
+          );
+        }
+      // Estimated costs decide JIT eligibility, so they are stated in every log.
+      for (const [name, sql] of statements) {
+        await beginRead((statement) => db.query(statement));
+        try {
+          const plan = (await db.query("EXPLAIN (FORMAT JSON) " + sql)).rows[0][
+            "QUERY PLAN"
+          ];
+          console.log(`tier2 plan ${name}`, planSummary(plan));
         } finally {
           await db.query("ROLLBACK");
         }
-      };
-      // Both windows include the full fixture. Three complete requests expose
-      // first-read and warm behavior without hiding monetary work in a cache.
-      for (const [index, url] of [
-        "/v1/leaderboard?limit=25",
-        "/v1/leaderboard?limit=25",
-        "/v1/leaderboard?window=All&limit=25",
-      ].entries()) {
-        timings.clear();
-        const request = parseRequest(url);
-        const start = performance.now();
-        const board = (await (process.env.TIER2_PROFILE ||
-        process.env.TIER2_EXPLAIN
-          ? measuredRead(request)
-          : reader.read(request))) as any;
-        const elapsed = performance.now() - start;
-        assert.equal(board.total, 11500);
-        assert.equal(board.items.length, 25);
-        for (const wallet of board.items) {
-          assert.equal(wallet.realizedWei, "10");
-          assert.equal(wallet.rankingTradeCount, 10);
-          assert.equal(wallet.accountingTier, "tier2");
-        }
-        assert.equal(board.coverage.catalogPools, 52000);
-        assert.equal(board.coverage.tier2Pools, 285);
-        if (process.env.TIER2_PROFILE || process.env.TIER2_EXPLAIN) {
-          assert.equal(timings.get("fetch")?.rows, 115000);
-          console.log("tier2 phases", Object.fromEntries(timings));
-          console.log(
-            "tier2 fold/composition milliseconds",
-            elapsed -
-              [...timings.values()].reduce((sum, t) => sum + t.milliseconds, 0),
-          );
-        }
-        // Keep 800ms headroom below the unchanged runtime accounting budget.
-        assert.ok(
-          elapsed < 2000,
-          `Complete 115k accounting request ${index + 1} took ${Math.round(elapsed)}ms`,
-        );
-        console.log(
-          `tier2 115k/52k complete read ${index + 1} (${request.leaderboard?.window}): ${Math.round(elapsed)}ms`,
-        );
       }
-      if (process.env.TIER2_EXPLAIN && cursorSql) {
-        const plan = await db.query(
-          "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + cursorSql,
-        );
-        await writeFile(
-          process.env.TIER2_EXPLAIN,
-          JSON.stringify(plan.rows[0]["QUERY PLAN"]),
-        );
-      }
+      if (explain)
+        for (const mode of [...modes, null])
+          for (const [name, sql] of statements) {
+            await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+            try {
+              await db.query("SET LOCAL statement_timeout = 0");
+              if (mode) await db.query(`SET LOCAL jit = ${mode}`);
+              const plan = (
+                await db.query("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql)
+              ).rows[0]["QUERY PLAN"];
+              console.log(
+                `tier2 explain ${name}`,
+                facts({ jit: mode ?? "default" }),
+                planSummary(plan),
+              );
+              if (explain !== "1")
+                await writeFile(
+                  `${explain}.${name}.${mode ?? "default"}.json`,
+                  JSON.stringify(plan),
+                );
+            } finally {
+              await db.query("ROLLBACK");
+            }
+          }
     } finally {
-      await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);
       await db.end();
     }
