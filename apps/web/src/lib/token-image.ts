@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Resolver } from "node:dns/promises";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
@@ -13,6 +14,19 @@ export const imagePolicy = {
   cacheEntries: 64,
   concurrentImages: 8,
 } as const;
+// Lifetimes in seconds. The edge keeps a served icon for a week and may keep
+// serving it stale for another week while one request refreshes it; browsers
+// and the process cache keep it for a day. A content-addressed IPFS CID cannot
+// change but a creator-hosted URL can, so nothing is marked immutable. A
+// permanent rejection (policy, invalid URL, unusable bytes) is remembered for
+// a day; a transient failure (timeout, upstream error, network) for a minute.
+export const imageLifetimes = {
+  browser: 86400,
+  edge: 604800,
+  staleWhileRevalidate: 604800,
+  rejected: 86400,
+  unavailable: 60,
+} as const;
 // Exact hosts found in reviewed launch proof metadata, plus the chosen IPFS
 // gateway. Expanding this set is a reviewed code change, never a query option.
 export const imageHosts = new Set([
@@ -21,7 +35,17 @@ export const imageHosts = new Set([
   "8c.pw",
   "coffeegoofld.mypinata.cloud",
 ]);
-const invalid = () => new Error("Token image unavailable");
+/** Permanent rejections follow the long negative cache, transient failures the short one. */
+export class ImageRejection extends Error {
+  constructor(
+    readonly permanent: boolean,
+    options?: ErrorOptions,
+  ) {
+    super("Token image unavailable", options);
+  }
+}
+const rejected = () => new ImageRejection(true);
+const unavailable = () => new ImageRejection(false);
 const poolPattern = /^0x[0-9a-f]{64}$/i;
 const denied = new BlockList();
 // Conservative IANA special-purpose exclusions, including globally reachable
@@ -78,7 +102,7 @@ export function tokenImageUrl(source: string): URL {
     source.length > 2048 ||
     /[\u0000-\u0020\u007f-\u009f\\]/u.test(source)
   )
-    throw invalid();
+    throw rejected();
   if (source.startsWith("ipfs://")) {
     // Keep CIDv0 case intact; URL.hostname would lowercase a base58 CID.
     const ipfs = /^ipfs:\/\/(?:ipfs\/)?([^/?#]+)(\/[^?#]*)?$/u.exec(source);
@@ -86,7 +110,7 @@ export function tokenImageUrl(source: string): URL {
       !ipfs ||
       !/^(?:Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{31,119})$/u.test(ipfs[1])
     )
-      throw invalid();
+      throw rejected();
     const path = ipfs[2] ?? "";
     for (const segment of path.split("/")) {
       const decoded = decodeURIComponent(segment);
@@ -95,7 +119,7 @@ export function tokenImageUrl(source: string): URL {
         decoded === ".." ||
         /[\/\\\u0000-\u0020\u007f]/u.test(decoded)
       )
-        throw invalid();
+        throw rejected();
     }
     source = `${imagePolicy.ipfsGateway}/ipfs/${ipfs[1]}${path}`;
   }
@@ -108,10 +132,10 @@ export function tokenImageUrl(source: string): URL {
     !url.hostname ||
     url.hash
   )
-    throw invalid();
+    throw rejected();
   const host = url.hostname.replace(/^\[|\]$/gu, "");
-  if (!imageHosts.has(host)) throw invalid();
-  if (isIP(host) && !publicImageAddress(host)) throw invalid();
+  if (!imageHosts.has(host)) throw rejected();
+  if (isIP(host) && !publicImageAddress(host)) throw rejected();
   if (
     !isIP(host) &&
     (!host.includes(".") ||
@@ -120,7 +144,7 @@ export function tokenImageUrl(source: string): URL {
         host,
       ))
   )
-    throw invalid();
+    throw rejected();
   return url;
 }
 
@@ -136,7 +160,7 @@ const resolveImage: ImageResolver = async (host, signal) => {
   signal.addEventListener("abort", cancel, { once: true });
   const absent = (error: NodeJS.ErrnoException): string[] => {
     if (error.code === "ENODATA" || error.code === "ENOTFOUND") return [];
-    throw invalid();
+    throw unavailable();
   };
   try {
     const [v4, v6] = await Promise.all([
@@ -155,7 +179,7 @@ const resolveImage: ImageResolver = async (host, signal) => {
 function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const abort = () => reject(invalid());
+    const abort = () => reject(unavailable());
     signal.addEventListener("abort", abort, { once: true });
     operation
       .then(resolve, reject)
@@ -178,7 +202,7 @@ async function imageBytes(
       (a) => !publicImageAddress(a.address) || isIP(a.address) !== a.family,
     )
   )
-    throw invalid();
+    throw unavailable();
   signal.throwIfAborted();
   const pinned = addresses[0];
   // Node may ask for all addresses. Return only the checked address in either
@@ -205,13 +229,20 @@ async function imageBytes(
           },
         },
         (response) => {
+          const fail = (error: ImageRejection) => {
+            response.destroy();
+            request.destroy();
+            reject(error);
+          };
+          // Anything but a 200 may be a passing upstream condition; what a
+          // 200 actually serves is the host's chosen representation.
+          if (response.statusCode !== 200) return fail(unavailable());
           const mime = String(response.headers["content-type"] ?? "")
             .split(";")[0]
             .trim()
             .toLowerCase();
           const length = response.headers["content-length"];
           if (
-            response.statusCode !== 200 ||
             !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
               mime,
             ) ||
@@ -219,30 +250,23 @@ async function imageBytes(
               response.headers["content-encoding"] !== "identity") ||
             (length !== undefined &&
               (!/^\d+$/u.test(length) || Number(length) > imagePolicy.maxBytes))
-          ) {
-            response.destroy();
-            request.destroy();
-            reject(invalid());
-            return;
-          }
+          )
+            return fail(rejected());
           const chunks: Buffer[] = [];
           let bytes = 0;
           response.on("data", (chunk: Buffer) => {
             bytes += chunk.length;
-            if (bytes > imagePolicy.maxBytes) {
-              response.destroy();
-              request.destroy();
-              reject(invalid());
-            } else chunks.push(chunk);
+            if (bytes > imagePolicy.maxBytes) fail(rejected());
+            else chunks.push(chunk);
           });
           response.once("end", () =>
             resolve({ bytes: Buffer.concat(chunks), mime }),
           );
-          response.once("error", () => reject(invalid()));
-          response.once("aborted", () => reject(invalid()));
+          response.once("error", () => reject(unavailable()));
+          response.once("aborted", () => reject(unavailable()));
         },
       );
-      request.once("error", () => reject(invalid()));
+      request.once("error", () => reject(unavailable()));
       request.end();
     }),
     signal,
@@ -277,7 +301,7 @@ export async function transformedTokenImage(
     signal,
     resolver,
   );
-  if (!rasterMatches(bytes, mime)) throw invalid();
+  if (!rasterMatches(bytes, mime)) throw rejected();
   signal.throwIfAborted();
   const transform = sharp(bytes, {
     limitInputPixels: imagePolicy.maxPixels,
@@ -295,9 +319,16 @@ export async function transformedTokenImage(
   const abort = () => transform.destroy();
   signal.addEventListener("abort", abort, { once: true });
   try {
-    const output = await abortable(transform.toBuffer(), signal);
+    let output: Buffer;
+    try {
+      output = await abortable(transform.toBuffer(), signal);
+    } catch (error) {
+      // Sharp refused the raster itself; only the deadline is transient.
+      if (error instanceof ImageRejection || signal.aborted) throw error;
+      throw new ImageRejection(true, { cause: error });
+    }
     if (!output.length || output.length > imagePolicy.maxOutputBytes)
-      throw invalid();
+      throw rejected();
     return output;
   } finally {
     signal.removeEventListener("abort", abort);
@@ -305,7 +336,7 @@ export async function transformedTokenImage(
 }
 
 async function boundedJson(response: Response, signal: AbortSignal) {
-  if (!response.ok || !response.body) throw invalid();
+  if (!response.ok || !response.body) throw unavailable();
   const reader = response.body.getReader();
   let length = 0;
   const chunks: Uint8Array[] = [];
@@ -314,7 +345,7 @@ async function boundedJson(response: Response, signal: AbortSignal) {
       const { done, value } = await abortable(reader.read(), signal);
       if (done) break;
       length += value.byteLength;
-      if (length > 128 * 1024) throw invalid();
+      if (length > 128 * 1024) throw unavailable();
       chunks.push(value);
     }
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -327,7 +358,7 @@ export async function indexedImageUrl(
   poolId: string,
   signal: AbortSignal,
 ): Promise<string | null> {
-  if (!poolPattern.test(poolId)) throw invalid();
+  if (!poolPattern.test(poolId)) throw rejected();
   const configured = process.env.INDEXER_API_URL;
   if (!configured || process.env.CHAIN_REFRESH_DISABLED === "1") return null;
   const origin = new URL(configured);
@@ -339,7 +370,7 @@ export async function indexedImageUrl(
     origin.search ||
     origin.hash
   )
-    throw invalid();
+    throw rejected();
   const url = new URL("/v1/explore", origin);
   url.search = new URLSearchParams({
     view: "watchlist",
@@ -364,24 +395,57 @@ export async function indexedImageUrl(
     : null;
 }
 
+export type StoredImageSource = (
+  poolId: string,
+  signal: AbortSignal,
+) => Promise<Buffer | null>;
+/**
+ * Persistent per-pool image store: the 128 px WebP encoded once on first view
+ * and served from storage afterwards. The data side plugs its store in here;
+ * until then nothing is stored and a process-cache miss takes the live path.
+ */
+export const resolveStoredImage: StoredImageSource = async () => null;
+
+type Outcome =
+  { bytes: Buffer; etag: string } | { bytes: null; permanent: boolean };
+const entityTag = (bytes: Buffer) =>
+  `"${createHash("sha256").update(bytes).digest("hex")}"`;
+// If-None-Match uses weak comparison, so a W/ prefix still matches.
+const matchesEntityTag = (header: string | null, etag: string) =>
+  (header ?? "")
+    .split(",")
+    .map((tag) => tag.trim().replace(/^W\//u, ""))
+    .some((tag) => tag === "*" || tag === etag);
+const servedCacheControl = `public, max-age=${imageLifetimes.browser}, s-maxage=${imageLifetimes.edge}, stale-while-revalidate=${imageLifetimes.staleWhileRevalidate}`;
+const negativeCacheControl = (permanent: boolean) => {
+  const seconds = permanent
+    ? imageLifetimes.rejected
+    : imageLifetimes.unavailable;
+  return `public, max-age=${seconds}, s-maxage=${seconds}`;
+};
+
 /** Factory makes process-local caching testable; no pool scan or image prefetch. */
 export function createTokenImageHandler(
   readUrl = indexedImageUrl,
   resolver = resolveImage,
   timeoutMs: number = imagePolicy.timeoutMs,
+  storedImage = resolveStoredImage,
 ) {
-  const cache = new Map<string, { expires: number; bytes: Buffer | null }>();
-  const pending = new Map<string, Promise<Buffer | null>>();
+  const cache = new Map<string, { expires: number; outcome: Outcome }>();
+  const pending = new Map<string, Promise<Outcome>>();
   return async (request: Request, poolId: string): Promise<Response> => {
     if (!poolPattern.test(poolId) || new URL(request.url).search)
+      // Refused before any work, so it never takes a process cache slot; the
+      // browser and edge may still hold the empty response for a day.
       return new Response(null, {
         status: 400,
-        headers: { "Cache-Control": "no-store" },
+        headers: { "Cache-Control": negativeCacheControl(true) },
       });
     const key = poolId.toLowerCase();
     const remembered = cache.get(key);
-    let bytes: Buffer | null;
-    if (remembered && remembered.expires > Date.now()) bytes = remembered.bytes;
+    let outcome: Outcome;
+    if (remembered && remembered.expires > Date.now())
+      outcome = remembered.outcome;
     else {
       let task = pending.get(key);
       if (!task) {
@@ -390,41 +454,73 @@ export function createTokenImageHandler(
             status: 503,
             headers: { "Cache-Control": "no-store", "Retry-After": "5" },
           });
-        task = (async () => {
+        task = (async (): Promise<Outcome> => {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), timeoutMs);
           try {
+            const stored = await abortable(
+              storedImage(key, controller.signal),
+              controller.signal,
+            );
+            if (stored) return { bytes: stored, etag: entityTag(stored) };
             const source = await abortable(
               readUrl(key, controller.signal),
               controller.signal,
             );
-            return source
-              ? await transformedTokenImage(source, controller.signal, resolver)
-              : null;
-          } catch {
-            return null;
+            if (!source) return { bytes: null, permanent: true };
+            const bytes = await transformedTokenImage(
+              source,
+              controller.signal,
+              resolver,
+            );
+            return { bytes, etag: entityTag(bytes) };
+          } catch (error) {
+            return {
+              bytes: null,
+              permanent: error instanceof ImageRejection && error.permanent,
+            };
           } finally {
             clearTimeout(timer);
           }
         })();
         pending.set(key, task);
       }
-      bytes = await task;
+      outcome = await task;
       pending.delete(key);
       cache.delete(key);
       if (cache.size >= imagePolicy.cacheEntries)
         cache.delete(cache.keys().next().value!);
-      cache.set(key, { bytes, expires: Date.now() + (bytes ? 300000 : 60000) });
+      const seconds = outcome.bytes
+        ? imageLifetimes.browser
+        : outcome.permanent
+          ? imageLifetimes.rejected
+          : imageLifetimes.unavailable;
+      cache.set(key, { outcome, expires: Date.now() + seconds * 1000 });
     }
-    return new Response(bytes ? Uint8Array.from(bytes) : null, {
-      status: bytes ? 200 : 404,
+    if (!outcome.bytes)
+      return new Response(null, {
+        status: 404,
+        headers: {
+          "Content-Type": "image/webp",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Cache-Control": negativeCacheControl(outcome.permanent),
+          "Content-Disposition": 'inline; filename="token.webp"',
+        },
+      });
+    if (matchesEntityTag(request.headers.get("if-none-match"), outcome.etag))
+      return new Response(null, {
+        status: 304,
+        headers: { ETag: outcome.etag, "Cache-Control": servedCacheControl },
+      });
+    return new Response(Uint8Array.from(outcome.bytes), {
+      status: 200,
       headers: {
         "Content-Type": "image/webp",
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": bytes
-          ? "public, max-age=300, s-maxage=300"
-          : "public, max-age=60, s-maxage=60",
+        "Cache-Control": servedCacheControl,
+        ETag: outcome.etag,
         "Content-Disposition": 'inline; filename="token.webp"',
       },
     });
