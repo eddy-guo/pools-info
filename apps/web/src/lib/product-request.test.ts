@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { productRequest } from "./product-request";
 import { preloadedProduct, readProduct } from "./product-server";
-import { walletCaptureLabel, readCardWallet } from "./product-card";
+import { cardRankLabel, readCardWallet } from "./product-card";
 import { validatePoolResponse } from "./pool-response";
 import type {
   AnalyticsExploreResponse,
@@ -168,19 +168,11 @@ test("a stale upstream window cannot masquerade as the newly selected window", a
   assert.equal(result.delivery.source, "preloaded");
 });
 
-test("share card timestamps use the wallet's own capture range and preserve unknown cutoff", () => {
-  assert.equal(
-    walletCaptureLabel({ asOf: 2000, oldestAsOf: 1000 }),
-    "Wallet captures 1970-01-01 00:16:40 to 1970-01-01 00:33:20 UTC",
-  );
-  assert.equal(
-    walletCaptureLabel({ asOf: 1000, oldestAsOf: 1000 }),
-    "Wallet captured 1970-01-01 00:16:40 UTC",
-  );
-  assert.equal(
-    walletCaptureLabel({ asOf: null, oldestAsOf: null }),
-    "Wallet cutoff unavailable",
-  );
+test("share card rank badge carries no coverage copy", () => {
+  assert.equal(cardRankLabel(1, null), "#1");
+  assert.equal(cardRankLabel(3, "PEPE pool"), "#3 in PEPE pool");
+  assert.equal(cardRankLabel(null, null), null);
+  assert.equal(cardRankLabel(null, "PEPE pool"), "PEPE pool");
 });
 
 test("an explicitly scoped share card cannot silently switch to global wallet PnL", async (t) => {
@@ -205,7 +197,7 @@ test("an explicitly scoped share card cannot silently switch to global wallet Pn
     position.poolId,
     position.launchTx,
   );
-  assert.equal(card.global, false);
+  assert.equal(card.scope, `${position.symbol} pool`);
   assert.equal(card.result.positions.length, 1);
   assert.equal(card.result.wallet.realizedWei, position.realizedWei);
   assert.equal(card.result.wallet.asOf, position.asOf);

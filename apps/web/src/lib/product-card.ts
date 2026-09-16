@@ -1,7 +1,6 @@
 import {
   buildAnalyticsModel,
   walletAnalytics,
-  type AnalyticsWalletSummary,
   type AnalyticsWalletResponse,
   type AnalyticsPoolDetail,
   type LiveWindow,
@@ -20,8 +19,7 @@ export async function readCardWallet(
         ["wallets", address],
         new URLSearchParams({ window }),
       ),
-      scope: "processed pools",
-      global: true,
+      scope: null,
     };
   const saved = await readProduct<{ analytics: AnalyticsPoolDetail | null }>(
     ["pools", poolId],
@@ -44,19 +42,14 @@ export async function readCardWallet(
   return {
     result: { ...result, delivery: saved.delivery },
     scope: `${market.symbol} pool`,
-    global: false,
   };
 }
 
-/** Card freshness belongs to this wallet's captures, not a newer unrelated pool. */
-export function walletCaptureLabel(
-  wallet: Pick<AnalyticsWalletSummary, "asOf" | "oldestAsOf">,
-): string {
-  const stamp = (n: number) =>
-    new Date(n * 1000).toISOString().slice(0, 19).replace("T", " ");
-  if (wallet.asOf === null || !Number.isFinite(wallet.asOf))
-    return "Wallet cutoff unavailable";
-  if (wallet.oldestAsOf !== null && wallet.oldestAsOf < wallet.asOf)
-    return `Wallet captures ${stamp(wallet.oldestAsOf)} to ${stamp(wallet.asOf)} UTC`;
-  return `Wallet captured ${stamp(wallet.asOf)} UTC`;
+/** The card's rank badge: a global card names only the rank, a pool card its pool. */
+export function cardRankLabel(
+  rank: number | null,
+  scope: string | null,
+): string | null {
+  if (rank === null) return scope;
+  return scope ? `#${rank} in ${scope}` : `#${rank}`;
 }

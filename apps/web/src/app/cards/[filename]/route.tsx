@@ -1,6 +1,5 @@
 import { ImageResponse } from "next/og";
-import { walletCaptureLabel, readCardWallet } from "@/lib/product-card";
-import { accountingExplanation, accountingLabel } from "@/lib/accounting-evidence";
+import { cardRankLabel, readCardWallet } from "@/lib/product-card";
 import {
   shortAddress,
   visualTheme,
@@ -35,7 +34,7 @@ export async function GET(
       (launch && !/^0x[0-9a-f]{64}$/.test(launch))
     )
       return new Response("Invalid pool scope", { status: 400 });
-    const { result, scope, global } = await readCardWallet(
+    const { result, scope } = await readCardWallet(
       address,
       window,
       poolId,
@@ -46,7 +45,7 @@ export async function GET(
       return new Response("No trades in the available saved coverage", {
         status: 404,
       });
-    const rank = m.rank;
+    const rankLabel = cardRankLabel(m.rank, scope);
     const image = new ImageResponse(
       <div
         style={{
@@ -92,13 +91,13 @@ export async function GET(
             }}
           >
             <span style={{ color: visualTheme.muted, fontSize: 18 }}>
-              REALIZED SWAP PNL · {accountingLabel(m)}
+              REALIZED SWAP PNL
             </span>
-            <span style={{ color: visualTheme.accent, fontSize: 17 }}>
-              {rank
-                ? `#${rank} ${global ? "across" : "in"} ${scope}`
-                : `Unranked · ${scope}`}
-            </span>
+            {rankLabel && (
+              <span style={{ color: visualTheme.accent, fontSize: 17 }}>
+                {rankLabel}
+              </span>
+            )}
           </div>
           <div
             style={{
@@ -168,25 +167,13 @@ export async function GET(
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            gap: 9,
             borderTop: `1px solid ${visualTheme.lineRaised}`,
             paddingTop: 19,
             color: visualTheme.muted,
             fontSize: 15,
           }}
         >
-          <span>
-            {accountingExplanation(m)}
-          </span>
-          <span>{walletCaptureLabel(m)}</span>
-          <span>{`poolsinfo.com/wallet/${address}/`}</span>
-          <span style={{ fontSize: 13 }}>
-            {m.excludedPositionCount} positions excluded. Average cost, before gas.
-            {result.delivery.source === "preloaded"
-              ? " Preloaded public dataset."
-              : " Saved chain data."}
-          </span>
+          {`poolsinfo.com/wallet/${address}/`}
         </div>
       </div>,
       {
