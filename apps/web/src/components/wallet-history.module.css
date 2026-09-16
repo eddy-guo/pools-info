@@ -1,0 +1,230 @@
+/* A fixed scroll surface owns the explorer pages, so appending one never moves
+   the page around it and the reserved rows resolve in place. */
+.region {
+  height: calc(10 * 62px + 34px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.attribution {
+  color: var(--color-text-3);
+  font-size: 11px;
+  font-weight: 400;
+}
+.region .table {
+  min-width: 1010px;
+  table-layout: fixed;
+}
+.region .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--color-surface-4);
+}
+.region .table tbody tr {
+  height: 62px;
+}
+.region .table td {
+  height: auto;
+  overflow: hidden;
+  /* Chips are inline-flex and plain text is not, so baselines would disagree. */
+  vertical-align: middle;
+}
+.time {
+  color: var(--color-text-3);
+}
+.transactions th:nth-child(1),
+.transfers th:nth-child(1) {
+  width: 176px;
+}
+.transactions th:nth-child(2) {
+  width: 104px;
+}
+.transactions th:nth-child(3),
+.transactions th:nth-child(4),
+.transfers th:nth-child(4),
+.transfers th:nth-child(5) {
+  width: 168px;
+}
+.transactions th:nth-child(5),
+.transactions th:nth-child(6) {
+  width: 112px;
+}
+.transfers th:nth-child(2) {
+  width: 120px;
+}
+.transfers th:nth-child(3) {
+  width: 188px;
+}
+/* Numeric headers sit over their right-aligned column. */
+.transactions th:nth-child(5),
+.transactions th:nth-child(6),
+.transfers th:nth-child(3) {
+  text-align: right;
+}
+.subject {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.pill {
+  flex: 0 0 auto;
+  border: 1px solid;
+  border-radius: 5px;
+  padding: 2px 5px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.failed {
+  color: var(--color-down);
+  border-color: color-mix(in srgb, var(--color-down) 35%, transparent);
+  background: color-mix(in srgb, var(--color-down) 10%, transparent);
+}
+.waiting {
+  color: var(--color-text-3);
+  border-color: var(--color-surface-4);
+}
+.method {
+  color: var(--color-text-2);
+  text-overflow: ellipsis;
+}
+.token {
+  color: var(--color-text-2);
+  text-overflow: ellipsis;
+}
+.token strong {
+  font-weight: 500;
+  color: var(--color-text);
+}
+.numeric {
+  text-align: right;
+}
+.region .numeric :global(.number),
+.region .numeric :global(.price) {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.tokenId {
+  color: var(--color-text-3);
+}
+.cards {
+  display: none;
+}
+.card {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  height: 140px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-surface-4);
+}
+.cardTop,
+.cardFlow,
+.cardStats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cardTop,
+.cardStats {
+  justify-content: space-between;
+}
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--color-text-2);
+}
+.cardFlow > span[aria-hidden] {
+  color: var(--color-faint);
+}
+.cardStats > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cardStats small {
+  color: var(--color-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.card > span[data-pending] {
+  height: 14px;
+}
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+/* Like the empty state, this sits at the top of the reserved table area. */
+.unavailable {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 40px 16px;
+  text-align: center;
+}
+.unavailable p {
+  margin: 0;
+  color: var(--color-text-2);
+  font-size: 13px;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--color-text-3);
+  font-size: 11px;
+}
+.footerFailure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+@container site (max-width: 767px) {
+  /* The same page, read as cards instead of a seven-column sideways scroll. */
+  .region {
+    height: calc(4 * 140px);
+  }
+  .region .table {
+    display: none;
+  }
+  .cards {
+    display: block;
+  }
+  .footer {
+    min-height: 68px;
+  }
+  .unavailable,
+  .empty {
+    padding: 32px 14px;
+  }
+  /* Three chips to a card, so the explorer links need a real touch target. */
+  .card :global(.address-label) a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 32px;
+  }
+}

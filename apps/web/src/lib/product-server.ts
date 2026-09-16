@@ -1,6 +1,7 @@
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
+import { validateWalletHistoryResponse } from "./wallet-history-response";
 import {
   buildAnalyticsModel,
   exploreAnalytics,
@@ -15,6 +16,9 @@ import {
   type AnalyticsLeaderboardOptions,
   type LiveWindow,
   type SearchGroup,
+  type WalletHistoryKind,
+  type WalletHistoryResponse,
+  type WalletHistoryUnavailable,
 } from "@pools/core";
 import initial from "../../../../data/snapshots/chain.json";
 import captured from "../../../../data/pools/index.json";
@@ -114,24 +118,101 @@ export function preloadedProduct(
   }
   throw Error("Unsupported saved-data request");
 }
+/** The configured read API, or null when this deployment has none. */
+function indexerOrigin() {
+  const base = process.env.INDEXER_API_URL;
+  if (!base || process.env.CHAIN_REFRESH_DISABLED === "1") return null;
+  const origin = new URL(base);
+  if (
+    !["http:", "https:"].includes(origin.protocol) ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== "/" ||
+    origin.search ||
+    origin.hash
+  )
+    throw Error("Invalid configured indexer origin");
+  return origin;
+}
+/** The read API's own 503 contract, carried to the browser unchanged. */
+export class WalletHistoryUnavailableError extends Error {
+  constructor(
+    readonly reason: WalletHistoryUnavailable["reason"],
+    readonly retryAfter: number,
+  ) {
+    super("Explorer history is unavailable.");
+  }
+}
+const historyReasons = [
+  "not_configured",
+  "budget_exhausted",
+  "upstream_unavailable",
+  "key_rejected",
+];
+function historyFailure(response: Response, body: unknown) {
+  const reported = body as WalletHistoryUnavailable | null;
+  const seconds = Number(response.headers.get("retry-after"));
+  return new WalletHistoryUnavailableError(
+    response.status === 503 &&
+      reported?.error === "wallet_history_unavailable" &&
+      historyReasons.includes(reported.reason)
+      ? reported.reason
+      : "upstream_unavailable",
+    Number.isSafeInteger(seconds) && seconds > 0
+      ? Math.min(seconds, 86400)
+      : 30,
+  );
+}
+/**
+ * On-demand explorer history: display data with no saved counterpart, so an
+ * outage stays an outage instead of falling back to the preloaded dataset.
+ */
+export async function readWalletHistory(
+  path: string[],
+  params: URLSearchParams,
+): Promise<WalletHistoryResponse> {
+  const checked = productRequest(path, params);
+  const wallet = checked.endpoint.split("/")[1];
+  const kind = checked.params.get("kind") as WalletHistoryKind;
+  let origin: URL | null = null;
+  try {
+    origin = indexerOrigin();
+  } catch {
+    /* A misconfigured origin is as unusable as an absent one. */
+  }
+  if (!origin) throw new WalletHistoryUnavailableError("not_configured", 3600);
+  let response: Response;
+  try {
+    const url = new URL(`/v1/${checked.endpoint}`, origin);
+    url.search = checked.params.toString();
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+      redirect: "error",
+    });
+  } catch {
+    throw new WalletHistoryUnavailableError("upstream_unavailable", 30);
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw historyFailure(response, body);
+  try {
+    validateWalletHistoryResponse(body, wallet, kind);
+  } catch {
+    throw new WalletHistoryUnavailableError("upstream_unavailable", 30);
+  }
+  return body;
+}
 export async function readProduct<T>(
   path: string[],
   params: URLSearchParams,
 ): Promise<Delivered<T>> {
   const checked = productRequest(path, params);
   const base = process.env.INDEXER_API_URL;
+  if (checked.endpoint.endsWith("/history"))
+    throw Error("Explorer history has no saved publication.");
   if (base && process.env.CHAIN_REFRESH_DISABLED !== "1") {
     try {
-      const origin = new URL(base);
-      if (
-        !["http:", "https:"].includes(origin.protocol) ||
-        origin.username ||
-        origin.password ||
-        origin.pathname !== "/" ||
-        origin.search ||
-        origin.hash
-      )
-        throw Error("Invalid configured indexer origin");
+      const origin = indexerOrigin()!;
       const url = new URL(`/v1/${checked.endpoint}`, origin);
       url.search = checked.params.toString();
       const response = await fetch(url, {
