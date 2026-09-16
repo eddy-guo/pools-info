@@ -141,7 +141,7 @@ test("saved product refresh retains data during failures and recovers without br
     new URLSearchParams("q=" + market.token),
   ) as AnalyticsExploreResponse;
   let calls = 0;
-  await page.route("**/api/product/explore?**", async (route) => {
+  await page.route("**/api/product/explore/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (!params.get("q")) return route.continue();
     calls++;
@@ -642,6 +642,183 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   ).toBe(true);
 });
 
+test("live feed slides arriving trades into place with transform and opacity only", async ({
+  page,
+}, testInfo) => {
+  const now = chain.toTimestamp;
+  // Two-day-old trades keep the age labels' text stable across clock ticks.
+  const timestamp = now - 2 * 86400;
+  await page.clock.install({ time: new Date(now * 1000) });
+  await page.addInitScript(() => {
+    const shifts: unknown[] = [];
+    Object.assign(window, { layoutShifts: shifts });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+          sources: {
+            node: Element | null;
+            previousRect: DOMRectReadOnly;
+            currentRect: DOMRectReadOnly;
+          }[];
+        };
+        if (!shift.hadRecentInput)
+          shifts.push({
+            value: shift.value,
+            sources: shift.sources.map((source) => ({
+              node: source.node?.outerHTML.slice(0, 120),
+              from: source.previousRect.toJSON(),
+              to: source.currentRect.toJSON(),
+            })),
+          });
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+  const [a, b, c, d, e] = [1, 2, 3, 4, 5].map((index) =>
+    liveEvent(index, timestamp, { side: index % 2 ? "buy" : "sell" }),
+  );
+  const windows = [[a], [c, b, a], [d, c, b, a], [e, d, c, b, a]];
+  let calls = 0;
+  await page.route("**/api/live-trades/**", (route) =>
+    route.fulfill({
+      json: liveBatch(windows[Math.min(calls++, windows.length - 1)], now),
+    }),
+  );
+  await page.goto("/");
+  const feed = page.getByRole("region", { name: "Recent trades" });
+  const rows = feed.locator(".stream-event");
+  await expect(rows).toHaveCount(1);
+  await expect(feed.getByText("Checking every 15s")).toBeVisible();
+  // Document-relative layout geometry of the feed and its surroundings,
+  // unaffected by scrolling or by the transforms the entrance applies.
+  const geometry = (retained: string) =>
+    feed.evaluate((node, retained) => {
+      const top = (element: Element | null) =>
+        Math.round(element!.getBoundingClientRect().top + scrollY);
+      const surface = node.querySelector(".activity-list")!;
+      return {
+        region: [top(node), node.getBoundingClientRect().height],
+        surface: [top(surface), surface.getBoundingClientRect().height],
+        footnote: top(surface.nextElementSibling),
+        retained: surface.querySelector<HTMLElement>(
+          `[data-event-id="${retained}"]`,
+        )!.offsetTop,
+      };
+    }, retained);
+  const transforms = () =>
+    rows.evaluateAll((nodes) =>
+      nodes.map((node) => getComputedStyle(node).transform),
+    );
+  const shifts = () =>
+    page.evaluate(
+      () => (window as unknown as { layoutShifts: unknown[] }).layoutShifts,
+    );
+  const before = await geometry(a.id);
+  const shiftsBefore = (await shifts()).length;
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", c.id);
+  await expect(rows.nth(0)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(1)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(2)).toHaveAttribute("data-event-id", a.id);
+  await expect(rows.nth(2)).toHaveAttribute("data-new", "false");
+  await expect
+    .poll(transforms, { message: "the entrance runs to completion" })
+    .toEqual(["none", "none", "none"]);
+  await page.waitForTimeout(100);
+  const after = await geometry(a.id);
+  expect(
+    after.retained - before.retained,
+    "the retained row moved down two slots in layout",
+  ).toBeGreaterThan(0);
+  expect(
+    { region: after.region, surface: after.surface, footnote: after.footnote },
+    "nothing outside the scroll surface moved",
+  ).toEqual({
+    region: before.region,
+    surface: before.surface,
+    footnote: before.footnote,
+  });
+  expect(
+    (await shifts()).slice(shiftsBefore),
+    "layout-shift entries recorded while trades arrived",
+  ).toEqual([]);
+  // Freeze the document timeline so the next arrival can be inspected frame
+  // by frame; scrubbing is an instrument, so entries are not counted here.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  const slot = (await geometry(c.id)).retained;
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", d.id);
+  const distance = (await geometry(c.id)).retained - slot;
+  expect(distance, "one arriving row pushes the list one slot").toBeGreaterThan(
+    0,
+  );
+  const frame = (time: number) =>
+    feed.evaluate((node, time) => {
+      for (const animation of node.getAnimations({ subtree: true })) {
+        animation.pause();
+        animation.currentTime = time;
+      }
+      return [...node.querySelectorAll<HTMLElement>(".stream-event")].map(
+        (row) => {
+          const style = getComputedStyle(row);
+          return { transform: style.transform, opacity: style.opacity };
+        },
+      );
+    }, time);
+  const frames: Record<number, { transform: string; opacity: string }[]> = {};
+  for (const time of [0, 225, 450]) {
+    frames[time] = await frame(time);
+    await feed.screenshot({
+      path: testInfo.outputPath(`live-feed-frame-${time}.png`),
+    });
+  }
+  await testInfo.attach("live-feed-frames", {
+    body: JSON.stringify({ before, after, distance, frames }, null, 2),
+    contentType: "application/json",
+  });
+  const arriving = `matrix(1, 0, 0, 1, 0, -${distance})`;
+  expect(
+    frames[0],
+    "every row starts where the list was painted, the arriving row invisible",
+  ).toEqual([
+    { transform: arriving, opacity: "0" },
+    { transform: arriving, opacity: "1" },
+    { transform: arriving, opacity: "1" },
+    { transform: arriving, opacity: "1" },
+  ]);
+  for (const row of frames[225]) {
+    const y = Number(row.transform.match(/, (-?[\d.]+)\)$/)![1]);
+    expect(y, "the rows are still sliding down midway").toBeLessThan(0);
+    expect(y).toBeGreaterThan(-distance);
+  }
+  expect(frames[450], "the rows settle with no transform left").toEqual(
+    Array.from({ length: 4 }, () => ({ transform: "none", opacity: "1" })),
+  );
+  await feed.evaluate((node) => {
+    for (const animation of node.getAnimations({ subtree: true }))
+      animation.finish();
+  });
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(5);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", e.id);
+  await expect(rows.nth(0)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(0)).toBeVisible();
+  await expect(rows.nth(0)).toHaveCSS("animation-name", "none");
+  await expect(rows.nth(0)).toHaveCSS("opacity", "1");
+  expect(await transforms()).toEqual(Array.from({ length: 5 }, () => "none"));
+  expect(
+    await feed.evaluate((node) => node.getAnimations({ subtree: true }).length),
+    "reduced motion shows the row without any animation",
+  ).toBe(0);
+});
+
 test("catalog token search opens a verified pool link and loads its details on demand", async ({
   page,
 }) => {
@@ -825,7 +1002,7 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   request,
 }) => {
   const response = await request.get(
-    "/api/product/explore?limit=100&sort=launch&window=All",
+    "/api/product/explore/?limit=100&sort=launch&window=All",
   );
   const all = (await response.json()) as AnalyticsExploreResponse;
   expect(all.total).toBeGreaterThan(25);
@@ -932,12 +1109,12 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     if (r.url().includes("/accounting/") || r.method() === "POST")
       reads.push(r.url());
   });
-  await page.route("**/api/product/leaderboard?**", (r) =>
+  await page.route("**/api/product/leaderboard/?**", (r) =>
     r.fulfill({
       json: { ...board, delivery: { source: "indexer", notice: null } },
     }),
   );
-  await page.route(`**/api/product/wallets/${wallet}?**`, (r) =>
+  await page.route(`**/api/product/wallets/${wallet}/?**`, (r) =>
     r.fulfill({
       json: { ...profile, delivery: { source: "indexer", notice: null } },
     }),
@@ -966,11 +1143,11 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "rgb(63, 214, 140)",
   );
   await expect(
-    page.getByRole("heading", { name: "Positions across covered pools" }),
+    page.getByRole("heading", { name: "Positions by pool" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Observed trade history" }),
+    page.getByRole("heading", { name: "Trade history" }),
   ).toBeVisible();
   await expect(page.locator("main tbody tr")).toHaveCount(11);
   await page
@@ -1006,7 +1183,7 @@ test("command search extends instant local matches with saved-only tokens and wa
   const model = buildAnalyticsModel([indexed], []);
   let release: () => void = () => {};
   let pending = false;
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     const q = new URL(r.request().url()).searchParams.get("q")!;
     if (q === market.symbol) {
       await new Promise<void>((resolve) => {
@@ -1077,7 +1254,7 @@ test("ENS creator search reaches saved-only creators and opens their profile", a
   await page.route("**/api/ens/?**", (r) =>
     r.fulfill({ json: { name: "indexed.eth", address: creator } }),
   );
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     const q = new URL(r.request().url()).searchParams.get("q")!;
     queries.push(q);
     await r.fulfill({ json: await searchAnalytics(model, q) });
@@ -1107,7 +1284,7 @@ test("ENS wallet fallback stays usable while saved search is slow or unavailable
   await page.route("**/api/ens/?**", (r) =>
     r.fulfill({ json: { name: "indexed.eth", address } }),
   );
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     if (
       new URL(r.request().url()).searchParams.get("q") === `wallet:${address}`
     ) {
@@ -1171,7 +1348,7 @@ test("saved pool details show reconciled holders and label infrastructure separa
     },
   );
   let savedReads = 0;
-  await page.route(`**/api/product/pools/${market.id}`, (r) => {
+  await page.route(`**/api/product/pools/${market.id}/`, (r) => {
     savedReads++;
     return r.fulfill({
       json: { ...payload, delivery: { source: "indexer", notice: null } },
@@ -1205,7 +1382,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
 }, testInfo) => {
   // No product endpoint or image interception: this reads the actual captured dataset.
   const boardResponse = await request.get(
-    "/api/product/leaderboard?window=All&minTrades=10&metric=realized&limit=25",
+    "/api/product/leaderboard/?window=All&minTrades=10&metric=realized&limit=25",
   );
   expect(boardResponse.status()).toBe(200);
   const board = (await boardResponse.json()) as AnalyticsLeaderboardResponse;
@@ -1214,7 +1391,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   expect(top.address).toBe("0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1");
   expect(top.realizedWei).toBe("11471084300772102");
   const profileResponse = await request.get(
-    `/api/product/wallets/${top.address}?window=All`,
+    `/api/product/wallets/${top.address}/?window=All`,
   );
   expect(profileResponse.status()).toBe(200);
   const profile = (await profileResponse.json()) as AnalyticsWalletResponse;
@@ -1284,7 +1461,7 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     "explore",
     new URLSearchParams(),
   ) as AnalyticsExploreResponse;
-  await page.route("**/api/product/explore?**", (route) =>
+  await page.route("**/api/product/explore/?**", (route) =>
     route.fulfill({
       json: {
         ...base,

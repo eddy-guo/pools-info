@@ -24,6 +24,7 @@ export type Route =
   | "status"
   | "pools"
   | "pool"
+  | "pool-image"
   | "trades"
   | "trade-share"
   | "wallet"
@@ -72,6 +73,7 @@ export function parseRequest(input: string): ReadRequest {
       url.pathname,
     );
   const pool = /^\/v1\/pools\/(0x[\da-f]{64})$/i.exec(url.pathname);
+  const poolImage = /^\/v1\/pools\/(0x[\da-f]{64})\/image$/i.exec(url.pathname);
   const activity = /^\/v1\/wallets\/(0x[\da-f]{40})\/activity$/i.exec(
     url.pathname,
   );
@@ -101,6 +103,9 @@ export function parseRequest(input: string): ReadRequest {
   } else if (pool) {
     route = "pool";
     poolId = pool[1].toLowerCase();
+  } else if (poolImage) {
+    route = "pool-image";
+    poolId = poolImage[1].toLowerCase();
   } else if (activity) {
     route = "wallet";
     wallet = activity[1].toLowerCase();

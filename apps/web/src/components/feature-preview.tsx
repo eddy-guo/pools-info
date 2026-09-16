@@ -136,6 +136,15 @@ export function FeaturePreview({
     </>
   );
 }
+/** One quiet line for features that are not built yet: no accent, no dialog. */
+export function ComingSoonRow({ items }: { items: string[] }) {
+  return (
+    <p className="coming-soon-row">
+      <span>Coming soon</span>
+      {items.join(" · ")}
+    </p>
+  );
+}
 export function PersonalRankPreview() {
   return (
     <div className="personal-rank">

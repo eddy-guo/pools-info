@@ -3085,11 +3085,6 @@ main {
 .search-result small {
   white-space: nowrap;
 }
-.search-result:focus {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-  background: #2b252d;
-}
 .search-results {
   max-height: calc(72dvh - 175px);
 }
@@ -4500,6 +4495,7 @@ main {
   }
   .market-sidebar {
     display: flex;
+    align-items: stretch;
   }
   .table-toolbar {
     padding: 10px;
@@ -4818,28 +4814,6 @@ main {
     transition: opacity 150ms ease-out;
   }
 }
-.product-coverage {
-  height: 114px;
-  overflow: auto;
-  color: var(--color-text-3);
-}
-.product-coverage strong {
-  color: var(--color-text-2);
-}
-.product-coverage p {
-  font-weight: 400;
-}
-.product-coverage a {
-  color: var(--color-text-2);
-}
-.wallet-accounting-slot {
-  height: 24px;
-  width: 190px;
-  overflow: auto;
-}
-.wallet-page .page-heading h1 + span {
-  width: 112px;
-}
 .wallet-page .live-eight-stats .stat {
   height: 144px;
 }
@@ -4914,11 +4888,6 @@ main {
 .leaderboard-panel .data-table td:nth-child(n + 6) .positive,
 .leaderboard-panel .data-table td:nth-child(n + 6) .negative {
   color: inherit;
-}
-.wallet-summary-note {
-  display: block;
-  height: 92px;
-  overflow: auto;
 }
 .explore-page .desktop-pools {
   min-height: calc(25 * 62px + 44px);
@@ -5163,15 +5132,72 @@ main {
   color: var(--color-text-3);
   font-size: 12px;
 }
-.wallet-curve-note {
-  height: 72px;
-  overflow: auto;
-}
 .wallet-list-region {
-  min-height: calc(25 * 74px + 44px);
+  min-height: calc(25 * 62px + 44px);
 }
 .wallet-list-region .data-table tbody tr {
-  height: 74px;
+  height: 62px;
+}
+.wallet-list-region .data-table td {
+  height: auto;
+}
+.wallet-top-pools {
+  height: calc(5 * 62px);
+  overflow: auto;
+}
+.wallet-top-pool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 62px;
+  padding: 0 16px;
+  border-bottom: 1px solid #131317;
+  color: var(--text);
+  font-size: 13px;
+}
+.wallet-top-pool > span:first-child {
+  min-width: 0;
+}
+.wallet-top-pool strong {
+  display: block;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wallet-top-pool small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.wallet-top-pool small .number {
+  font-size: inherit;
+}
+a.wallet-top-pool:hover {
+  background: var(--color-panel-hover);
+}
+.wallet-top-pools .panel-footnote {
+  border-top: 0;
+}
+.coming-soon-row {
+  margin: 0;
+  padding: 0 16px;
+  min-height: var(--ctl-min);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+.coming-soon-row > span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-faint);
 }
 .leaderboard-panel .desktop-traders {
   min-height: calc(25 * 74px + 44px);
@@ -5314,12 +5340,6 @@ main {
   min-width: 8ch;
 }
 @container site (max-width: 767px) {
-  .product-coverage {
-    height: 190px;
-  }
-  .wallet-summary-note {
-    height: 176px;
-  }
   .wallet-chart-region {
     height: 330px;
   }

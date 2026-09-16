@@ -151,7 +151,7 @@ test("invalid shared links remain empty without falling back to personal stars o
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (
-      url.pathname === "/api/product/explore" &&
+      url.pathname === "/api/product/explore/" &&
       url.searchParams.get("view") === "watchlist"
     )
       requests.push(url.searchParams.get("ids") ?? "missing");
@@ -206,7 +206,7 @@ test("large personal lists stay saved while reads and share links respect their 
   const watchlistRequest = page.waitForRequest((request) => {
     const url = new URL(request.url());
     return (
-      url.pathname === "/api/product/explore" &&
+      url.pathname === "/api/product/explore/" &&
       url.searchParams.get("view") === "watchlist" &&
       !!url.searchParams.get("ids")
     );

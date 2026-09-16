@@ -140,6 +140,7 @@ export async function readData(
     await query("SELECT 1 FROM analytics_accounting_positions WHERE false");
     await query("SELECT 1 FROM analytics_accounting_trades WHERE false");
     await query("SELECT 1 FROM analytics_accounting_prices WHERE false");
+    await query("SELECT 1 FROM token_images WHERE false");
     await accountingCoverage(query);
     return { ready: true };
   }

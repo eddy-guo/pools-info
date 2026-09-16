@@ -51,7 +51,7 @@ export function createSearchProvider(
       if (q.length > 100) return base;
       try {
         const response = await fetch(
-          `/api/product/search?q=${encodeURIComponent(q)}`,
+          `/api/product/search/?q=${encodeURIComponent(q)}`,
           {
             signal: AbortSignal.any([
               options.signal,

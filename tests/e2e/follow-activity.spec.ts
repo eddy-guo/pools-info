@@ -58,7 +58,7 @@ test("followed activity keeps dated trades on outage, pauses and replaces a remo
   page.on("request", (request) => {
     if (/alchemy|\/rpc(?:\/|$)/i.test(request.url())) rpc.push(request.url());
   });
-  await page.route("**/api/product/following?*", async (route) => {
+  await page.route("**/api/product/following/?*", async (route) => {
     requests++;
     expect(new URL(route.request().url()).searchParams.get("wallets")).toBe(
       wallet,
@@ -141,7 +141,7 @@ test("followed activity keeps dated trades on outage, pauses and replaces a remo
 test("wallet copy signals show read-only executions without changing follows", async ({
   page,
 }) => {
-  await page.route("**/api/product/following?*", (route) =>
+  await page.route("**/api/product/following/?*", (route) =>
     route.fulfill({ json: snapshot }),
   );
   await page.goto(`/wallet/${wallet}/`);

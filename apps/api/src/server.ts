@@ -1,12 +1,19 @@
 import { createServer } from "node:http";
 import { parseRequest, RequestError } from "./request";
 import type { Reader } from "./reader";
+import { respondTokenImage, type TokenImageService } from "./token-image-store";
 
 /** Small per-instance limits. We deliberately do not trust forwarded IP headers
  * or keep visitor/account records. Railway may add an edge limit separately. */
 export function createApi(
   reader: Reader,
-  { now = Date.now, maxPerMinute = 240, cacheMs = 5000 } = {},
+  {
+    now = Date.now,
+    maxPerMinute = 240,
+    cacheMs = 5000,
+    images = null as TokenImageService | null,
+    maxImagesPerMinute = 1200,
+  } = {},
 ) {
   const cache = new Map<
     string,
@@ -18,9 +25,26 @@ export function createApi(
     cache.delete(key);
   }
   const pending = new Map<string, Promise<string>>();
-  let windowStart = now(),
-    used = 0,
-    active = 0;
+  /** Per-minute budget; returns the seconds until the window resets when spent. */
+  function limiter(max: number) {
+    let windowStart = now(),
+      used = 0;
+    return () => {
+      if (now() - windowStart >= 60000) {
+        windowStart = now();
+        used = 0;
+      }
+      return ++used > max
+        ? Math.max(1, Math.ceil((windowStart + 60000 - now()) / 1000))
+        : null;
+    };
+  }
+  const readBudget = limiter(maxPerMinute);
+  // Icons have their own budget so a cold viewport of icons never starves
+  // JSON reads, and their own in-flight bound beside the fetch slots.
+  const imageBudget = limiter(maxImagesPerMinute);
+  let active = 0,
+    activeImages = 0;
   const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -39,16 +63,23 @@ export function createApi(
         send(200, '{"ok":true}');
         return;
       }
-      if (now() - windowStart >= 60000) {
-        windowStart = now();
-        used = 0;
-      }
-      if (++used > maxPerMinute) {
-        res.setHeader(
-          "Retry-After",
-          String(Math.max(1, Math.ceil((windowStart + 60000 - now()) / 1000))),
-        );
+      const retryAfter = (
+        request.route === "pool-image" ? imageBudget : readBudget
+      )();
+      if (retryAfter !== null) {
+        res.setHeader("Retry-After", String(retryAfter));
         throw new RequestError(429, "request_limit");
+      }
+      if (request.route === "pool-image") {
+        if (!images) throw new RequestError(404, "not_found");
+        if (activeImages >= 64) throw new RequestError(503, "busy");
+        activeImages++;
+        try {
+          respondTokenImage(req, res, await images.resolve(request.poolId!));
+        } finally {
+          activeImages--;
+        }
+        return;
       }
       // A rewound recent window must disappear on the very next poll.
       const cacheable =

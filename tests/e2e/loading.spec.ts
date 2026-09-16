@@ -7,12 +7,12 @@ const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 test("Explore retains saved rows during refresh", async ({ page, request }) => {
   const payload = await (
     await request.get(
-      "/api/product/explore?window=24h&view=all&offset=0&limit=25&q=&sort=launch&direction=desc",
+      "/api/product/explore/?window=24h&view=all&offset=0&limit=25&q=&sort=launch&direction=desc",
     )
   ).json();
   let release: () => void = () => {},
     calls = 0;
-  await page.route("**/api/product/explore?**", async (route) => {
+  await page.route("**/api/product/explore/?**", async (route) => {
     if (new URL(route.request().url()).searchParams.get("limit") !== "25")
       return route.continue();
     calls++;
@@ -54,12 +54,12 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   request,
 }) => {
   const explore = (sort: string) =>
-    `/api/product/explore?window=24h&view=all&offset=0&limit=25&q=&sort=${sort}&direction=desc`;
+    `/api/product/explore/?window=24h&view=all&offset=0&limit=25&q=&sort=${sort}&direction=desc`;
   const byLaunch = await (await request.get(explore("launch"))).json();
   const byVolume = await (await request.get(explore("volume"))).json();
   let release: () => void = () => {},
     gated = false;
-  await page.route("**/api/product/explore?**", async (route) => {
+  await page.route("**/api/product/explore/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (params.get("limit") !== "25") return route.continue();
     if (params.get("sort") !== "volume")
@@ -123,8 +123,8 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       url: `/wallet/${topWallet}/`,
       api: `wallets/${topWallet}`,
       label: "Loading wallet analytics",
-      skeleton: ".product-coverage[aria-busy=true]",
-      loaded: "Positions across covered pools",
+      skeleton: ".wallet-top-pools[aria-busy=true]",
+      loaded: "Positions by pool",
     },
     {
       url: "/traders/?window=All",
@@ -135,11 +135,11 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
     },
   ]) {
     const payload = await (
-      await request.get(`/api/product/${entry.api}?window=All`)
+      await request.get(`/api/product/${entry.api}/?window=All`)
     ).json();
     let release: () => void = () => {},
       started = false;
-    await page.route(`**/api/product/${entry.api}?**`, async (route) => {
+    await page.route(`**/api/product/${entry.api}/?**`, async (route) => {
       started = true;
       await new Promise<void>((resolve) => {
         release = resolve;
@@ -151,9 +151,7 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
     await expect(skeleton.first()).toBeVisible();
     await expect(
       page
-        .getByText("No supported realized history in this window.", {
-          exact: true,
-        })
+        .getByText("No realized PnL in this window.", { exact: true })
         .filter({ visible: true }),
     ).toHaveCount(0);
     await page.screenshot({
@@ -176,7 +174,7 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
           .filter({ visible: true })
           .first(),
       ).toBeVisible();
-    await page.unroute(`**/api/product/${entry.api}?**`);
+    await page.unroute(`**/api/product/${entry.api}/?**`);
   }
 });
 
@@ -189,7 +187,7 @@ test("on-demand pools reserve a chart layout while saved data loads", async ({
   const pool = saved.markets[0];
   const releases: Array<() => void> = [];
   for (const pattern of [
-    `**/api/product/pools/${pool.id}`,
+    `**/api/product/pools/${pool.id}/`,
     `**/api/markets/${pool.id}/?*`,
   ])
     await page.route(pattern, async (route) => {
@@ -217,7 +215,7 @@ test("search keeps local matches while the saved index is pending and skeletons 
 }) => {
   let release: () => void = () => {},
     started = false;
-  await page.route("**/api/product/search?**", async (route) => {
+  await page.route("**/api/product/search/?**", async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q");
     if (!query) return route.continue();
     started = true;
