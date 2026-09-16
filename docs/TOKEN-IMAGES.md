@@ -116,6 +116,27 @@ takes a process-cache slot but carries the same day-long negative
 `Cache-Control`. The lifetimes live in `imageLifetimes` in
 `apps/web/src/lib/token-image.ts`.
 
+## Persistent store in the read API
+
+`GET /v1/pools/<poolId>/image` on the read API (`apps/api`, documented under
+"Token icon store" in its README) serves the same 128 x 128 WebP from the
+`token_images` table in the read database. The first view of a pool runs the
+policy above, moved verbatim into the shared `@pools/token-image` package,
+with a 4-second upstream budget and eight concurrent fetches per process; the
+bytes, their SHA-256 (the `ETag`) and the catalog `image_url` they came from
+are stored, so every later view anywhere is one primary-key read with a
+day-long browser lifetime and a month-long edge lifetime plus
+`stale-while-revalidate`. Rejections store a reason and a retry time instead
+of bytes: policy rejections for a day, transient fetch or decode failures for
+five minutes doubling per repeat, both answered as cacheable 404s so the
+generated icon stays the client's behaviour. A replaced catalog `image_url`
+re-encodes on the next view. Nothing prefetches: a request is the only trigger
+across the 62k-pool catalog. The store is cosmetic, carries no evidence
+linkage, and a lost row only costs one more encode.
+
+The website proxy's `resolveStoredImage` seam above is where it will read
+this endpoint; until that switch it still runs its own copy of the policy.
+
 ## Verification
 
 Unit tests exercise the actual request/response boundary with controlled HTTPS

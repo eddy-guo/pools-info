@@ -28,8 +28,10 @@ service can have a Railway HTTPS domain for the Next.js server to call. No new
 RPC key is required. Prefer a dedicated database role with SELECT access only
 to `indexed_pools`, `indexed_events`, `indexer_streams`, `indexer_batches`, and
 `analytics_pool_snapshots`, the four `analytics_accounting_*` tables and the
-four `recent_*` tables, plus schema USAGE. Even when using the existing connection initially, all API
-transactions explicitly run READ ONLY. Database roles are infrastructure
+four `recent_*` tables, plus schema USAGE, and SELECT, INSERT and UPDATE on
+`token_images` only (the icon store below). Even when using the existing connection initially, all API
+read transactions explicitly run READ ONLY; the icon store writes through its
+own three-connection pool and touches no other table. Database roles are infrastructure
 permissions and are unrelated to user accounts.
 
 Deploy the indexer first so its pre-deploy migration applies
@@ -83,6 +85,7 @@ launch is indexed or that a wallet's history/cost basis is complete.
 | `/v1/trades?poolId=&limit=&cursor=`            | `{items,nextCursor,pagination}` of recorded swaps, globally or scoped to one pool. Includes unsupported swap records with their original payload/exclusion reason.                                                                         |
 | `/v1/wallets/:address/activity?limit=&cursor=` | `{wallet,activityMeaning,items,nextCursor,pagination}` for a transaction initiator or token Transfer participant. Empty activity does not prove the wallet is inactive. Does not require sign-in.                                          |
 | `/v1/feed?pools=id1,id2`                       | Bounded recent swap feed for 1-8 distinct indexed pool IDs, described below.                                                                                                                                                               |
+| `/v1/pools/:poolId/image`                      | The pool's creator icon as a stored 128 px WebP, described under "Token icon store". No query parameters.                                                                                                                                  |
 
 A pool item includes `poolId`, `token`, `name`, `symbol`, `coverage`, and `launch`:
 `block`, `transactionHash`, `transactionInitiator`, `timestamp`, `sourceStream`,
@@ -208,6 +211,55 @@ preserving its exact terminal realized total. Search returns up to eight results
 per group with full matching counts; catalog pages never load the full catalog
 into application memory. Global sorting always precedes pagination. In-process
 response caching can add up to five seconds before a correction is visible.
+
+## Token icon store
+
+`GET` or `HEAD /v1/pools/:poolId/image` serves the catalog's creator image for
+one pool as a 128 px WebP, encoded once and kept in the `token_images` table
+(migration `015_token_images.sql`; `/ready` checks access to it). The first
+view of a pool runs the shared `@pools/token-image` policy inside the request:
+exact host allowlist, DNS answers checked against private-address block lists
+and pinned, HTTPS only, 2 MiB and 4-megapixel caps, content-type and magic-byte
+checks, Sharp decode and WebP re-encode. The bytes, their SHA-256 and the
+catalog `image_url` they came from are then stored and every later view is a
+primary-key read. A request is the only trigger: nothing prefetches, warms or
+sweeps the 62k-pool catalog. A changed catalog `image_url` re-encodes on the
+pool's next view. Any query string is rejected with 400 `invalid_parameter`.
+
+Responses:
+
+- `200` with `Content-Type: image/webp`, `Content-Length`, a strong `ETag`
+  (the content hash), `nosniff`, a restrictive CSP and
+  `Cache-Control: public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800`.
+  `If-None-Match` matching the ETag returns `304` with the same validators.
+- `404` JSON, cacheable for as long as the store itself will not retry:
+  `{error:"pool_not_indexed"}` (300 s); `{error:"image_unavailable",reason}`
+  with reason `no_source` or `source_rejected` (host or URL outside the policy,
+  86400 s) or `dns_rejected`, `fetch_rejected`, `decode_rejected`, `timeout`
+  (transient: 300 s, doubling per consecutive failure of the same source up to
+  86400 s). A stored `source_rejected` row is re-checked by the pure URL
+  policy on each view, so widening the allowlist takes effect without a sweep.
+  The website keeps its generated icon on any 404.
+- `503 {error:"busy"}` with `Retry-After: 5` and `no-store` when the process's
+  fetch slots and their waiting line are full, or when more than 64 image
+  requests are in flight; `429` with `Retry-After` from the route's own
+  1,200 requests/minute budget, separate from the JSON read budget.
+
+Variables, all optional:
+
+| Variable                       | Default | Meaning                                                                                                                   |
+| ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_IMAGE_DEADLINE_MS`      | `4000`  | Upstream budget per attempt (DNS, download, decode, encode), and the longest a request waits for a fetch slot. 500-10000. |
+| `TOKEN_IMAGE_CONCURRENCY`      | `8`     | Concurrent upstream fetches per process; four times as many may wait in line. 1-32.                                       |
+| `TOKEN_IMAGE_RETRY_SECONDS`    | `300`   | First negative lifetime after a transient failure. 5-86400.                                                               |
+| `TOKEN_IMAGE_REJECTED_SECONDS` | `86400` | Negative lifetime for policy rejections and the ceiling of the transient backoff. 60-2592000.                             |
+
+The store is a `bytea` column rather than a volume or object store: it needs no
+deployment change, survives rolling deploys, and the whole catalog is about
+180 MB at roughly 3 KB per icon. A failed store write after a successful encode
+still serves the image and logs `token_image_store_failed`; the next view
+encodes again. Rows carry no batch linkage and are never joined into
+accounting or evidence reads.
 
 ## Recent trade stream
 
