@@ -7,6 +7,7 @@ import { createReader } from "./reader";
 import { parseRequest } from "./request";
 import type { ChainSnapshot } from "@pools/core";
 import { readData } from "./reader";
+import { validatePoolResponse } from "../../web/src/lib/pool-response";
 
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
@@ -461,6 +462,9 @@ test(
         parseRequest(`/v1/pools/${word(1)}`),
       )) as any;
       assert.equal(details.analytics.audit.wallets[0].realizedWei, "50");
+      // The website's validator also parses the published analytics snapshot,
+      // so a pool with one attached must clear the same boundary.
+      validatePoolResponse(JSON.parse(JSON.stringify(details)), word(1));
       const found = (await reader.read(
         parseRequest("/v1/search?q=Pepe"),
       )) as any;
