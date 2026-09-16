@@ -17,7 +17,7 @@ for (const entry of [
   { roi: 274.3, text: "+274.3%", tone: "positive", token: "--color-up" },
   { roi: -12.34, text: "-12.3%", tone: "negative", token: "--color-down" },
 ]) {
-  test(`wallet Realized ROI reads ${entry.text} in the ${entry.tone} tone`, async ({
+  test(`wallet ROI reads ${entry.text} in the ${entry.tone} tone`, async ({
     page,
     request,
   }) => {
@@ -32,7 +32,7 @@ for (const entry of [
     await page.goto(`/wallet/${wallet}/?window=All`);
     const stat = page
       .locator(".stat")
-      .filter({ hasText: "Realized ROI" })
+      .filter({ has: page.getByText("ROI", { exact: true }) })
       .locator("strong");
     await expect(stat).toHaveText(entry.text);
     await expect(stat.locator(`.${entry.tone}`)).toHaveCSS(

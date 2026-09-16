@@ -25,6 +25,25 @@ const removedCopy = [
   "Edit profile",
   "PREVIEW",
   "Set up copy trading",
+  "Before gas",
+  "Profit / disposed cost",
+  "Closed inventory cycles",
+  "Refresh saved profile",
+  "Ranking trades",
+  "Observed volume",
+  "Avg closed hold",
+  "Best realized sale",
+];
+/** The export's stat labels: a name for each value, never a method note. */
+const statLabels = [
+  "Realized PnL",
+  "Unrealized",
+  "ROI",
+  "Win rate",
+  "Trades",
+  "Volume",
+  "Avg hold",
+  "Best trade",
 ];
 
 async function settled(page: import("@playwright/test").Page, url: string) {
@@ -61,6 +80,32 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   await expect(comingSoon.locator("button, a")).toHaveCount(0);
   await expect(comingSoon).toHaveCSS("color", "rgb(154, 154, 164)");
+
+  const stats = main.locator(".live-eight-stats .stat");
+  await expect(stats.locator("> span")).toHaveText(statLabels);
+  await expect(stats.locator("small")).toHaveCount(0);
+  // The window tabs sit in the chart panel head, as the export draws them,
+  // rather than in a controls row of their own above the stat cards.
+  await expect(main.locator(".live-controls")).toHaveCount(0);
+  await expect(
+    main
+      .locator(".panel-heading", { hasText: "Cumulative realized PnL" })
+      .getByRole("button", { pressed: true }),
+  ).toHaveText("All");
+  if (testInfo.project.name === "desktop") {
+    const lines = await stats.locator("> strong > span").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const line = parseFloat(getComputedStyle(node).lineHeight);
+        return Math.round(node.getBoundingClientRect().height / line);
+      }),
+    );
+    expect(lines, "no stat value wraps").toEqual(statLabels.map(() => 1));
+  }
+  await page.getByRole("button", { name: "Share PnL card" }).click();
+  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.innerText()).not.toContain("1200 × 630");
+  await page.getByRole("button", { name: "Close card preview" }).click();
 
   const actions = page.locator(".page-heading .button");
   await expect(actions).toHaveText([

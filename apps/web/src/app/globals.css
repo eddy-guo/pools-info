@@ -4850,15 +4850,8 @@ main {
     transition: opacity 150ms ease-out;
   }
 }
-.wallet-page .live-eight-stats .stat {
-  height: 144px;
-}
 .wallet-page .live-eight-stats .stat > strong {
   height: 47px;
-  overflow: auto;
-}
-.wallet-page .live-eight-stats .stat > small {
-  height: 32px;
   overflow: auto;
 }
 .wallet-list-region .data-table,
