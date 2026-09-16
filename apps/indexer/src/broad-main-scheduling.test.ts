@@ -72,8 +72,7 @@ test("actual main preserves discovery priority, bounds broad catch-up and stops 
       {
         cwd: fileURLToPath(new URL("../../../", import.meta.url)),
         encoding: "utf8",
-        // Bounds a hung child only; a loaded host spawns tsx in several seconds.
-        timeout: 60000,
+        timeout: 10000,
       },
     );
     assert.equal(result.error, undefined, state);
