@@ -63,16 +63,31 @@ A 40k aged-backlog test proves sustained high-band preference and lower-band
 progress. Source identity, exact wei, compatible range grouping, writer lock and
 reorg rules are preserved. Full CI **34963571241 passed** at 93a0cb8.
 
-**Tier-2 ranking is BLOCKED for deployment.** The complete 115k-swap/52k-registry
-read sometimes exceeds the existing 2.8-second serving budget; the best standalone
-result was 2,785 ms, with no safe margin for Railway. Do not deploy that path or
-raise the budget silently. Its WIP is backed up on
-`wip/tier2-read-budget` at **af6a7f3**. Its runtime and integration-test changes
-were removed from main's working tree; optional display types remain for explicit
-evidence labels. Correctness fixtures pass, but broad/recent conflict and mixed
-integration verification are also unfinished. This is not a completed Tier-2 board.
-The existing verified ranking remains available; the live browser previously showed
-25 actual rows per page and 373 qualifying traders, not a 14-row global ceiling.
+**Tier-2 ranking: CI blocker reproduced and fixed on `fm/pools-tier2-serve-p1`.**
+The 57014 statement timeout at `tier2-read.ts:143` was PostgreSQL JIT: on the
+Debian `postgres:17` image (LLVM present, `pg_jit_available()` true) the
+candidate's coverage statement had an estimated cost of 753,250, far above
+`jit_optimize_above_cost`, and compiling it took 2,951 / 2,868 / 2,900 ms per
+request in CI run 35047485541, against 159 ms with `jit=off`. Every Homebrew
+Postgres on the development machine lacks LLVM, so no local run could show it.
+A second, smaller cause surfaced once JIT was off: the cursor statement sorted
+every canonical row on text keys in an external merge under the stock 4 MB
+`work_mem`, and the same code measured 1,285 ms on one runner and 2,257 ms on
+another (run 35049292470). The read preamble now sets `SET LOCAL jit = off` (a
+regression test checks the transaction settings on any build), the coverage
+statement carries only the CTEs it reads with the catalog looked up per active
+pool (estimated cost 94,041), and the cursor statement streams evidence one
+book at a time in byte order, each book's copies read through the pool history
+indexes and sorted in memory, so the ledger's grouping order costs one bounded
+sort per pool instead of a whole-history sort; the fold verifies that order and
+fails closed. Measured complete 115k-swap/52k-pool reads (cold, warm 7d, warm
+All): CI run 35053090850 on Debian 17.11 with JIT available under the full
+parallel `test:db` 1,096 / 969 / 941 ms; local Postgres 17.11 (port 5417,
+stock container settings, no JIT) 951 / 813 / 621 ms and Postgres 18.6 (port
+5418) 559 / 517 / 527 ms under the full `test:db`, 114 database checks passing
+with zero skips on each. The 3,000 ms statement timeout and the 2,800 ms
+accounting budget are unchanged. Deployment and visual verification of tier-2
+rows follow the merge decision.
 
 Read-only production measurements:
 - At 11:26:57 UTC: 488 deep pools, 574 pools with observed volume in the requested
