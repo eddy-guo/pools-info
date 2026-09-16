@@ -283,24 +283,36 @@ export function ProductWallet({ address }: { address: string }) {
                                 )}
                               </td>
                               <td data-pending={!p && !data}>
-                                <Eth
-                                  pending={!data}
-                                  wei={p?.position?.costWei}
-                                />
+                                {p || !data ? (
+                                  <Eth
+                                    pending={!data}
+                                    wei={p?.position?.costWei}
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
                               </td>
                               <td data-pending={!p && !data}>
-                                <Eth
-                                  pending={!data}
-                                  wei={p?.realizedWei}
-                                  signed
-                                />
+                                {p || !data ? (
+                                  <Eth
+                                    pending={!data}
+                                    wei={p?.realizedWei}
+                                    signed
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
                               </td>
                               <td data-pending={!p && !data}>
-                                <Eth
-                                  pending={!data}
-                                  wei={p?.unrealizedWei}
-                                  signed
-                                />
+                                {p || !data ? (
+                                  <Eth
+                                    pending={!data}
+                                    wei={p?.unrealizedWei}
+                                    signed
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
                               </td>
                             </tr>
                           ))}
