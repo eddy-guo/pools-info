@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { parseRequest, RequestError } from "./request";
 import type { Reader } from "./reader";
 import { respondTokenImage, type TokenImageService } from "./token-image-store";
+import { createWalletHistory, type WalletHistory } from "./wallet-history";
 
 /** Small per-instance limits. We deliberately do not trust forwarded IP headers
  * or keep visitor/account records. Railway may add an edge limit separately. */
@@ -13,6 +14,7 @@ export function createApi(
     cacheMs = 5000,
     images = null as TokenImageService | null,
     maxImagesPerMinute = 1200,
+    history = createWalletHistory({ client: null }) as WalletHistory,
   } = {},
 ) {
   const cache = new Map<
@@ -82,8 +84,10 @@ export function createApi(
         return;
       }
       // A rewound recent window must disappear on the very next poll.
+      // Explorer history keeps its own cache with stale/fresh semantics.
       const cacheable =
         request.route !== "ready" &&
+        request.route !== "history" &&
         request.route !== "pool" &&
         request.route !== "live-trades" &&
         request.route !== "following" &&
@@ -100,7 +104,16 @@ export function createApi(
         active++;
         result = (async () => {
           try {
-            const body = JSON.stringify(await reader.read(request));
+            const body = JSON.stringify(
+              request.route === "history"
+                ? await history.read({
+                    wallet: request.wallet!,
+                    kind: request.kind,
+                    page: request.page,
+                    scope: request.scope,
+                  })
+                : await reader.read(request),
+            );
             const bytes = Buffer.byteLength(body);
             if (bytes > 8 * 1024 * 1024) throw Error("Response exceeds bound");
             if (cacheable) {
@@ -131,10 +144,13 @@ export function createApi(
     } catch (error) {
       const known = error instanceof RequestError;
       if (!known) process.stderr.write('{"event":"read_failed"}\n');
+      if (known && error.retryAfter)
+        res.setHeader("Retry-After", String(error.retryAfter));
       send(
         known ? error.status : 503,
         JSON.stringify({
           error: known ? error.code : "data_temporarily_unavailable",
+          ...(known && error.reason ? { reason: error.reason } : {}),
         }),
       );
     }

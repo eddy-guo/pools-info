@@ -5,14 +5,21 @@ import type {
   AnalyticsLeaderboardOptions,
   LiveWindow,
   SearchGroup,
+  WalletHistoryKind,
 } from "@pools/core";
+import { decodeHistoryCursor, historyKinds } from "./history-cursor";
 
 export class RequestError extends Error {
+  public reason?: string;
+  public retryAfter?: number;
   constructor(
     public status: number,
     public code: string,
+    details: { reason?: string; retryAfter?: number } = {},
   ) {
     super(code);
+    this.reason = details.reason;
+    this.retryAfter = details.retryAfter;
   }
 }
 const address = /^0x[\da-f]{40}$/i;
@@ -34,7 +41,8 @@ export type Route =
   | "search"
   | "feed"
   | "following"
-  | "live-trades";
+  | "live-trades"
+  | "history";
 export interface ReadRequest {
   route: Route;
   limit: number;
@@ -47,6 +55,9 @@ export interface ReadRequest {
   wallets: string[];
   scope: string;
   cursor: string[] | null;
+  /** Explorer history only: the kind and the decoded upstream page cursor. */
+  kind: WalletHistoryKind;
+  page: Record<string, string> | null;
   cacheKey: string;
   explore: AnalyticsExploreOptions;
   leaderboard: AnalyticsLeaderboardOptions;
@@ -75,6 +86,9 @@ export function parseRequest(input: string): ReadRequest {
   const pool = /^\/v1\/pools\/(0x[\da-f]{64})$/i.exec(url.pathname);
   const poolImage = /^\/v1\/pools\/(0x[\da-f]{64})\/image$/i.exec(url.pathname);
   const activity = /^\/v1\/wallets\/(0x[\da-f]{40})\/activity$/i.exec(
+    url.pathname,
+  );
+  const history = /^\/v1\/wallets\/(0x[\da-f]{40})\/history$/i.exec(
     url.pathname,
   );
   const profile = /^\/v1\/wallets?\/(0x[\da-f]{40})$/i.exec(url.pathname);
@@ -109,6 +123,9 @@ export function parseRequest(input: string): ReadRequest {
   } else if (activity) {
     route = "wallet";
     wallet = activity[1].toLowerCase();
+  } else if (history) {
+    route = "history";
+    wallet = history[1].toLowerCase();
   } else throw new RequestError(404, "not_found");
   const allowed =
     route === "trade-share"
@@ -140,9 +157,11 @@ export function parseRequest(input: string): ReadRequest {
                       ? ["poolId", "limit", "cursor"]
                       : route === "wallet"
                         ? ["limit", "cursor"]
-                        : route === "feed"
-                          ? ["pools"]
-                          : [];
+                        : route === "history"
+                          ? ["kind", "cursor"]
+                          : route === "feed"
+                            ? ["pools"]
+                            : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
@@ -218,6 +237,7 @@ export function parseRequest(input: string): ReadRequest {
     minTrades: +minRaw,
     metric: choice("metric", ["realized", "net"] as const, "realized"),
   };
+  const kind = choice("kind", historyKinds, "transactions");
   const group = url.searchParams.has("group")
     ? choice(
         "group",
@@ -263,8 +283,15 @@ export function parseRequest(input: string): ReadRequest {
     .digest("hex")
     .slice(0, 24);
   let cursor: string[] | null = null;
+  let page: Record<string, string> | null = null;
   const rawCursor = url.searchParams.get("cursor");
-  if (rawCursor !== null) {
+  if (rawCursor !== null && route === "history") {
+    try {
+      page = decodeHistoryCursor(rawCursor, scope, kind);
+    } catch {
+      throw new RequestError(400, "invalid_cursor");
+    }
+  } else if (rawCursor !== null) {
     try {
       if (!/^[A-Za-z0-9_-]{1,1024}$/.test(rawCursor)) throw Error();
       const decoded = JSON.parse(
@@ -310,7 +337,9 @@ export function parseRequest(input: string): ReadRequest {
     wallets,
     scope,
     cursor,
-    cacheKey: JSON.stringify([scope, +rawLimit, cursor]),
+    kind,
+    page,
+    cacheKey: JSON.stringify([scope, +rawLimit, cursor, page]),
     explore,
     leaderboard,
     window,
