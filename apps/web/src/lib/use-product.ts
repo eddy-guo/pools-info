@@ -16,11 +16,6 @@ export function useProduct<T>(path: string) {
     pending: boolean;
   }>({ path, pending: true });
   useEffect(() => {
-    const reload = () => setAttempt((n) => n + 1);
-    window.addEventListener("product-refresh", reload);
-    return () => window.removeEventListener("product-refresh", reload);
-  }, []);
-  useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(async () => {
       if (controller.signal.aborted) return;

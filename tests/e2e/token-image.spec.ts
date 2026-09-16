@@ -176,11 +176,10 @@ test("token images recover from temporary capacity errors with bounded retries",
   await expect(icon).toHaveAttribute("data-image-state", "failed");
   // Client navigation unmounts the row while its retry timer is still pending.
   await page
-    .locator('a[href="/methodology/"]')
-    .filter({ visible: true })
-    .first()
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Creators" })
     .click();
-  await expect(page).toHaveURL(/\/methodology\/$/);
+  await expect(page).toHaveURL(/\/creators\/$/);
   await expect(page.locator("[data-pool-image]")).toHaveCount(0);
   const attemptsBeforeUnmount = attempts.get(imageUrl);
   await page.clock.fastForward(20000);
