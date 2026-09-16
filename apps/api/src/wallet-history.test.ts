@@ -16,7 +16,10 @@ import {
 import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
 import { parseRequest, RequestError } from "./request";
 import { createApi } from "./server";
-import { createWalletHistory } from "./wallet-history";
+import {
+  createWalletHistory,
+  createWalletHistoryFromEnv,
+} from "./wallet-history";
 
 const wallet = "0x42a68318a6d78644870d3a37ec9e708e3ea904f5";
 const key = "proapi_test_key_never_logged";
@@ -642,4 +645,39 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
     error: "wallet_history_unavailable",
     reason: "not_configured",
   });
+});
+
+test("startup reads the key and limits by name and never requires them", async () => {
+  const missing = createWalletHistoryFromEnv({});
+  await assert.rejects(
+    missing.read({ wallet, kind: "transactions", page: null, scope: "s" }),
+    (e: RequestError) => e.reason === "not_configured",
+  );
+  assert.throws(
+    () =>
+      createWalletHistoryFromEnv({
+        BLOCKSCOUT_API_KEY: key,
+        BLOCKSCOUT_DAILY_CREDIT_CAP: "100000",
+      }),
+    /BLOCKSCOUT_DAILY_CREDIT_CAP/,
+  );
+  assert.throws(
+    () =>
+      createWalletHistoryFromEnv({
+        BLOCKSCOUT_API_KEY: key,
+        BLOCKSCOUT_PAGE_TTL_SECONDS: "0",
+      }),
+    /BLOCKSCOUT_PAGE_TTL_SECONDS/,
+  );
+  // A configured client with an unreachable override host fails as upstream.
+  const configured = createWalletHistoryFromEnv({
+    BLOCKSCOUT_API_KEY: key,
+    BLOCKSCOUT_API_URL: "http://127.0.0.1:9",
+    BLOCKSCOUT_DAILY_CREDIT_CAP: "50",
+  });
+  await assert.rejects(
+    configured.read({ wallet, kind: "transactions", page: null, scope: "s" }),
+    (e: RequestError) =>
+      e.reason === "upstream_unavailable" && e.retryAfter === 30,
+  );
 });

@@ -132,7 +132,7 @@ export function createWalletHistoryFromEnv(
       ? createBlockscoutClient({
           key,
           baseUrl: env.BLOCKSCOUT_API_URL || undefined,
-          dailyCreditCap: integer("BLOCKSCOUT_DAILY_CREDIT_CAP", 40000, 99999),
+          dailyCreditCap: integer("BLOCKSCOUT_DAILY_CREDIT_CAP", 30000, 99999),
         })
       : null,
     firstPageTtlMs:

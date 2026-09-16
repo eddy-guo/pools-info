@@ -346,7 +346,7 @@ Configuration, read from the environment at startup:
 | Variable                            | Default  | Meaning                                                                                                         |
 | ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
 | `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs. |
-| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `40000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers page).             |
+| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers page).             |
 | `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                           |
 | `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                             |
 | `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                            |
@@ -358,8 +358,9 @@ credit counter that resets at UTC midnight. The explorer's `x-credits-remaining`
 header is a backstop: when the key itself is nearly out, calls pause for an
 hour regardless of the local count. The counter is per process: during a
 Railway rolling deploy the old and new instance each keep their own, so the
-day's real spend can briefly count from zero again; the default cap of 40,000
-leaves room for two such restarts inside the 100,000 daily allowance. Upstream
+day's real spend can briefly count from zero again; the default cap of 30,000
+keeps three process lifetimes in one day (two such deploys) inside the 100,000
+daily allowance, and the header backstop covers anything beyond. Upstream
 calls time out after five seconds and bodies above 4 MiB are rejected. There is
 no retry. Pages are cached in process by wallet, kind, and cursor (2,000 entries,
 32 MiB); a page past its TTL is still served with `stale:true` for up to a day
