@@ -4,9 +4,8 @@ import { shortAddress, type AnalyticsLeaderboardResponse } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { Avatar, Change } from "./ui";
+import { Avatar, Change, TierBadge } from "./ui";
 import { ProductPagination } from "./product-common";
-import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
@@ -105,10 +104,10 @@ export function ProductTraders() {
                     </strong>
                     <span>
                       {w ? (
-                        <AccountingBadge wallet={w} />
+                        <TierBadge tier={w.accountingTier} />
                       ) : (
-                        <span className="evidence-badge" data-pending={!data}>
-                          Accounting pending
+                        <span className="badge tier-badge" data-pending={!data}>
+                          Tier
                         </span>
                       )}
                     </span>
@@ -157,17 +156,15 @@ export function ProductTraders() {
                     </td>
                     <td data-pending={!w && !data}>
                       {w ? (
-                        <>
+                        <span className="trader-cell">
                           <Link
                             className="mono"
                             href={`/wallet/${w.address}/?window=${window}`}
                           >
                             {shortAddress(w.address)}
                           </Link>
-                          <div className="cell-sub">
-                            <AccountingBadge wallet={w} />
-                          </div>
-                        </>
+                          <TierBadge tier={w.accountingTier} />
+                        </span>
                       ) : data ? (
                         "\u00a0"
                       ) : (
@@ -272,7 +269,7 @@ export function ProductTraders() {
                         <Avatar address={w.address} small />
                         <span className="mono">{shortAddress(w.address)}</span>
                       </Link>
-                      <AccountingBadge wallet={w} />
+                      <TierBadge tier={w.accountingTier} />
                     </div>
                     <div className="mobile-trader-value">
                       <Eth

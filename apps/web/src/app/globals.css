@@ -4052,6 +4052,15 @@ main {
   color: var(--purple);
   border-color: #45184f;
 }
+/* The accounting tier is a tag, not a sentence: one uppercase token in the
+   secondary tone, never the accent, and never wider than its word. */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
 .empty-state {
   padding: 44px 24px;
 }
@@ -4889,6 +4898,17 @@ main {
 .leaderboard-panel .data-table td:nth-child(n + 6) .negative {
   color: inherit;
 }
+/* The trader cell keeps its address and tier tag on one baseline. */
+.leaderboard-panel .data-table td .trader-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.leaderboard-panel .data-table td .trader-cell > .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .explore-page .desktop-pools {
   min-height: calc(25 * 62px + 44px);
 }
@@ -5141,6 +5161,14 @@ main {
 .wallet-list-region .data-table td {
   height: auto;
 }
+/* A position with no verified inventory keeps the shape of a verified row and
+   reads quieter; its own figures keep their sign and colour. */
+.wallet-list-region .data-table tbody tr.unsupported-row {
+  background: color-mix(in srgb, var(--color-line) 45%, transparent);
+}
+.wallet-list-region .data-table tbody tr.unsupported-row td {
+  color: var(--color-faint);
+}
 .wallet-top-pools {
   height: calc(5 * 62px);
   overflow: auto;
@@ -5212,6 +5240,13 @@ a.wallet-top-pool:hover {
 .leaderboard-panel .live-podium > * {
   height: 204px;
   overflow: auto;
+}
+/* A wallet the read API reports no tier for shows no tag, so the podium holds
+   the slot itself rather than letting the figure below it rise. */
+.leaderboard-panel .live-podium a > strong + span {
+  display: flex;
+  align-items: center;
+  min-height: 18px;
 }
 
 /* Creators: a fixed scroll surface owns the virtualised table, so the panel never grows with the catalog. */

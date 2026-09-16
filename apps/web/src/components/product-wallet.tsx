@@ -17,7 +17,7 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-import { AddressLabel, Avatar, Change, Chart } from "./ui";
+import { AddressLabel, Avatar, Change, Chart, TierBadge } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import styles from "./detail-design.module.css";
@@ -39,6 +39,13 @@ export function ProductWallet({ address }: { address: string }) {
   }, [card]);
   const w = data?.wallet,
     cardUrl = `/cards/${address.toLowerCase()}.png?window=${period}`;
+  const launchTxByPool = new Map(
+    (data?.positions ?? []).map((p) => [p.poolId, p.launchTx]),
+  );
+  const tradeHref = (poolId: string) => {
+    const launchTx = launchTxByPool.get(poolId);
+    return launchTx ? poolHref({ id: poolId, launchTx }) : `/pool/${poolId}/`;
+  };
   const topPools = (data?.positions ?? [])
     .slice()
     .sort((a, b) => (BigInt(b.volumeWei) > BigInt(a.volumeWei) ? 1 : -1))
@@ -65,6 +72,7 @@ export function ProductWallet({ address }: { address: string }) {
                     ? "UNRANKED"
                     : "RANK PENDING"}
               </span>
+              <TierBadge tier={w?.accountingTier} />
             </div>
             <AddressLabel address={address} full />
           </div>
@@ -225,6 +233,9 @@ export function ProductWallet({ address }: { address: string }) {
                             key={index}
                             aria-hidden={!p}
                             data-row={p ? "resolved" : "reserved"}
+                            className={
+                              p && !p.supported ? "unsupported-row" : undefined
+                            }
                           >
                             <td data-pending={!p && !data}>
                               {p ? (
@@ -259,22 +270,35 @@ export function ProductWallet({ address }: { address: string }) {
                                 "Pending"
                               )}
                             </td>
+                            {/* A reserved row holds geometry and has no figure
+                                to report: "N/A" belongs to real positions that
+                                the read API cannot value, such as tier-2 rows. */}
                             <td data-pending={!p && !data}>
-                              <Eth pending={!data} wei={p?.position?.costWei} />
+                              {p ? (
+                                <Eth wei={p.position?.costWei} />
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                <Eth pending wei={undefined} />
+                              )}
                             </td>
                             <td data-pending={!p && !data}>
-                              <Eth
-                                pending={!data}
-                                wei={p?.realizedWei}
-                                signed
-                              />
+                              {p ? (
+                                <Eth wei={p.realizedWei} signed />
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                <Eth pending wei={undefined} />
+                              )}
                             </td>
                             <td data-pending={!p && !data}>
-                              <Eth
-                                pending={!data}
-                                wei={p?.unrealizedWei}
-                                signed
-                              />
+                              {p ? (
+                                <Eth wei={p.unrealizedWei} signed />
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                <Eth pending wei={undefined} />
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -319,7 +343,9 @@ export function ProductWallet({ address }: { address: string }) {
                             key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
                           >
                             <td>{utc(e.trade.timestamp)}</td>
-                            <td>{e.symbol}</td>
+                            <td>
+                              <Link href={tradeHref(e.poolId)}>{e.symbol}</Link>
+                            </td>
                             <td
                               className={
                                 e.trade.side === "buy" ? "positive" : "negative"

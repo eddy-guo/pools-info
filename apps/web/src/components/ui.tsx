@@ -14,6 +14,7 @@ import {
   displayEth,
   shortAddress,
   visualTheme,
+  type AnalyticsWalletSummary,
   type PricePoint,
 } from "@pools/core";
 import { useWatchlist } from "./state";
@@ -243,6 +244,24 @@ export function Change({
     >
       {displayed > 0 ? "+" : ""}
       {displayed.toFixed(digits)}%
+    </span>
+  );
+}
+const tierTokens = { tier2: "SWAP", tier3: "VERIFIED", mixed: "MIXED" };
+/**
+ * The accounting tier is a styling cue, never a caption: one token, muted, and
+ * nothing at all when the read API reports no tier for the wallet.
+ */
+export function TierBadge({
+  tier,
+}: {
+  tier?: AnalyticsWalletSummary["accountingTier"];
+}) {
+  const token = tier && tier !== "unavailable" ? tierTokens[tier] : null;
+  if (!token) return null;
+  return (
+    <span className="badge tier-badge" data-tier={tier}>
+      {token}
     </span>
   );
 }
