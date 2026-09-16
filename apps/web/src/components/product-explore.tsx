@@ -29,6 +29,65 @@ const subscribeClock = (notify: () => void) => {
 };
 const currentSeconds = () => Math.floor(Date.now() / 1000);
 const serverSeconds = () => null;
+/** The launches tab: the API sorts this view by launch time on its own. */
+const LAUNCH_VIEW = "new";
+/**
+ * A pool with neither a deep publication nor a broad rollup has no market
+ * evidence at all; it reads as a launch rather than as a row of N/A.
+ */
+const launchOnly = (pool: AnalyticsPoolRow) =>
+  !pool.processed && !pool.marketCoverage;
+function PoolCell({ pool }: { pool: AnalyticsPoolRow }) {
+  return (
+    <Link className="token-cell" href={poolHref(pool)}>
+      <PoolImage
+        poolId={pool.id}
+        token={pool.token}
+        hasImage={!!pool.imageUrl}
+      />
+      <span>
+        <strong>{pool.name}</strong>
+        <small>
+          {launchOnly(pool)
+            ? pool.symbol
+            : `${pool.symbol} · ${new Date(
+                pool.launchedAt * 1000,
+              ).toLocaleDateString("en-US", { timeZone: "UTC" })}`}
+        </small>
+      </span>
+    </Link>
+  );
+}
+function LaunchLine({
+  pool,
+  now,
+}: {
+  pool: AnalyticsPoolRow;
+  now: number | null;
+}) {
+  return (
+    <span className="launch-line">
+      Launched{" "}
+      <time
+        data-pending={now === null}
+        dateTime={new Date(pool.launchedAt * 1000).toISOString()}
+        title={utc(pool.launchedAt)}
+      >
+        {now === null ? "Pending" : since(pool.launchedAt, now)}
+      </time>{" "}
+      ago
+      <span aria-hidden="true"> · </span>
+      <Link
+        href={`/wallet/${pool.launchSender.toLowerCase()}/`}
+        className="mono"
+      >
+        {shortAddress(pool.launchSender)}
+      </Link>
+      <span aria-hidden="true"> · </span>
+      Launch only
+    </span>
+  );
+}
 function MarketBasis({ pool }: { pool: AnalyticsPoolRow }) {
   const basis = pool.marketCoverage;
   return (
@@ -67,7 +126,8 @@ export function ProductExplore() {
         : "all")) as AnalyticsExploreOptions["view"],
     offset = Math.max(0, Number(params.get("offset") ?? 0)),
     q = params.get("q") ?? "";
-  const sort = params.get("sort") ?? "launch",
+  const sort =
+      params.get("sort") ?? (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = params.get("dir") ?? "desc";
   const filter = useDebouncedInput(q, (next) => set({ q: next, offset: null }));
   const query = new URLSearchParams({
@@ -85,6 +145,7 @@ export function ProductExplore() {
     query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
   const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsExploreResponse>(`explore?${query}`);
+  const launchPage = !!data?.items.length && data.items.every(launchOnly);
   return (
     <div className="page explore-page">
       <div className="page-heading">
@@ -99,7 +160,7 @@ export function ProductExplore() {
             Just launched
           </span>
           <button
-            onClick={() => set({ view: "new", sort: "launch", offset: null })}
+            onClick={() => set({ view: LAUNCH_VIEW, sort: null, offset: null })}
           >
             All discovered launches →
           </button>
@@ -163,8 +224,34 @@ export function ProductExplore() {
                 </span>
               </div>
               <div className="launch-card-values">
-                <Price wei={p?.stats.priceWei} pending={!launches.data} />
-                <Change value={p?.stats.change} pending={!launches.data} />
+                {p && launchOnly(p) ? (
+                  <>
+                    <span className="launch-card-note">Launch only</span>
+                    <span className="mono launch-card-sender">
+                      {shortAddress(p.launchSender)}
+                    </span>
+                  </>
+                ) : p ? (
+                  <>
+                    <Price wei={p.stats.priceWei} />
+                    <Change value={p.stats.change} />
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className="launch-card-note"
+                      data-pending={!launches.data}
+                    >
+                      {launches.data ? "\u00a0" : "Launch only"}
+                    </span>
+                    <span
+                      className="mono launch-card-sender"
+                      data-pending={!launches.data}
+                    >
+                      {launches.data ? "\u00a0" : "Sender"}
+                    </span>
+                  </>
+                )}
               </div>
             </Link>
           ))}
@@ -295,19 +382,38 @@ export function ProductExplore() {
                 data-stale-rows={stale}
               >
                 <table className="data-table pool-table">
+                  {/* Column widths live here so a row that spans the metric
+                      columns cannot move the ones before it. */}
+                  <colgroup>
+                    <col className="col-watch" />
+                    <col className="col-token" />
+                    <col className="col-price" />
+                    <col className="col-change" />
+                    <col className="col-volume" />
+                    <col className="col-trades" />
+                    <col className="col-liquidity" />
+                    <col className="col-holders" />
+                    <col className="col-sender" />
+                    <col className="col-trend" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th aria-label="Watchlist" />
                       <th>Token</th>
-                      <th>Price</th>
-                      <th>{window} change</th>
-                      <th>{window} volume</th>
-                      <th>{window} trades</th>
-                      <th>Liquidity</th>
-                      <th>Holders</th>
-                      <th>Launch sender</th>
-                      <th>Trend</th>
-                      <th>Coverage</th>
+                      {launchPage ? (
+                        <th colSpan={8}>Launch</th>
+                      ) : (
+                        <>
+                          <th>Price</th>
+                          <th>{window} change</th>
+                          <th>{window} volume</th>
+                          <th>{window} trades</th>
+                          <th>Liquidity</th>
+                          <th>Holders</th>
+                          <th>Launch sender</th>
+                          <th>Trend</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -333,115 +439,110 @@ export function ProductExplore() {
                         </td>
                         <td data-pending={!p && !data}>
                           {p ? (
-                            <>
-                              <Link className="token-cell" href={poolHref(p)}>
-                                <PoolImage
-                                  poolId={p.id}
-                                  token={p.token}
-                                  hasImage={!!p.imageUrl}
-                                />
-                                <span>
-                                  <strong>{p.name}</strong>
-                                  <small>
-                                    {p.symbol} ·{" "}
-                                    {new Date(
-                                      p.launchedAt * 1000,
-                                    ).toLocaleDateString("en-US", {
-                                      timeZone: "UTC",
-                                    })}
-                                  </small>
-                                </span>
-                              </Link>
-                            </>
+                            <PoolCell pool={p} />
                           ) : data ? (
                             "\u00a0"
                           ) : (
                             "Pending"
                           )}
                         </td>
-                        <td data-pending={!p && !data}>
-                          <Price wei={p?.stats.priceWei} pending={!data} />
-                        </td>
-                        <td data-pending={!p && !data}>
-                          <Change value={p?.stats.change} pending={!data} />
-                        </td>
-                        <td data-pending={!p && !data}>
-                          <Eth pending={!data} wei={p?.stats.volumeWei} />
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>{p.stats.trades ?? <Unavailable />}</>
-                          ) : data ? (
-                            " "
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        <td data-pending={!p && !data}>
-                          <Eth pending={!data} wei={p?.stats.liquidityWei} />
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>{p.stats.holders ?? <Unavailable />}</>
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>
-                              <Link
-                                href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                className="mono"
-                              >
-                                {shortAddress(p.launchSender)}
-                              </Link>
-                            </>
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>
-                              {p.marketCoverage?.source !== "canonical_broad" &&
-                              p.market?.series.length ? (
-                                <Sparkline
-                                  points={p.market.series}
-                                  positive={(p.stats.change ?? 0) >= 0}
+                        {p && launchOnly(p) ? (
+                          <td className="launch-cell" colSpan={8}>
+                            <LaunchLine pool={p} now={now} />
+                          </td>
+                        ) : (
+                          <>
+                            <td data-pending={!p && !data}>
+                              {p || !data ? (
+                                <Price
+                                  wei={p?.stats.priceWei}
+                                  pending={!data}
                                 />
                               ) : (
-                                <Unavailable />
+                                "\u00a0"
                               )}
-                            </>
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>
-                              <span className="badge">
-                                {p.processed
-                                  ? "Market evidence"
-                                  : p.marketCoverage
-                                    ? "Swaps only"
-                                    : "Launch only"}
-                              </span>
-                              <MarketBasis pool={p} />
-                            </>
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p || !data ? (
+                                <Change
+                                  value={p?.stats.change}
+                                  pending={!data}
+                                />
+                              ) : (
+                                "\u00a0"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p || !data ? (
+                                <Eth pending={!data} wei={p?.stats.volumeWei} />
+                              ) : (
+                                "\u00a0"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p ? (
+                                <>{p.stats.trades ?? <Unavailable />}</>
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                "Pending"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p || !data ? (
+                                <Eth
+                                  pending={!data}
+                                  wei={p?.stats.liquidityWei}
+                                />
+                              ) : (
+                                "\u00a0"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p ? (
+                                <>{p.stats.holders ?? <Unavailable />}</>
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                "Pending"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p ? (
+                                <Link
+                                  href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                                  className="mono"
+                                >
+                                  {shortAddress(p.launchSender)}
+                                </Link>
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                "Pending"
+                              )}
+                            </td>
+                            <td data-pending={!p && !data}>
+                              {p ? (
+                                <>
+                                  {p.marketCoverage?.source !==
+                                    "canonical_broad" &&
+                                  p.market?.series.length ? (
+                                    <Sparkline
+                                      points={p.market.series}
+                                      positive={(p.stats.change ?? 0) >= 0}
+                                    />
+                                  ) : (
+                                    <Unavailable />
+                                  )}
+                                </>
+                              ) : data ? (
+                                "\u00a0"
+                              ) : (
+                                "Pending"
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -456,61 +557,88 @@ export function ProductExplore() {
                   { length: Math.max(25, data?.items.length ?? 0) },
                   (_, index) => data?.items[index],
                 ).map((p, index) => (
-                  <article className="mobile-pool" key={index}>
+                  <article
+                    className="mobile-pool"
+                    key={index}
+                    data-row={p ? "resolved" : "reserved"}
+                  >
                     {p ? (
                       <>
                         <div className="mobile-pool-top">
-                          <Link className="token-cell" href={poolHref(p)}>
-                            <PoolImage
-                              poolId={p.id}
-                              token={p.token}
-                              hasImage={!!p.imageUrl}
-                            />
-                            <span>
-                              <strong>{p.name}</strong>
-                              <small>
-                                {p.symbol} ·{" "}
-                                {p.processed
-                                  ? "Saved analytics"
-                                  : "Launch only"}
-                              </small>
-                            </span>
-                          </Link>
+                          <PoolCell pool={p} />
                           <WatchButton id={p.id} />
                         </div>
-                        <MarketBasis pool={p} />
-                        <div className="mobile-pool-stats">
-                          <span>
-                            Price
-                            <strong>
-                              {p.stats.priceWei === null ? (
-                                <Unavailable />
-                              ) : (
-                                <Price wei={p.stats.priceWei} />
-                              )}
-                            </strong>
-                          </span>
-                          <span>
-                            {window} volume
-                            <strong>
-                              <Eth wei={p.stats.volumeWei} />
-                            </strong>
-                          </span>
-                          <span>
-                            Trades
-                            <strong>{p.stats.trades ?? <Unavailable />}</strong>
-                          </span>
-                          <span>
-                            Change
-                            <strong>
-                              {p.stats.change === null ? (
-                                <Unavailable />
-                              ) : (
-                                <Change value={p.stats.change} />
-                              )}
-                            </strong>
-                          </span>
-                        </div>
+                        {launchOnly(p) ? (
+                          /* The card holds a fixed height, so the launch
+                             facts take the stat slots rather than leaving
+                             most of it empty. */
+                          <div
+                            className="mobile-pool-stats"
+                            data-launch-row="true"
+                          >
+                            <span>
+                              Launched
+                              <strong>
+                                <time
+                                  data-pending={now === null}
+                                  dateTime={new Date(
+                                    p.launchedAt * 1000,
+                                  ).toISOString()}
+                                  title={utc(p.launchedAt)}
+                                >
+                                  {now === null
+                                    ? "Pending"
+                                    : `${since(p.launchedAt, now)} ago`}
+                                </time>
+                              </strong>
+                            </span>
+                            <span>
+                              Sender
+                              <strong>
+                                <Link
+                                  href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                                  className="mono"
+                                >
+                                  {shortAddress(p.launchSender)}
+                                </Link>
+                              </strong>
+                            </span>
+                            <span>
+                              Status
+                              <strong>Launch only</strong>
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <MarketBasis pool={p} />
+                            <div className="mobile-pool-stats">
+                              <span>
+                                Price
+                                <strong>
+                                  <Price wei={p.stats.priceWei} />
+                                </strong>
+                              </span>
+                              <span>
+                                {window} volume
+                                <strong>
+                                  <Eth wei={p.stats.volumeWei} />
+                                </strong>
+                              </span>
+                              <span>
+                                Trades
+                                <strong>
+                                  {p.stats.trades ?? <Unavailable />}
+                                </strong>
+                              </span>
+                              <span>
+                                Change
+                                <strong>
+                                  <Change value={p.stats.change} />
+                                </strong>
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </>
                     ) : !data ? (
                       <>

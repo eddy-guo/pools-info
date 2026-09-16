@@ -12,6 +12,11 @@ const unknownPool = `0x${"f".repeat(64)}`;
 const routes = [
   { name: "screener", url: "/", sentinel: ".explore-page .workspace-grid" },
   {
+    name: "launches",
+    url: "/?view=new",
+    sentinel: ".explore-page .workspace-grid",
+  },
+  {
     name: "pool",
     url: poolHref(chain.markets[0]),
     sentinel: ".page .workspace-grid",
@@ -190,7 +195,9 @@ for (const entry of routes) {
           ),
           "the first real table row survives hydration and data resolution",
         ).toBe(true);
-      if (!entry.name.includes("pool"))
+      /* A page of nothing but launches resolves to launch lines, so it holds
+         no formatted number to compare against the pending one. */
+      if (!entry.name.includes("pool") && entry.name !== "launches")
         expect(
           await page.evaluate(() => {
             const saved = (
