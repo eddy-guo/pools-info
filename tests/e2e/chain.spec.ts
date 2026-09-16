@@ -141,7 +141,7 @@ test("saved product refresh retains data during failures and recovers without br
     new URLSearchParams("q=" + market.token),
   ) as AnalyticsExploreResponse;
   let calls = 0;
-  await page.route("**/api/product/explore?**", async (route) => {
+  await page.route("**/api/product/explore/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (!params.get("q")) return route.continue();
     calls++;
@@ -825,7 +825,7 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   request,
 }) => {
   const response = await request.get(
-    "/api/product/explore?limit=100&sort=launch&window=All",
+    "/api/product/explore/?limit=100&sort=launch&window=All",
   );
   const all = (await response.json()) as AnalyticsExploreResponse;
   expect(all.total).toBeGreaterThan(25);
@@ -932,12 +932,12 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     if (r.url().includes("/accounting/") || r.method() === "POST")
       reads.push(r.url());
   });
-  await page.route("**/api/product/leaderboard?**", (r) =>
+  await page.route("**/api/product/leaderboard/?**", (r) =>
     r.fulfill({
       json: { ...board, delivery: { source: "indexer", notice: null } },
     }),
   );
-  await page.route(`**/api/product/wallets/${wallet}?**`, (r) =>
+  await page.route(`**/api/product/wallets/${wallet}/?**`, (r) =>
     r.fulfill({
       json: { ...profile, delivery: { source: "indexer", notice: null } },
     }),
@@ -1006,7 +1006,7 @@ test("command search extends instant local matches with saved-only tokens and wa
   const model = buildAnalyticsModel([indexed], []);
   let release: () => void = () => {};
   let pending = false;
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     const q = new URL(r.request().url()).searchParams.get("q")!;
     if (q === market.symbol) {
       await new Promise<void>((resolve) => {
@@ -1077,7 +1077,7 @@ test("ENS creator search reaches saved-only creators and opens their profile", a
   await page.route("**/api/ens/?**", (r) =>
     r.fulfill({ json: { name: "indexed.eth", address: creator } }),
   );
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     const q = new URL(r.request().url()).searchParams.get("q")!;
     queries.push(q);
     await r.fulfill({ json: await searchAnalytics(model, q) });
@@ -1107,7 +1107,7 @@ test("ENS wallet fallback stays usable while saved search is slow or unavailable
   await page.route("**/api/ens/?**", (r) =>
     r.fulfill({ json: { name: "indexed.eth", address } }),
   );
-  await page.route("**/api/product/search?**", async (r) => {
+  await page.route("**/api/product/search/?**", async (r) => {
     if (
       new URL(r.request().url()).searchParams.get("q") === `wallet:${address}`
     ) {
@@ -1171,7 +1171,7 @@ test("saved pool details show reconciled holders and label infrastructure separa
     },
   );
   let savedReads = 0;
-  await page.route(`**/api/product/pools/${market.id}`, (r) => {
+  await page.route(`**/api/product/pools/${market.id}/`, (r) => {
     savedReads++;
     return r.fulfill({
       json: { ...payload, delivery: { source: "indexer", notice: null } },
@@ -1205,7 +1205,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
 }, testInfo) => {
   // No product endpoint or image interception: this reads the actual captured dataset.
   const boardResponse = await request.get(
-    "/api/product/leaderboard?window=All&minTrades=10&metric=realized&limit=25",
+    "/api/product/leaderboard/?window=All&minTrades=10&metric=realized&limit=25",
   );
   expect(boardResponse.status()).toBe(200);
   const board = (await boardResponse.json()) as AnalyticsLeaderboardResponse;
@@ -1214,7 +1214,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   expect(top.address).toBe("0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1");
   expect(top.realizedWei).toBe("11471084300772102");
   const profileResponse = await request.get(
-    `/api/product/wallets/${top.address}?window=All`,
+    `/api/product/wallets/${top.address}/?window=All`,
   );
   expect(profileResponse.status()).toBe(200);
   const profile = (await profileResponse.json()) as AnalyticsWalletResponse;
@@ -1284,7 +1284,7 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     "explore",
     new URLSearchParams(),
   ) as AnalyticsExploreResponse;
-  await page.route("**/api/product/explore?**", (route) =>
+  await page.route("**/api/product/explore/?**", (route) =>
     route.fulfill({
       json: {
         ...base,
