@@ -47,6 +47,8 @@ export function ObservedPoolDetail({
   refresh,
   loading,
   pending = false,
+  chart = true,
+  published = true,
   error,
 }: {
   id: string;
@@ -59,9 +61,18 @@ export function ObservedPoolDetail({
   refresh: () => void;
   loading: boolean;
   pending?: boolean;
+  /** A chart can still arrive, so its region holds that height from first paint. */
+  chart?: boolean;
+  /** The read API answered for this pool; a failed market refresh has not. */
+  published?: boolean;
   error?: string;
 }) {
   const [tab, setTab] = useState("Top traders");
+  /** Nothing about this pool is published, so the page states no evidence. */
+  const unpublished =
+    !published && !market && !accountedMarket && !publication;
+  const candles =
+    !!(accountedMarket && snapshot) || !!market?.history.candles.length;
   const c = accountedMarket ? undefined : market?.coverage;
   const stat =
     accountedMarket && snapshot
@@ -109,7 +120,7 @@ export function ObservedPoolDetail({
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
         <Link href="/">Explore</Link>
         <span>/</span>
-        <span data-pending={pending}>
+        <span data-pending={pending && !pool?.symbol}>
           {pool?.symbol ?? (pending ? "Pool pending" : "Pool")}
         </span>
       </nav>
@@ -131,24 +142,30 @@ export function ObservedPoolDetail({
           </span>
           <div className="pool-heading-copy">
             <div className={`${styles.title} pool-identity-title`}>
-              <h1 data-pending={pending} title={pool?.name}>
+              <h1 data-pending={pending && !pool?.name} title={pool?.name}>
                 {pool?.name ??
-                  (pending
-                    ? "Loading saved pool"
-                    : "Pool outside current coverage")}
+                  (pending ? "Loading saved pool" : "Pool name unavailable")}
               </h1>
-              <span className={styles.symbol} data-pending={pending}>
-                {pool?.symbol ?? "Pending"}
+              <span
+                className={styles.symbol}
+                data-pending={pending && !pool?.symbol}
+              >
+                {pool?.symbol ?? (pending ? "Pending" : <Unavailable />)}
               </span>
               <span className={styles.mode}>INSTANT</span>
-              <span className="evidence-badge" data-pending={pending}>
+              <span
+                className="evidence-badge"
+                data-pending={pending && !unpublished}
+              >
                 {publication?.holders?.complete && audit
                   ? "Verified history"
-                  : pending
-                    ? "Evidence pending"
-                    : market || accountedMarket
-                      ? "Market evidence"
-                      : "Launch only"}
+                  : unpublished
+                    ? ""
+                    : pending
+                      ? "Evidence pending"
+                      : market || accountedMarket
+                        ? "Market evidence"
+                        : "Launch only"}
               </span>
             </div>
             <div className="pool-address-slot">
@@ -163,7 +180,7 @@ export function ObservedPoolDetail({
               )}
             </div>
             <div className={`${styles.meta} pool-launch-meta`}>
-              <PendingValue pending={pending}>
+              <PendingValue pending={pending && !pool?.launch}>
                 {pool?.launch?.timestamp != null
                   ? `Launched ${utc(pool.launch.timestamp)}`
                   : "Launch time unavailable"}{" "}
@@ -213,17 +230,19 @@ export function ObservedPoolDetail({
           {error
             ? accountedMarket
               ? "Refresh unavailable. The captured pool data remains visible."
-              : pool
+              : market
                 ? "Saved refresh is unavailable. Showing the last dated observation."
-                : "Saved pool is temporarily unavailable. Retry to check coverage."
+                : "Pool data is unavailable."
             : loading
               ? "Loading saved market data"
               : "Saved market data loaded"}
         </p>
       </div>
       <p className="page-intro-note pool-coverage-note">
-        <PendingValue pending={pending}>
-          {c?.cutoff ? (
+        {/* A pool the read API does not publish says nothing here: its slot
+            keeps the height, and the page does not explain the absence. */}
+        <PendingValue pending={pending && !unpublished}>
+          {unpublished ? null : c?.cutoff ? (
             <>
               Observed market coverage: blocks {c.startBlock?.toLocaleString()}{" "}
               to {c.cutoff.block.toLocaleString()} · {utc(c.cutoff.asOf)} ·
@@ -239,12 +258,12 @@ export function ObservedPoolDetail({
             </>
           ) : pool ? (
             "Market history has not been processed. This verified launch's background analytics are still processing; values remain unavailable. "
-          ) : (
-            "This pool has no available saved publication. This coverage limit does not prove that the pool does not exist. "
-          )}
-          {audit
-            ? "Accounting uses supported positions with observed purchase basis. Unknown basis stays excluded. "
-            : "Accounting coverage is unavailable. Swaps do not establish holders, balances, beneficiaries or PnL. "}
+          ) : null}
+          {unpublished
+            ? null
+            : audit
+              ? "Accounting uses supported positions with observed purchase basis. Unknown basis stays excluded. "
+              : "Accounting coverage is unavailable. Swaps do not establish holders, balances, beneficiaries or PnL. "}
           {c?.unitBasis && (
             <>
               Prices use token units verified at block{" "}
@@ -276,14 +295,26 @@ export function ObservedPoolDetail({
                 </div>
               </div>
             </div>
-            <div className="pool-chart-region">
-              <Candles
-                {...(accountedMarket && snapshot
-                  ? { market: accountedMarket, snapshot }
-                  : market
-                    ? { observed: market }
-                    : { poolId: id, pending })}
-              />
+            {/* The height is settled at first paint and never moves after it:
+                a chart that can still arrive holds its full region, and a row
+                with no market evidence opens on the empty state. */}
+            <div
+              className="pool-chart-region"
+              data-chart={candles || chart ? "reserved" : "empty"}
+            >
+              {candles || (chart && pending) ? (
+                <Candles
+                  {...(accountedMarket && snapshot
+                    ? { market: accountedMarket, snapshot }
+                    : market
+                      ? { observed: market }
+                      : { poolId: id, pending })}
+                />
+              ) : (
+                <div className="empty-state">
+                  <h3>Price chart unavailable</h3>
+                </div>
+              )}
             </div>
             <p className="panel-footnote pool-truncation-note">
               {market?.history.truncated
@@ -308,10 +339,13 @@ export function ObservedPoolDetail({
             </Stat>
             <Stat
               label={`Observed ${market?.window ?? "24h"} volume`}
+              /* An unpublished pool has no window to describe as incomplete. */
               note={
-                c?.completeWindow
-                  ? "Within covered history"
-                  : "Incomplete covered window"
+                unpublished
+                  ? undefined
+                  : c?.completeWindow
+                    ? "Within covered history"
+                    : "Incomplete covered window"
               }
               pending={pending}
             >

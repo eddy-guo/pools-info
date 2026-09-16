@@ -84,6 +84,14 @@ approximate route loading pages were removed. Desktop and mobile measurements
 cover the screener, pool, traders and wallet, plus on-demand pool success/error:
 CLS 0, unchanged sentinels, and persistent representative numeric nodes.
 
+A reserved slot is sized at first paint and never resized by a response. The
+pool page's chart region is the one slot with two sizes: it holds a chart's
+height unless the row that opened it carried no market evidence, in which case
+it paints the empty state's height from the start (`pool-row-memory.ts` carries
+that row into the page, and hydration cannot read it, so a direct URL always
+reserves the chart). A pool whose detail the read API does not publish keeps
+whichever height it painted with.
+
 Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
 (`screener-before-desktop.png` / `screener-after-desktop.png`, and mobile peers).
 They use the same real preloaded fixture with chain refresh disabled. Current

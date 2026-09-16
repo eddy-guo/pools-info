@@ -288,7 +288,7 @@ for (const entry of routes) {
           await expect(
             page
               .getByRole("status")
-              .filter({ hasText: "Saved pool is temporarily unavailable" }),
+              .filter({ hasText: "Pool data is unavailable." }),
           ).toBeVisible();
       }
       await page.screenshot({
