@@ -90,3 +90,50 @@ test("an empty window asks for a wider one and nothing else", async ({
   await expect(empty.locator("p")).toHaveText("Try a wider window.");
   await expectStripped(page);
 });
+
+// The Layout Instability API only counts a shift inside the viewport, so a
+// reserved row that resolves to a different height hides below the fold until
+// the copy above it goes. Compare the geometry directly on the first entry.
+test("the first ranked entry keeps its first-paint geometry as saved data resolves", async ({
+  page,
+}) => {
+  let releaseScripts!: () => void;
+  const scripts = new Promise<void>((resolve) => {
+    releaseScripts = resolve;
+  });
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  const entry = page
+    .locator(
+      "main .mobile-trader:visible, main .desktop-traders:visible tbody tr",
+    )
+    .first();
+  const rects = async () => {
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    return entry
+      .locator("> *")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getBoundingClientRect().toJSON()),
+      );
+  };
+  try {
+    await page.goto("/traders/?window=All", { waitUntil: "commit" });
+    await expect(entry).toBeVisible();
+    const pending = await rects();
+    expect(pending.length, "the entry reserves its rows").toBeGreaterThan(1);
+    releaseScripts();
+    await settled(page);
+    expect(await rects(), "every reserved row of the first entry").toEqual(
+      pending,
+    );
+  } finally {
+    releaseScripts();
+  }
+});

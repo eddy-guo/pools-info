@@ -4808,7 +4808,9 @@ main {
     font-size: 22px;
     font-weight: 600;
   }
-  .mobile-trader-value > span:last-child {
+  /* The caption follows the number; a pending row holds the number alone and
+     must keep the number's size so the card below it never moves on resolve. */
+  .mobile-trader-value > .number + span {
     font-size: 11px;
     color: var(--muted);
   }
