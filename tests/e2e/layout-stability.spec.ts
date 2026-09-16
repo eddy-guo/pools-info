@@ -26,6 +26,7 @@ const routes = [
     url: `/wallet/${wallet}/?window=All`,
     sentinel: ".page .workspace-grid",
   },
+  { name: "creators", url: "/creators/", sentinel: ".creators-panel" },
   {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
