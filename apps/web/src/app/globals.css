@@ -5106,6 +5106,10 @@ main {
   width: 144px;
   flex-shrink: 0;
 }
+/* A pool the read API does not publish names no evidence; its slot stays. */
+.pool-identity-title > .evidence-badge:empty {
+  visibility: hidden;
+}
 .pool-identity-title > span:first-of-type {
   width: 12ch;
   flex-shrink: 0;
@@ -5130,9 +5134,21 @@ main {
   height: 92px;
   overflow: auto;
 }
+/* The region holds a chart's height while one can still arrive. A page opened
+   from a row with no market evidence knows at first paint that none can, and
+   takes the empty state's height instead of reserving a chart of nothing. */
 .pool-chart-region {
   height: 640px;
   overflow: auto;
+}
+.pool-chart-region[data-chart="empty"] {
+  height: 156px;
+}
+.pool-chart-region > .empty-state {
+  display: grid;
+  place-content: center;
+  height: 100%;
+  padding: 0 24px;
 }
 .pool-truncation-note {
   height: 36px;

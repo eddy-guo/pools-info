@@ -9,6 +9,7 @@ import {
   type ObservedMarket,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import { useRememberedPoolRow } from "@/lib/pool-row-memory";
 import { useQuery } from "./state";
 import { useLive } from "./live-provider";
 import { AddressLabel, Change, Price, WatchButton } from "./ui";
@@ -59,6 +60,11 @@ export function PoolDetail({ id }: { id: string }) {
     analytics: AnalyticsPoolDetail | null;
     market?: ObservedMarket;
   }>(`pools/${id}`);
+  const remembered = useRememberedPoolRow(id);
+  /* Hydration paints the server's markup, which never sees a remembered row, so
+     only an arrival from a row can size the chart region before the first
+     paint. Reading it once keeps that region's height fixed from then on. */
+  const [expectChart] = useState(() => remembered?.measured !== false);
   const savedIdentity = saved.data?.pool ?? saved.data;
   const publication = saved.data?.analytics;
   const publishedMarket = publication?.snapshot.markets.find(
@@ -75,13 +81,13 @@ export function PoolDetail({ id }: { id: string }) {
   const [tab, setTab] = useState("Top traders");
   if (!preloadedIds.has(id)) {
     const pool =
-      savedIdentity || m
+      savedIdentity || m || remembered
         ? {
             poolId: id,
-            name: savedIdentity?.name ?? m?.name,
-            symbol: savedIdentity?.symbol ?? m?.symbol,
-            token: savedIdentity?.token ?? m?.token,
-            imageUrl: savedIdentity?.imageUrl,
+            name: savedIdentity?.name ?? m?.name ?? remembered?.name,
+            symbol: savedIdentity?.symbol ?? m?.symbol ?? remembered?.symbol,
+            token: savedIdentity?.token ?? m?.token ?? remembered?.token,
+            imageUrl: savedIdentity?.imageUrl ?? remembered?.imageUrl,
             launch:
               "launch" in (savedIdentity ?? {})
                 ? (savedIdentity as ObservedPoolIdentity).launch
@@ -91,7 +97,7 @@ export function PoolDetail({ id }: { id: string }) {
                       transactionHash: m.launchTx,
                       transactionInitiator: m.launchSender,
                     }
-                  : undefined,
+                  : remembered?.launch,
           }
         : undefined;
     return (
@@ -102,6 +108,8 @@ export function PoolDetail({ id }: { id: string }) {
         accountedMarket={m}
         snapshot={m ? s : undefined}
         publication={publication ?? undefined}
+        chart={expectChart}
+        published={!!saved.data || !saved.error}
         audit={publication?.audit ?? audits[id]}
         refresh={() => {
           refresh();
@@ -134,16 +142,16 @@ export function PoolDetail({ id }: { id: string }) {
       <div className={`page ${styles.page}`}>
         <h1>
           {savedIdentity?.name ??
-            (loading ? "Loading saved pool…" : "Pool outside current coverage")}
+            remembered?.name ??
+            (loading ? "Loading saved pool…" : "Pool name unavailable")}
         </h1>
-        <p>
-          {saved.data && !saved.data.analytics
-            ? "This verified launch is in the catalog. Its background analytics are still processing; no prices, holders or profit are estimated."
-            : loading
-              ? "Loading saved market data. No blockchain scan is started by this page."
-              : error ||
-                "Use a covered pool link to provide its verified launch transaction. This is a coverage limit, not proof that the pool does not exist."}
-        </p>
+        {(saved.data || loading) && (
+          <p>
+            {saved.data && !saved.data.analytics
+              ? "This verified launch is in the catalog. Its background analytics are still processing; no prices, holders or profit are estimated."
+              : "Loading saved market data. No blockchain scan is started by this page."}
+          </p>
+        )}
         <Link className="button" href="/">
           Explore pools
         </Link>

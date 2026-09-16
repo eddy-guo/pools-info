@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { RefreshCw, Search } from "lucide-react";
 import { TradeStream } from "./trade-stream";
 import {
@@ -13,6 +13,7 @@ import {
   type AnalyticsPoolRow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import { rememberPoolRow } from "@/lib/pool-row-memory";
 import {
   MAX_WATCHLIST_QUERY_POOLS,
   parseSharedWatchlist,
@@ -38,6 +39,9 @@ const LAUNCH_VIEW = "new";
 const launchOnly = (pool: AnalyticsPoolRow) =>
   !pool.processed && !pool.marketCoverage;
 function PoolCell({ pool }: { pool: AnalyticsPoolRow }) {
+  /* The read API does not publish every pool's detail; the page this row opens
+     reads back what the row already showed rather than dropping its identity. */
+  useEffect(() => rememberPoolRow(pool), [pool]);
   return (
     <Link className="token-cell" href={poolHref(pool)}>
       <PoolImage
