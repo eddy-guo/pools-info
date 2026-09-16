@@ -62,19 +62,20 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   await page.route("**/api/product/explore/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (params.get("limit") !== "25") return route.continue();
-    if (params.get("sort") !== "volume")
-      return route.fulfill({ json: byLaunch });
+    if (params.get("sort") !== "launch")
+      return route.fulfill({ json: byVolume });
     gated = true;
     await new Promise<void>((resolve) => {
       release = resolve;
     });
-    await route.fulfill({ json: byVolume });
+    await route.fulfill({ json: byLaunch });
   });
   await page.goto("/");
   const rows = page.locator(".desktop-pools, .mobile-pools"),
     first = rows
-      .getByText(byLaunch.items[0].name, { exact: true })
-      .filter({ visible: true });
+      .getByText(byVolume.items[0].name, { exact: true })
+      .filter({ visible: true })
+      .first();
   await expect(first).toBeVisible();
   await expect(rows.locator("[data-stale-rows=true]")).toHaveCount(0);
   await page.evaluate(() => {
@@ -92,7 +93,7 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   });
   await page
     .getByRole("combobox", { name: "Sort all pools" })
-    .selectOption("volume");
+    .selectOption("launch");
   await expect.poll(() => gated).toBe(true);
   const busy = rows.filter({ visible: true }).first();
   await expect(busy).toHaveAttribute("aria-busy", "true");
@@ -102,8 +103,9 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   release();
   await expect(
     rows
-      .getByText(byVolume.items[0].name, { exact: true })
-      .filter({ visible: true }),
+      .getByText(byLaunch.items[0].name, { exact: true })
+      .filter({ visible: true })
+      .first(),
   ).toBeVisible();
   await expect(busy).toHaveAttribute("aria-busy", "false");
   await expect(busy).toHaveAttribute("data-stale-rows", "false");

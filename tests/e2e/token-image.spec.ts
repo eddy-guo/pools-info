@@ -42,7 +42,9 @@ test("token images load lazily through the local endpoint and retain generated f
     if (r.resourceType() === "image" && !r.url().startsWith(`${baseURL}/`))
       externalImages.push(r.url());
   });
-  await page.goto("/");
+  // The launches view still fills a page of rows; the default volume sort
+  // only lists pools with market evidence.
+  await page.goto("/?view=new");
   const icons = page.locator("[data-pool-image]").filter({ visible: true });
   await expect(icons.first()).toHaveAttribute("data-image-state", "loaded");
   const image = icons.first().locator("img");

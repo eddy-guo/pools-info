@@ -1036,7 +1036,8 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   const displayed = page
     .locator(".desktop-pools, .mobile-pools")
     .getByText(all.items[25].name, { exact: true })
-    .filter({ visible: true });
+    .filter({ visible: true })
+    .first();
   await expect(displayed).toBeVisible();
   await page
     .getByRole("textbox", { name: "Filter pools" })
