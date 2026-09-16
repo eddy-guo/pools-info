@@ -164,7 +164,7 @@ export function ProductTraders() {
                   <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
                   <th>ROI</th>
                   <th>W / L</th>
-                  <th>Ranking trades</th>
+                  <th>Trades</th>
                   <th>Volume</th>
                   <th>Positions</th>
                   <th>Best sale</th>
@@ -216,17 +216,7 @@ export function ProductTraders() {
                           {w.roi === null ? (
                             <Unavailable />
                           ) : (
-                            <span
-                              className={
-                                w.roi > 0
-                                  ? "positive"
-                                  : w.roi < 0
-                                    ? "negative"
-                                    : ""
-                              }
-                            >
-                              {w.roi.toFixed(2)}%
-                            </span>
+                            <Change value={w.roi} />
                           )}
                         </>
                       ) : data ? (
@@ -322,7 +312,7 @@ export function ProductTraders() {
                         {metric === "realized" ? "realized" : "net flow"}
                       </span>
                     </div>
-                    <div className="mobile-pool-stats">
+                    <div className="mobile-trader-key">
                       <span>
                         ROI
                         <strong>
@@ -334,8 +324,16 @@ export function ProductTraders() {
                         </strong>
                       </span>
                       <span>
+                        W / L
+                        <strong className="number">
+                          {w.wins} / {w.losses}
+                        </strong>
+                      </span>
+                    </div>
+                    <div className="mobile-trader-stats">
+                      <span>
                         Trades
-                        <strong>
+                        <strong className="number">
                           {w.rankingTradeCount ?? w.supportedTradeCount}
                         </strong>
                       </span>
@@ -372,8 +370,16 @@ export function ProductTraders() {
                         PnL pending
                       </span>
                     </div>
-                    <div className="mobile-pool-stats">
-                      {["ROI", "Trades", "Volume", "Best sale"].map((label) => (
+                    <div className="mobile-trader-key">
+                      {["ROI", "W / L"].map((label) => (
+                        <span key={label}>
+                          {label}
+                          <strong data-pending="true">Pending</strong>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mobile-trader-stats">
+                      {["Trades", "Volume", "Best sale"].map((label) => (
                         <span key={label}>
                           {label}
                           <strong data-pending="true">Pending</strong>
