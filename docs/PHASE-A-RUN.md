@@ -277,6 +277,13 @@ main --service indexer`, which deploys the head of `main`. Stop is
 redeploy it. The full HyperSync backfill needs the indexer stopped, as it is
 now; the writer lock is free while the backfill's temporary service is idle.
 
+Reading a closed hour from `alchemy --json --no-interactive usage timeseries
+--start-time <hour> --granularity hour`: take the row's `amount` once
+`freshness.dataThrough` is past the end of the hour. Do not gate on
+`isPartial`; the unattended guard for this measurement did, and a jq
+`.isPartial // empty` dropped the `false` value, so it never accepted a final
+reading and left the service running for another hour and a half.
+
 ## Paused product work
 
 Trade-card UI, font, metadata and browser-test work was safely saved in
