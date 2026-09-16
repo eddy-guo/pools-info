@@ -6,7 +6,6 @@ import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { AddressChip, Avatar, Change } from "./ui";
 import { ProductPagination } from "./product-common";
-import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
@@ -19,7 +18,7 @@ export function ProductTraders() {
     offset: String(offset),
     limit: "25",
   });
-  const { data, loading, stale, error, refresh } =
+  const { data, loading, stale, error } =
     useProduct<AnalyticsLeaderboardResponse>(`leaderboard?${query}`);
   return (
     <div className="page traders-page">
@@ -49,13 +48,6 @@ export function ProductTraders() {
               set({ offset: null });
             }}
           />
-          <button
-            className="button secondary"
-            disabled={loading}
-            onClick={refresh}
-          >
-            Refresh saved rankings
-          </button>
         </div>
       </div>
       <section className="panel leaderboard-panel">
@@ -91,7 +83,7 @@ export function ProductTraders() {
                     }}
                   >
                     <small data-pending={!data}>
-                      {w ? `#${w.rank} · covered pools` : "Covered pools"}
+                      {w ? `#${w.rank}` : "Rank"}
                     </small>
                     {w ? (
                       <Avatar address={w.address} />
@@ -103,15 +95,6 @@ export function ProductTraders() {
                     <strong data-pending={!data}>
                       {w ? shortAddress(w.address) : "Wallet pending"}
                     </strong>
-                    <span>
-                      {w ? (
-                        <AccountingBadge wallet={w} />
-                      ) : (
-                        <span className="evidence-badge" data-pending={!data}>
-                          Accounting pending
-                        </span>
-                      )}
-                    </span>
                     <Eth
                       wei={metric === "realized" ? w?.realizedWei : w?.netWei}
                       signed
@@ -157,15 +140,10 @@ export function ProductTraders() {
                     </td>
                     <td data-pending={!w && !data}>
                       {w ? (
-                        <>
-                          <AddressChip
-                            address={w.address}
-                            href={`/wallet/${w.address}/?window=${window}`}
-                          />
-                          <div className="cell-sub">
-                            <AccountingBadge wallet={w} />
-                          </div>
-                        </>
+                        <AddressChip
+                          address={w.address}
+                          href={`/wallet/${w.address}/?window=${window}`}
+                        />
                       ) : data ? (
                         "\u00a0"
                       ) : (
@@ -220,11 +198,7 @@ export function ProductTraders() {
                     <td data-pending={!w && !data}>
                       {w ? (
                         <>
-                          {w.realizedPositionCount ?? w.supportedPositionCount}{" "}
-                          eligible
-                          <small className="cell-sub">
-                            {w.excludedPositionCount} excluded
-                          </small>
+                          {w.realizedPositionCount ?? w.supportedPositionCount}
                         </>
                       ) : data ? (
                         "\u00a0"
@@ -267,7 +241,6 @@ export function ProductTraders() {
                         address={w.address}
                         href={`/wallet/${w.address}/?window=${window}`}
                       />
-                      <AccountingBadge wallet={w} />
                     </div>
                     <div className="mobile-trader-value">
                       <Eth
@@ -316,10 +289,6 @@ export function ProductTraders() {
                         </strong>
                       </span>
                     </div>
-                    <p className="panel-footnote">
-                      {w.realizedPositionCount ?? w.supportedPositionCount}{" "}
-                      eligible positions · {w.excludedPositionCount} excluded
-                    </p>
                   </>
                 ) : !data ? (
                   <>
@@ -352,9 +321,6 @@ export function ProductTraders() {
                         </span>
                       ))}
                     </div>
-                    <p className="panel-footnote" data-pending="true">
-                      Eligible positions pending
-                    </p>
                   </>
                 ) : null}
               </div>
@@ -364,10 +330,7 @@ export function ProductTraders() {
         {data && !data.items.length && !loading && (
           <div className="empty-state">
             <h3>No qualifying traders in this window</h3>
-            <p>
-              Try a wider window. Realized PnL requires observed purchase basis;
-              missing history is not assigned zero cost.
-            </p>
+            <p>Try a wider window.</p>
           </div>
         )}
         <ProductPagination
