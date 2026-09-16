@@ -72,6 +72,16 @@ function transport(
   );
   return { calls, destroyed };
 }
+/** A deadline armed the way callers arm theirs, with a timer that keeps the
+ * event loop alive. AbortSignal.timeout() is unref'd, so a stalled stage with
+ * nothing else pending would let the runner see an idle loop and cancel the
+ * test instead of observing the timeout. */
+function deadline(ms: number) {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 async function rejectedWith(operation: Promise<unknown>, reason: string) {
   await assert.rejects(operation, (error: unknown) => {
     assert.ok(error instanceof TokenImageError);
@@ -327,17 +337,13 @@ test("redirects, encoded/oversized bodies and MIME confusion are rejected at the
 
 test("an expired deadline reports timeout whether DNS, download or decoding stalled", async (t) => {
   await rejectedWith(
-    transformedTokenImage(
-      source,
-      AbortSignal.timeout(20),
-      () => new Promise(() => {}),
-    ),
+    transformedTokenImage(source, deadline(20), () => new Promise(() => {})),
     "timeout",
   );
   transport(t, { stall: true });
   const started = Date.now();
   await rejectedWith(
-    transformedTokenImage(source, AbortSignal.timeout(20), resolvePublic),
+    transformedTokenImage(source, deadline(20), resolvePublic),
     "timeout",
   );
   assert.ok(Date.now() - started < 1000);
