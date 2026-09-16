@@ -596,7 +596,7 @@ export function Chart({
           ? "\u00a0"
           : pending
             ? "Loading saved PnL observations"
-            : "No supported realized history in this window."}
+            : "No realized PnL in this window."}
       </p>
     </div>
   );
