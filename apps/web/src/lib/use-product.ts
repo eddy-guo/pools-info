@@ -8,6 +8,9 @@ export type ProductDelivery = {
 export type Delivered<T> = T & { delivery: ProductDelivery };
 /** The endpoint identity: the same list or entity under different query parameters. */
 const resource = (path: string) => path.split("?")[0];
+/** Request the trailing-slash form the app serves, rather than paying its 308. */
+const productUrl = (path: string) =>
+  `/api/product/${resource(path)}/${path.slice(resource(path).length)}`;
 /**
  * Keep the last rows of the same resource while a re-query runs, marked stale;
  * never show another entity's rows.
@@ -30,7 +33,7 @@ export function useProduct<T>(path: string) {
         pending: true,
       }));
       try {
-        const response = await fetch(`/api/product/${path}`, {
+        const response = await fetch(productUrl(path), {
           signal: AbortSignal.any([
             controller.signal,
             AbortSignal.timeout(12000),

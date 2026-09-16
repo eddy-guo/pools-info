@@ -80,7 +80,7 @@ function fixture(): ObservedMarket {
 test("broad-only pool uses the real chart and exact market stats while accounting remains unavailable", async ({
   page,
 }, testInfo) => {
-  await page.route(`**/api/product/pools/${id}`, (route) =>
+  await page.route(`**/api/product/pools/${id}/`, (route) =>
     route.fulfill({
       json: {
         pool,
@@ -133,7 +133,7 @@ test("quiet token retains its chart with a dated unit basis after the global mar
   page,
 }) => {
   let advanced = false;
-  await page.route(`**/api/product/pools/${id}`, (route) => {
+  await page.route(`**/api/product/pools/${id}/`, (route) => {
     const market = fixture();
     if (advanced)
       market.coverage.cutoff = {
@@ -202,7 +202,7 @@ test("direct pool link preserves verified published deep accounting alongside br
     completeWindow: false,
   });
   Object.assign(market.history, { fromTimestamp: null, candles: [] });
-  await page.route(`**/api/product/pools/${deep.id}`, (route) =>
+  await page.route(`**/api/product/pools/${deep.id}/`, (route) =>
     route.fulfill({
       json: {
         ...payload,
@@ -255,7 +255,7 @@ test("discovered-only pool shows unprocessed coverage without invented zero tota
     unitBasis: null,
   });
   Object.assign(market.history, { fromTimestamp: null, candles: [] });
-  await page.route(`**/api/product/pools/${id}`, (route) =>
+  await page.route(`**/api/product/pools/${id}/`, (route) =>
     route.fulfill({
       json: {
         pool,

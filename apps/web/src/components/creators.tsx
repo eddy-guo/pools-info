@@ -50,7 +50,7 @@ function useCatalog(address?: string) {
     void (async () => {
       try {
         const response = await fetch(
-          `/api/product/explore?window=24h&sort=launch&limit=${PAGE_SIZE}&offset=${offset}${address ? `&q=${encodeURIComponent(address)}` : ""}`,
+          `/api/product/explore/?window=24h&sort=launch&limit=${PAGE_SIZE}&offset=${offset}${address ? `&q=${encodeURIComponent(address)}` : ""}`,
           {
             signal: AbortSignal.any([
               controller.signal,

@@ -23,7 +23,7 @@ test("leaderboard leads with signed realized, ROI and W/L over secondary columns
   request,
 }) => {
   const payload = await (
-    await request.get("/api/product/leaderboard?window=All")
+    await request.get("/api/product/leaderboard/?window=All")
   ).json();
   const positive = payload.items.findIndex(
     (item: { roi: number | null }) => item.roi !== null && item.roi > 0,

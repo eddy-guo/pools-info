@@ -14,7 +14,7 @@ test("ENS wallet remains one result when the saved index adds a different query 
   await page.route("**/api/ens/?**", (route) =>
     route.fulfill({ json: { name: "example.eth", address } }),
   );
-  await page.route("**/api/product/search?**", async (route) => {
+  await page.route("**/api/product/search/?**", async (route) => {
     const query = new URL(route.request().url()).searchParams.get("q");
     if (query !== `wallet:${address}`)
       return route.fulfill({
@@ -75,7 +75,7 @@ test("address search merges equivalent wallets but retains a distinct creator re
   await page.route("**/api/markets/", (route) =>
     route.fulfill({ status: 503, json: { error: "disabled" } }),
   );
-  await page.route("**/api/product/search?**", async (route) => {
+  await page.route("**/api/product/search/?**", async (route) => {
     const q = new URL(route.request().url()).searchParams.get("q") ?? "";
     const entries = [
       {

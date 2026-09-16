@@ -22,9 +22,9 @@ for (const entry of [
     request,
   }) => {
     const payload = await (
-      await request.get(`/api/product/wallets/${wallet}?window=All`)
+      await request.get(`/api/product/wallets/${wallet}/?window=All`)
     ).json();
-    await page.route(`**/api/product/wallets/${wallet}?**`, (route) =>
+    await page.route(`**/api/product/wallets/${wallet}/?**`, (route) =>
       route.fulfill({
         json: { ...payload, wallet: { ...payload.wallet, roi: entry.roi } },
       }),
