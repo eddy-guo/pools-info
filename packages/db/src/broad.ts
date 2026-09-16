@@ -4,7 +4,10 @@ import {
   broadEventPolicy,
   collectPoolEventGroup,
   contracts,
-  type BroadPoolEventGroup,
+  isHyperSyncGroup,
+  observedBroadPoolIds,
+  verifyHyperSyncBroadGroup,
+  type BroadGroupInput,
   type BroadPoolIdentity,
   type BroadRegistryCheckpoint,
   type Rpc,
@@ -21,7 +24,7 @@ export const broadStreamIdentity = Object.freeze({
 export interface BroadPoolCommit {
   mode: "broad";
   expected: Stream;
-  group: BroadPoolEventGroup;
+  group: BroadGroupInput;
 }
 export type { BroadPoolEventGroup, BroadIndexedSwap } from "@pools/chain";
 
@@ -183,16 +186,20 @@ export async function resolveBroadPools(
 
 /** Validate against retained bytes using the collector's decoder and canonical
  * evidence checks. The adapter has no network methods or provider fallback. */
-async function checkedGroup(group: BroadPoolEventGroup) {
+async function checkedGroup(group: BroadGroupInput) {
   if (
     group.mode !== "broad" ||
     group.schemaVersion !== 1 ||
     group.chainId !== 4663 ||
     group.manager !== contracts.manager ||
     group.pools.length > broadEventPolicy.maxLogs ||
-    group.swaps.length > broadEventPolicy.maxLogs ||
-    group.evidence.swapLogs.length > broadEventPolicy.maxLogs
+    group.swaps.length > broadEventPolicy.maxLogs
   )
+    throw Error("Invalid broad commit group");
+  // The transaction-shaped variant re-derives every row from its retained
+  // rows without any network adapter; the same commit path follows.
+  if (isHyperSyncGroup(group)) return verifyHyperSyncBroadGroup(group);
+  if (group.evidence.swapLogs.length > broadEventPolicy.maxLogs)
     throw Error("Invalid broad commit group");
   if (group.tokenUnits !== undefined && !Array.isArray(group.tokenUnits))
     throw Error("Invalid broad token units evidence");
@@ -203,6 +210,7 @@ async function checkedGroup(group: BroadPoolEventGroup) {
   const receipts = new Map(
     group.evidence.receipts.map((r) => [r.transactionHash.toLowerCase(), r]),
   );
+  const retainedLogs = group.evidence.swapLogs;
   const evidenceRpc = {
     requests: 0,
     call: async (method: string) => {
@@ -211,7 +219,7 @@ async function checkedGroup(group: BroadPoolEventGroup) {
         return `0x${(group.registry.throughBlock + 128).toString(16)}`;
       throw Error("Unexpected broad evidence call");
     },
-    logs: async () => [...group.evidence.swapLogs],
+    logs: async () => [...retainedLogs],
     batch: async (method: string, params: unknown[][]) => {
       if (method === "eth_call")
         return params.map((p) => {
@@ -258,7 +266,7 @@ async function checkedGroup(group: BroadPoolEventGroup) {
 export async function commitBroadGroupInTransaction(
   db: Client,
   expected: Stream,
-  group: BroadPoolEventGroup,
+  group: BroadGroupInput,
   serialized: string,
 ): Promise<boolean> {
   const id = discoveryV2Identity;
@@ -310,9 +318,7 @@ export async function commitBroadGroupInTransaction(
 
   // Resolve EVERY observed ID again, including claimed unregistered swaps.
   // A launch from v1/candidate alone does not enter the pinned v2 registry.
-  const observed = [
-    ...new Set(group.evidence.swapLogs.map((l) => l.topics[1].toLowerCase())),
-  ];
+  const observed = observedBroadPoolIds(group);
   const members = await registryMembers(db, observed, pin, true);
   const pools = memberPools(members);
   if (!isDeepStrictEqual(pools, group.pools))
@@ -421,7 +427,7 @@ export function snapshotBroadCommit(entry: BroadPoolCommit) {
     throw Error("Broad event group exceeds capacity; split the range");
   return {
     expected: { ...entry.expected },
-    group: JSON.parse(serialized) as BroadPoolEventGroup,
+    group: JSON.parse(serialized) as BroadGroupInput,
     serialized,
   };
 }

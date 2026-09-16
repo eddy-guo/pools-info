@@ -1,5 +1,18 @@
 # Status - 15 Sep 2026, current settling pass
 
+## HyperSync history backfill: built and tested, not run (16 Sep, 02:25 UTC live check)
+
+The complete tier-2 swap history is to come from Envio HyperSync on its free
+tier into the existing `swaps:broad:v1` stream and tables, with a
+transaction-shaped evidence variant beside the receipt-shaped one
+(`docs/HYPERSYNC-BACKFILL.md`). The transport, the broad collector and
+verifier, the tier-3 Transfer collector and the bounded `pnpm hypersync:plan`
+and `pnpm hypersync:run` commands are on `fm/pools-hypersync-history-p3`. A
+bounded live check (two height reads, seven small queries over 20 blocks)
+recorded the wire shape as fixtures; the backfill itself has not been run and
+waits for the captain's word. The indexer stays stopped; nothing touches
+Alchemy or Railway.
+
 ## Resumed goal handoff: tier-2 CI blocker
 
 The validated production baseline is **b985105** (full CI **34966065169 passed**).
