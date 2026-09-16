@@ -217,9 +217,11 @@ export function Price({
 export function Change({
   value,
   pending = false,
+  digits = 2,
 }: {
   value?: number | null;
   pending?: boolean;
+  digits?: number;
 }) {
   if (value == null)
     return (
@@ -234,13 +236,13 @@ export function Change({
         {pending ? "Pending" : "N/A"}
       </span>
     );
-  const displayed = Number(value.toFixed(2));
+  const displayed = Number(value.toFixed(digits));
   return (
     <span
       className={`number change ${displayed > 0 ? "positive" : displayed < 0 ? "negative" : "muted"}`}
     >
       {displayed > 0 ? "+" : ""}
-      {displayed.toFixed(2)}%
+      {displayed.toFixed(digits)}%
     </span>
   );
 }
