@@ -47,6 +47,71 @@ test("Explore retains saved rows during refresh", async ({ page, request }) => {
   ).toBeEnabled();
 });
 
+test("Explore keeps the previous rows dimmed while a sort change loads", async ({
+  page,
+  request,
+}) => {
+  const explore = (sort: string) =>
+    `/api/product/explore?window=24h&view=all&offset=0&limit=25&q=&sort=${sort}&direction=desc`;
+  const byLaunch = await (await request.get(explore("launch"))).json();
+  const byVolume = await (await request.get(explore("volume"))).json();
+  let release: () => void = () => {},
+    gated = false;
+  await page.route("**/api/product/explore?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get("limit") !== "25") return route.continue();
+    if (params.get("sort") !== "volume")
+      return route.fulfill({ json: byLaunch });
+    gated = true;
+    await new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await route.fulfill({ json: byVolume });
+  });
+  await page.goto("/");
+  const rows = page.locator(".desktop-pools, .mobile-pools"),
+    first = rows
+      .getByText(byLaunch.items[0].name, { exact: true })
+      .filter({ visible: true });
+  await expect(first).toBeVisible();
+  await expect(rows.locator("[data-stale-rows=true]")).toHaveCount(0);
+  await page.evaluate(() => {
+    const visible = () =>
+      [
+        ...document.querySelectorAll(
+          'tbody tr[data-row="resolved"], .mobile-pool a.token-cell',
+        ),
+      ].filter((row) => (row as HTMLElement).offsetParent !== null).length;
+    const watch = { min: visible() };
+    setInterval(() => {
+      watch.min = Math.min(watch.min, visible());
+    }, 50);
+    Object.assign(window, { rowWatch: watch });
+  });
+  await page
+    .getByRole("combobox", { name: "Sort all pools" })
+    .selectOption("volume");
+  await expect.poll(() => gated).toBe(true);
+  const busy = rows.filter({ visible: true }).first();
+  await expect(busy).toHaveAttribute("aria-busy", "true");
+  await expect(busy).toHaveAttribute("data-stale-rows", "true");
+  await expect(first).toBeVisible();
+  await expect(busy.locator("[data-pending=true]")).toHaveCount(0);
+  release();
+  await expect(
+    rows
+      .getByText(byVolume.items[0].name, { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible();
+  await expect(busy).toHaveAttribute("aria-busy", "false");
+  await expect(busy).toHaveAttribute("data-stale-rows", "false");
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { rowWatch: { min: number } }).rowWatch.min,
+    ),
+  ).toBeGreaterThan(0);
+});
+
 test("wallet and leaderboard show structured loading instead of empty analytics", async ({
   page,
   request,

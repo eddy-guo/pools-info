@@ -4903,6 +4903,15 @@ main {
     animation: none;
   }
 }
+/* Rows from the previous query dim while the next one loads; skeletons are for first paint only. */
+[data-stale-rows="true"] {
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  [data-stale-rows] {
+    transition: opacity 150ms ease-out;
+  }
+}
 .product-coverage {
   height: 114px;
   overflow: auto;
