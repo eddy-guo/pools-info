@@ -16,6 +16,7 @@ const routes = [
 for (const route of routes) {
   test(`${route} keeps the shell to the network context, search and a quiet wallet placeholder`, async ({
     page,
+    isMobile,
   }) => {
     await page.goto(route);
     const strip = page.locator(".network-subnav");
@@ -32,7 +33,7 @@ for (const route of routes) {
     const connect = page.locator(".header-actions .connect-button");
     await expect(connect).toBeVisible();
     await expect(connect).toHaveAttribute("aria-disabled", "true");
-    await expect(connect).toContainText("Soon");
+    await expect(connect).toHaveAccessibleName("Connect wallet, coming soon");
     const search = await page
       .locator(".header-actions .search-trigger")
       .boundingBox();
@@ -40,7 +41,23 @@ for (const route of routes) {
     expect(box!.x, "the placeholder sits right of search").toBeGreaterThan(
       search!.x + search!.width,
     );
-    expect(box!.height).toBeGreaterThanOrEqual(36);
+    if (isMobile) {
+      // Under 768 px the control is an icon-only 44 px square: its name
+      // carries the coming-soon note and no chip text is drawn.
+      expect((await connect.innerText()).trim()).toBe("");
+      expect(box!.width).toBe(44);
+      expect(box!.height).toBe(44);
+      const pill = await page
+        .locator(".header-actions .currency-pill")
+        .boundingBox();
+      expect(box!.x, "the control clears the ETH pill").toBeGreaterThanOrEqual(
+        pill!.x + pill!.width,
+      );
+    } else {
+      await expect(connect).toContainText("Connect wallet");
+      await expect(connect).toContainText("Soon");
+      expect(box!.height).toBeGreaterThanOrEqual(36);
+    }
     await connect.click({ force: true });
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.locator(".footer")).toContainText(

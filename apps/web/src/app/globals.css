@@ -4456,11 +4456,19 @@ main {
     display: none;
   }
   .connect-button {
-    min-width: 44px;
+    flex: 0 0 44px;
+    display: grid;
+    place-items: center;
+    width: 44px;
     height: 44px;
-    padding: 0 10px;
+    padding: 0;
   }
-  .connect-label {
+  .connect-button svg {
+    width: 16px;
+    height: 16px;
+  }
+  .connect-label,
+  .connect-soon {
     display: none;
   }
   .currency-pill {
