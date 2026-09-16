@@ -21,7 +21,7 @@ export function ProductTraders() {
     offset: String(offset),
     limit: "25",
   });
-  const { data, loading, error, refresh } =
+  const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsLeaderboardResponse>(`leaderboard?${query}`);
   return (
     <div className="page traders-page">
@@ -100,7 +100,11 @@ export function ProductTraders() {
         )}
         <>
           {!offset && (
-            <div className="live-podium">
+            <div
+              className="live-podium"
+              aria-busy={stale}
+              data-stale-rows={stale}
+            >
               {Array.from({ length: 3 }, (_, index) => data?.items[index]).map(
                 (w, index) => (
                   <Link
@@ -147,7 +151,11 @@ export function ProductTraders() {
               )}
             </div>
           )}
-          <div className="table-scroll desktop-traders">
+          <div
+            className="table-scroll desktop-traders"
+            aria-busy={stale}
+            data-stale-rows={stale}
+          >
             <table className="data-table">
               <thead>
                 <tr>
@@ -282,7 +290,11 @@ export function ProductTraders() {
               </tbody>
             </table>
           </div>
-          <div className="mobile-traders">
+          <div
+            className="mobile-traders"
+            aria-busy={stale}
+            data-stale-rows={stale}
+          >
             {Array.from(
               { length: Math.max(25, data?.items.length ?? 0) },
               (_, index) => data?.items[index],

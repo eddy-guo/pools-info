@@ -30,9 +30,10 @@ import { FollowButton } from "./following";
 import styles from "./detail-design.module.css";
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
-  const { data, loading, error, refresh } = useProduct<AnalyticsWalletResponse>(
-    `wallets/${address.toLowerCase()}?window=${period}`,
-  );
+  const { data, loading, stale, error, refresh } =
+    useProduct<AnalyticsWalletResponse>(
+      `wallets/${address.toLowerCase()}?window=${period}`,
+    );
   const [tab, setTab] = useState("Positions"),
     [showSignals, setShowSignals] = useState(false),
     [copied, setCopied] = useState(false),
@@ -253,7 +254,11 @@ export function ProductWallet({ address }: { address: string }) {
                   <div className="panel-heading">
                     <h2>Positions across covered pools</h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -379,7 +384,11 @@ export function ProductWallet({ address }: { address: string }) {
                   <div className="panel-heading">
                     <h2>Observed trade history</h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -443,7 +452,11 @@ export function ProductWallet({ address }: { address: string }) {
                       {data?.launchesTruncated ? "shown" : "covered"}
                     </h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>

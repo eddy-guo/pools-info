@@ -6,7 +6,12 @@ export type ProductDelivery = {
   notice: string | null;
 };
 export type Delivered<T> = T & { delivery: ProductDelivery };
-/** Keep the last matching page while a refresh runs; never show another query's rows. */
+/** The endpoint identity: the same list or entity under different query parameters. */
+const resource = (path: string) => path.split("?")[0];
+/**
+ * Keep the last rows of the same resource while a re-query runs, marked stale;
+ * never show another entity's rows.
+ */
 export function useProduct<T>(path: string) {
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
@@ -26,7 +31,7 @@ export function useProduct<T>(path: string) {
       if (controller.signal.aborted) return;
       setState((prior) => ({
         path,
-        data: prior.path === path ? prior.data : undefined,
+        data: resource(prior.path) === resource(path) ? prior.data : undefined,
         pending: true,
       }));
       try {
@@ -65,10 +70,15 @@ export function useProduct<T>(path: string) {
     return () => controller.abort();
   }, [path, attempt]);
   const refresh = useCallback(() => setAttempt((n) => n + 1), []);
+  const current = state.path === path,
+    data = resource(state.path) === resource(path) ? state.data : undefined,
+    loading = !current || state.pending;
   return {
-    data: state.path === path ? state.data : undefined,
-    error: state.path === path ? state.error : undefined,
-    loading: state.path !== path || state.pending,
+    data,
+    error: current ? state.error : undefined,
+    loading,
+    /** Rows on screen belong to the previous query of this resource. */
+    stale: loading && data !== undefined,
     refresh,
   };
 }

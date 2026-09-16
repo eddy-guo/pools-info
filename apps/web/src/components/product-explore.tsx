@@ -63,7 +63,7 @@ export function ProductExplore() {
   const watched = shared?.ids ?? ids;
   if (view === "watchlist")
     query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
-  const { data, loading, error, refresh } =
+  const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsExploreResponse>(`explore?${query}`);
   return (
     <div className="page explore-page">
@@ -303,7 +303,11 @@ export function ProductExplore() {
               {data?.message ?? "\u00a0"}
             </p>
             <>
-              <div className="table-scroll desktop-pools">
+              <div
+                className="table-scroll desktop-pools"
+                aria-busy={stale}
+                data-stale-rows={stale}
+              >
                 <table className="data-table pool-table">
                   <thead>
                     <tr>
@@ -448,7 +452,11 @@ export function ProductExplore() {
                   </tbody>
                 </table>
               </div>
-              <div className="mobile-pools">
+              <div
+                className="mobile-pools"
+                aria-busy={stale}
+                data-stale-rows={stale}
+              >
                 {Array.from(
                   { length: Math.max(25, data?.items.length ?? 0) },
                   (_, index) => data?.items[index],
