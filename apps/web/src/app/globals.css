@@ -3884,12 +3884,18 @@ main {
   line-height: 18px;
   font-weight: 500;
 }
+/* The token column is at its 162px floor up to a 1440px viewport, so a long
+   symbol and its launch date end in an ellipsis like the name above rather
+   than running under the price. */
 .desktop-pools .token-cell small {
   display: block;
   margin-top: 0;
   font-size: 12px;
   line-height: 17px;
   color: var(--color-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .desktop-pools .token-cell small .mono {
   font-size: inherit;
