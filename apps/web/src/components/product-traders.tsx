@@ -5,54 +5,30 @@ import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { Avatar, Change } from "./ui";
-import { PersonalRankPreview } from "./feature-preview";
-import { ProductCoverage, ProductPagination } from "./product-common";
+import { ProductPagination } from "./product-common";
 import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
-  const minimum = Number(params.get("minTrades") ?? 10),
-    metric = params.get("metric") ?? "realized",
+  const metric = params.get("metric") ?? "realized",
     offset = Number(params.get("offset") ?? 0);
+  // The read API applies its own minimum-trade gate; the page exposes no control.
   const query = new URLSearchParams({
     window,
-    minTrades: String(minimum),
     metric,
     offset: String(offset),
     limit: "25",
   });
-  const { data, loading, error, refresh } =
+  const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsLeaderboardResponse>(`leaderboard?${query}`);
   return (
     <div className="page traders-page">
       <div className="page-heading">
-        <div>
-          <h1>
-            Trader leaderboard<span className="title-dot">.</span>
-          </h1>
-          <p>Follow the wallets. Understand the performance.</p>
-        </div>
-        <Link className="button secondary" href="/wallet/">
-          Look up your wallet ↗
-        </Link>
-      </div>
-      <PersonalRankPreview />
-      <ProductCoverage coverage={data?.coverage} delivery={data?.delivery} />
-      <section className="panel leaderboard-panel">
-        <div className="live-controls">
-          <label>
-            Minimum swaps
-            <select
-              aria-label="Minimum swaps"
-              value={minimum}
-              onChange={(e) => set({ minTrades: e.target.value, offset: null })}
-            >
-              {[1, 10, 25, 100].map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          <div className="segmented">
+        <h1>
+          Trader leaderboard<span className="title-dot">.</span>
+        </h1>
+        <div className="traders-controls">
+          <div className="segmented" aria-label="Ranking metric">
             {[
               ["realized", "Realized PnL"],
               ["net", "Net ETH"],
@@ -81,13 +57,8 @@ export function ProductTraders() {
             Refresh saved rankings
           </button>
         </div>
-        <p className="panel-footnote">
-          Ranked before pagination using transfer-verified positions and
-          explicitly flagged swap-based estimates with known purchase basis.
-          Unknown basis is excluded from realized PnL. Net ETH includes
-          purchases of unsold inventory. Coverage varies by pool; these are not
-          complete wallet returns.
-        </p>
+      </div>
+      <section className="panel leaderboard-panel">
         {loading && data && (
           <span className="sr-only" role="status">
             Updating saved rankings
@@ -100,7 +71,11 @@ export function ProductTraders() {
         )}
         <>
           {!offset && (
-            <div className="live-podium">
+            <div
+              className="live-podium"
+              aria-busy={stale}
+              data-stale-rows={stale}
+            >
               {Array.from({ length: 3 }, (_, index) => data?.items[index]).map(
                 (w, index) => (
                   <Link
@@ -147,7 +122,11 @@ export function ProductTraders() {
               )}
             </div>
           )}
-          <div className="table-scroll desktop-traders">
+          <div
+            className="table-scroll desktop-traders"
+            aria-busy={stale}
+            data-stale-rows={stale}
+          >
             <table className="data-table">
               <thead>
                 <tr>
@@ -156,7 +135,7 @@ export function ProductTraders() {
                   <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
                   <th>ROI</th>
                   <th>W / L</th>
-                  <th>Ranking trades</th>
+                  <th>Trades</th>
                   <th>Volume</th>
                   <th>Positions</th>
                   <th>Best sale</th>
@@ -208,17 +187,7 @@ export function ProductTraders() {
                           {w.roi === null ? (
                             <Unavailable />
                           ) : (
-                            <span
-                              className={
-                                w.roi > 0
-                                  ? "positive"
-                                  : w.roi < 0
-                                    ? "negative"
-                                    : ""
-                              }
-                            >
-                              {w.roi.toFixed(2)}%
-                            </span>
+                            <Change value={w.roi} />
                           )}
                         </>
                       ) : data ? (
@@ -282,7 +251,11 @@ export function ProductTraders() {
               </tbody>
             </table>
           </div>
-          <div className="mobile-traders">
+          <div
+            className="mobile-traders"
+            aria-busy={stale}
+            data-stale-rows={stale}
+          >
             {Array.from(
               { length: Math.max(25, data?.items.length ?? 0) },
               (_, index) => data?.items[index],
@@ -310,7 +283,7 @@ export function ProductTraders() {
                         {metric === "realized" ? "realized" : "net flow"}
                       </span>
                     </div>
-                    <div className="mobile-pool-stats">
+                    <div className="mobile-trader-key">
                       <span>
                         ROI
                         <strong>
@@ -322,8 +295,16 @@ export function ProductTraders() {
                         </strong>
                       </span>
                       <span>
+                        W / L
+                        <strong className="number">
+                          {w.wins} / {w.losses}
+                        </strong>
+                      </span>
+                    </div>
+                    <div className="mobile-trader-stats">
+                      <span>
                         Trades
-                        <strong>
+                        <strong className="number">
                           {w.rankingTradeCount ?? w.supportedTradeCount}
                         </strong>
                       </span>
@@ -360,8 +341,16 @@ export function ProductTraders() {
                         PnL pending
                       </span>
                     </div>
-                    <div className="mobile-pool-stats">
-                      {["ROI", "Trades", "Volume", "Best sale"].map((label) => (
+                    <div className="mobile-trader-key">
+                      {["ROI", "W / L"].map((label) => (
+                        <span key={label}>
+                          {label}
+                          <strong data-pending="true">Pending</strong>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mobile-trader-stats">
+                      {["Trades", "Volume", "Best sale"].map((label) => (
                         <span key={label}>
                           {label}
                           <strong data-pending="true">Pending</strong>
@@ -381,9 +370,8 @@ export function ProductTraders() {
           <div className="empty-state">
             <h3>No qualifying traders in this window</h3>
             <p>
-              Try a wider window or a lower minimum. Realized PnL requires
-              observed purchase basis; missing history is not assigned zero
-              cost.
+              Try a wider window. Realized PnL requires observed purchase basis;
+              missing history is not assigned zero cost.
             </p>
           </div>
         )}

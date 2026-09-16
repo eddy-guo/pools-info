@@ -6,9 +6,13 @@ import {
   decodeLaunch,
   getInstantDeployment,
   decodeSwap,
+  multicallConfig,
+  readContracts,
   spotPriceWei,
   swapEvent,
   transferEvent,
+  type ContractReadEvidence,
+  type MulticallConfig,
   type RawLog,
   type Receipt,
   type EventHeader,
@@ -25,10 +29,16 @@ import {
   decodeFunctionResult,
   encodeFunctionData,
   erc20Abi,
+  keccak256,
   toEventSelector,
   type Hex,
 } from "viem";
-import type { Client } from "@pools/db";
+import {
+  loadSenderCode,
+  saveSenderCode,
+  senderCodeReusable,
+  type Client,
+} from "@pools/db";
 import {
   backfillAccountingRows,
   replaceAccountingRows,
@@ -70,6 +80,81 @@ export interface AnalyticsResult {
     unsupportedSwaps: number;
     holderError: string | null;
     source: AnalyticsInput["source"];
+    /** Raw replies to the token unit and trader balance reads at the cutoff. */
+    calls: ContractReadEvidence[];
+  };
+}
+/** Answers "does this sender have code at block?" for each address. */
+export type SenderCodeReader = (
+  addresses: readonly string[],
+  block: number,
+) => Promise<Map<string, boolean>>;
+export interface ProjectionOptions {
+  senderCode?: SenderCodeReader;
+  multicall?: MulticallConfig;
+}
+const codeValid = (c: unknown): c is Hex =>
+  typeof c === "string" && /^0x[\da-f]*$/i.test(c);
+/** One eth_getCode per sender per projection, the pre-cache behavior. */
+export function rpcSenderCode(rpc: Rpc): SenderCodeReader {
+  return async (addresses, block) => {
+    const senders = [...new Set(addresses.map((a) => a.toLowerCase()))];
+    const codes = await rpc.batch<Hex>(
+      "eth_getCode",
+      senders.map((a) => [a, hex(block)]),
+    );
+    if (codes.length !== senders.length || !codes.every(codeValid))
+      throw Error("analytics_missing_sender_code");
+    return new Map(senders.map((a, i) => [a, codes[i] !== "0x"]));
+  };
+}
+/** SENDER_CODE_RECHECK_BLOCKS bounds how far a saved code observation may
+ * answer for; 0 records observations but never reuses them. */
+export function senderCodeRecheckBlocks(
+  value = process.env.SENDER_CODE_RECHECK_BLOCKS,
+): number {
+  const n = Number(value ?? 1000000);
+  if (!Number.isSafeInteger(n) || n < 0 || n > 100000000)
+    throw Error("analytics_invalid_sender_code_recheck");
+  return n;
+}
+/** eth_getCode once per address across pools, persisted in
+ * sender_code_observations. Reuse follows senderCodeReusable exactly; every
+ * address it cannot answer is read fresh at the requested block and saved. The
+ * accounting rule is unchanged: a sender with code at the cutoff is flagged. */
+export function cachedSenderCode(
+  db: Client,
+  rpc: Rpc,
+  recheckBlocks = senderCodeRecheckBlocks(),
+): SenderCodeReader {
+  return async (addresses, block) => {
+    const senders = [...new Set(addresses.map((a) => a.toLowerCase()))];
+    const saved = await loadSenderCode(db, senders);
+    const answers = new Map<string, boolean>();
+    const missing: string[] = [];
+    for (const a of senders) {
+      const o = saved.get(a);
+      if (o && senderCodeReusable(o, block, recheckBlocks))
+        answers.set(a, o.codeHash !== null);
+      else missing.push(a);
+    }
+    if (!missing.length) return answers;
+    const codes = await rpc.batch<Hex>(
+      "eth_getCode",
+      missing.map((a) => [a, hex(block)]),
+    );
+    if (codes.length !== missing.length || !codes.every(codeValid))
+      throw Error("analytics_missing_sender_code");
+    await saveSenderCode(
+      db,
+      missing.map((a, i) => ({
+        address: a,
+        codeHash: codes[i] === "0x" ? null : keccak256(codes[i]),
+        observedBlock: block,
+      })),
+    );
+    missing.forEach((a, i) => answers.set(a, codes[i] !== "0x"));
+    return answers;
   };
 }
 function limited(input: AnalyticsInput) {
@@ -139,8 +224,11 @@ function receiptMatches(log: RawLog, receipt: Receipt) {
 export async function projectAnalytics(
   input: AnalyticsInput,
   rpc: Rpc,
+  options: ProjectionOptions = {},
 ): Promise<AnalyticsResult> {
   const started = Date.now();
+  const senderCode = options.senderCode ?? rpcSenderCode(rpc);
+  const multicall = options.multicall ?? multicallConfig();
   limited(input);
   if (Number(await rpc.call<Hex>("eth_chainId", [])) !== 4663)
     throw Error("analytics_wrong_chain");
@@ -237,16 +325,17 @@ export async function projectAnalytics(
   }
   if (!same(headers.get(input.launchBlock)!.hash, input.launchLog.blockHash))
     throw Error("analytics_launch_unverified");
-  const [decimalsData, supplyData] = await rpc.batch<Hex>(
-    "eth_call",
-    (["decimals", "totalSupply"] as const).map((functionName) => [
-      {
-        to: input.token,
-        data: encodeFunctionData({ abi: erc20Abi, functionName }),
-      },
-      hex(input.toBlock),
-    ]),
+  const unitReads = await readContracts(
+    rpc,
+    (["decimals", "totalSupply"] as const).map((functionName) => ({
+      to: input.token as Hex,
+      data: encodeFunctionData({ abi: erc20Abi, functionName }),
+    })),
+    input.toBlock,
+    multicall,
   );
+  const [decimalsData, supplyData] = unitReads.results;
+  const calls: ContractReadEvidence[] = [...unitReads.evidence];
   const decimals = Number(
     decodeFunctionResult({
       abi: erc20Abi,
@@ -356,7 +445,8 @@ export async function projectAnalytics(
   } catch {
     holderError = "incomplete_or_unsupported_transfer_history";
   }
-  let accounting: Awaited<ReturnType<typeof auditPool>> | undefined;
+  let accounting:
+    Omit<Awaited<ReturnType<typeof auditPool>>, "calls"> | undefined;
   // Unknown swap signs could affect the same wallets' basis, so do not silently
   // discard them and publish apparently complete PnL from the remaining rows.
   if (!unsupportedSwaps) {
@@ -367,17 +457,8 @@ export async function projectAnalytics(
         ),
       ),
     ];
-    const codes = await rpc.batch<Hex>(
-      "eth_getCode",
-      senders.map((a) => [a, hex(input.toBlock)]),
-    );
-    if (
-      codes.length !== senders.length ||
-      codes.some((c) => !/^0x[\da-f]*$/i.test(c))
-    )
-      throw Error("analytics_missing_sender_code");
-    const codeMap = new Map(senders.map((a, i) => [a, codes[i]]));
-    accounting = await auditPool({
+    const codeMap = await senderCode(senders, input.toBlock);
+    const { calls: balanceCalls, ...audited } = await auditPool({
       rpc,
       token: input.token as Hex,
       rawSwaps: supported,
@@ -395,7 +476,10 @@ export async function projectAnalytics(
         if (c === undefined) throw Error("analytics_missing_sender_code");
         return c;
       },
+      multicall,
     });
+    accounting = audited;
+    calls.push(...balanceCalls);
   }
   if (!same((await canonical(rpc, input.toBlock)).hash, cutoff.hash))
     throw Error("analytics_cutoff_changed");
@@ -453,6 +537,7 @@ export async function projectAnalytics(
       unsupportedSwaps,
       holderError,
       source: input.source,
+      calls,
     },
   };
 }
@@ -636,7 +721,12 @@ export async function nextAnalyticsPool(db: Client): Promise<string | null> {
   ).rows[0];
   return row?.pool_id ?? null;
 }
-export async function runAnalyticsOnce(db: Client, rpc: Rpc, poolId?: string) {
+export async function runAnalyticsOnce(
+  db: Client,
+  rpc: Rpc,
+  poolId?: string,
+  options: ProjectionOptions = {},
+) {
   // Retry any publication skipped because another transaction held its lock
   // during startup. Backfill itself never queries the RPC.
   await backfillAccountingRows(db, 25);
@@ -648,7 +738,7 @@ export async function runAnalyticsOnce(db: Client, rpc: Rpc, poolId?: string) {
   );
   try {
     const input = await loadIndexedAnalytics(db, selected);
-    const result = await projectAnalytics(input, rpc);
+    const result = await projectAnalytics(input, rpc, options);
     const published = await publishAnalytics(db, input, result);
     console.log(
       JSON.stringify({

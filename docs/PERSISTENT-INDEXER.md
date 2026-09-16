@@ -153,7 +153,11 @@ a separate historical backfill path will be needed to expand coverage backwards.
 
 Optional tuning: `INDEXER_BATCH_BLOCKS=1000` (maximum 2000),
 `INDEXER_POLL_MS=15000`, `INDEXER_POOLS_PER_CYCLE=2`. These are conservative starting
-values, not a guarantee of keeping up with chain activity. Logs report HTTP and
+values, not a guarantee of keeping up with chain activity.
+`INDEXER_DEEP_TIER_ENABLED=0` pauses the tier-3 per-pool sweeps entirely while
+the process, discovery and the broad range keep running; saved pool cursors are
+untouched and resume where they stopped when it is set back to 1 (the default).
+`pnpm indexer:status` reports the value in effect under `scheduler`. Logs report HTTP and
 logical RPC counts separately; retries can increase billable provider calls.
 Each worker sends at most two calls per batch, with at least one second between
 HTTP requests. All workers consume the same provider account allowance; these
@@ -266,6 +270,14 @@ Settings:
   changing this value never moves an existing checkpoint forward or skips a gap.
 - `RECENT_BATCH_BLOCKS=1000`: maximum blocks per cycle, inclusive, maximum 2000.
 - `RECENT_LOG_RANGE_BLOCKS=10`: provider request range, matching Alchemy Free.
+- `RECENT_TIP_POLL_MS=30000`: pause after a cycle that reached the confirmed
+  head. Every cycle pays the same fixed reads whether or not blocks arrived.
+
+Each cycle observes one chain view: the chain id, the head and every canonical
+header are fetched at most once, and one combined log query serves both the
+discovery and the swap collector. Reorg handling is unchanged: the next cycle
+re-reads the saved cursor's header and walks checkpoints back to a matching
+ancestor before extending, and every cutoff stays 128 blocks behind the head.
 
 One combined query reads registered strategy launch events plus PoolManager
 Swap events. Unknown pool IDs are discarded before receipt/header enrichment.

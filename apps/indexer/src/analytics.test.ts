@@ -10,7 +10,11 @@ import {
 import {
   Rpc,
   RpcRateLimitExhausted,
+  canonicalMulticall3Address,
   contracts,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  expandContractReads,
   getInstantDeployment,
   swapEvent,
   transferEvent,
@@ -23,6 +27,8 @@ import {
   loadIndexedAnalytics,
   runAnalyticsOnce,
   analyticsError,
+  cachedSenderCode,
+  senderCodeRecheckBlocks,
   type AnalyticsInput,
 } from "./analytics";
 import type { Client } from "@pools/db";
@@ -172,7 +178,11 @@ function fixture(
   };
   const rpc = new Rpc();
   let cutoffReads = 0;
+  /** Provider calls by method, counting every member of a batch. */
+  const counts: Record<string, number> = {};
+  const count = (m: string, n = 1) => (counts[m] = (counts[m] ?? 0) + n);
   rpc.call = async <T>(method: string, params: unknown[]) => {
+    count(method);
     if (method === "eth_chainId") return "0x1237" as T;
     if (method === "eth_blockNumber") return "0x1f4" as T;
     const n = Number(params[0]);
@@ -182,8 +192,22 @@ function fixture(
       ...(options.reorg && cutoffReads > 1 ? { hash: word(999) } : {}),
     } as T;
   };
-  rpc.batch = async <T>(method: string, params: unknown[][]) =>
-    params.map((p) => {
+  const answer = (data: string): Hex =>
+    encodeAbiParameters(
+      [{ type: "uint256" }],
+      [
+        data.startsWith("0x313ce567")
+          ? 18n
+          : data.startsWith("0x18160ddd")
+            ? 1000n
+            : options.balanceMismatch
+              ? 1n
+              : 0n,
+      ],
+    );
+  rpc.batch = async <T>(method: string, params: unknown[][]) => {
+    count(method, params.length);
+    return params.map((p) => {
       if (method === "eth_getCode")
         return p[0] === token
           ? Number(p[1]) === 99 && !options.birthUnknown
@@ -191,31 +215,55 @@ function fixture(
             : "0x6000"
           : "0x";
       if (method === "eth_call") {
-        const data = (p[0] as { data: string }).data;
-        return encodeAbiParameters(
-          [{ type: "uint256" }],
-          [
-            data.startsWith("0x313ce567")
-              ? 18n
-              : data.startsWith("0x18160ddd")
-                ? 1000n
-                : options.balanceMismatch
-                  ? 1n
-                  : 0n,
-          ],
+        const call = p[0] as { to: string; data: Hex };
+        if (call.to !== canonicalMulticall3Address) return answer(call.data);
+        return encodeAggregateReply(
+          decodeAggregateRequest(call.data).map((c) => ({
+            success: true,
+            returnData: answer(c.callData),
+          })),
         );
       }
       if (method === "eth_getTransactionReceipt")
         return receipts.find((r) => r.transactionHash === p[0]);
       throw Error("Unexpected RPC method");
     }) as T[];
-  return { input, rpc };
+  };
+  return { input, rpc, counts };
 }
 
 test("background projection produces exact realized PnL and holder preload from verified full-birth evidence", async () => {
-  const { input, rpc } = fixture();
+  const { input, rpc, counts } = fixture();
   const result = await projectAnalytics(input, rpc);
   const market = result.snapshot.markets[0];
+  // The unit pair and every trader balance travel as one aggregate each;
+  // before batching this projection made 3 eth_calls (2 units + 1 balance).
+  assert.deepEqual(counts, {
+    eth_chainId: 1,
+    eth_blockNumber: 1,
+    eth_getBlockByNumber: 2,
+    eth_getTransactionReceipt: 0,
+    eth_call: 2,
+    eth_getCode: 3, // the token's birth pair and one sender
+  });
+  assert.deepEqual(
+    result.evidence.calls.map((c) => c.kind),
+    ["multicall3", "multicall3"],
+  );
+  const reads = expandContractReads(result.evidence.calls);
+  assert.deepEqual(
+    reads.map((r) => [r.to, r.data.slice(0, 10), r.block]),
+    [
+      [token, "0x313ce567", "0x78"],
+      [token, "0x18160ddd", "0x78"],
+      [token, "0x70a08231", "0x78"],
+    ],
+  );
+  assert.equal(
+    reads[2].result,
+    encodeAbiParameters([{ type: "uint256" }], [0n]),
+  );
+  assert.equal("calls" in (market.accounting ?? {}), false);
   assert.equal(market.accounting?.wallets[0].realizedWei, "60");
   assert.equal(market.accounting?.wallets[0].eligible, true);
   assert.equal(market.accounting?.wallets[0].balanceMatches, true);
@@ -456,6 +504,7 @@ test(
         "002_read_indexes.sql",
         "003_analytics.sql",
         "005_accounting_rows.sql",
+        "013_sender_code_observations.sql",
       ])
         await db.query(
           await readFile(
@@ -488,8 +537,53 @@ test(
           [`pool:${poolId}`, from, to, word(to)],
         );
       const newer = fixture(),
-        newResult = await projectAnalytics(newer.input, newer.rpc);
+        newResult = await projectAnalytics(newer.input, newer.rpc, {
+          senderCode: cachedSenderCode(db, newer.rpc),
+        });
       assert.equal(await publishAnalytics(db, newer.input, newResult), true);
+      // The sender's code was read once at the cutoff and saved.
+      assert.equal(newer.counts.eth_getCode, 3);
+      assert.deepEqual(
+        (
+          await db.query(
+            "SELECT address,code_hash,observed_block::text FROM sender_code_observations",
+          )
+        ).rows,
+        [{ address: wallet, code_hash: null, observed_block: "120" }],
+      );
+      // A projection of the same sender at an earlier cutoff answers from the
+      // saved observation: only the token's birth pair is read.
+      const cached = fixture();
+      cached.input.toBlock = 110;
+      cached.input.blockHash = word(110);
+      cached.input.source = {
+        kind: "indexed",
+        stream: `pool:${poolId}`,
+        batch: 110,
+      };
+      for (const key of ["swapLogs", "transferLogs", "headers"] as const)
+        cached.input[key] = (
+          cached.input[key] as { blockNumber?: string; number?: string }[]
+        ).filter((r) => Number(r.blockNumber ?? r.number) <= 110) as never;
+      const cachedResult = await projectAnalytics(cached.input, cached.rpc, {
+        senderCode: cachedSenderCode(db, cached.rpc),
+      });
+      assert.equal(cached.counts.eth_getCode, 2);
+      assert.equal(
+        cachedResult.snapshot.markets[0].accounting?.wallets[0].flags.includes(
+          "contract_sender",
+        ),
+        false,
+      );
+      // A zero recheck horizon records but never reuses an observation.
+      const uncached = fixture();
+      await projectAnalytics(uncached.input, uncached.rpc, {
+        senderCode: cachedSenderCode(db, uncached.rpc, 0),
+      });
+      assert.equal(uncached.counts.eth_getCode, 3);
+      assert.equal(senderCodeRecheckBlocks(undefined), 1000000);
+      assert.equal(senderCodeRecheckBlocks("0"), 0);
+      assert.throws(() => senderCodeRecheckBlocks("-1"), /recheck/);
       const { backfillAccountingRows } =
         await import("./accounting-projection");
       assert.deepEqual(

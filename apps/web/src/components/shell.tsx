@@ -1,10 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useProduct } from "@/lib/use-product";
-import type { AnalyticsExploreResponse } from "@pools/core";
 import { usePathname } from "next/navigation";
-import { ArrowUpRight, BookOpen, Wallet, RefreshCw } from "lucide-react";
-import { FeaturePreview } from "./feature-preview";
+import { Wallet } from "lucide-react";
 import { Search } from "./search";
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -62,7 +59,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               { label: "Pools", href: "/" },
               { label: "Traders", href: "/traders/" },
               { label: "Creators", href: "/creators/" },
-              { label: "Wallet", href: "/wallet/" },
             ].map((item) => {
               const active =
                 item.href === "/"
@@ -88,88 +84,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
             >
               ETH
             </span>
-            <FeaturePreview feature="connect" className="button connect-button">
+            {/* Holds the top-right slot where the wallet profile entry will live. */}
+            <button
+              type="button"
+              className="connect-button"
+              aria-disabled="true"
+              aria-label="Connect wallet, coming soon"
+              title="Wallet connection is coming soon"
+            >
               <Wallet size={15} />
-              <span>Connect wallet</span>
-            </FeaturePreview>
+              <span className="connect-label">Connect wallet</span>
+              <span className="connect-soon">Soon</span>
+            </button>
           </div>
         </div>
-        <ShellStatus />
+        <div className="network-subnav">
+          <span className="network-context">v4 · Robinhood Chain</span>
+        </div>
       </header>
       <main id="main">{children}</main>
       <footer className="footer">
         <span>Independent analytics. Not affiliated with Uniswap Labs.</span>
         <div>
           <span>Robinhood Chain · Values in ETH</span>
-          <Link href="/methodology/">
-            <BookOpen size={13} /> Methodology
-          </Link>
         </div>
       </footer>
-    </div>
-  );
-}
-
-function ShellStatus() {
-  const { data, loading, error } =
-    useProduct<AnalyticsExploreResponse>("explore?limit=1");
-  const captured =
-    data &&
-    data.coverage.processedPools > 0 &&
-    data.coverage.asOf > 0 &&
-    Number.isFinite(data.coverage.asOf)
-      ? new Date(data.coverage.asOf * 1000).toISOString()
-      : null;
-  return (
-    <div className="network-subnav">
-      <strong role="status" className="status-label">
-        <span className="network-indicator" />
-        {loading
-          ? "Reading saved data"
-          : data?.delivery.source === "indexer"
-            ? "Saved index"
-            : data
-              ? "Preloaded coverage"
-              : (error ?? "Saved data unavailable")}
-      </strong>
-      <span className="network-context">Uniswap v4 · Robinhood Chain</span>
-      <span
-        className="capture-time"
-        title={captured ?? undefined}
-        data-pending={loading}
-      >
-        {captured
-          ? `Latest capture ${captured.slice(5, 10)} ${captured.slice(11, 16)} UTC`
-          : loading
-            ? "Capture time pending"
-            : "Capture time unavailable"}
-      </span>
-      <span className="coverage-tag" data-pending={loading}>
-        {data ? (
-          <>
-            {data.coverage.catalogPools} discovered ·{" "}
-            {data.coverage.processedPools} processed
-          </>
-        ) : loading ? (
-          "Coverage pending"
-        ) : (
-          "Coverage unavailable"
-        )}
-      </span>
-      <div className="status-actions">
-        <button
-          className="icon-button"
-          title="Refresh saved data"
-          aria-label="Refresh saved data"
-          disabled={loading}
-          onClick={() => window.dispatchEvent(new Event("product-refresh"))}
-        >
-          <RefreshCw size={12} />
-        </button>
-        <Link href="/methodology/">
-          Methodology <ArrowUpRight size={11} />
-        </Link>
-      </div>
     </div>
   );
 }

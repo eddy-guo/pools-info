@@ -14,10 +14,26 @@ export {
 } from "./broad-pool-events";
 export {
   Rpc,
+  RpcCallError,
   RpcRateLimitExhausted,
   RpcResponseCapacity,
   type RpcRateLimitEvent,
 } from "./rpc";
+export {
+  canonicalMulticall3Address,
+  multicallConfig,
+  multicallPolicy,
+  readContracts,
+  expandContractReads,
+  aggregateRequestData,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+  type MulticallConfig,
+  type ContractRead,
+  type ContractReadEvidence,
+  type ContractReads,
+  type ExpandedContractRead,
+} from "./multicall";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
 
@@ -79,3 +95,45 @@ export {
   instantRegistryVerifiedAtBlock,
   type InstantDeployment,
 } from "./deployments";
+export {
+  HyperSyncClient,
+  HyperSyncBudgetExceeded,
+  HyperSyncPageCapacity,
+  HyperSyncRateLimitExhausted,
+  HyperSyncRequestRejected,
+  HyperSyncResponseCapacity,
+  HyperSyncUnauthorized,
+  hypersyncFields,
+  hypersyncPolicy,
+  swapLogQuery,
+  transferLogQuery,
+  headerQuery,
+  chunkValues,
+  checkedPage,
+  type HyperSyncBlockRow,
+  type HyperSyncClientOptions,
+  type HyperSyncLogRow,
+  type HyperSyncPage,
+  type HyperSyncPageRecord,
+  type HyperSyncQuery,
+  type HyperSyncRetryEvent,
+  type HyperSyncTransactionRow,
+} from "./hypersync";
+export {
+  collectHyperSyncBroadGroup,
+  verifyHyperSyncBroadGroup,
+  observedBroadPoolIds,
+  isHyperSyncGroup,
+  type BroadGroupInput,
+  type HyperSyncBroadEvidence,
+  type HyperSyncBroadGroup,
+  type HyperSyncBroadRange,
+} from "./hypersync-broad";
+export {
+  collectHyperSyncTransfers,
+  verifyHyperSyncTransferBatch,
+  hypersyncTransferPolicy,
+  type HyperSyncTransferBatch,
+  type HyperSyncTransferRange,
+  type HyperSyncTransferRow,
+} from "./hypersync-transfers";

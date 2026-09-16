@@ -42,6 +42,12 @@ Production-build browser validation at 1440 x 1000 measured eight visible rows a
 
 The combined production build and four token-image desktop/mobile E2E checks passed in the parallel image task. Broader responsive regression checks remain with the root task. This increment changes no component markup, query behavior or financial calculations. The coverage notice and double toolbar still cause the largest page-level difference from the reference and are deliberately left for a separate layout decision.
 
+## Leaderboard row hierarchy
+
+The reference trader row is a 10-column grid (`42px 464px 118px 82px 116px 78px 108px 92px 84px 68px`, 10px gaps) whose numeric columns are right-aligned: realized at 14px / 600 in the up colour, the supporting counts at 14px / 400 in text-2, rank and time in text-3. The live table had every column left-aligned at 12px / 600 with `ch` widths that left ROI, W/L, trades and positions 174px wide while the timestamp overflowed its 159px cell.
+
+`.leaderboard-panel .data-table` now fixes pixel widths (rank 58, realized 150, ROI 104, W/L and trades 92, volume 124, positions 110, best sale 134, last 186; the trader column takes the remainder, 324px at 1440) and right-aligns columns three onward. Realized, ROI and W/L render at `--text-lg` / 600; trades, volume, positions, best sale and last render at `--text-base` / 400 in text-2, with best sale keeping its sign but not its colour. Table ROI goes through the shared signed `Change` component, so it reads `+23.03%` and `-8.54%` like the mobile card. Numeric spans are blocks inside their cells: a right-aligned inline-block whose width changes on the pending-to-value swap moves its left edge, which registered as a 0.00001 layout shift before the fix. Mobile cards mirror the split with `.mobile-trader-key` (ROI, W/L at 14px / 600) above `.mobile-trader-stats` (12px / 400, text-2); the 268px card height is unchanged and the content fits it. Row height stays 74px, so the reserved geometry and the layout-stability sentinels are untouched.
+
 ---
 
 Extracted from `~/Downloads/Poolsinfo Design System/poolsinfo.html` and compared against `apps/web/src/app/globals.css` + components, 15 Sep 2026.

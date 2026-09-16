@@ -299,10 +299,6 @@ test("creator routes, arbitrary wallet lookup and typed global search remain usa
     `https://robinhoodchain.blockscout.com/tx/${chain.trades[0].txHash}`,
   );
   await page.keyboard.press("Escape");
-  await page.goto("/methodology/");
-  await expect(
-    page.getByRole("heading", { name: "Behind the numbers." }),
-  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -1233,13 +1229,6 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
       unexpected.push(r.url());
   });
   await page.goto("/traders/?window=All");
-  await expect(page.locator(".network-subnav .capture-time")).toHaveAttribute(
-    "title",
-    new Date(board.coverage.asOf * 1000).toISOString(),
-  );
-  await expect(
-    page.getByLabel("Minimum swaps").filter({ visible: true }),
-  ).toHaveValue("10");
   await page
     .locator(`a[href="/wallet/${top.address}/?window=All"]`)
     .filter({ visible: true })
@@ -1320,8 +1309,7 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText("1970");
-  await expect(page.locator(".network-subnav .capture-time")).toHaveText(
-    "Capture time unavailable",
+  await expect(page.locator(".network-subnav")).toHaveText(
+    "v4 · Robinhood Chain",
   );
-  await expect(page.locator(".network-subnav")).toContainText("0 processed");
 });

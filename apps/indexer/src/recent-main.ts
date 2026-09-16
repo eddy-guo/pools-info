@@ -40,6 +40,9 @@ async function main() {
     signal: stop.signal,
   };
   const logRangeBlocks = integer("RECENT_LOG_RANGE_BLOCKS", 10, 1, 10000);
+  // At the confirmed tip a cycle repeats its fixed reads (head, cursors, both
+  // boundaries, one log query) whether or not blocks arrived; poll slowly.
+  const tipPollMs = integer("RECENT_TIP_POLL_MS", 30000, 1000, 600000);
   const db = createClient();
   db.on("error", () => {
     stop.abort();
@@ -64,6 +67,17 @@ async function main() {
     let failures = 0;
     let goodCycles = 0;
     let batchBlocks = await recentResumeBatchBlocks(db, options.batchBlocks);
+    console.log(
+      JSON.stringify({
+        event: "recent_configuration",
+        bootstrapBlocks: options.bootstrapBlocks,
+        batchBlocks: options.batchBlocks,
+        resumeBatchBlocks: batchBlocks,
+        logRangeBlocks,
+        tipPollMs,
+        ...rpcPacing(),
+      }),
+    );
     do {
       if (stop.signal.aborted) break;
       // Always use the configured authenticated RPC. The public provider blocks
@@ -102,7 +116,7 @@ async function main() {
           }),
         );
         if (mode === "once" || stop.signal.aborted) break;
-        if (!r.advanced || r.through === r.head - 128) await pause(2000);
+        if (!r.advanced || r.through === r.head - 128) await pause(tipPollMs);
       } catch (e) {
         throwIfRateLimitExhausted(e);
         goodCycles = 0;

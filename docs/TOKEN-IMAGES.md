@@ -85,12 +85,36 @@ unmounting or changing pool identity cancels pending retry timers.
 
 The handler coalesces simultaneous requests for one pool. Per warm process it
 allows eight image operations at a time and holds at most 64 cache entries.
-The output cap bounds retained image bytes to 16 MiB. Successful responses
-cache for five minutes; unavailable images cache for one minute. The same
-durations are advertised to the browser and CDN. There is no blob store or
-persistent cache service. Cold starts or cache eviction can cause a later
-request to fetch again. Cosmetic images may remain cached briefly after a
-metadata change or chain reorganization.
+The output cap bounds retained image bytes to 16 MiB. Before the catalog
+lookup the handler asks `resolveStoredImage` for a persisted copy of the
+encoded icon. Nothing is stored today, so it returns null and a process-cache
+miss takes the live path; a store hit shares the same response path, headers
+and validator. Cold starts or cache eviction can cause a later request to
+fetch again.
+
+A served icon carries a strong `ETag` (SHA-256 of the output bytes) and
+`Cache-Control: public, max-age=86400, s-maxage=604800,
+stale-while-revalidate=604800`. Browsers and the process cache keep it for a
+day, the edge for a week, and the edge may serve it stale for another week
+while one request refreshes it in the background. Vercel honours `s-maxage`
+and `stale-while-revalidate` and strips both from the browser copy. A request
+whose `If-None-Match` matches gets an empty 304. Nothing is marked immutable:
+a content-addressed IPFS CID cannot change, but a creator-hosted URL can, so a
+changed image propagates within a day in the browser and about a week at the
+edge.
+
+Rejections are classed by whether a retry could change the answer. Permanent
+ones (a host outside the allowlist, an invalid image URL, no image URL on
+record, or a 200 whose bytes are not a usable image: wrong MIME, compressed
+body, over the size caps, bad magic bytes, or a raster Sharp refuses) are
+cached as an empty 404 for a day in the process cache, the browser and the
+edge, so the client's 5 s and 10 s retries never reach the origin. Transient
+failures (the 10-second deadline, a DNS failure, an upstream status other than
+200, a network error) keep the one-minute negative cache. A malformed pool id
+or any query string is refused with an empty 400 before any work; it never
+takes a process-cache slot but carries the same day-long negative
+`Cache-Control`. The lifetimes live in `imageLifetimes` in
+`apps/web/src/lib/token-image.ts`.
 
 ## Verification
 
@@ -98,6 +122,7 @@ Unit tests exercise the actual request/response boundary with controlled HTTPS
 transport, including the pinned lookup callback, mixed DNS answers, private
 address spellings, redirect rejection, streaming size limits, fake MIME types,
 real Sharp decoding/re-encoding, oversized raster dimensions, timeout behavior,
-exact catalog identity, query rejection and cache coalescing. Browser tests
+exact catalog identity, query rejection, cache coalescing, the validator and
+304 path, both negative-cache classes and the stored-image seam. Browser tests
 cover lazy local requests, fallback after an image failure and the built route's
 invalid-request behavior. No test fetches a catalog's entire image population.

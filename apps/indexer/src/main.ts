@@ -7,6 +7,7 @@ import {
 } from "./rpc-operations";
 import { DiscoveryScheduler } from "./discovery-worker";
 import { BroadScheduler } from "./broad-worker";
+import { deepTierEnabled } from "./deep-tier";
 import {
   BROAD_MAX_BLOCKS,
   BROAD_RPC_TIMEOUT_MS,
@@ -188,13 +189,23 @@ async function main() {
       return;
     }
     if (mode === "status") {
-      console.log(JSON.stringify(await status(db), null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            ...(await status(db)),
+            scheduler: { deepTierEnabled: deepTierEnabled() },
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
     if (!process.env.ROBINHOOD_RPC_URL)
       throw Error("ROBINHOOD_RPC_URL is required for the persistent worker");
     const discovery = new DiscoveryScheduler();
     const broad = new BroadScheduler();
+    const deepTier = deepTierEnabled();
     const batch = integer("INDEXER_BATCH_BLOCKS", 1000, 1, 2000);
     const poolBudget = new PoolBatchBudget(batch);
     const budgetOptions = (keys: string[]) => ({
@@ -234,6 +245,9 @@ async function main() {
     // setup or v1 fallback happens while disabled; deep pool work continues.
     if (!discovery.enabled)
       console.log(JSON.stringify({ event: "discovery_v2_disabled" }));
+    // Paused deep sweeps keep their saved cursors; discovery, the broad range
+    // and the sibling live and analytics workers are unaffected.
+    if (!deepTier) console.log(JSON.stringify({ event: "deep_tier_disabled" }));
     console.log(
       JSON.stringify(
         broad.enabled
@@ -353,7 +367,9 @@ async function main() {
         continue;
       }
       const deepAllowed =
-        (!discovery.enabled || (!discoveryBehind && !failed)) && !broadBehind;
+        deepTier &&
+        (!discovery.enabled || (!discoveryBehind && !failed)) &&
+        !broadBehind;
       let attempted = 0;
       while (deepAllowed && attempted < poolsPerCycle && !stopping) {
         let group: (Stream & { token: string })[];

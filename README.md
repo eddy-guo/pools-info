@@ -20,7 +20,7 @@ The database stays private. The HTTP service exposes read-only public chain anal
 - `/cards/[address].png?window=All`: 1200×630 image using the same wallet figures and default rank as the profile.
 - `/creators/`, `/creators/[address]/`: creator discovery and public profile surfaces.
 - Cmd/Ctrl+K: tokens, wallet addresses, creators, transaction hashes and ENS. Saved search results augment immediate local results.
-- `/methodology/`: formulas and limitations. Legacy scoped audit endpoints remain advanced tools, not prerequisites for normal browsing.
+- Legacy scoped audit endpoints remain advanced tools, not prerequisites for normal browsing.
 
 Account sign-in, account-synced watchlists and copy trading are design surfaces only. Browser-local watchlists work without accounts.
 

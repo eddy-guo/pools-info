@@ -1,0 +1,13 @@
+{
+  "from_block": 62688988,
+  "to_block": 62688989,
+  "include_all_blocks": true,
+  "field_selection": {
+    "block": [
+      "number",
+      "hash",
+      "parent_hash",
+      "timestamp"
+    ]
+  }
+}

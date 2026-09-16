@@ -1,0 +1,49 @@
+{
+  "from_block": 62688988,
+  "to_block": 62689008,
+  "field_selection": {
+    "block": [
+      "number",
+      "hash",
+      "parent_hash",
+      "timestamp"
+    ],
+    "transaction": [
+      "block_number",
+      "block_hash",
+      "hash",
+      "transaction_index",
+      "from",
+      "to",
+      "status"
+    ],
+    "log": [
+      "log_index",
+      "transaction_index",
+      "transaction_hash",
+      "block_hash",
+      "block_number",
+      "address",
+      "data",
+      "topic0",
+      "topic1",
+      "topic2",
+      "topic3",
+      "removed"
+    ]
+  },
+  "max_num_logs": 5000,
+  "logs": [
+    {
+      "address": [
+        "0x433025fe9550ed919d8b28b53a3f5419be678d0d",
+        "0xb480aa907f5ca5364daa47508f06d248411f28be"
+      ],
+      "topics": [
+        [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+        ]
+      ]
+    }
+  ]
+}

@@ -94,6 +94,9 @@
 .chartHeader :global(.live-price-heading > .price) {
   font-size: 30px;
 }
+.chartHeader :global(.live-price-heading > .price sub) {
+  color: var(--muted);
+}
 .context {
   display: flex;
   align-items: center;

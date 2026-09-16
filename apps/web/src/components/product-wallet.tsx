@@ -17,7 +17,7 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-import { AddressLabel, Avatar, Chart } from "./ui";
+import { AddressLabel, Avatar, Change, Chart } from "./ui";
 import { FeaturePreview, TradingPreviewPanels } from "./feature-preview";
 import { PendingValue, ProductCoverage } from "./product-common";
 import { AccountingBadge } from "./accounting-badge";
@@ -30,9 +30,10 @@ import { FollowButton } from "./following";
 import styles from "./detail-design.module.css";
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
-  const { data, loading, error, refresh } = useProduct<AnalyticsWalletResponse>(
-    `wallets/${address.toLowerCase()}?window=${period}`,
-  );
+  const { data, loading, stale, error, refresh } =
+    useProduct<AnalyticsWalletResponse>(
+      `wallets/${address.toLowerCase()}?window=${period}`,
+    );
   const [tab, setTab] = useState("Positions"),
     [showSignals, setShowSignals] = useState(false),
     [copied, setCopied] = useState(false),
@@ -45,16 +46,8 @@ export function ProductWallet({ address }: { address: string }) {
   }, [card]);
   const w = data?.wallet,
     cardUrl = `/cards/${address.toLowerCase()}.png?window=${period}`;
-  const pct = (n: number | null | undefined, signed = false) =>
-    n == null ? (
-      <Unavailable />
-    ) : (
-      <span
-        className={signed ? (n > 0 ? "positive" : n < 0 ? "negative" : "") : ""}
-      >
-        {n.toFixed(1)}%
-      </span>
-    );
+  const pct = (n: number | null | undefined) =>
+    n == null ? <Unavailable /> : <span>{n.toFixed(1)}%</span>;
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -170,7 +163,11 @@ export function ProductWallet({ address }: { address: string }) {
             label="Realized ROI"
             note="Profit / disposed cost"
           >
-            {pct(w?.roi, true)}
+            {w?.roi == null ? (
+              <Unavailable />
+            ) : (
+              <Change value={w.roi} digits={1} />
+            )}
           </Stat>
           <Stat
             pending={loading && !data}
@@ -253,7 +250,11 @@ export function ProductWallet({ address }: { address: string }) {
                   <div className="panel-heading">
                     <h2>Positions across covered pools</h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -379,7 +380,11 @@ export function ProductWallet({ address }: { address: string }) {
                   <div className="panel-heading">
                     <h2>Observed trade history</h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -443,7 +448,11 @@ export function ProductWallet({ address }: { address: string }) {
                       {data?.launchesTruncated ? "shown" : "covered"}
                     </h2>
                   </div>
-                  <div className="table-scroll wallet-list-region">
+                  <div
+                    className="table-scroll wallet-list-region"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>

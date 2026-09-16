@@ -415,10 +415,6 @@ function PoolTraders() {
           </div>
         )}
       </section>
-      <p className="page-methodology">
-        Realized swap PnL before gas · Average-cost accounting · Per-pool
-        coverage <Link href="/methodology/">How rankings work ↗</Link>
-      </p>
     </div>
   );
 }
