@@ -68,8 +68,12 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
       withLaunchRow: list.filter(
         (row) => !!row.querySelector(".launch-cell, [data-launch-row]"),
       ).length,
+      /* The live trade rail is a separate feed this suite does not serve,
+         so its stamp reads N/A; the launches page is the rows and the rail. */
       unavailable: [
-        ...document.querySelectorAll(".explore-page .unavailable"),
+        ...document.querySelectorAll(
+          ".explore-page :is(.desktop-pools, .mobile-pools, .launch-rail) .unavailable",
+        ),
       ].filter(shown).length,
       firstLine: list[0]?.querySelector(".launch-line")?.textContent ?? null,
       firstFacts: [
