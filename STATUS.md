@@ -70,18 +70,24 @@ candidate's coverage statement had an estimated cost of 753,250, far above
 `jit_optimize_above_cost`, and compiling it took 2,951 / 2,868 / 2,900 ms per
 request in CI run 35047485541, against 159 ms with `jit=off`. Every Homebrew
 Postgres on the development machine lacks LLVM, so no local run could show it.
-The read preamble now sets `SET LOCAL jit = off` (a regression test checks the
-transaction settings on any build), the coverage statement carries only the
-CTEs it reads, recent evidence streams once into the canonical ordering instead
-of a spilling materialized CTE, and books look up the catalog per active pool
-instead of scanning 52k rows; estimated cost fell to 94,041 / 94,181 and temp
-blocks from 44,695 to 9,608. Measured complete 115k-swap/52k-pool reads (cold,
-warm 7d, warm All): CI run 35048339188 under the full parallel `test:db`
-1,285 / 1,310 / 1,299 ms (jit forced on: 1,444 / 1,347 / 1,335 ms); local
-Postgres 17.11 812 / 686 / 646 ms and Postgres 18.6 1,189 / 790 / 913 ms, both
-measured with the machine at load average above 20. The 3,000 ms statement
-timeout and the 2,800 ms accounting budget are unchanged. Deployment and visual
-verification of tier-2 rows follow the merge decision.
+A second, smaller cause surfaced once JIT was off: the cursor statement sorted
+every canonical row on text keys in an external merge under the stock 4 MB
+`work_mem`, and the same code measured 1,285 ms on one runner and 2,257 ms on
+another (run 35049292470). The read preamble now sets `SET LOCAL jit = off` (a
+regression test checks the transaction settings on any build), the coverage
+statement carries only the CTEs it reads with the catalog looked up per active
+pool (estimated cost 94,041), and the cursor statement streams evidence one
+book at a time in byte order, each book's copies read through the pool history
+indexes and sorted in memory, so the ledger's grouping order costs one bounded
+sort per pool instead of a whole-history sort; the fold verifies that order and
+fails closed. Measured complete 115k-swap/52k-pool reads (cold, warm 7d, warm
+All): CI run 35053090850 on Debian 17.11 with JIT available under the full
+parallel `test:db` 1,096 / 969 / 941 ms; local Postgres 17.11 (port 5417,
+stock container settings, no JIT) 951 / 813 / 621 ms and Postgres 18.6 (port
+5418) 559 / 517 / 527 ms under the full `test:db`, 114 database checks passing
+with zero skips on each. The 3,000 ms statement timeout and the 2,800 ms
+accounting budget are unchanged. Deployment and visual verification of tier-2
+rows follow the merge decision.
 
 Read-only production measurements:
 - At 11:26:57 UTC: 488 deep pools, 574 pools with observed volume in the requested
