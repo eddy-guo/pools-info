@@ -5384,17 +5384,18 @@ a.wallet-top-pool:hover {
 }
 
 /* Creators: a fixed scroll surface owns the virtualised table, so the panel never grows with the catalog. */
-.creators-page .page-heading p {
-  max-width: 560px;
-}
 .creators-page .creators-scroll {
   position: relative;
   height: calc(11 * 62px + 34px);
   overflow: auto;
   overscroll-behavior: contain;
 }
+/* Column widths follow the export's grid, which keeps the creator column at its
+   width (about 600px at 1440) and at least the export's 180px on a phone: 192px
+   there, so the address chip with its two actions never ellipsises. */
 .creators-page .data-table {
   table-layout: fixed;
+  min-width: 1000px;
 }
 .creators-page .data-table th {
   position: sticky;
@@ -5410,17 +5411,25 @@ a.wallet-top-pool:hover {
   width: 64px;
 }
 .creators-page .data-table th:nth-child(3) {
-  width: 13ch;
+  width: 116px;
 }
 .creators-page .data-table th:nth-child(4) {
-  width: 20ch;
+  width: 172px;
 }
 .creators-page .data-table th:nth-child(5),
 .creators-page .data-table th:nth-child(6) {
-  width: 16ch;
+  width: 144px;
 }
 .creators-page .data-table th:nth-child(7) {
-  width: 18ch;
+  width: 168px;
+}
+.creators-page .data-table th:nth-child(3),
+.creators-page .data-table td:nth-child(3),
+.creators-page .data-table th:nth-child(5),
+.creators-page .data-table td:nth-child(5),
+.creators-page .data-table th:nth-child(6),
+.creators-page .data-table td:nth-child(6) {
+  text-align: right;
 }
 .creators-page .data-table tbody tr,
 .creators-page .data-table tbody td {
@@ -5440,6 +5449,7 @@ a.wallet-top-pool:hover {
   align-items: center;
   min-height: 44px;
 }
+.creators-page .data-table tr.spacer,
 .creators-page .data-table tr.spacer td {
   height: auto;
   padding: 0;
@@ -5448,17 +5458,42 @@ a.wallet-top-pool:hover {
 .creators-page .data-table tr.spacer:hover {
   background: transparent;
 }
+.survival-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 132px;
+}
+.survival-bar {
+  display: flex;
+  overflow: hidden;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-surface-5);
+}
+.survival-bar i {
+  height: 100%;
+  background: var(--ac);
+}
+.survival-cell small {
+  font-size: 11.5px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
 .creators-page .creators-scroll .empty-state {
   position: absolute;
   inset: 34px 0 0;
   display: grid;
   place-content: center;
 }
-/* The row holds the height its 38px button gives it, so the status text and
-   the panel's edge stay put when the last batch takes the button away. */
+/* The footer holds the Load more button's height (the button's own
+   max(38px, --ctl-min) plus the pagination padding and border) whether it
+   shows the progress bar, the button or nothing, so the panel never grows
+   when a batch ends. */
 .creators-page .creators-progress {
   position: relative;
-  min-height: 69px;
+  justify-content: flex-end;
+  min-height: calc(max(38px, var(--ctl-min)) + 31px);
   gap: 12px;
 }
 .creators-page .creators-progress-bar {

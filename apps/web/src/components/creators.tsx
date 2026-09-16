@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AnalyticsExploreResponse, AnalyticsPoolRow } from "@pools/core";
 import type { Delivered } from "@/lib/use-product";
@@ -123,10 +123,7 @@ function groupBySender(items: AnalyticsPoolRow[], sort: Sort) {
         BigInt(a.stats.volumeWei!) > BigInt(b.stats.volumeWei!) ? -1 : 1,
       )[0];
       const active = pools.filter((p) => (p.stats.trades ?? 0) > 0).length;
-      const complete = pools.every(
-        (p) => p.processed && p.stats.completeWindow,
-      );
-      return { sender, pools, volume, median, best, active, complete };
+      return { sender, pools, volume, median, best, active };
     })
     .sort(
       (a, b) =>
@@ -134,6 +131,19 @@ function groupBySender(items: AnalyticsPoolRow[], sort: Sort) {
         compare(a.volume, b.volume) ||
         a.sender.localeCompare(b.sender),
     );
+}
+
+/** Launches with a swap in the window against all launches, drawn as the export's bar. */
+function SurvivalBar({ active, total }: { active: number; total: number }) {
+  const percent = Math.round((100 * active) / total);
+  return (
+    <span className="survival-cell">
+      <span className="survival-bar" aria-hidden="true">
+        <i style={{ width: `${percent}%` }} />
+      </span>
+      <small>{`${active} of ${total} · ${percent}%`}</small>
+    </span>
+  );
 }
 
 export function Creators({ address }: { address?: string }) {
@@ -216,12 +226,9 @@ function CreatorDirectory() {
   return (
     <div className="page creators-page">
       <div className="page-heading">
-        <div>
-          <h1>
-            Creators<span className="title-dot">.</span>
-          </h1>
-          <p>Who launches pools, how often, and how their launches trade.</p>
-        </div>
+        <h1>
+          Creators<span className="title-dot">.</span>
+        </h1>
         <div className="segmented" role="group" aria-label="Sort creators">
           {SORTS.map(([key, label]) => (
             <button
@@ -289,17 +296,22 @@ function CreatorDirectory() {
                       )}
                     </td>
                     <td data-pending={pending}>
-                      {g ? g.pools.length : pending ? "Pending" : " "}
+                      {g ? (
+                        // Keyed so a new count replaces its text node: rewriting
+                        // right-aligned text in place moves its start, which
+                        // Chrome scores as a layout shift.
+                        <Fragment key={g.pools.length}>
+                          {g.pools.length}
+                        </Fragment>
+                      ) : pending ? (
+                        "Pending"
+                      ) : (
+                        " "
+                      )}
                     </td>
                     <td data-pending={pending}>
                       {g ? (
-                        g.complete ? (
-                          `${g.active}/${g.pools.length}`
-                        ) : (
-                          <Unavailable
-                            reason={`${g.active} pools have observed swaps; full 24h coverage is incomplete`}
-                          />
-                        )
+                        <SurvivalBar active={g.active} total={g.pools.length} />
                       ) : pending ? (
                         "Pending"
                       ) : (
@@ -328,7 +340,10 @@ function CreatorDirectory() {
                   </tr>
                 );
               })}
-              {last && last.end < virtualizer.getTotalSize() && (
+              {/* Always present, so no data row is the tbody's last child: the
+                  base table drops that row's bottom border, which would centre a
+                  reserved row's text 0.25px lower than it lands once rows follow. */}
+              {last && (
                 <tr className="spacer" aria-hidden>
                   <td
                     colSpan={7}
@@ -346,15 +361,7 @@ function CreatorDirectory() {
           )}
         </div>
         <div className="pagination creators-progress">
-          {catalog.error ? (
-            <span role="alert">{catalog.error}</span>
-          ) : (
-            <span role="status" data-pending={!total}>
-              {total === null
-                ? "Loading creators"
-                : `${catalog.streaming ? "Loading creators · " : ""}${loaded.toLocaleString()} of ${total.toLocaleString()} pools · ${groups.length.toLocaleString()} creators`}
-            </span>
-          )}
+          {catalog.error && <span role="alert">{catalog.error}</span>}
           {catalog.error ? (
             <button className="button secondary" onClick={catalog.retry}>
               Retry
@@ -413,7 +420,7 @@ function CreatorProfile({ address }: { address: string }) {
           <h2>
             Launches{" "}
             <span className="badge" data-pending={pending}>
-              {pending ? "count pending" : `${pools.length} covered`}
+              {pending ? "Pending" : pools.length}
             </span>
           </h2>
           <Link href={`/wallet/${address}/?window=All`}>

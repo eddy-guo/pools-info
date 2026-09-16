@@ -31,12 +31,17 @@ const creators = (count: number) =>
       (pool) => pool.launchSender,
     ),
   ).size;
-const removedHeaderCopy = [
+const removedCopy = [
   "Launches grouped by transaction sender",
   "with saved analytics",
   "Coverage and methodology",
   "Loading the saved creator catalog",
   "Totals are partial",
+  "Who launches pools, how often, and how their launches trade.",
+  /Loading creators/,
+  /of 2,500 pools/,
+  /\d creators$/,
+  /covered/,
 ];
 
 /** Serves the synthetic catalog and counts the 100-row pages the creators page streams. */
@@ -103,13 +108,14 @@ test("creators stream one bounded batch into a virtualised, layout-stable table"
   const panel = page.locator(".creators-panel");
   await expect(panel).toHaveCSS("border-top-left-radius", "16px");
   const before = await documentBox(page, ".creators-panel");
-  const status = panel.locator(".creators-progress").getByRole("status");
-  await expect(status).toHaveText(
-    `2,000 of 2,500 pools · ${creators(2000).toLocaleString()} creators`,
-    streaming,
-  );
+  // The progress bar alone shows the batch streaming; Load more marks its end.
+  const loadMore = panel.getByRole("button", { name: "Load more" });
+  await expect(loadMore).toBeVisible(streaming);
   expect(pages).toHaveLength(20);
-  for (const copy of removedHeaderCopy)
+  await expect(
+    panel.locator(".creators-progress").getByRole("status"),
+  ).toHaveCount(0);
+  for (const copy of removedCopy)
     await expect(page.getByText(copy)).toHaveCount(0);
   const rows = page.locator(".creators-page tbody tr[data-index]");
   expect(await rows.count()).toBeLessThanOrEqual(11 + 2 * 8 + 1);
@@ -118,19 +124,51 @@ test("creators stream one bounded batch into a virtualised, layout-stable table"
     "href",
     /^\/creators\/0x[0-9a-f]{40}\/$/,
   );
+  // Still trading is the export's bar over the counts the client grouped;
+  // launch-only pools have no swaps, so none of these creators' pools trade.
+  const cells = rows.first().locator("td");
+  const survival = cells.nth(3).locator(".survival-cell");
+  await expect(survival).toHaveText(
+    `0 of ${await cells.nth(2).innerText()} · 0%`,
+  );
+  await expect(survival.locator(".survival-bar i")).toHaveAttribute(
+    "style",
+    "width: 0%;",
+  );
+  for (const column of [3, 5, 6])
+    await expect(cells.nth(column - 1)).toHaveCSS("text-align", "right");
+  const creatorColumn = (await cells.nth(1).boundingBox())!.width;
+  expect(
+    creatorColumn,
+    "at least the export's 180px on a phone",
+  ).toBeGreaterThanOrEqual(180);
+  expect(
+    await cells.nth(1).evaluate((td) => td.scrollWidth <= td.clientWidth),
+    "the address chip fits the creator cell without an ellipsis",
+  ).toBe(true);
+  expect(
+    creatorColumn,
+    "no wider than the export's column at 1440",
+  ).toBeLessThanOrEqual(602);
   expect(
     await page.evaluate(
       () => document.querySelector(".creators-scroll")!.scrollHeight,
     ),
     "the surface holds every creator while only visible rows are in the DOM",
   ).toBe(creators(2000) * 62 + 34);
-  await panel.getByRole("button", { name: "Load more" }).click();
-  await expect(status).toHaveText(
-    `2,500 of 2,500 pools · ${creators(2500).toLocaleString()} creators`,
+  await loadMore.click();
+  // The remainder streams behind the progress bar; the exhausted catalog ends it.
+  await expect.poll(() => pages.length, streaming).toBe(25);
+  await expect(panel.locator(".creators-progress-bar")).toHaveCount(
+    0,
     streaming,
   );
-  expect(pages).toHaveLength(25);
-  await expect(panel.getByRole("button", { name: "Load more" })).toHaveCount(0);
+  await expect(loadMore).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.querySelector(".creators-scroll")!.scrollHeight,
+    ),
+  ).toBe(creators(2500) * 62 + 34);
   expect(await rows.count()).toBeLessThanOrEqual(11 + 2 * 8 + 1);
   await page.evaluate(
     () =>
@@ -155,9 +193,9 @@ test("creators sort from the URL and restore their scroll position after a detou
   await serveCatalog(page);
   await page.goto("/creators/");
   const panel = page.locator(".creators-panel");
-  await expect(
-    panel.locator(".creators-progress").getByRole("status"),
-  ).toHaveText(/2,000 of 2,500 pools/, streaming);
+  await expect(panel.getByRole("button", { name: "Load more" })).toBeVisible(
+    streaming,
+  );
   await page.getByRole("button", { name: "Launches" }).click();
   await expect(page).toHaveURL(/\?sort=launches$/);
   await expect(page.getByRole("button", { name: "Launches" })).toHaveAttribute(
@@ -188,13 +226,17 @@ test("creators sort from the URL and restore their scroll position after a detou
   const href = (await link.getAttribute("href"))!;
   await link.click();
   await expect(page).toHaveURL(new RegExp(href));
-  await expect(page.getByRole("heading", { level: 2 })).toContainText(
-    "Launches",
+  // The launches badge is the count itself.
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText(
+    /^Launches \d+$/,
+    streaming,
   );
+  for (const copy of removedCopy)
+    await expect(page.getByText(copy)).toHaveCount(0);
   await page.goBack();
-  await expect(
-    panel.locator(".creators-progress").getByRole("status"),
-  ).toHaveText(/2,000 of 2,500 pools/, streaming);
+  await expect(panel.getByRole("button", { name: "Load more" })).toBeVisible(
+    streaming,
+  );
   await expect
     .poll(() => surface.evaluate((node) => node.scrollTop))
     .toBe(3100);
