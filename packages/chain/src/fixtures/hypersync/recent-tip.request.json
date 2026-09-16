@@ -1,0 +1,79 @@
+{
+  "from_block": 64413742,
+  "to_block": 64413767,
+  "include_all_blocks": true,
+  "logs": [
+    {
+      "address": [
+        "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+      ],
+      "topics": [
+        [
+          "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f"
+        ]
+      ]
+    },
+    {
+      "address": [
+        "0x23f8209572b4a1c2ad88a42749e830791fb027f1",
+        "0xad44d55e7f8337c3ce113fbb591486e85be104b2",
+        "0x60d73b21cdf2ea846ab3d58699bbbb8f29d72491",
+        "0xfce92c70f1fc017b72f6dd7a00d9e38725c7fbd1",
+        "0xce57498d3474dcc244dfb6710ffbe6d4441cd2b2",
+        "0x583a7903152b95831e82fff534448dee081754ec",
+        "0x9f67b864b565966dfcc2e0c6ba2483b2d5ff4b00",
+        "0x16b63f1c8415fd68591c31fb3c6796a333dd640c",
+        "0x3f556b542105d5efbbefe7c766a4919c76b960fb",
+        "0x36bdb859518c89f764337cd5c24762d2aa650f3c",
+        "0x7c48dde3b447381f4d986334679b3afc7f2d35c2",
+        "0xc9566675b1ea42861546f3c5b74ace2c79c49572",
+        "0x000000e200088d55c39a11f609e5f667729ad49b"
+      ],
+      "topics": [
+        [
+          "0x3b3d2bafdcae274a232217e1f80ee4305d3af6aa25c8b14b1681bd68d18042a4",
+          "0x4ef8284ecf42d4cd19686572ffd87f630858c82398911e776cb831de35eddbf4"
+        ]
+      ]
+    },
+    {
+      "address": [
+        "0x00004c4ccc709ef590f7c81102c0689f0263d4e9",
+        "0x7a6c474b4dcd35b72203d2b569eafe4c9b5c768e",
+        "0x0000ffffbe8efe702c8703ae3477ff5de3d319c0"
+      ]
+    }
+  ],
+  "field_selection": {
+    "block": [
+      "number",
+      "hash",
+      "parent_hash",
+      "timestamp"
+    ],
+    "transaction": [
+      "block_number",
+      "block_hash",
+      "hash",
+      "transaction_index",
+      "from",
+      "to",
+      "status"
+    ],
+    "log": [
+      "log_index",
+      "transaction_index",
+      "transaction_hash",
+      "block_hash",
+      "block_number",
+      "address",
+      "data",
+      "topic0",
+      "topic1",
+      "topic2",
+      "topic3",
+      "removed"
+    ]
+  },
+  "max_num_logs": 5000
+}

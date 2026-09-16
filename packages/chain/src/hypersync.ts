@@ -1,5 +1,5 @@
 import { toEventSelector, type Hex } from "viem";
-import { contracts, swapEvent, transferEvent } from "./events";
+import { contracts, swapEvent, transferEvent, type RawLog } from "./events";
 
 /** Envio HyperSync JSON transport for chain 4663. Documented at
  * https://docs.envio.dev/docs/HyperSync/hypersync-query (read 2026-09-16):
@@ -17,7 +17,11 @@ export const hypersyncPolicy = Object.freeze({
   maxRequestBytes: 2097152,
   /** Measured: 10,000 topic values (690 KB) were accepted in one selection. */
   topicValuesPerSelection: 10000,
-  maxSelectionsPerQuery: 2,
+  /** Value-list chunks (pool ids, token addresses) per query; two full
+   * chunks stay under the body limit. */
+  valueSelectionsPerQuery: 2,
+  /** Distinct selections one query may carry (the tip query uses three). */
+  maxSelectionsPerQuery: 4,
   maxResponseBytes: 32 * 1024 * 1024,
   maxRowsPerTable: 20000,
   requestTimeoutMs: 30000,
@@ -137,6 +141,13 @@ export interface HyperSyncRetryEvent {
   waitMs: number;
   reason: "throttled" | "server_error" | "network";
 }
+/** Request spacing shared by every client holding it. A worker that creates
+ * one client per cycle, for per-cycle request and byte counters, keeps one
+ * pacer for its lifetime so the spacing (and a throttle's wait) also holds
+ * across cycles. */
+export class HyperSyncPacer {
+  nextRequestAt = 0;
+}
 export interface HyperSyncClientOptions {
   url?: string;
   token?: string | null;
@@ -147,6 +158,8 @@ export interface HyperSyncClientOptions {
   minIntervalMs?: number;
   maxResponseBytes?: number;
   maxRowsPerTable?: number;
+  /** Omitted gives the client its own pacer. */
+  pacer?: HyperSyncPacer;
   /** Base of the exponential wait between attempts; tests shorten it. */
   retryBaseMs?: number;
   onRetry?: (event: HyperSyncRetryEvent) => void;
@@ -213,6 +226,22 @@ export function logTopics(log: HyperSyncLogRow): Hex[] {
     topics.push(topic as Hex);
   }
   return topics;
+}
+/** The same log in the JSON-RPC shape the ABI decoders take. HyperSync only
+ * serves canonical rows, so `removed` is false; quantities become hex. */
+export function rawLogOf(log: HyperSyncLogRow): RawLog {
+  const topics = logTopics(log);
+  if (!topics.length) throw Error("HyperSync returned an invalid log topic");
+  return {
+    address: log.address as Hex,
+    topics: topics as [Hex, ...Hex[]],
+    data: log.data as Hex,
+    blockNumber: `0x${log.block_number.toString(16)}`,
+    blockHash: log.block_hash as Hex,
+    transactionHash: log.transaction_hash as Hex,
+    logIndex: `0x${log.log_index.toString(16)}`,
+    removed: false,
+  };
 }
 function rowObject(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v))
@@ -466,11 +495,14 @@ export function swapLogQuery(
   });
   if (ids && (!ids.length || new Set(ids).size !== ids.length))
     throw Error("Invalid HyperSync pool id selection");
+  const chunks = ids ? chunkValues(ids) : null;
+  if (chunks && chunks.length > hypersyncPolicy.valueSelectionsPerQuery)
+    throw Error("Invalid HyperSync query");
   return checkedQuery({
     from_block: range.fromBlock,
     to_block: range.toBlock + 1,
-    logs: ids
-      ? chunkValues(ids).map((chunk) => ({
+    logs: chunks
+      ? chunks.map((chunk) => ({
           address: [contracts.manager],
           topics: [[topic], chunk],
         }))
@@ -495,10 +527,13 @@ export function transferLogQuery(
   });
   if (!addresses.length || new Set(addresses).size !== addresses.length)
     throw Error("Invalid HyperSync token selection");
+  const chunks = chunkValues(addresses);
+  if (chunks.length > hypersyncPolicy.valueSelectionsPerQuery)
+    throw Error("Invalid HyperSync query");
   return checkedQuery({
     from_block: range.fromBlock,
     to_block: range.toBlock + 1,
-    logs: chunkValues(addresses).map((chunk) => ({
+    logs: chunks.map((chunk) => ({
       address: chunk,
       topics: [[toEventSelector(transferEvent)]],
     })),
@@ -535,7 +570,7 @@ export class HyperSyncClient {
   private readonly maxRowsPerTable: number;
   private readonly retryBaseMs: number;
   private readonly onRetry?: (event: HyperSyncRetryEvent) => void;
-  private nextRequestAt = 0;
+  private readonly pacer: HyperSyncPacer;
   constructor(options: HyperSyncClientOptions = {}) {
     const url = options.url ?? hypersyncPolicy.defaultUrl;
     if (
@@ -561,6 +596,7 @@ export class HyperSyncClient {
       options.maxRowsPerTable ?? hypersyncPolicy.maxRowsPerTable;
     this.retryBaseMs = options.retryBaseMs ?? 500;
     this.onRetry = options.onRetry;
+    this.pacer = options.pacer ?? new HyperSyncPacer();
     for (const [name, value, min, max] of [
       ["requestTimeoutMs", this.requestTimeoutMs, 1, 600000],
       ["maxRequests", this.maxRequests, 1, 10000000],
@@ -602,7 +638,10 @@ export class HyperSyncClient {
         ? Math.min(60000, retryAfterMs ?? 2 * this.retryBaseMs * 2 ** attempt)
         : this.retryBaseMs * 2 ** attempt;
     this.onRetry?.({ attempt: attempt + 1, status, waitMs, reason });
-    this.nextRequestAt = Math.max(this.nextRequestAt, Date.now() + waitMs);
+    this.pacer.nextRequestAt = Math.max(
+      this.pacer.nextRequestAt,
+      Date.now() + waitMs,
+    );
     await this.wait(waitMs);
   }
   private async boundedBody(response: Response): Promise<string> {
@@ -642,8 +681,8 @@ export class HyperSyncClient {
     if (body && this.token === null) throw new HyperSyncUnauthorized(401);
     for (let attempt = 0; ; attempt++) {
       this.signal?.throwIfAborted();
-      const scheduledAt = Math.max(Date.now(), this.nextRequestAt);
-      this.nextRequestAt = scheduledAt + this.minIntervalMs;
+      const scheduledAt = Math.max(Date.now(), this.pacer.nextRequestAt);
+      this.pacer.nextRequestAt = scheduledAt + this.minIntervalMs;
       await this.wait(scheduledAt - Date.now());
       if (this.requests >= this.maxRequests)
         throw new HyperSyncBudgetExceeded(this.requests);

@@ -695,8 +695,10 @@ export {
   commitRecentBatch,
   recentCheckpoints,
   rewindRecent,
+  recentBatchSources,
   type RecentStream,
   type RecentBatch,
+  type RecentBatchSource,
   type RecentEvent,
 } from "./recent";
 

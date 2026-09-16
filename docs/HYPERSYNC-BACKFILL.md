@@ -130,7 +130,9 @@ integration test covers that sequence.
 
 The live worker's window is a different table (`recent_swaps`) with its own
 reconciliation; the readers already reconcile recent copies against broad rows
-by `(tx_hash, log_index)` and refuse conflicts. The backfill never writes
+by `(tx_hash, log_index)` and refuse conflicts. The live worker can read the tip
+from HyperSync too, through the same client (`RECENT_SOURCE=hypersync`,
+[HYPERSYNC-TIP.md](HYPERSYNC-TIP.md)). The backfill never writes
 `recent_*`, and it never runs while the indexer holds the writer lock.
 
 ### Decimals and poolId verification

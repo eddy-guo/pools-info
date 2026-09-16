@@ -1,14 +1,22 @@
 import { toEventSelector } from "viem";
 import {
   Rpc,
+  blockTimestamp,
   collectCatalog,
   collectRecentEvents,
+  collectRecentPages,
   contracts,
   launchEvent,
+  observedRecentPoolIds,
+  recentLaunchesFromPages,
+  recentSwapsFromPages,
   swapEvent,
   tokenMetadataFactory,
   tokenMetadataTopic,
   type EventHeader,
+  type HyperSyncBlockRow,
+  type HyperSyncClient,
+  type MulticallConfig,
   type RawLog,
 } from "@pools/chain";
 import {
@@ -19,6 +27,7 @@ import {
   observeRecentHead,
   knownRecentPools,
   commitRecentBatch,
+  recentBatchSources,
   type Client,
   type RecentStream,
 } from "@pools/db";
@@ -39,16 +48,20 @@ export async function recentHeader(rpc: Rpc, n: number) {
     throw Error("Missing recent header");
   return h;
 }
-async function reconcile(db: Client, key: RecentStream["key"], rpc: Rpc) {
+/** Re-read the saved cursor's canonical hash from the source; when it no
+ * longer matches, walk the saved checkpoints back to the newest one that
+ * still does and rewind to it (discovery also rewinds the swap lane). Both
+ * sources share this path and differ only in where a canonical hash is read. */
+async function reconcile(
+  db: Client,
+  key: RecentStream["key"],
+  canonicalHash: (block: number) => Promise<string>,
+) {
   const s = await recentStream(db, key);
-  if (
-    s.cursor === null ||
-    (await recentHeader(rpc, s.cursor)).hash.toLowerCase() === s.hash
-  )
-    return s;
+  if (s.cursor === null || (await canonicalHash(s.cursor)) === s.hash) return s;
   let ancestor: number | null = null;
   for (const b of await recentCheckpoints(db, key))
-    if ((await recentHeader(rpc, b.to)).hash.toLowerCase() === b.hash) {
+    if ((await canonicalHash(b.to)) === b.hash) {
       ancestor = b.to;
       break;
     }
@@ -183,8 +196,10 @@ export async function runRecentCycle(
     Math.max(0, head - 128 - options.bootstrapBlocks + 1),
   );
   await observeRecentHead(db, head, Number(headHeader.timestamp));
-  let discovery = await reconcile(db, "discovery", rpc);
-  const swaps = await reconcile(db, "swaps", rpc);
+  const canonicalHash = async (n: number) =>
+    (await recentHeader(rpc, n)).hash.toLowerCase();
+  let discovery = await reconcile(db, "discovery", canonicalHash);
+  const swaps = await reconcile(db, "swaps", canonicalHash);
   const swapFrom = swaps.cursor === null ? swaps.start : swaps.cursor + 1;
   const discoveryFrom =
     discovery.cursor === null ? discovery.start : discovery.cursor + 1;
@@ -268,5 +283,132 @@ export async function runRecentCycle(
     pools,
     observedSwaps: result.observedSwaps,
     unregisteredSwaps: result.unregisteredSwaps,
+  };
+}
+
+/** One cycle with Envio HyperSync as the chain source (RECENT_SOURCE=hypersync,
+ * docs/HYPERSYNC-TIP.md). The confirmation buffer, the lane order, the
+ * checkpoint links and the reconciliation are the JSON-RPC cycle's; only the
+ * reads move. HyperSync's archive height is the head, every canonical header
+ * comes from HyperSync at most once per cycle, and one paged query serves both
+ * lanes with the logs, their transactions and every block of the range. The
+ * JSON-RPC provider is read only for a new launch's name and symbol. */
+export async function runRecentHyperSyncCycle(
+  db: Client,
+  client: HyperSyncClient,
+  rpc: Rpc,
+  options: {
+    bootstrapBlocks: number;
+    batchBlocks: number;
+    maxPages: number;
+    signal?: AbortSignal;
+    multicall?: MulticallConfig;
+  },
+) {
+  const headers = new Map<number, Promise<HyperSyncBlockRow>>();
+  const header = (n: number) => {
+    if (!headers.has(n)) headers.set(n, client.header(n));
+    return headers.get(n)!;
+  };
+  const head = await client.height();
+  if (!Number.isSafeInteger(head) || head < 128)
+    throw Error("Invalid chain head");
+  await ensureRecentStreams(
+    db,
+    Math.max(0, head - 128 - options.bootstrapBlocks + 1),
+  );
+  await observeRecentHead(db, head, blockTimestamp(await header(head)));
+  const idle = (through: number | null) => ({
+    head,
+    through,
+    advanced: 0,
+    swaps: 0,
+    pools: 0,
+    pages: 0,
+  });
+  // A cursor above the archive height (a switch from a provider whose head
+  // was ahead) cannot be read back yet; wait until HyperSync reaches it.
+  const saved = await Promise.all([
+    recentStream(db, "discovery"),
+    recentStream(db, "swaps"),
+  ]);
+  if (saved.some((s) => s.cursor !== null && s.cursor > head))
+    return idle(saved[1].cursor);
+  const canonicalHash = async (n: number) =>
+    (await header(n)).hash.toLowerCase();
+  let discovery = await reconcile(db, "discovery", canonicalHash);
+  const swaps = await reconcile(db, "swaps", canonicalHash);
+  const swapFrom = swaps.cursor === null ? swaps.start : swaps.cursor + 1;
+  const discoveryFrom =
+    discovery.cursor === null ? discovery.start : discovery.cursor + 1;
+  const behindDiscovery = swapFrom < discoveryFrom;
+  const from = behindDiscovery ? swapFrom : discoveryFrom;
+  const requestedTo = Math.min(
+    head - 128,
+    from + options.batchBlocks - 1,
+    behindDiscovery ? discovery.cursor! : Infinity,
+  );
+  if (from > requestedTo || options.signal?.aborted) return idle(swaps.cursor);
+  // Whole pages only: a dense range ends early at a block boundary, and every
+  // block of what was consumed is checked to be one parent-linked chain.
+  const pages = await collectRecentPages(client, {
+    fromBlock: from,
+    toBlock: requestedTo,
+    height: head,
+    maxPages: options.maxPages,
+  });
+  const to = pages.toBlock;
+  const first = pages.blocks.get(from)!;
+  let pools = 0;
+  if (!behindDiscovery) {
+    if (discovery.hash && first.parent_hash.toLowerCase() !== discovery.hash)
+      throw Error("Checkpoint parent changed");
+    const launches = await recentLaunchesFromPages(
+      pages,
+      rpc,
+      options.multicall,
+    );
+    await commitRecentBatch(db, discovery, {
+      from,
+      to,
+      hash: launches.blockHash,
+      parentHash: launches.fromBlockParentHash,
+      timestamp: launches.toTimestamp,
+      pools: launches.pools,
+      evidence: launches.evidence,
+      source: recentBatchSources.hypersync,
+    });
+    pools = launches.pools.length;
+    discovery = await recentStream(db, "discovery");
+  }
+  if (options.signal?.aborted)
+    return { ...idle(swaps.cursor), pools, pages: pages.pages.length };
+  // Launches committed above are registered before the swap ids resolve.
+  const batch = recentSwapsFromPages(
+    pages,
+    await knownRecentPools(db, observedRecentPoolIds(pages)),
+  );
+  await commitRecentBatch(db, swaps, {
+    from,
+    to,
+    hash: batch.blockHash,
+    parentHash: batch.fromBlockParentHash,
+    timestamp: batch.toTimestamp,
+    events: batch.events,
+    evidence: batch.evidence,
+    observedSwaps: batch.observedSwaps,
+    unregisteredSwaps: batch.unregisteredSwaps,
+    unsupportedSwaps: batch.unsupportedSwaps,
+    source: recentBatchSources.hypersync,
+  });
+  return {
+    head,
+    through: to,
+    advanced: to - from + 1,
+    swaps: batch.events.length,
+    pools,
+    pages: pages.pages.length,
+    observedSwaps: batch.observedSwaps,
+    unregisteredSwaps: batch.unregisteredSwaps,
   };
 }

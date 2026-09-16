@@ -97,6 +97,7 @@ export {
 } from "./deployments";
 export {
   HyperSyncClient,
+  HyperSyncPacer,
   HyperSyncBudgetExceeded,
   HyperSyncPageCapacity,
   HyperSyncRateLimitExhausted,
@@ -110,6 +111,8 @@ export {
   headerQuery,
   chunkValues,
   checkedPage,
+  blockTimestamp,
+  rawLogOf,
   type HyperSyncBlockRow,
   type HyperSyncClientOptions,
   type HyperSyncLogRow,
@@ -129,6 +132,23 @@ export {
   type HyperSyncBroadGroup,
   type HyperSyncBroadRange,
 } from "./hypersync-broad";
+export {
+  collectRecentPages,
+  hypersyncRecentPolicy,
+  hypersyncRecentStream,
+  isHyperSyncRecentEvidence,
+  observedRecentPoolIds,
+  recentLaunchesFromPages,
+  recentLogQuery,
+  recentSwapsFromPages,
+  verifyHyperSyncRecentLaunches,
+  verifyHyperSyncRecentSwaps,
+  type HyperSyncRecentLaunchBatch,
+  type HyperSyncRecentLaunchEvidence,
+  type HyperSyncRecentPages,
+  type HyperSyncRecentSwapBatch,
+  type HyperSyncRecentSwapEvidence,
+} from "./hypersync-recent";
 export {
   collectHyperSyncTransfers,
   verifyHyperSyncTransferBatch,
