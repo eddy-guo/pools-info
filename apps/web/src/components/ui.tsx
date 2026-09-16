@@ -117,18 +117,22 @@ export function CopyButton({
 export function AddressLabel({
   address,
   full = false,
+  kind = "address",
 }: {
   address: string;
   full?: boolean;
+  /** Transactions live under a different explorer path than accounts do. */
+  kind?: "address" | "tx";
 }) {
+  const subject = kind === "tx" ? "transaction" : "address";
   return (
     <span className="address-label">
       <span className="mono">{full ? address : shortAddress(address)}</span>
-      <CopyButton value={address} />
+      <CopyButton value={address} label={`Copy ${subject}`} />
       {
         <a
-          aria-label="Open address on explorer"
-          href={`https://robinhoodchain.blockscout.com/address/${address}`}
+          aria-label={`Open ${subject} on explorer`}
+          href={`https://robinhoodchain.blockscout.com/${kind}/${address}`}
           target="_blank"
           rel="noreferrer"
         >

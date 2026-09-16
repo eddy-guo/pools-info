@@ -1,5 +1,9 @@
 import { productRequest } from "@/lib/product-request";
-import { readProduct } from "@/lib/product-server";
+import {
+  readProduct,
+  readWalletHistory,
+  WalletHistoryUnavailableError,
+} from "@/lib/product-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 12;
@@ -17,6 +21,29 @@ export async function GET(
       { status: 400 },
     );
   }
+  // Explorer history is on-demand and unsaved: its outage contract, including
+  // Retry-After, reaches the browser instead of becoming a coverage fallback.
+  if (path.length === 3 && path[2] === "history")
+    try {
+      return Response.json(await readWalletHistory(path, query), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      const failure =
+        error instanceof WalletHistoryUnavailableError
+          ? error
+          : new WalletHistoryUnavailableError("upstream_unavailable", 30);
+      return Response.json(
+        { error: "wallet_history_unavailable", reason: failure.reason },
+        {
+          status: 503,
+          headers: {
+            "Retry-After": String(failure.retryAfter),
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
   try {
     return Response.json(await readProduct(path, query), {
       headers: {

@@ -20,19 +20,36 @@ import {
 import { AddressLabel, Avatar, Change, Chart, EmptyState } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
+import { useQuery } from "./state";
+import { WalletTokenTransfers, WalletTransactions } from "./wallet-history";
 import styles from "./detail-design.module.css";
+/** Saved profile tabs first, then the wallet's own on-demand explorer history. */
+const tabs = [
+  { id: "positions", label: "Positions" },
+  { id: "trades", label: "Trades" },
+  { id: "launches", label: "Launches" },
+  { id: "transactions", label: "Transactions" },
+  { id: "token-transfers", label: "Token transfers" },
+];
+const historyTabs = ["transactions", "token-transfers"];
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
+  const { params, set } = useQuery();
   const { data, loading, stale, error, refresh } =
     useProduct<AnalyticsWalletResponse>(
       `wallets/${address.toLowerCase()}?window=${period}`,
     );
-  const [tab, setTab] = useState("Positions"),
+  const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
+    [opened, setOpened] = useState<string[]>([]),
     [showSignals, setShowSignals] = useState(false),
     [copied, setCopied] = useState(false),
     [card, setCard] = useState(false),
     [cardError, setCardError] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  // An explorer page costs credits, so a tab keeps its pages once opened
+  // instead of paying for them again on every visit.
+  if (historyTabs.includes(tab) && !opened.includes(tab))
+    setOpened([...opened, tab]);
   useEffect(() => {
     if (card) dialog.current?.showModal();
     else dialog.current?.close();
@@ -185,18 +202,18 @@ export function ProductWallet({ address }: { address: string }) {
                 role="tablist"
                 aria-label="Wallet activity"
               >
-                {["Positions", "Trades", "Launches"].map((t) => (
+                {tabs.map((t) => (
                   <button
                     role="tab"
-                    aria-selected={tab === t}
-                    key={t}
-                    onClick={() => setTab(t)}
+                    aria-selected={tab === t.id}
+                    key={t.id}
+                    onClick={() => set({ tab: t.id })}
                   >
-                    {t}
+                    {t.label}
                   </button>
                 ))}
               </div>
-              {tab === "Positions" && (
+              {tab === "positions" && (
                 <>
                   <div className="panel-heading">
                     <h2>Positions by pool</h2>
@@ -304,7 +321,7 @@ export function ProductWallet({ address }: { address: string }) {
                   )}
                 </>
               )}
-              {tab === "Trades" && (
+              {tab === "trades" && (
                 <>
                   <div className="panel-heading">
                     <h2>Trade history</h2>
@@ -362,7 +379,7 @@ export function ProductWallet({ address }: { address: string }) {
                   )}
                 </>
               )}
-              {tab === "Launches" && (
+              {tab === "launches" && (
                 <>
                   <div className="panel-heading">
                     <h2>Launches · {data?.launches.length ?? 0}</h2>
@@ -409,6 +426,18 @@ export function ProductWallet({ address }: { address: string }) {
                     </p>
                   )}
                 </>
+              )}
+              {opened.includes("transactions") && (
+                <WalletTransactions
+                  wallet={address.toLowerCase()}
+                  active={tab === "transactions"}
+                />
+              )}
+              {opened.includes("token-transfers") && (
+                <WalletTokenTransfers
+                  wallet={address.toLowerCase()}
+                  active={tab === "token-transfers"}
+                />
               )}
             </section>
           </div>
