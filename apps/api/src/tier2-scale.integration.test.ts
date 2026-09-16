@@ -23,7 +23,8 @@ const ms = (n: number) => `${Math.round(n)}ms`;
 const serverFacts = `SELECT current_setting('server_version') AS server_version,current_setting('jit') AS jit,pg_jit_available() AS jit_available,
   current_setting('jit_above_cost') AS jit_above_cost,current_setting('jit_inline_above_cost') AS jit_inline_above_cost,
   current_setting('jit_optimize_above_cost') AS jit_optimize_above_cost,current_setting('shared_buffers') AS shared_buffers,
-  current_setting('work_mem') AS work_mem,current_setting('max_parallel_workers_per_gather') AS parallel_workers`;
+  current_setting('work_mem') AS work_mem,current_setting('max_parallel_workers_per_gather') AS parallel_workers,
+  (SELECT datcollate FROM pg_database WHERE datname=current_database()) AS collation`;
 
 function planSummary(plan: any) {
   const root = Array.isArray(plan) ? plan[0] : plan;
@@ -107,6 +108,9 @@ test(
       await db.query("ANALYZE recent_swaps");
       console.log("tier2 server", facts((await db.query(serverFacts)).rows[0]));
       const statements = new Map<string, string>();
+      // Contract failures surface after the plan facts so a failing CI log
+      // still explains itself.
+      const failures: unknown[] = [];
       // Both windows include the full fixture. Three complete requests expose
       // first-read and warm behavior without hiding monetary work in a cache.
       // Every read runs through the production transaction preamble.
@@ -186,22 +190,30 @@ test(
             }),
           );
           if (mode) continue;
-          assert.equal(failure, null, `Complete read ${index + 1}: ${failure}`);
-          assert.equal(board.total, 11500);
-          assert.equal(board.items.length, 25);
-          for (const wallet of board.items) {
-            assert.equal(wallet.realizedWei, "10");
-            assert.equal(wallet.rankingTradeCount, 10);
-            assert.equal(wallet.accountingTier, "tier2");
+          try {
+            assert.equal(
+              failure,
+              null,
+              `Complete read ${index + 1}: ${failure}`,
+            );
+            assert.equal(board.total, 11500);
+            assert.equal(board.items.length, 25);
+            for (const wallet of board.items) {
+              assert.equal(wallet.realizedWei, "10");
+              assert.equal(wallet.rankingTradeCount, 10);
+              assert.equal(wallet.accountingTier, "tier2");
+            }
+            assert.equal(board.coverage.catalogPools, 52000);
+            assert.equal(board.coverage.tier2Pools, 285);
+            assert.equal(phase("fetch").rows, 115000);
+            // Keep 800ms headroom below the unchanged runtime accounting budget.
+            assert.ok(
+              elapsed < 2000,
+              `Complete 115k accounting request ${index + 1} took ${Math.round(elapsed)}ms`,
+            );
+          } catch (error) {
+            failures.push(error);
           }
-          assert.equal(board.coverage.catalogPools, 52000);
-          assert.equal(board.coverage.tier2Pools, 285);
-          assert.equal(phase("fetch").rows, 115000);
-          // Keep 800ms headroom below the unchanged runtime accounting budget.
-          assert.ok(
-            elapsed < 2000,
-            `Complete 115k accounting request ${index + 1} took ${Math.round(elapsed)}ms`,
-          );
         }
       // Estimated costs decide JIT eligibility, so they are stated in every log.
       for (const [name, sql] of statements) {
@@ -239,6 +251,7 @@ test(
               await db.query("ROLLBACK");
             }
           }
+      if (failures.length) throw failures[0];
     } finally {
       await db.query(`DROP SCHEMA ${schema} CASCADE`);
       await db.end();

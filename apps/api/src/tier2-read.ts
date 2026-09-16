@@ -63,33 +63,44 @@ books AS MATERIALIZED (
   WHERE NOT EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=c.chain_id AND a.pool_id=c.pool_id)
     AND NOT EXISTS(SELECT 1 FROM merged newer WHERE upper(newer.span)>upper(m.span) AND upper(newer.span)>c.launch_block)
 )`;
-// Broad copies are read three times and stay materialized. Recent copies, the
-// bulk of the evidence, stream once into the canonical ordering; conflicts
-// re-derive only the recent copies sharing a key with a surviving broad swap.
-const evidenceCte = `${booksCte}, broad_copies AS MATERIALIZED (
-  SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
+// Every copy definition is written once and bound to a book alias. The global
+// sets reconcile cross-source keys; the ledger stream reads the same
+// definitions one book at a time through the pool history indexes, so each
+// pool's copies sort in memory instead of one whole-history sort that spills.
+const broadCopies = (
+  book: string,
+) => `SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
     e.eth_wei::text,e.token_raw::text,e.amount0::text,e.amount1::text,
-    b.catalog_valid AND e.token=b.token AND e.block_number BETWEEN greatest(b.launch_block,r.from_block) AND r.to_block
-      AND e.timestamp BETWEEN b.launched_at AND r.timestamp AND (e.block_number<>r.to_block OR e.block_hash=r.block_hash)
+    ${book}.catalog_valid AND e.token=${book}.token AND e.block_number BETWEEN greatest(${book}.launch_block,r.from_block) AND r.to_block
+      AND e.timestamp BETWEEN ${book}.launched_at AND r.timestamp AND (e.block_number<>r.to_block OR e.block_hash=r.block_hash)
       AND (member.identity->>'pool_id',member.identity->>'token',member.identity->>'launch_block',member.identity->>'launch_tx',member.identity->>'launch_sender',member.identity->>'launched_at')
-        IS NOT DISTINCT FROM (b.pool_id,b.token,b.launch_block::text,b.launch_tx,b.launch_sender,b.launched_at::text)
+        IS NOT DISTINCT FROM (${book}.pool_id,${book}.token,${book}.launch_block::text,${book}.launch_tx,${book}.launch_sender,${book}.launched_at::text)
       AND source.block_hash=member.identity->>'source_hash' AND source.content_hash=member.identity->>'source_content_hash' AS valid,'broad' AS source
-  FROM broad_swaps e JOIN books b USING(chain_id,pool_id) JOIN ranges r ON r.source='broad' AND r.stream_key=e.stream_key AND r.to_block=e.batch_end
+  FROM broad_swaps e JOIN ranges r ON r.source='broad' AND r.stream_key=e.stream_key AND r.to_block=e.batch_end
   JOIN broad_registry_members member ON member.chain_id=e.chain_id AND member.stream_key=e.stream_key AND member.batch_end=e.batch_end AND member.pool_id=e.pool_id
   LEFT JOIN pool_launch_sources ps ON ps.chain_id=e.chain_id AND ps.pool_id=e.pool_id AND ps.stream_key='discovery:v2' AND ps.batch_end::text=member.identity->>'source_batch'
   LEFT JOIN indexer_batches source ON source.chain_id=ps.chain_id AND source.stream_key=ps.stream_key AND source.to_block=ps.batch_end
-  WHERE e.chain_id=4663 AND e.block_number BETWEEN b.start_block AND b.through_block
-), recent_copies AS NOT MATERIALIZED (
-  SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
-    -- Keep exact stored strings on the hot path. JavaScript validates every
-    -- amount before folding; numeric normalization is only needed for the
-    -- cross-source comparison below, rather than every observed execution.
+  WHERE e.chain_id=4663 AND e.pool_id=${book}.pool_id AND e.block_number BETWEEN ${book}.start_block AND ${book}.through_block`;
+// Recent copies keep exact stored strings on the hot path. JavaScript validates
+// every amount before folding; numeric normalization is only needed for the
+// cross-source comparison in conflicts, rather than every observed execution.
+const recentCopies = (
+  book: string,
+) => `SELECT e.pool_id,e.token,e.tx_hash,e.log_index,e.block_number,e.block_hash,e.timestamp,e.transaction_sender,e.side,
     e.eth_wei,e.token_raw,e.amount0,e.amount1,
-    b.catalog_valid AND e.token=b.token AND e.block_number BETWEEN greatest(b.launch_block,r.from_block) AND r.to_block
-      AND e.timestamp BETWEEN b.launched_at AND r.timestamp AND (e.block_number<>r.to_block OR e.block_hash=r.block_hash) AS valid,'recent' AS source
-  FROM recent_swaps e JOIN books b USING(chain_id,pool_id) JOIN ranges r ON r.source='recent' AND r.stream_key=e.source_stream AND r.to_block=e.batch_end
-  WHERE e.chain_id=4663 AND e.block_number BETWEEN b.start_block AND b.through_block
-), conflicts AS MATERIALIZED (
+    ${book}.catalog_valid AND e.token=${book}.token AND e.block_number BETWEEN greatest(${book}.launch_block,r.from_block) AND r.to_block
+      AND e.timestamp BETWEEN ${book}.launched_at AND r.timestamp AND (e.block_number<>r.to_block OR e.block_hash=r.block_hash) AS valid,'recent' AS source
+  FROM recent_swaps e JOIN ranges r ON r.source='recent' AND r.stream_key=e.source_stream AND r.to_block=e.batch_end
+  WHERE e.chain_id=4663 AND e.pool_id=${book}.pool_id AND e.block_number BETWEEN ${book}.start_block AND ${book}.through_block`;
+// The ordered rows carry only what the ledger reads.
+const ledgerColumns = `c.pool_id,c.tx_hash,c.log_index,c.block_number,c.block_hash,c.timestamp,c.transaction_sender AS wallet,c.side,c.eth_wei,c.token_raw,c.amount0,c.amount1,c.valid,
+      EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict`;
+// Broad copies are read three times and stay materialized. Recent copies, the
+// bulk of the evidence, are only re-derived for keys shared with a surviving
+// broad swap.
+const evidenceCte = `${booksCte}, broad_copies AS MATERIALIZED (SELECT c.* FROM books b CROSS JOIN LATERAL (${broadCopies("b")}) c),
+recent_copies AS NOT MATERIALIZED (SELECT c.* FROM books b CROSS JOIN LATERAL (${recentCopies("b")}) c),
+conflicts AS MATERIALIZED (
   -- Reconcile surviving source identities before eligibility can discard a
   -- changed pool. A collision affecting an eligible book must have both valid
   -- copies; otherwise a moved/invalid copy could conceal the conflict.
@@ -108,16 +119,21 @@ const evidenceCte = `${booksCte}, broad_copies AS MATERIALIZED (
       CASE WHEN r.amount0 ~ '^-?[0-9]{1,96}$' THEN r.amount0::numeric::text ELSE r.amount0 END,
       CASE WHEN r.amount1 ~ '^-?[0-9]{1,96}$' THEN r.amount1::numeric::text ELSE r.amount1 END))
 ), canonical AS (
-  -- Each normalized source has a unique (chain,tx,log) key. Only cross-source
-  -- copies require reconciliation, avoiding a whole-history GROUP BY. The
-  -- ordered rows carry only what the ledger reads.
-  SELECT c.pool_id,c.tx_hash,c.log_index,c.block_number,c.block_hash,c.timestamp,c.transaction_sender AS wallet,c.side,c.eth_wei,c.token_raw,c.amount0,c.amount1,c.valid,
-    EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict
-  FROM broad_copies c
-  UNION ALL
-  SELECT c.pool_id,c.tx_hash,c.log_index,c.block_number,c.block_hash,c.timestamp,c.transaction_sender AS wallet,c.side,c.eth_wei,c.token_raw,c.amount0,c.amount1,c.valid,
-    EXISTS(SELECT 1 FROM conflicts conflict WHERE conflict.tx_hash=c.tx_hash AND conflict.log_index=c.log_index) AS conflict
-  FROM recent_copies c WHERE NOT EXISTS(SELECT 1 FROM broad_copies b WHERE b.tx_hash=c.tx_hash AND b.log_index=c.log_index)
+  -- Each normalized source has a unique (chain,tx,log) key, so only
+  -- cross-source copies need reconciliation. Books stream in byte order and
+  -- each book's copies sort by initiator and chronology; the lateral subquery
+  -- can only run as the inner side of a nested loop over that ordered outer
+  -- and a cursor never runs in parallel, so the ledger's grouping order costs
+  -- one bounded sort per pool. Byte order keeps the contract independent of
+  -- the database locale and lets the ledger verify it.
+  SELECT c.* FROM (SELECT * FROM books ORDER BY pool_id COLLATE "C") b CROSS JOIN LATERAL (
+    SELECT * FROM (
+      SELECT ${ledgerColumns} FROM (${broadCopies("b")}) c
+      UNION ALL
+      SELECT ${ledgerColumns} FROM (${recentCopies("b")}) c
+      WHERE NOT EXISTS(SELECT 1 FROM broad_copies x WHERE x.tx_hash=c.tx_hash AND x.log_index=c.log_index)
+    ) u ORDER BY u.wallet COLLATE "C",u.block_number,u.log_index
+  ) c
 )`;
 export interface Tier2Result {
   summaries: Map<string, AnalyticsWalletSummary>;
@@ -312,11 +328,13 @@ export async function readTier2(
     pendingGains = [];
     pendingTrades = [];
   };
-  // A transaction-scoped read cursor executes the canonical aggregation once.
+  // A transaction-scoped read cursor executes the canonical stream once.
   // Fetch batches bound chain evidence memory without truncating accounting.
   await query(
-    `DECLARE tier2_ledger NO SCROLL CURSOR FOR ${evidenceCte} SELECT * FROM canonical ORDER BY pool_id,wallet,block_number,log_index,tx_hash`,
+    `DECLARE tier2_ledger NO SCROLL CURSOR FOR ${evidenceCte} SELECT * FROM canonical`,
   );
+  let lastPool = "",
+    lastWallet = "";
   for (;;) {
     if (Date.now() - started > 2800)
       throw new RequestError(503, "tier2_read_budget_exceeded");
@@ -344,6 +362,16 @@ export async function readTier2(
         ledger.wallet !== r.wallet
       ) {
         finish();
+        // Books and initiators arrive in byte order, so a finished ledger's
+        // key can never return. Anything else would blend two ledgers of one
+        // initiator, so it fails closed.
+        if (
+          r.pool_id < lastPool ||
+          (r.pool_id === lastPool && r.wallet <= lastWallet)
+        )
+          throw Error("Unordered initiator books");
+        lastPool = r.pool_id;
+        lastWallet = r.wallet;
         meta = book;
         ledger = new InitiatorLedger(
           r.pool_id,
