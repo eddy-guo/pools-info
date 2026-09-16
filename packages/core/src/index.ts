@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./accounting";
+export * from "./tier2-accounting";
 export * from "./format";
 export * from "./chain-types";
 export * from "./chain-accounting";

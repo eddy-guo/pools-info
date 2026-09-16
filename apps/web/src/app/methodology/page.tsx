@@ -99,10 +99,12 @@ export default function Methodology() {
           <section id="attribution">
             <h2>04. What each evidence label means</h2>
             <p>
-              The current leaderboard ranks transfer-verified positions. The
-              swap-based tier is not enabled: its complete read has not passed
-              the serving-performance gate. Its label and model are described
-              here for clarity, not as a claim of current ranking coverage.
+              The leaderboard can combine transfer-verified positions and
+              explicitly flagged swap-based estimates. Coverage counts and each
+              wallet&apos;s evidence label identify the histories actually
+              included. A verified pool&apos;s complete book takes precedence
+              over its swap-only copies, so the same trades never count in both
+              tiers.
             </p>
             <p>
               <strong>Swap-based estimate (tier 2):</strong> recorded swaps and

@@ -82,11 +82,11 @@ export function ProductTraders() {
           </button>
         </div>
         <p className="panel-footnote">
-          Ranked before pagination using transfer-verified positions with known
-          purchase basis. Swap-based estimates are not enabled yet. Unknown
-          basis is excluded from realized PnL. Net ETH includes purchases of
-          unsold inventory. Coverage varies by pool; these are not complete
-          wallet returns.
+          Ranked before pagination using transfer-verified positions and
+          explicitly flagged swap-based estimates with known purchase basis.
+          Unknown basis is excluded from realized PnL. Net ETH includes
+          purchases of unsold inventory. Coverage varies by pool; these are not
+          complete wallet returns.
         </p>
         {loading && data && (
           <span className="sr-only" role="status">
