@@ -131,7 +131,7 @@ export function createCreditBudget({
       assertAvailable(cost);
       spent += cost;
     },
-    /** The header is only a lower bound on what the key has left today. */
+    /** The header counts every process using the key, not only this one. */
     observeRemaining(remaining: number | null, nextCost: number) {
       if (remaining !== null && remaining < nextCost)
         upstreamBlockedUntil = now() + 3600000;
@@ -364,7 +364,7 @@ export function createBlockscoutClient({
           kind,
           cause:
             error instanceof Error
-              ? error.name + ":" + error.message
+              ? `${error.name}:${error.message}`.slice(0, 120)
               : "unknown",
         });
         throw new BlockscoutError("upstream_unavailable", 30);
