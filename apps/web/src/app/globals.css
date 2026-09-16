@@ -4920,13 +4920,6 @@ main {
   height: 92px;
   overflow: auto;
 }
-.explore-page .stats-grid .stat {
-  height: 132px;
-}
-.explore-page .stats-grid .stat > small {
-  height: 32px;
-  overflow: auto;
-}
 .explore-page .desktop-pools {
   min-height: calc(25 * 62px + 44px);
 }
@@ -4957,70 +4950,82 @@ main {
 .explore-page .pool-table th:nth-child(10) {
   width: 20ch;
 }
-.explore-message {
-  height: 24px;
-  margin: 0;
-  padding: 2px 16px;
-  overflow: auto;
+.explore-toolbar .table-tabs button {
+  padding: 7px 11px;
+  font-size: 13px;
+  line-height: 17px;
+  color: var(--faint);
 }
-.explore-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 130px 160px;
-  grid-template-rows: 32px 32px;
-  gap: 12px;
-  padding: 16px;
-  height: 108px;
+.explore-toolbar .table-tabs button.active {
+  background: var(--color-surface-6);
+  color: var(--text);
 }
-.explore-controls > input {
-  grid-column: 1;
-  width: 100%;
+.explore-toolbar .market-filter-actions {
+  flex-wrap: wrap;
+}
+.explore-toolbar .filter-input input {
+  width: 150px;
+  font-weight: 400;
+}
+.explore-toolbar select {
+  height: var(--ctl-min);
   min-width: 0;
-  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 9px;
+  background: var(--color-panel-raised);
+  color: var(--text);
+  font-size: 12px;
 }
-.explore-controls > label {
-  grid-column: 2 / 4;
-  flex-wrap: nowrap;
-  height: 32px;
-}
-.explore-controls select {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-}
-.explore-controls > .sort-coverage {
-  grid-column: 1;
-  max-width: 100%;
-}
-.explore-controls > .button {
-  width: 100%;
-  min-height: 32px;
-  height: 32px;
+.explore-toolbar .button {
+  height: var(--ctl-min);
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-@media (max-width: 700px) {
-  .explore-controls {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-rows: 44px 44px 18px 44px;
-    height: 218px;
-  }
-  .explore-controls > input,
-  .explore-controls > label,
-  .explore-controls > .sort-coverage {
-    grid-column: 1 / 3;
-  }
-  .explore-controls > input,
-  .explore-controls > label,
-  .explore-controls select,
-  .explore-controls > .button {
-    height: 44px;
-    min-height: 44px;
+.explore-toolbar .icon-button {
+  height: var(--ctl-min);
+  width: var(--ctl-min);
+  border: 1px solid var(--color-line-strong);
+  border-radius: 9px;
+  background: var(--color-panel-raised);
+  color: var(--color-text-3);
+}
+.explore-toolbar .segmented button {
+  font-size: 12px;
+  font-weight: 600;
+}
+.explore-toolbar .segmented button[aria-pressed="true"] {
+  background: var(--color-surface-6);
+}
+@container site (min-width: 768px) {
+  /* The window control is one 32px control: 26px segments inside 2px padding. */
+  .explore-toolbar .segmented button {
+    min-height: 26px;
+    line-height: 16px;
   }
 }
-.sort-coverage {
-  display: inline-block;
-  width: 32ch;
-  height: 18px;
-  overflow: auto;
+@container site (max-width: 767px) {
+  .explore-toolbar .table-tabs button {
+    padding: 6px 4px;
+    font-size: 12px;
+  }
+  /* Two control rows: filter + sort, then direction + refresh + window. */
+  .explore-toolbar .filter-input {
+    flex-basis: 200px;
+  }
+  .explore-toolbar .filter-input input {
+    width: 100%;
+  }
+  .explore-toolbar .segmented {
+    flex: 1;
+  }
+  .explore-toolbar .segmented button {
+    flex: 1;
+    padding: 6px 3px;
+  }
 }
 .nullable-pool-page .page-heading {
   height: 134px;
@@ -5181,6 +5186,96 @@ main {
 .leaderboard-panel .live-podium > * {
   height: 204px;
   overflow: auto;
+}
+
+/* Creators: a fixed scroll surface owns the virtualised table, so the panel never grows with the catalog. */
+.creators-page .page-heading p {
+  max-width: 560px;
+}
+.creators-page .creators-scroll {
+  position: relative;
+  height: calc(11 * 62px + 34px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.creators-page .data-table {
+  table-layout: fixed;
+}
+.creators-page .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--color-surface-4);
+}
+.creators-page .data-table th:nth-child(1) {
+  width: 64px;
+}
+.creators-page .data-table th:nth-child(3) {
+  width: 13ch;
+}
+.creators-page .data-table th:nth-child(4) {
+  width: 20ch;
+}
+.creators-page .data-table th:nth-child(5),
+.creators-page .data-table th:nth-child(6) {
+  width: 16ch;
+}
+.creators-page .data-table th:nth-child(7) {
+  width: 18ch;
+}
+.creators-page .data-table tbody tr,
+.creators-page .data-table tbody td {
+  height: 62px;
+}
+.creators-page .data-table td {
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.creators-page .data-table td.rank-number {
+  color: var(--color-text-3);
+}
+.creators-page .data-table td > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.creators-page .data-table tr.spacer td {
+  height: auto;
+  padding: 0;
+  border: 0;
+}
+.creators-page .data-table tr.spacer:hover {
+  background: transparent;
+}
+.creators-page .creators-scroll .empty-state {
+  position: absolute;
+  inset: 34px 0 0;
+  display: grid;
+  place-content: center;
+}
+.creators-page .creators-progress {
+  position: relative;
+  min-height: 62px;
+  gap: 12px;
+}
+.creators-page .creators-progress-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ac);
+  transition: width 0.3s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .creators-page .creators-progress-bar {
+    transition: none;
+  }
 }
 
 .panel {

@@ -11,6 +11,7 @@ const png = Buffer.from(
 
 test("token images load lazily through the local endpoint and retain generated fallback on failure", async ({
   page,
+  baseURL,
 }) => {
   const imageRequests = new Set<string>();
   let failImages = false;
@@ -38,10 +39,7 @@ test("token images load lazily through the local endpoint and retain generated f
   });
   const externalImages: string[] = [];
   page.on("request", (r) => {
-    if (
-      r.resourceType() === "image" &&
-      !r.url().startsWith("http://127.0.0.1:3101/")
-    )
+    if (r.resourceType() === "image" && !r.url().startsWith(`${baseURL}/`))
       externalImages.push(r.url());
   });
   await page.goto("/");
@@ -96,6 +94,7 @@ test("image endpoint rejects arbitrary URL parameters and unavailable pools with
 
 test("token images recover from temporary capacity errors with bounded retries", async ({
   page,
+  baseURL,
 }, testInfo) => {
   await page.clock.install();
   const attempts = new Map<string, number>();
@@ -137,7 +136,7 @@ test("token images recover from temporary capacity errors with bounded retries",
   await expect(icon).toHaveAttribute("data-image-state", "failed");
   await expect(icon.locator(".avatar svg")).toBeVisible();
   const id = await icon.getAttribute("data-pool-image");
-  const imageUrl = `http://127.0.0.1:3101/api/token-image/${id}/`;
+  const imageUrl = `${baseURL}/api/token-image/${id}/`;
   await page.clock.fastForward(5000);
   await expect(icon).toHaveAttribute("data-image-state", "loaded", {
     timeout: 2000,

@@ -22,7 +22,11 @@ test("Explore retains saved rows during refresh", async ({ page, request }) => {
     await route.fulfill({ json: payload });
   });
   await page.goto("/");
-  await expect(page.locator(".product-coverage[aria-busy=true]")).toBeVisible();
+  const pendingRows = page
+    .locator(".desktop-pools, .mobile-pools")
+    .locator('[data-pending="true"]')
+    .filter({ visible: true });
+  await expect(pendingRows.first()).toBeVisible();
   await expect.poll(() => calls).toBe(1);
   release();
   const first = page
@@ -36,9 +40,7 @@ test("Explore retains saved rows during refresh", async ({ page, request }) => {
     .click();
   await expect.poll(() => calls).toBe(2);
   await expect(first).toBeVisible();
-  await expect(page.locator(".product-coverage[aria-busy=true]")).toHaveCount(
-    0,
-  );
+  await expect(pendingRows).toHaveCount(0);
   release();
   await expect(
     page

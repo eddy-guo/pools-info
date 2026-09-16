@@ -26,6 +26,7 @@ const routes = [
     url: `/wallet/${wallet}/?window=All`,
     sentinel: ".page .workspace-grid",
   },
+  { name: "creators", url: "/creators/", sentinel: ".creators-panel" },
   {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
@@ -133,24 +134,50 @@ for (const entry of routes) {
       await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
       const after = await sentinel.boundingBox();
       if (entry.name === "screener") {
-        const controls = page.locator(".explore-controls");
-        const input = await controls.locator("input").boundingBox();
-        const direction = await controls.locator("button").nth(0).boundingBox();
-        const refresh = await controls.locator("button").nth(1).boundingBox();
+        const toolbar = page.locator(".explore-toolbar");
+        const rects = (selector: string) =>
+          toolbar
+            .locator(selector)
+            .evaluateAll((nodes) =>
+              nodes.map((node) => node.getBoundingClientRect().toJSON()),
+            );
+        const tabs = await rects(".table-tabs button");
+        expect(tabs, "all, gainers, new, crowd and watchlist").toHaveLength(5);
+        tabs.forEach((tab, index) => {
+          expect(tab.y, "tabs share one row").toBe(tabs[0].y);
+          if (index)
+            expect(
+              tab.x - tabs[index - 1].x - tabs[index - 1].width,
+              "tabs sit tightly together",
+            ).toBeLessThanOrEqual(4);
+        });
+        const controls = await rects(
+          ".filter-input, select, .button, .icon-button, .segmented",
+        );
         expect(
-          input!.width,
-          "the full filter placeholder has room",
-        ).toBeGreaterThan(300);
+          controls,
+          "filter, sort, direction, refresh, window",
+        ).toHaveLength(5);
+        for (const control of controls)
+          if (testInfo.project.name === "desktop")
+            expect(
+              Math.abs(
+                control.y + control.height / 2 - tabs[0].y - tabs[0].height / 2,
+              ),
+              "controls share the single toolbar row with the tabs",
+            ).toBeLessThanOrEqual(1);
+          else
+            expect(control.height, "44px tap targets").toBeGreaterThanOrEqual(
+              44,
+            );
+        if (testInfo.project.name !== "desktop")
+          for (const tab of tabs)
+            expect(tab.height, "44px tap targets").toBeGreaterThanOrEqual(44);
         expect(
-          direction!.y,
-          "both actions occupy the deliberate second action row",
-        ).toBe(refresh!.y);
-        expect(refresh!.y).toBeGreaterThan(input!.y);
-        expect(
-          await controls.evaluate(
+          await toolbar.evaluate(
             (node) => node.scrollWidth <= node.clientWidth,
           ),
-          "controls fit their panel",
+          "the toolbar fits its panel",
         ).toBe(true);
       }
       if (!entry.name.includes("pool"))
