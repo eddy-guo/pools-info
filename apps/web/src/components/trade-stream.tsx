@@ -1,6 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
 import { Eth, explorer, utc } from "./live-ui";
@@ -11,6 +17,16 @@ const subscribeClock = (notify: () => void) => {
 };
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const serverSeconds = () => 0;
+const slideMs = 450;
+/** Painted top of each row inside the scroll surface, keyed by trade id. */
+function rowOffsets(list: HTMLElement | null) {
+  const offsets = new Map<string, number>();
+  if (!list) return offsets;
+  const origin = list.getBoundingClientRect().top;
+  for (const row of list.querySelectorAll<HTMLElement>("[data-event-id]"))
+    offsets.set(row.dataset.eventId!, row.getBoundingClientRect().top - origin);
+  return offsets;
+}
 function age(timestamp: number, now: number) {
   if (!now) return utc(timestamp);
   const seconds = now - timestamp;
@@ -40,6 +56,8 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     seen: new Set<string>(),
     initialized: false,
   });
+  const list = useRef<HTMLDivElement>(null);
+  const offsets = useRef<Map<string, number>>(null);
   useEffect(() => {
     if (!enabled) return;
     if (history.current.scope !== scope)
@@ -85,6 +103,10 @@ export function TradeStream({ poolId }: { poolId?: string }) {
         );
         for (const event of events) seen.add(event.id);
         while (seen.size > 1000) seen.delete(seen.values().next().value!);
+        // Only windows after the first population animate into place.
+        offsets.current = remembered.initialized
+          ? rowOffsets(list.current)
+          : null;
         remembered.initialized = true;
         // This is the entire canonical recent window, including rollback/removal.
         setState({ scope, data: { ...data, events }, error: false, fresh });
@@ -116,6 +138,36 @@ export function TradeStream({ poolId }: { poolId?: string }) {
   }, [scope, enabled, attempt]);
   const data = current?.data,
     coverage = data?.coverage;
+  useLayoutEffect(() => {
+    const before = offsets.current;
+    offsets.current = null;
+    if (
+      !before ||
+      !list.current ||
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    // Retained rows start where they were painted before this window and
+    // slide into their new slot; arriving rows ride down with the row beneath
+    // them. Transform only, so the surface below the feed never moves.
+    const origin = list.current.getBoundingClientRect().top;
+    let carried: number | undefined;
+    for (const row of [
+      ...list.current.querySelectorAll<HTMLElement>("[data-event-id]"),
+    ].reverse()) {
+      const previous = before.get(row.dataset.eventId!);
+      const shift =
+        previous === undefined
+          ? (carried ?? -row.offsetHeight)
+          : Math.round(previous - (row.getBoundingClientRect().top - origin));
+      if (previous !== undefined) carried = shift;
+      if (shift)
+        row.animate(
+          [{ transform: `translateY(${shift}px)` }, { transform: "none" }],
+          { duration: slideMs, easing: "ease-out" },
+        );
+    }
+  }, [data]);
   const stale =
     current?.error ||
     coverage?.state === "stale" ||
@@ -156,7 +208,7 @@ export function TradeStream({ poolId }: { poolId?: string }) {
           </button>
         )}
       </div>
-      <div className={`activity-list ${styles.events}`}>
+      <div className={`activity-list ${styles.events}`} ref={list}>
         {!data &&
           !current?.error &&
           Array.from({ length: 3 }, (_, index) => (

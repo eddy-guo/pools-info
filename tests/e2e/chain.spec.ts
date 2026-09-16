@@ -642,6 +642,183 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   ).toBe(true);
 });
 
+test("live feed slides arriving trades into place with transform and opacity only", async ({
+  page,
+}, testInfo) => {
+  const now = chain.toTimestamp;
+  // Two-day-old trades keep the age labels' text stable across clock ticks.
+  const timestamp = now - 2 * 86400;
+  await page.clock.install({ time: new Date(now * 1000) });
+  await page.addInitScript(() => {
+    const shifts: unknown[] = [];
+    Object.assign(window, { layoutShifts: shifts });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+          sources: {
+            node: Element | null;
+            previousRect: DOMRectReadOnly;
+            currentRect: DOMRectReadOnly;
+          }[];
+        };
+        if (!shift.hadRecentInput)
+          shifts.push({
+            value: shift.value,
+            sources: shift.sources.map((source) => ({
+              node: source.node?.outerHTML.slice(0, 120),
+              from: source.previousRect.toJSON(),
+              to: source.currentRect.toJSON(),
+            })),
+          });
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+  const [a, b, c, d, e] = [1, 2, 3, 4, 5].map((index) =>
+    liveEvent(index, timestamp, { side: index % 2 ? "buy" : "sell" }),
+  );
+  const windows = [[a], [c, b, a], [d, c, b, a], [e, d, c, b, a]];
+  let calls = 0;
+  await page.route("**/api/live-trades/**", (route) =>
+    route.fulfill({
+      json: liveBatch(windows[Math.min(calls++, windows.length - 1)], now),
+    }),
+  );
+  await page.goto("/");
+  const feed = page.getByRole("region", { name: "Recent trades" });
+  const rows = feed.locator(".stream-event");
+  await expect(rows).toHaveCount(1);
+  await expect(feed.getByText("Checking every 15s")).toBeVisible();
+  // Document-relative layout geometry of the feed and its surroundings,
+  // unaffected by scrolling or by the transforms the entrance applies.
+  const geometry = (retained: string) =>
+    feed.evaluate((node, retained) => {
+      const top = (element: Element | null) =>
+        Math.round(element!.getBoundingClientRect().top + scrollY);
+      const surface = node.querySelector(".activity-list")!;
+      return {
+        region: [top(node), node.getBoundingClientRect().height],
+        surface: [top(surface), surface.getBoundingClientRect().height],
+        footnote: top(surface.nextElementSibling),
+        retained: surface.querySelector<HTMLElement>(
+          `[data-event-id="${retained}"]`,
+        )!.offsetTop,
+      };
+    }, retained);
+  const transforms = () =>
+    rows.evaluateAll((nodes) =>
+      nodes.map((node) => getComputedStyle(node).transform),
+    );
+  const shifts = () =>
+    page.evaluate(
+      () => (window as unknown as { layoutShifts: unknown[] }).layoutShifts,
+    );
+  const before = await geometry(a.id);
+  const shiftsBefore = (await shifts()).length;
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", c.id);
+  await expect(rows.nth(0)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(1)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(2)).toHaveAttribute("data-event-id", a.id);
+  await expect(rows.nth(2)).toHaveAttribute("data-new", "false");
+  await expect
+    .poll(transforms, { message: "the entrance runs to completion" })
+    .toEqual(["none", "none", "none"]);
+  await page.waitForTimeout(100);
+  const after = await geometry(a.id);
+  expect(
+    after.retained - before.retained,
+    "the retained row moved down two slots in layout",
+  ).toBeGreaterThan(0);
+  expect(
+    { region: after.region, surface: after.surface, footnote: after.footnote },
+    "nothing outside the scroll surface moved",
+  ).toEqual({
+    region: before.region,
+    surface: before.surface,
+    footnote: before.footnote,
+  });
+  expect(
+    (await shifts()).slice(shiftsBefore),
+    "layout-shift entries recorded while trades arrived",
+  ).toEqual([]);
+  // Freeze the document timeline so the next arrival can be inspected frame
+  // by frame; scrubbing is an instrument, so entries are not counted here.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  const slot = (await geometry(c.id)).retained;
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", d.id);
+  const distance = (await geometry(c.id)).retained - slot;
+  expect(distance, "one arriving row pushes the list one slot").toBeGreaterThan(
+    0,
+  );
+  const frame = (time: number) =>
+    feed.evaluate((node, time) => {
+      for (const animation of node.getAnimations({ subtree: true })) {
+        animation.pause();
+        animation.currentTime = time;
+      }
+      return [...node.querySelectorAll<HTMLElement>(".stream-event")].map(
+        (row) => {
+          const style = getComputedStyle(row);
+          return { transform: style.transform, opacity: style.opacity };
+        },
+      );
+    }, time);
+  const frames: Record<number, { transform: string; opacity: string }[]> = {};
+  for (const time of [0, 225, 450]) {
+    frames[time] = await frame(time);
+    await feed.screenshot({
+      path: testInfo.outputPath(`live-feed-frame-${time}.png`),
+    });
+  }
+  await testInfo.attach("live-feed-frames", {
+    body: JSON.stringify({ before, after, distance, frames }, null, 2),
+    contentType: "application/json",
+  });
+  const arriving = `matrix(1, 0, 0, 1, 0, -${distance})`;
+  expect(
+    frames[0],
+    "every row starts where the list was painted, the arriving row invisible",
+  ).toEqual([
+    { transform: arriving, opacity: "0" },
+    { transform: arriving, opacity: "1" },
+    { transform: arriving, opacity: "1" },
+    { transform: arriving, opacity: "1" },
+  ]);
+  for (const row of frames[225]) {
+    const y = Number(row.transform.match(/, (-?[\d.]+)\)$/)![1]);
+    expect(y, "the rows are still sliding down midway").toBeLessThan(0);
+    expect(y).toBeGreaterThan(-distance);
+  }
+  expect(frames[450], "the rows settle with no transform left").toEqual(
+    Array.from({ length: 4 }, () => ({ transform: "none", opacity: "1" })),
+  );
+  await feed.evaluate((node) => {
+    for (const animation of node.getAnimations({ subtree: true }))
+      animation.finish();
+  });
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.clock.fastForward(16000);
+  await expect(rows).toHaveCount(5);
+  await expect(rows.nth(0)).toHaveAttribute("data-event-id", e.id);
+  await expect(rows.nth(0)).toHaveAttribute("data-new", "true");
+  await expect(rows.nth(0)).toBeVisible();
+  await expect(rows.nth(0)).toHaveCSS("animation-name", "none");
+  await expect(rows.nth(0)).toHaveCSS("opacity", "1");
+  expect(await transforms()).toEqual(Array.from({ length: 5 }, () => "none"));
+  expect(
+    await feed.evaluate((node) => node.getAnimations({ subtree: true }).length),
+    "reduced motion shows the row without any animation",
+  ).toBe(0);
+});
+
 test("catalog token search opens a verified pool link and loads its details on demand", async ({
   page,
 }) => {
