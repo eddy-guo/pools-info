@@ -21,3 +21,4 @@ export * from "./analytics";
 export * from "./live-feed-types";
 export * from "./visual-theme";
 export * from "./observed-market";
+export * from "./wallet-history-types";
