@@ -22,6 +22,7 @@ test("copied watchlists open in a fresh browser and import only with an explicit
   page,
   context,
   browser,
+  baseURL,
 }, testInfo) => {
   await disableLive(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -35,7 +36,7 @@ test("copied watchlists open in a fresh browser and import only with an explicit
     },
     { firstId: first.id, secondId: second.id },
   );
-  const source = new URL("http://127.0.0.1:3101/");
+  const source = new URL("/", baseURL);
   source.search = new URLSearchParams({
     view: "watchlist",
     window: "7d",
@@ -98,7 +99,7 @@ test("copied watchlists open in a fresh browser and import only with an explicit
     // A second tab adds a personal star while the shared view remains open.
     const otherTab = await recipientContext.newPage();
     await disableLive(otherTab);
-    await otherTab.goto(`http://127.0.0.1:3101/?q=${personal.token}`);
+    await otherTab.goto(`${baseURL}/?q=${personal.token}`);
     await otherTab
       .getByRole("button", { name: "Add to watchlist", exact: true })
       .filter({ visible: true })
