@@ -15,7 +15,9 @@ export const hypersyncPolicy = Object.freeze({
   maxLogsPerPage: 5000,
   /** Measured: bodies above 2,097,152 bytes are rejected with HTTP 413. */
   maxRequestBytes: 2097152,
-  /** Measured: 10,000 topic values (690 KB) were accepted in one selection. */
+  /** Measured: 10,000 topic values (690 KB) were accepted in one selection;
+   * the ledger pass selects 20,000 pool ids (1.38 MB) and 31,000 token
+   * addresses (1.40 MB at 31,200) per query (hypersync-ledger.ts). */
   topicValuesPerSelection: 10000,
   /** Value-list chunks (pool ids, token addresses) per query; two full
    * chunks stay under the body limit. */
@@ -480,12 +482,14 @@ export function checkedQuery(query: HyperSyncQuery): HyperSyncQuery {
   return query;
 }
 /** PoolManager Swap logs, optionally restricted to pool ids in topics[1]. The
- * ids are split across selections; more ids than one query holds must be
- * spread over separate queries by the caller. Without ids every manager swap
- * is returned and the caller filters locally. */
+ * ids are split across selections of `valuesPerSelection`; more ids than one
+ * query holds must be spread over separate queries by the caller, and the
+ * body limit is checked either way. Without ids every manager swap is
+ * returned and the caller filters locally. */
 export function swapLogQuery(
   range: { fromBlock: number; toBlock: number },
   poolIds?: readonly string[],
+  valuesPerSelection: number = hypersyncPolicy.topicValuesPerSelection,
 ): HyperSyncQuery {
   checkedRange(range.fromBlock, range.toBlock);
   const topic = toEventSelector(swapEvent);
@@ -495,7 +499,7 @@ export function swapLogQuery(
   });
   if (ids && (!ids.length || new Set(ids).size !== ids.length))
     throw Error("Invalid HyperSync pool id selection");
-  const chunks = ids ? chunkValues(ids) : null;
+  const chunks = ids ? chunkValues(ids, valuesPerSelection) : null;
   if (chunks && chunks.length > hypersyncPolicy.valueSelectionsPerQuery)
     throw Error("Invalid HyperSync query");
   return checkedQuery({
@@ -519,6 +523,7 @@ export function swapLogQuery(
 export function transferLogQuery(
   range: { fromBlock: number; toBlock: number },
   tokens: readonly string[],
+  valuesPerSelection: number = hypersyncPolicy.topicValuesPerSelection,
 ): HyperSyncQuery {
   checkedRange(range.fromBlock, range.toBlock);
   const addresses = tokens.map((t) => {
@@ -527,7 +532,7 @@ export function transferLogQuery(
   });
   if (!addresses.length || new Set(addresses).size !== addresses.length)
     throw Error("Invalid HyperSync token selection");
-  const chunks = chunkValues(addresses);
+  const chunks = chunkValues(addresses, valuesPerSelection);
   if (chunks.length > hypersyncPolicy.valueSelectionsPerQuery)
     throw Error("Invalid HyperSync query");
   return checkedQuery({

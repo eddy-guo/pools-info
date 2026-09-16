@@ -9,15 +9,31 @@ import {
 } from "./broad";
 
 export type Client = pg.Client;
-export function createClient(url = process.env.DATABASE_URL): Client {
+export interface ClientOptions {
+  /** Server-side statement timeout; the client-side query timeout is 5 s
+   * longer. The ledger pass raises both for its dense-range batches. */
+  statementTimeoutMs?: number;
+  applicationName?: string;
+}
+export function createClient(
+  url = process.env.DATABASE_URL,
+  options: ClientOptions = {},
+): Client {
   if (!url || url.includes("user:password@host"))
     throw Error("DATABASE_URL is required");
+  const statementTimeoutMs = options.statementTimeoutMs ?? 30000;
+  if (
+    !Number.isSafeInteger(statementTimeoutMs) ||
+    statementTimeoutMs < 1000 ||
+    statementTimeoutMs > 3600000
+  )
+    throw Error("Invalid client statement timeout");
   return new pg.Client({
     connectionString: url,
     connectionTimeoutMillis: 10000,
-    statement_timeout: 30000,
-    query_timeout: 35000,
-    application_name: "pools-indexer",
+    statement_timeout: statementTimeoutMs,
+    query_timeout: statementTimeoutMs + 5000,
+    application_name: options.applicationName ?? "pools-indexer",
   });
 }
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -263,6 +279,9 @@ export interface PoolRecord {
   imageUrl?: string;
   description?: string;
   externalUrl?: string;
+  /** ERC-20 decimals read by the ledger pass; null when the read did not
+   * decode. Immutable: a later observation must agree. */
+  decimals?: number | null;
 }
 export interface EventRecord {
   txHash: string;
@@ -510,8 +529,14 @@ async function commitBatchInTransaction(
   for (const p of batch.pools ?? []) {
     if (p.launchBlock < batch.from || p.launchBlock > batch.to)
       throw Error("Launch outside batch");
+    if (
+      p.decimals !== undefined &&
+      p.decimals !== null &&
+      (!Number.isInteger(p.decimals) || p.decimals < 0 || p.decimals > 36)
+    )
+      throw Error("Invalid launch decimals");
     const inserted = await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -526,6 +551,7 @@ async function commitBatchInTransaction(
         p.imageUrl ?? null,
         p.description ?? null,
         p.externalUrl ?? null,
+        p.decimals ?? null,
       ],
     );
     if (inserted.rowCount) {
@@ -559,6 +585,15 @@ async function commitBatchInTransaction(
           identity[column] !== value
         )
           throw Error("Conflicting launch metadata");
+      }
+      if (p.decimals !== undefined && p.decimals !== null) {
+        if (identity.decimals !== null && identity.decimals !== p.decimals)
+          throw Error("Conflicting launch identity");
+        if (identity.decimals === null)
+          await db.query(
+            "UPDATE indexed_pools SET decimals=$2 WHERE chain_id=4663 AND pool_id=$1",
+            [p.id.toLowerCase(), p.decimals],
+          );
       }
       // Matching observations add provenance, never restart a pool's history.
       const history = await getStream(db, "pool:" + p.id.toLowerCase());
@@ -715,6 +750,12 @@ export {
   releaseLedgerWriter,
   applyLedgerBatch,
   walkBackLedger,
+  ledgerLaunchStreamIdentity,
+  ensureLedgerLaunchStream,
+  ledgerRegistry,
+  ledgerBatchCreatedRows,
+  ledgerTotals,
+  setLedgerMode,
   type LedgerMode,
   type LedgerStreamState,
   type LedgerLaunch,
