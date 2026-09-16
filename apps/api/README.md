@@ -49,10 +49,14 @@ to this service after deployment and data validation.
 
 Only GET and HEAD are supported. Unknown/duplicate query parameters are rejected.
 Pool IDs are 32-byte `0x` hex values; wallet/token addresses are 20-byte hex
-values. Addresses are normalized to lowercase. Amounts, block heights, and
-on-chain timestamps remain decimal strings in ordinary endpoints; `logIndex`
-and chain ID are numbers. The feed has the existing `RecentSwaps` numeric
-block/timestamp contract, with safe-integer validation for its boundaries.
+values. Addresses are normalized to lowercase. Exact amounts - wei values and
+raw token quantities - remain decimal strings. Block heights and on-chain
+timestamps are JSON numbers, as are `logIndex` and chain ID: they sit far below
+2^53 and the website's response validators require numbers. The feed has the
+existing `RecentSwaps` numeric block/timestamp contract, with safe-integer
+validation for its boundaries. The `/v1/status` `poolStreams` and `indexedPools`
+summaries are the exception: they stay raw `::text` aggregates under their SQL
+column names.
 
 Raw-event `/v1` responses have `generatedAt` and this `coverage`:
 
