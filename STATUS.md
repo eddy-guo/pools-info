@@ -50,16 +50,25 @@ A 40k aged-backlog test proves sustained high-band preference and lower-band
 progress. Source identity, exact wei, compatible range grouping, writer lock and
 reorg rules are preserved. Full CI **34963571241 passed** at 93a0cb8.
 
-**Tier-2 ranking is BLOCKED for deployment.** The complete 115k-swap/52k-registry
-read sometimes exceeds the existing 2.8-second serving budget; the best standalone
-result was 2,785 ms, with no safe margin for Railway. Do not deploy that path or
-raise the budget silently. Its WIP is backed up on
-`wip/tier2-read-budget` at **af6a7f3**. Its runtime and integration-test changes
-were removed from main's working tree; optional display types remain for explicit
-evidence labels. Correctness fixtures pass, but broad/recent conflict and mixed
-integration verification are also unfinished. This is not a completed Tier-2 board.
-The existing verified ranking remains available; the live browser previously showed
-25 actual rows per page and 373 qualifying traders, not a 14-row global ceiling.
+**Tier-2 ranking: CI blocker reproduced and fixed on `fm/pools-tier2-serve-p1`.**
+The 57014 statement timeout at `tier2-read.ts:143` was PostgreSQL JIT: on the
+Debian `postgres:17` image (LLVM present, `pg_jit_available()` true) the
+candidate's coverage statement had an estimated cost of 753,250, far above
+`jit_optimize_above_cost`, and compiling it took 2,951 / 2,868 / 2,900 ms per
+request in CI run 35047485541, against 159 ms with `jit=off`. Every Homebrew
+Postgres on the development machine lacks LLVM, so no local run could show it.
+The read preamble now sets `SET LOCAL jit = off` (a regression test checks the
+transaction settings on any build), the coverage statement carries only the
+CTEs it reads, recent evidence streams once into the canonical ordering instead
+of a spilling materialized CTE, and books look up the catalog per active pool
+instead of scanning 52k rows; estimated cost fell to 94,041 / 94,181 and temp
+blocks from 44,695 to 9,608. Measured complete 115k-swap/52k-pool reads (cold,
+warm 7d, warm All): CI run 35048339188 under the full parallel `test:db`
+1,285 / 1,310 / 1,299 ms (jit forced on: 1,444 / 1,347 / 1,335 ms); local
+Postgres 17.11 812 / 686 / 646 ms and Postgres 18.6 1,189 / 790 / 913 ms, both
+measured with the machine at load average above 20. The 3,000 ms statement
+timeout and the 2,800 ms accounting budget are unchanged. Deployment and visual
+verification of tier-2 rows follow the merge decision.
 
 Read-only production measurements:
 - At 11:26:57 UTC: 488 deep pools, 574 pools with observed volume in the requested
