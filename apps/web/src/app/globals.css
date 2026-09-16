@@ -3781,6 +3781,7 @@ main {
   text-transform: inherit;
   min-height: 20px;
 }
+.data-table th button:hover,
 .data-table th .sort-active {
   color: var(--text);
 }
@@ -3903,8 +3904,7 @@ main {
   font-size: 9.5px;
   color: var(--color-muted);
 }
-.desktop-pools .change,
-.desktop-pools .data-table th button {
+.desktop-pools .change {
   font-weight: 600;
 }
 .desktop-pools .data-table td:nth-child(6),
@@ -4945,6 +4945,14 @@ main {
 .explore-page .pool-table {
   table-layout: fixed;
 }
+/* The export's header row is 34px: 11.5px caps inside the 9px th padding. */
+.explore-page .pool-table th {
+  font-size: 11.5px;
+  line-height: 15.5px;
+}
+.explore-page .pool-table th button {
+  min-height: 0;
+}
 .explore-page .pool-table tbody tr,
 .explore-page .pool-table tbody td {
   height: 62px;
@@ -4953,7 +4961,9 @@ main {
    value plus the cell padding and a volume never runs under the liquidity
    beside it. The narrower gutter is what lets them all fit; the token column
    takes the remainder, and the table scrolls rather than clip below the
-   868px of fixed columns plus a readable token column. */
+   868px of fixed columns plus a readable token column. The 11.5px head sizes
+   three of them: trades holds its label and sort arrow, and holders and
+   launch sender hold their labels without reaching into the next column. */
 .explore-page .pool-table {
   min-width: 1030px;
 }
@@ -4976,13 +4986,13 @@ main {
   width: 133px;
 }
 .explore-page .col-trades {
-  width: 82px;
+  width: 76px;
 }
 .explore-page .col-holders {
-  width: 68px;
+  width: 65px;
 }
 .explore-page .col-sender {
-  width: 101px;
+  width: 110px;
 }
 .explore-page .col-trend {
   width: 100px;
@@ -5024,24 +5034,6 @@ main {
   width: 150px;
   font-weight: 400;
 }
-.explore-toolbar select {
-  height: var(--ctl-min);
-  min-width: 0;
-  padding: 0 10px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 9px;
-  background: var(--color-panel-raised);
-  color: var(--text);
-  font-size: 12px;
-}
-.explore-toolbar .button {
-  height: var(--ctl-min);
-  padding: 0 12px;
-  border-radius: 9px;
-  font-size: 12px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 .explore-toolbar .icon-button {
   height: var(--ctl-min);
   width: var(--ctl-min);
@@ -5069,7 +5061,7 @@ main {
     padding: 6px 4px;
     font-size: 12px;
   }
-  /* Two control rows: filter + sort, then direction + refresh + window. */
+  /* One control row under the tabs: filter, refresh and the window segments. */
   .explore-toolbar .filter-input {
     flex-basis: 200px;
   }

@@ -55,20 +55,24 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
 }) => {
   const explore = (sort: string) =>
     `/api/product/explore/?window=24h&view=all&offset=0&limit=25&q=&sort=${sort}&direction=desc`;
-  const byLaunch = await (await request.get(explore("launch"))).json();
   const byVolume = await (await request.get(explore("volume"))).json();
+  const byChange = await (await request.get(explore("change"))).json();
+  expect(
+    byChange.items[0].name,
+    "the new order leads with a different pool",
+  ).not.toBe(byVolume.items[0].name);
   let release: () => void = () => {},
     gated = false;
   await page.route("**/api/product/explore/?**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
     if (params.get("limit") !== "25") return route.continue();
-    if (params.get("sort") !== "launch")
+    if (params.get("sort") !== "change")
       return route.fulfill({ json: byVolume });
     gated = true;
     await new Promise<void>((resolve) => {
       release = resolve;
     });
-    await route.fulfill({ json: byLaunch });
+    await route.fulfill({ json: byChange });
   });
   await page.goto("/");
   const rows = page.locator(".desktop-pools, .mobile-pools"),
@@ -91,9 +95,21 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
     }, 50);
     Object.assign(window, { rowWatch: watch });
   });
-  await page
-    .getByRole("combobox", { name: "Sort all pools" })
-    .selectOption("launch");
+  // Sorting lives on the desktop column headers; the phone layout renders
+  // cards with no header row, so drive its re-query the way the app does.
+  if (await page.locator(".desktop-pools").isVisible())
+    await page
+      .locator(".desktop-pools thead")
+      .getByRole("button", { name: /change/i })
+      .click();
+  else
+    await page.evaluate(() => {
+      const url = new URL(location.href);
+      url.searchParams.set("sort", "change");
+      url.searchParams.set("dir", "desc");
+      history.replaceState(null, "", url);
+      dispatchEvent(new PopStateEvent("popstate"));
+    });
   await expect.poll(() => gated).toBe(true);
   const busy = rows.filter({ visible: true }).first();
   await expect(busy).toHaveAttribute("aria-busy", "true");
@@ -103,7 +119,7 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   release();
   await expect(
     rows
-      .getByText(byLaunch.items[0].name, { exact: true })
+      .getByText(byChange.items[0].name, { exact: true })
       .filter({ visible: true })
       .first(),
   ).toBeVisible();

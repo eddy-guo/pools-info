@@ -34,7 +34,7 @@ This follow-up changes the avatar/card accent to pink and centralizes existing c
 
 ## Desktop pool rows and readability
 
-The desktop screener now follows the reference's measured row proportions: 62px rows, 30px token icons, 14px / weight 500 token names, 12px secondary token text, 13px prices, and weight 600 signed changes and sorting actions. The metadata, liquidity, holder count and creator columns use their distinct shared neutral tokens. Related table/filter literals now reference equivalent shared colors. Existing panel, card and control radii remain unchanged.
+The desktop screener now follows the reference's measured row proportions: 62px rows, 30px token icons, 14px / weight 500 token names, 12px secondary token text, 13px prices, weight 600 signed changes, and 11.5px / weight 400 column headers in a 34px head row; the sortable ones sort on click with an arrow on the active column. The metadata, liquidity, holder count and creator columns use their distinct shared neutral tokens. Related table/filter literals now reference equivalent shared colors. Existing panel, card and control radii remain unchanged.
 
 These density changes are scoped to `.desktop-pools`. The token icon selector covers both the original avatar and the new `PoolImage` wrapper. Coverage labels and timestamps remain present; their line boxes and the watch-button display were adjusted to avoid inflating the reference row height. Mobile cards retain their separate typography and touch targets.
 
