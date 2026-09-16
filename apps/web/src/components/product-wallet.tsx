@@ -17,7 +17,7 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-import { AddressLabel, Avatar, Chart } from "./ui";
+import { AddressLabel, Avatar, Change, Chart } from "./ui";
 import { FeaturePreview, TradingPreviewPanels } from "./feature-preview";
 import { PendingValue, ProductCoverage } from "./product-common";
 import { AccountingBadge } from "./accounting-badge";
@@ -46,16 +46,8 @@ export function ProductWallet({ address }: { address: string }) {
   }, [card]);
   const w = data?.wallet,
     cardUrl = `/cards/${address.toLowerCase()}.png?window=${period}`;
-  const pct = (n: number | null | undefined, signed = false) =>
-    n == null ? (
-      <Unavailable />
-    ) : (
-      <span
-        className={signed ? (n > 0 ? "positive" : n < 0 ? "negative" : "") : ""}
-      >
-        {n.toFixed(1)}%
-      </span>
-    );
+  const pct = (n: number | null | undefined) =>
+    n == null ? <Unavailable /> : <span>{n.toFixed(1)}%</span>;
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -171,7 +163,11 @@ export function ProductWallet({ address }: { address: string }) {
             label="Realized ROI"
             note="Profit / disposed cost"
           >
-            {pct(w?.roi, true)}
+            {w?.roi == null ? (
+              <Unavailable />
+            ) : (
+              <Change value={w.roi} digits={1} />
+            )}
           </Stat>
           <Stat
             pending={loading && !data}
