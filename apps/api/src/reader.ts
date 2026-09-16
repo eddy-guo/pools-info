@@ -47,10 +47,21 @@ const eventColumns =
 const eventOrder =
   "e.block_number DESC, e.log_index DESC, e.tx_hash DESC, e.stream_key DESC";
 const eventPosition = "(e.block_number,e.log_index,e.tx_hash,e.stream_key)";
+/** node-postgres hands back bigint columns as decimal strings. Block heights and
+ * on-chain timestamps are published as JSON numbers because they sit far below
+ * 2^53 and every website response validator requires numbers; exact wei amounts
+ * and raw token quantities stay strings and are never routed through here. */
+function chainNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 0)
+    throw new RequestError(503, "chain_evidence_invalid");
+  return n;
+}
 function coverage(r: Row) {
   return {
-    startBlock: r.start_block ?? null,
-    throughBlock: r.cursor_block ?? null,
+    startBlock: chainNumber(r.start_block),
+    throughBlock: chainNumber(r.cursor_block),
     throughBlockHash: r.cursor_hash ?? null,
     indexedAt: r.updated_at ?? null,
     completeTokenLifetime: false,
@@ -67,13 +78,13 @@ function poolItem(r: Row) {
     externalUrl: r.external_url ?? null,
     metadataSources: r.metadata_sources ?? null,
     launch: {
-      block: r.launch_block,
+      block: chainNumber(r.launch_block),
       transactionHash: r.launch_tx,
       transactionInitiator: r.launch_sender,
-      timestamp: r.launched_at,
+      timestamp: chainNumber(r.launched_at),
       sourceStream: r.source_stream,
       discoverySource: r.discovery_source,
-      sourceBatchThroughBlock: r.source_batch,
+      sourceBatchThroughBlock: chainNumber(r.source_batch),
     },
     coverage: coverage(r),
   };
@@ -85,9 +96,9 @@ function eventItem(r: Row) {
     token: r.token,
     transactionHash: r.tx_hash,
     logIndex: r.log_index,
-    block: r.block_number,
+    block: chainNumber(r.block_number),
     blockHash: r.block_hash,
-    timestamp: r.timestamp,
+    timestamp: chainNumber(r.timestamp),
     kind: r.kind,
     transactionInitiator: r.transaction_sender,
     attribution: "transaction_initiator_only",
