@@ -5172,6 +5172,96 @@ main {
   overflow: auto;
 }
 
+/* Creators: a fixed scroll surface owns the virtualised table, so the panel never grows with the catalog. */
+.creators-page .page-heading p {
+  max-width: 560px;
+}
+.creators-page .creators-scroll {
+  position: relative;
+  height: calc(11 * 62px + 34px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.creators-page .data-table {
+  table-layout: fixed;
+}
+.creators-page .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--color-surface-4);
+}
+.creators-page .data-table th:nth-child(1) {
+  width: 64px;
+}
+.creators-page .data-table th:nth-child(3) {
+  width: 13ch;
+}
+.creators-page .data-table th:nth-child(4) {
+  width: 20ch;
+}
+.creators-page .data-table th:nth-child(5),
+.creators-page .data-table th:nth-child(6) {
+  width: 16ch;
+}
+.creators-page .data-table th:nth-child(7) {
+  width: 18ch;
+}
+.creators-page .data-table tbody tr,
+.creators-page .data-table tbody td {
+  height: 62px;
+}
+.creators-page .data-table td {
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.creators-page .data-table td.rank-number {
+  color: var(--color-text-3);
+}
+.creators-page .data-table td > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.creators-page .data-table tr.spacer td {
+  height: auto;
+  padding: 0;
+  border: 0;
+}
+.creators-page .data-table tr.spacer:hover {
+  background: transparent;
+}
+.creators-page .creators-scroll .empty-state {
+  position: absolute;
+  inset: 34px 0 0;
+  display: grid;
+  place-content: center;
+}
+.creators-page .creators-progress {
+  position: relative;
+  min-height: 62px;
+  gap: 12px;
+}
+.creators-page .creators-progress-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--ac);
+  transition: width 0.3s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .creators-page .creators-progress-bar {
+    transition: none;
+  }
+}
+
 .panel {
   border-color: var(--color-line-strong);
 }

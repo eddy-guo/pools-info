@@ -1,0 +1,66 @@
+{
+  "method": "tests/e2e/layout-stability.spec.ts: sentinel .creators-panel bounding box at first sight after commit and again after the saved catalog resolved; buffered layout-shift observer summing every non-input entry since navigation. Preloaded fixture, chain refresh disabled.",
+  "audit_before": {
+    "source": "live-site audit 2026-09-15 (pools-ui-audit-s3), sentinel .page .panel",
+    "desktop": {
+      "cls_3s": 0.9259,
+      "cls_settled": 0.9378,
+      "sentinel_y": [
+        268.6,
+        402.6
+      ],
+      "sentinel_height": [
+        128,
+        15135
+      ],
+      "requests": 101,
+      "bytes": 2472010,
+      "seconds": 120.06,
+      "rows": 6402,
+      "document_px": 429619
+    },
+    "mobile": {
+      "cls_3s": 0.6196,
+      "document_px_3s": 20121
+    }
+  },
+  "after": [
+    {
+      "route": "creators",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 211.0625,
+        "width": 1376,
+        "height": 780
+      },
+      "after": {
+        "x": 32,
+        "y": 211.0625,
+        "width": 1376,
+        "height": 780
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "creators",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 324.359375,
+        "width": 384,
+        "height": 780
+      },
+      "after": {
+        "x": 14,
+        "y": 324.359375,
+        "width": 384,
+        "height": 780
+      },
+      "cls": 0,
+      "shifts": []
+    }
+  ],
+  "streaming": "tests/e2e/creators.spec.ts: 2,500 synthetic pools stream as 20 automatic 100-row pages (2,000 pools), then a Load more batch; at most 28 <tr data-index> rows in the DOM for 1,734 creators; sentinel geometry unchanged and CLS 0 across the whole stream on both viewports."
+}
