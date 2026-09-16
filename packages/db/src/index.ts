@@ -681,6 +681,12 @@ export {
   type BroadIndexedSwap,
 } from "./broad";
 export {
+  loadSenderCode,
+  saveSenderCode,
+  senderCodeReusable,
+  type SenderCodeObservation,
+} from "./sender-code";
+export {
   ensureRecentStreams,
   recentStream,
   recentResumeBatchBlocks,

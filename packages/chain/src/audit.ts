@@ -20,7 +20,13 @@ import {
   transferEvent,
   type RawLog,
 } from "./events";
-import { Rpc, hex } from "./rpc";
+import { Rpc } from "./rpc";
+import {
+  multicallConfig,
+  readContracts,
+  type ContractReadEvidence,
+  type MulticallConfig,
+} from "./multicall";
 
 export interface Receipt {
   status: Hex;
@@ -34,7 +40,7 @@ export function attributeSwap(
   log: RawLog,
   receipt: Receipt,
   token: string,
-  senderCode: string,
+  senderHasCode: boolean,
 ) {
   const decoded = decodeSwap(log);
   const flags: string[] = [];
@@ -51,7 +57,7 @@ export function attributeSwap(
     )
   )
     throw Error("Receipt does not match canonical swap");
-  if (senderCode !== "0x") flags.push("contract_sender");
+  if (senderHasCode) flags.push("contract_sender");
   if (
     receipt.to?.toLowerCase() !== contracts.router ||
     decoded.sender.toLowerCase() !== contracts.router
@@ -106,7 +112,9 @@ export async function auditPool(args: {
   toBlock: number;
   tokenBornAtLaunch: boolean;
   receipt: (hash: Hex) => Promise<Receipt>;
-  code: (address: Hex) => Promise<Hex>;
+  /** Whether the sender had code at the audit cutoff. */
+  code: (address: Hex) => Promise<boolean>;
+  multicall?: MulticallConfig;
 }) {
   const { rpc, token, rawSwaps, transfers, trades, toBlock } = args;
   const executions: ObservedExecution[] = [];
@@ -158,21 +166,22 @@ export async function auditPool(args: {
   });
   const addresses = [...new Set(executions.map((e) => e.trade.trader))];
   const balances = new Map<string, string>();
-  const results = await rpc.batch<Hex>(
-    "eth_call",
-    addresses.map((address) => [
-      {
-        to: token,
-        data: encodeFunctionData({
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address],
-        }),
-      },
-      hex(toBlock),
-    ]),
+  // One aggregate read per bounded chunk of traders instead of one eth_call
+  // per trader; the raw replies are returned as verifiable call evidence.
+  const reads = await readContracts(
+    rpc,
+    addresses.map((address) => ({
+      to: token,
+      data: encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      }),
+    })),
+    toBlock,
+    args.multicall ?? multicallConfig(),
   );
-  results.forEach((data, i) =>
+  reads.results.forEach((data, i) =>
     balances.set(
       addresses[i],
       decodeFunctionResult({
@@ -182,10 +191,12 @@ export async function auditPool(args: {
       }).toString(),
     ),
   );
+  const calls: ContractReadEvidence[] = reads.evidence;
   return {
     executions,
     wallets: reconcileWallets(executions, movements, balances),
     unattributedSwaps: executions.filter((e) => e.flags.length).length,
     transfersChecked: transfers.length,
+    calls,
   };
 }

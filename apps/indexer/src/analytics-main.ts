@@ -12,10 +12,12 @@ import { createClient } from "@pools/db";
 import { backfillAccountingRows } from "./accounting-projection";
 import {
   analyticsError,
+  cachedSenderCode,
   captureAnalyticsInput,
   projectAnalytics,
   publishAnalytics,
   runAnalyticsOnce,
+  senderCodeRecheckBlocks,
 } from "./analytics";
 
 function rpc() {
@@ -66,7 +68,10 @@ async function seedCapture(
       return;
     }
   }
-  const result = await projectAnalytics(input, rpc());
+  const client = rpc();
+  const result = await projectAnalytics(input, client, {
+    senderCode: cachedSenderCode(db, client),
+  });
   const published = await publishAnalytics(db, input, result);
   console.log(
     JSON.stringify({
@@ -145,12 +150,21 @@ async function main() {
     }
     if (mode === "run" && process.env.ANALYTICS_SEED_PATH)
       await seedCapture(db, process.env.ANALYTICS_SEED_PATH, true);
+    console.log(
+      JSON.stringify({
+        event: "analytics_configuration",
+        senderCodeRecheckBlocks: senderCodeRecheckBlocks(),
+        ...rpcPacing(),
+      }),
+    );
     do {
       try {
+        const client = rpc();
         await runAnalyticsOnce(
           db,
-          rpc(),
+          client,
           mode === "once" ? process.argv[3]?.toLowerCase() : undefined,
+          { senderCode: cachedSenderCode(db, client) },
         );
       } catch (e) {
         throwIfRateLimitExhausted(e);

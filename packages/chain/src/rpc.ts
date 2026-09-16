@@ -21,6 +21,13 @@ class BatchRateLimit extends Error {
     super("RPC HTTP 429");
   }
 }
+/** The provider answered a call with a JSON-RPC error or no result. */
+export class RpcCallError extends Error {
+  constructor() {
+    super("RPC returned an error or missing result");
+    this.name = "RpcCallError";
+  }
+}
 /** Terminal for this collection and its worker. Do not retry with a fresh Rpc. */
 export class RpcRateLimitExhausted extends Error {
   constructor() {
@@ -278,8 +285,7 @@ export class Rpc {
         if (!response.ok) throw Error(`RPC HTTP ${response.status}`);
         if (!result) throw Error("RPC returned invalid JSON");
         for (const row of Array.isArray(result) ? result : [result])
-          if (row.error || row.result === undefined)
-            throw Error("RPC returned an error or missing result");
+          if (row.error || row.result === undefined) throw new RpcCallError();
         return result;
       } catch (error) {
         if (
@@ -357,7 +363,7 @@ export class Rpc {
           }
           retry.push(request);
         } else if (reply.error || reply.result === undefined) {
-          throw Error("RPC returned an error or missing result");
+          throw new RpcCallError();
         } else values.set(request.id, reply.result);
       }
       pending.unshift(...retry);

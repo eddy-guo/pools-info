@@ -49,7 +49,13 @@ function swap(id = 3, unsupported = false): RawLog {
 }
 function mock(
   logs = [swap()],
-  opts: { reorg?: boolean; badReceipt?: boolean; chain?: number } = {},
+  opts: {
+    reorg?: boolean;
+    badReceipt?: boolean;
+    chain?: number;
+    /** Canonical headers disagree with the logs' block hashes. */
+    forked?: boolean;
+  } = {},
 ) {
   const rpc = new Rpc();
   const queries: unknown[] = [];
@@ -71,7 +77,10 @@ function mock(
     ps.map((p) => {
       if (m === "eth_getBlockByNumber") {
         headerRequests.push(p[0]);
-        return header(Number(p[0]));
+        return {
+          ...header(Number(p[0])),
+          ...(opts.forked && Number(p[0]) === 1500 ? { hash: word(999) } : {}),
+        };
       }
       receiptRequests.push(p[0]);
       return {
@@ -120,7 +129,7 @@ test("empty registry advances verified cutoff without fetching unknown transacti
   assert.deepEqual(m.receiptRequests, []);
   assert.equal(r.blockHash, word(1501));
 });
-test("recent collection rejects wrong source, duplicate evidence, incomplete receipts and changing cutoff", async () => {
+test("recent collection rejects wrong source, duplicate evidence, incomplete receipts and forked headers", async () => {
   for (const logs of [
     [{ ...swap(), address: token }],
     [swap(), swap()],
@@ -132,9 +141,14 @@ test("recent collection rejects wrong source, duplicate evidence, incomplete rec
     /receipt/,
   );
   await assert.rejects(
-    collectRecentEvents(range, mock(undefined, { reorg: true }).rpc),
-    /cutoff changed/,
+    collectRecentEvents(range, mock(undefined, { forked: true }).rpc),
+    /canonical block/,
   );
+  // Only the batch of canonical headers is read; the cutoff is never re-read.
+  const once = mock(undefined, { reorg: true });
+  const r = await collectRecentEvents(range, once.rpc);
+  assert.equal(r.blockHash, word(1501));
+  assert.deepEqual(once.headerRequests, [hex(1499), hex(1501), hex(1500)]);
   await assert.rejects(
     collectRecentEvents(range, mock(undefined, { chain: 1 }).rpc),
     /Wrong chain/,
