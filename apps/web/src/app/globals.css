@@ -4814,20 +4814,6 @@ main {
     transition: opacity 150ms ease-out;
   }
 }
-.product-coverage {
-  height: 114px;
-  overflow: auto;
-  color: var(--color-text-3);
-}
-.product-coverage strong {
-  color: var(--color-text-2);
-}
-.product-coverage p {
-  font-weight: 400;
-}
-.product-coverage a {
-  color: var(--color-text-2);
-}
 .wallet-page .live-eight-stats .stat {
   height: 144px;
 }
@@ -5354,9 +5340,6 @@ a.wallet-top-pool:hover {
   min-width: 8ch;
 }
 @container site (max-width: 767px) {
-  .product-coverage {
-    height: 190px;
-  }
   .wallet-chart-region {
     height: 330px;
   }

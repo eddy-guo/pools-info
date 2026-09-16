@@ -24,9 +24,7 @@ test("the trader leaderboard header holds only the title and its ranking control
   for (const copy of removedCopy)
     await expect(main.getByText(copy), copy).toHaveCount(0);
   await expect(main.getByLabel("Minimum swaps")).toHaveCount(0);
-  await expect(main.locator(".personal-rank, .product-coverage")).toHaveCount(
-    0,
-  );
+  await expect(main.locator(".personal-rank")).toHaveCount(0);
   const viewport = page.viewportSize()!;
   const box = (await panel.boundingBox())!;
   expect(box.y, "the leaderboard begins within the first screen").toBeLessThan(

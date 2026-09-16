@@ -49,7 +49,6 @@ test("the screener reaches its first rows within the first viewport", async ({
   }
   await expect(page.locator(".explore-page .launch-rail")).toBeVisible();
   await expect(page.locator(".explore-page .stats-grid")).toHaveCount(0);
-  await expect(page.locator(".explore-page .product-coverage")).toHaveCount(0);
   await expect(
     page.locator(".explore-page [data-row='resolved']").first(),
   ).toBeAttached();
