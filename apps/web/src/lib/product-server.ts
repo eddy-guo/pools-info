@@ -1,5 +1,5 @@
 import { validateFollowingResponse } from "./following-response";
-import { validatePoolResponse } from "./pool-response";
+import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
 import {
   buildAnalyticsModel,
@@ -149,8 +149,10 @@ export async function readProduct<T>(
         checked.endpoint.startsWith("wallets/")
           ? "All"
           : "24h");
-      if (checked.endpoint.startsWith("pools/"))
+      if (checked.endpoint.startsWith("pools/")) {
         validatePoolResponse(data, checked.endpoint.slice(6), expectedWindow);
+        normalizePoolLaunch(data);
+      }
       if (
         (checked.endpoint === "explore" ||
           checked.endpoint === "leaderboard" ||

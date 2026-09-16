@@ -280,3 +280,38 @@ test("discovered-only pool shows unprocessed coverage without invented zero tota
       .filter({ has: page.getByText("Observed 24h volume", { exact: true }) }),
   ).toContainText("N/A");
 });
+test("a pool whose saved launch arrives as decimal strings still renders its identity", async ({
+  page,
+}) => {
+  await page.route(`**/api/product/pools/${id}/`, (route) =>
+    route.fulfill({
+      json: {
+        // A bigint column read as text serialises these three as strings.
+        pool: {
+          ...pool,
+          launch: {
+            block: String(pool.launch.block),
+            timestamp: String(pool.launch.timestamp),
+            transactionHash: tx,
+            transactionInitiator: token,
+            sourceBatchThroughBlock: "22754729",
+          },
+        },
+        analytics: null,
+        market: fixture(),
+        delivery: { source: "indexer", notice: null },
+      },
+    }),
+  );
+  await page.goto(`/pool/${id}/`);
+  await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
+  await expect(page.getByText("Pool outside current coverage")).toHaveCount(0);
+  await expect(
+    page.getByText(/Launched 1970-01-02 03:46:40 UTC/),
+  ).toBeVisible();
+  await expect(
+    page
+      .locator(".stat")
+      .filter({ has: page.getByText("Observed trades", { exact: true }) }),
+  ).toContainText("21001");
+});

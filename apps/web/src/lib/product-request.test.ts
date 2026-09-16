@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { productRequest } from "./product-request";
 import { preloadedProduct, readProduct } from "./product-server";
 import { walletCaptureLabel, readCardWallet } from "./product-card";
+import { validatePoolResponse } from "./pool-response";
 import type {
   AnalyticsExploreResponse,
   AnalyticsLeaderboardResponse,
@@ -482,4 +483,176 @@ test("trade sharing never revives a preloaded PnL when saved evidence disappears
     readProduct(path, params),
     /verified sale is unavailable/,
   );
+});
+
+const stackBtc =
+  "0xe38aea5b2ba31e5a4d641f43a0b6a42ae3f20c19d7a9ceb533bc01ec8272c0f6";
+const stackToken = "0x163da2c74cc56d8c71671f7374b0522d9d16006c";
+const monkiiLabs =
+  "0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c";
+/** The live read API's pool response, trimmed to one observation and candle. */
+const savedPool = () => ({
+  coverage: { chainId: 4663, source: "indexed_chain_events" },
+  generatedAt: "2026-09-16T05:03:18.562Z",
+  pool: {
+    poolId: stackBtc,
+    token: stackToken,
+    name: "Stack Btc 7",
+    symbol: "STACK",
+    imageUrl: "ipfs://QmVjvbtLH6vDUTYrNzSLciuLL7JLL3QBZrfQ78V4JQMy55",
+    // Block heights and times arrive as decimal strings, not numbers.
+    launch: {
+      block: "63742277",
+      transactionHash:
+        "0xcc811c4fd51971d02697adfd748a6c47d076aad897c70354dc7ea15f19fa17f0",
+      transactionInitiator: "0xacb0be2f174851314f373367e4b9956c4a834b15",
+      timestamp: "1789483971",
+      sourceStream: "discovery:v2",
+      discoverySource: "historical_discovery",
+      sourceBatchThroughBlock: "63742337",
+    } as Record<string, unknown>,
+    coverage: { startBlock: "63742277", throughBlock: "63744999" },
+  },
+  market: {
+    poolId: stackBtc,
+    token: stackToken,
+    decimals: 18,
+    priceWei: "2708629098",
+    window: "24h",
+    volumeWei: "89175448391573819392",
+    trades: 1711,
+    change: null,
+    observations: [
+      {
+        id: "0x3801b5d22f8fbb93f691e3850943e1aa611c977c10b85c8c679662b6677bb5c4:73",
+        side: "sell",
+        block: 63744981,
+        ethWei: "499639903581326",
+        logIndex: 73,
+        tokenRaw: "184889703373714560783913",
+        blockHash:
+          "0xb5874bfb2158b38a7c41a8174deed4bed35eabe5466b0734d2b2cc7833053052",
+        timestamp: 1789484251,
+        transactionHash:
+          "0x3801b5d22f8fbb93f691e3850943e1aa611c977c10b85c8c679662b6677bb5c4",
+      },
+    ],
+    coverage: {
+      startBlock: 63742277,
+      cutoff: {
+        block: 63744999,
+        hash: "0xe0e8403a34fbcbb785fbb0ebbe0b2f135845171a170bc24499b8c30c8342cb66",
+        asOf: 1789484253,
+      },
+      indexedAt: "2026-09-15T23:14:29.785Z",
+      completeWindow: true,
+      windowStart: 1789397853,
+      priceBaseline: null,
+      unitBasis: {
+        block: 63743999,
+        hash: "0xd069a593e0c6baea949d6c9e2f4bc3f506ff4788ae4fa58d634a8b797068c50f",
+        asOf: 1789484149,
+        decimals: 18,
+        source: "verified_deep_snapshot",
+      },
+      unitsConflict: false,
+      accounting: "unavailable",
+      attribution: "transaction_initiator_only",
+    },
+    history: {
+      priceSemantics: "declared_cutoff_display_units",
+      intervalSeconds: 60,
+      fromTimestamp: 1789483920,
+      truncated: false,
+      candles: [
+        {
+          low: "2628552789",
+          high: "2715678394",
+          open: "2628552789",
+          time: 1789483920,
+          close: "2715678394",
+          volume: "102306162628590046",
+        },
+      ],
+    },
+  },
+  analytics: null,
+});
+
+test("a saved pool launch is read from either number or decimal-string heights", async (t) => {
+  const prior = process.env.INDEXER_API_URL,
+    disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const path = ["pools", stackBtc];
+  let response = savedPool();
+  t.mock.method(globalThis, "fetch", async () => Response.json(response));
+  const saved = await readProduct<ReturnType<typeof savedPool>>(
+    path,
+    new URLSearchParams(),
+  );
+  assert.equal(saved.delivery.source, "indexer");
+  assert.equal(saved.pool.name, "Stack Btc 7");
+  assert.deepEqual(saved.pool.launch, {
+    ...savedPool().pool.launch,
+    block: 63742277,
+    timestamp: 1789483971,
+    sourceBatchThroughBlock: 63742337,
+  });
+  // apps/api asserts its own JSON types on the raw body after calling the
+  // validator, so validating must not quietly repair a string regression.
+  const raw = savedPool();
+  validatePoolResponse(raw, stackBtc, "24h");
+  assert.deepEqual(raw.pool.launch, savedPool().pool.launch);
+  // A pool outside the preload has no fallback, so rejection is the 404 page.
+  for (const bad of ["63742277x", "6.5e7", " 63742277", "-1", "", 1.5, null])
+    for (const field of ["block", "timestamp", "sourceBatchThroughBlock"]) {
+      // An unrecorded source batch is absent data, not a malformed value.
+      if (bad === null && field === "sourceBatchThroughBlock") continue;
+      response = savedPool();
+      response.pool.launch[field] = bad;
+      await assert.rejects(
+        readProduct(path, new URLSearchParams()),
+        /outside available saved coverage/i,
+      );
+    }
+  response = savedPool();
+  delete response.pool.launch.sourceBatchThroughBlock;
+  assert.equal(
+    (
+      await readProduct<ReturnType<typeof savedPool>>(
+        path,
+        new URLSearchParams(),
+      )
+    ).delivery.source,
+    "indexer",
+  );
+});
+
+test("a preloaded pool still resolves while the saved index is unavailable", async (t) => {
+  const prior = process.env.INDEXER_API_URL,
+    disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  t.mock.method(globalThis, "fetch", async () => {
+    throw Error("index offline");
+  });
+  const preloaded = await readProduct<{ name: string }>(
+    ["pools", monkiiLabs],
+    new URLSearchParams(),
+  );
+  assert.equal(preloaded.delivery.source, "preloaded");
+  assert.equal(preloaded.name, "MonkiiLabs");
 });
