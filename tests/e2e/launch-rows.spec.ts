@@ -99,8 +99,8 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
   );
   expect(measured.rowHeights, "rows keep one height").toHaveLength(1);
   if (testInfo.project.name === "desktop") {
-    expect(measured.firstLine, "age, sender and the launch mark").toMatch(
-      /^Launched .+ ago · 0x[0-9a-f]{4}…[0-9a-f]{4} · Launch only$/,
+    expect(measured.firstLine, "age and sender").toMatch(
+      /^Launched .+ ago · 0x[0-9a-f]{4}…[0-9a-f]{4}$/,
     );
     await expect(
       page.locator(".pool-table thead th"),
@@ -110,12 +110,11 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
       "Liquidity",
     );
   } else {
-    /* The mobile card holds a fixed height, so the same three facts take
+    /* The mobile card holds a fixed height, so the same two facts take
        the stat slots the measured card uses. */
-    expect(measured.firstFacts, "age, sender and the launch mark").toEqual([
+    expect(measured.firstFacts, "age and sender").toEqual([
       expect.stringMatching(/^(<1m|\d+[mhd]) ago$/),
       expect.stringMatching(/^0x[0-9a-f]{4}…[0-9a-f]{4}$/),
-      "Launch only",
     ]);
   }
   await expect(
