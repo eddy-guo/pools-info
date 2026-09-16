@@ -2,8 +2,9 @@ import { test, expect } from "@playwright/test";
 import { preloadedProduct } from "../../apps/web/src/lib/product-server";
 import type { AnalyticsExploreResponse } from "@pools/core";
 
-// Valid tiny raster bytes for the browser boundary. Server tests separately
-// exercise DNS pinning, MIME/body checks and actual sharp re-encoding.
+// Valid tiny raster bytes for the browser boundary. The read API's icon store
+// separately exercises DNS pinning, MIME/body checks and sharp re-encoding;
+// the route's own store-read boundary is covered by its unit tests.
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=",
   "base64",

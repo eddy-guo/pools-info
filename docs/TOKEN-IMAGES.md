@@ -4,73 +4,87 @@ The browser requests `/api/token-image/<poolId>/` on this website. It never
 uses a creator-supplied URL as an image `src`. The route accepts only a 32-byte
 pool ID and rejects all query parameters, including URL overrides.
 
-The Node.js handler reads one matching saved catalog row from the configured
-Railway API using `/v1/explore?view=watchlist&ids=<poolId>&limit=1` and checks the
-returned pool identity. No RPC is called. A missing record, missing metadata,
-unapproved host, unavailable service or invalid image produces an empty 404;
-the UI keeps the deterministic generated token icon.
+The Node.js handler reads that pool's stored icon from the read API's token
+icon store and relays it. It fetches no creator host and no IPFS gateway, runs
+no image decoder, and holds no image bytes between requests: the store owns the
+whole upstream pipeline and the caching authority. A missing record, missing
+metadata, rejected source or unusable image produces an empty 404 and the UI
+keeps the deterministic generated token icon.
 
-## Network and content boundaries
+## The store this route reads
 
-- Image transport is HTTPS on port 443 only. HTTP is never upgraded or fetched.
-  Credentials, control characters, fragments and URL overrides are rejected.
-- The exact hostname allowlist is `gateway.pinata.cloud`, `pools.trade`,
-  `8c.pw` and `coffeegoofld.mypinata.cloud`. The latter three occur in committed
-  launch proof metadata; the first is the explicit IPFS gateway choice below.
-  There are no wildcards. Adding a host requires a reviewed code change.
-- Both A and AAAA answers are resolved. Any non-public answer rejects the
-  entire destination. IPv4 private, loopback, link-local, shared-address,
-  multicast, reserved and documentation ranges are denied. IPv6 must be global
-  unicast and outside special-purpose ranges; mapped IPv4, NAT64, unspecified,
-  loopback, scoped, link-local, unique-local and multicast addresses are denied.
-- The checked address is pinned in the HTTPS request's `lookup` callback.
-  The original hostname remains the TLS identity, certificate validation stays
-  enabled, and connection reuse is disabled. A second DNS answer cannot change
-  the connection destination after validation.
-- All redirects are rejected. Requests send only fixed image Accept and
-  identity-encoding headers; browser cookies, authorization, referer and other
-  incoming request headers are not forwarded. Upstream response headers,
-  including cookies, are not copied to the browser.
-- The entire operation has a 10-second deadline, including catalog lookup,
-  cancellable DNS resolution, download and decoding. Sharp also has a 3-second
-  processing timeout; the outer deadline covers time waiting for its worker.
-- Downloads must be PNG, JPEG, WebP or GIF, with matching magic bytes. SVG,
-  HTML and other formats are rejected even if mislabeled as an allowed image.
-  Compressed HTTP bodies are rejected. Both advertised and streamed length are
-  checked against a 2 MiB cap, with a 16 KiB response-header cap.
-- Sharp decodes at most 4 million pixels, only the first animation frame, and
-  re-encodes to at most 128 x 128 WebP. EXIF/ICC and other input metadata are
-  stripped. Invalid/truncated raster input and pixel bombs fail. Output is
-  capped at 256 KiB and served with `nosniff` and a restrictive CSP.
+`GET` or `HEAD /v1/pools/<poolId>/image` on the read API (`apps/api`,
+documented under "Token icon store" in its README) serves one pool's creator
+image as a 128 x 128 WebP from the `token_images` table. The first view of a
+pool runs the shared `@pools/token-image` policy inside that request - exact
+host allowlist, DNS answers checked against private-address block lists and
+pinned, HTTPS only, 2 MiB and 4-megapixel caps, content-type and magic-byte
+checks, Sharp decode and WebP re-encode - then stores the bytes, their SHA-256
+(the `ETag`) and the catalog `image_url` they came from. That first view has a
+10-second upstream budget (the Pinata public gateway measured 3.9 s on a
+production success) and eight concurrent fetches per process, and a separate
+12-second cap bounds one request's combined time queueing for a fetch slot and
+running the fetch. Every later view anywhere is one primary-key read. A
+replaced catalog `image_url` re-encodes on the pool's next view. Nothing
+prefetches, warms or sweeps the catalog: a browser request is the only trigger,
+across all 62k pools.
 
-The Next route uses the `server-only` marker. Sharp 0.35.4 was already present
-through Next; it is now an explicit web dependency so this route does not rely
-on a transitive dependency remaining accessible. No new service credential is
-required.
+That policy used to run in this web process, per warm instance, behind a
+process cache. It now runs once per pool for the whole product, which is what
+made a cold screener stop waiting on creator hosts. The allowlist, the address
+checks, the size and pixel caps and the decoder live in
+`packages/token-image`; the web app does not depend on that package and does
+not duplicate any of it.
 
-## IPFS choice and privacy
+## What the proxy relays
 
-`ipfs://<CID>/<optional-path>` maps to
-`https://gateway.pinata.cloud/ipfs/<CID>/<optional-path>`. CID and path syntax
-are bounded; traversal and query overrides are rejected. IPNS is not enabled.
-Pinata documents this as its [public gateway](https://www.pinata.cloud/blog/whats-the-difference-between-a-public-ipfs-gateway-and-a-dedicated-gateway/).
-It is best-effort and can throttle or be unavailable. The fallback icon remains
-part of normal behavior, not a reason to bypass validation or try arbitrary
-gateway hosts.
+The store's base is the same `INDEXER_API_URL` the product proxy uses, and is
+validated the same way: a bare `http`/`https` origin with no credentials, path,
+query or fragment. With no usable base configured - or with
+`CHAIN_REFRESH_DISABLED=1`, as the Playwright suite runs - no request is made
+and every pool's icon is simply absent.
 
-Pinata receives the server's IP address and requested CID. It does not receive
-the visitor's browser IP, wallet, cookies or page URL from this handler. Public
-gateways may record access metadata; the [IPFS privacy documentation](https://docs.ipfs.tech/how-to/privacy-best-practices/)
-describes this tradeoff. This implementation trusts gateway HTTPS retrieval;
-it does not implement independent IPFS DAG verification.
+- `200` relays the store's `ETag`, `Content-Length` and the lifetimes from its
+  `Cache-Control`, with `Content-Type: image/webp` pinned by this route rather
+  than taken from the store. A store response that is not a bounded WebP body
+  (wrong content type, absent body, a length that disagrees with the body, or
+  more than 512 KiB) never reaches the browser.
+- `If-None-Match` is relayed as sent, so the store performs the weak
+  comparison; its `304` becomes a `304` with the same validator and lifetimes.
+  `HEAD` asks the store for `HEAD`, so a validator check transfers no bytes.
+- The store's JSON `404` becomes an empty `404` with exactly the negative
+  lifetime the store stated, whatever its reason was: `pool_not_indexed`
+  (300 s), `no_source` or `source_rejected` (a day), or a transient
+  `dns_rejected`, `fetch_rejected` or `decode_rejected` (300 s, doubling per
+  repeat up to a day) or `timeout` (the same doubling, capped at an hour,
+  since a deadline expiry only proves that one fetch was slow). The reason is
+  the store's operational detail and is not shown; the generated icon is the
+  website's answer to all of them. A `404` that states no lifetime falls back
+  to 300 s.
+- `503 busy`, `429` from the store's request budget, an unexpected status, an
+  unreachable store and this route's own 13-second deadline all become `503`
+  with `Cache-Control: no-store` and a `Retry-After` - the store's own value
+  when it sent a usable one, otherwise 5 seconds. Rate limiting is relayed as
+  `503` because it is this gateway that is temporarily unable to serve, not
+  anything the visitor did. Nothing transient is ever cached.
+- A malformed pool ID or any query string is refused with an empty `400`
+  before the store is contacted, carrying a day-long negative `Cache-Control`
+  because such a request can never become valid.
+- Only `If-None-Match` and a fixed `Accept: image/webp` are sent upstream:
+  browser cookies, authorization and referer never reach the store. Responses
+  are built from a fixed header set, so no store header - including a cookie -
+  reaches the browser. Redirects are rejected and bytes are served with
+  `nosniff` and a restrictive CSP.
 
-The originally considered `ipfs.io` was rejected after a September 15, 2026
-check returned HTTP 429 and a September 21 Sunset header. The IPFS project
-[announced changes to its sponsored gateways](https://blog.ipfs.tech/2026-08-beyond-sponsored-gateways/).
-The same committed PROLOGUE CID returned 200 `image/webp` from Pinata without a
-redirect. The complete hardened request path also successfully resized it to
-a 668-byte WebP. That proves this sample works, not all token images or ongoing
-gateway availability.
+The route uses the `server-only` marker. The 13-second deadline sits above the
+store's own 12-second per-request cap, so a pool's first view receives the
+store's honest answer - the icon, or a cacheable `404` - rather than an
+uncached `503` from this route, while staying inside the route's 15-second
+platform limit. No new service credential is required, and this route no
+longer uses Sharp; the web app keeps that dependency only for the wallet PnL
+card route (`apps/web/src/app/cards/[filename]/route.tsx`). The lifetimes and
+the fallbacks live in `imageLifetimes` in `apps/web/src/lib/token-image.ts`;
+the store read itself is `resolveStoredImage` in the same file.
 
 ## Lazy work and caching
 
@@ -83,75 +97,46 @@ ten seconds, at most twice. This lets temporary capacity errors recover without
 query overrides or endless retries. The fallback stays visible between attempts;
 unmounting or changing pool identity cancels pending retry timers.
 
-The handler coalesces simultaneous requests for one pool. Per warm process it
-allows eight image operations at a time and holds at most 64 cache entries.
-The output cap bounds retained image bytes to 16 MiB. Before the catalog
-lookup the handler asks `resolveStoredImage` for a persisted copy of the
-encoded icon. Nothing is stored today, so it returns null and a process-cache
-miss takes the live path; a store hit shares the same response path, headers
-and validator. Cold starts or cache eviction can cause a later request to
-fetch again.
+Caching lives in one place: the lifetimes the store states, which this route
+relays. A served icon is kept by the browser for a day and by the edge for a
+month, and the edge may serve it stale for another week while one request
+refreshes it. Vercel honours `s-maxage` and `stale-while-revalidate` and strips
+both from the browser copy. Nothing is marked immutable: a creator-hosted URL
+can change, so a replaced image propagates within a day in the browser and
+about a month at the edge. This route keeps no process-local copy of any image,
+so a cold start costs nothing beyond one primary-key read at the store.
 
-A served icon carries a strong `ETag` (SHA-256 of the output bytes) and
-`Cache-Control: public, max-age=86400, s-maxage=604800,
-stale-while-revalidate=604800`. Browsers and the process cache keep it for a
-day, the edge for a week, and the edge may serve it stale for another week
-while one request refreshes it in the background. Vercel honours `s-maxage`
-and `stale-while-revalidate` and strips both from the browser copy. A request
-whose `If-None-Match` matches gets an empty 304. Nothing is marked immutable:
-a content-addressed IPFS CID cannot change, but a creator-hosted URL can, so a
-changed image propagates within a day in the browser and about a week at the
-edge.
+## IPFS choice and privacy
 
-Rejections are classed by whether a retry could change the answer. Permanent
-ones (a host outside the allowlist, an invalid image URL, no image URL on
-record, or a 200 whose bytes are not a usable image: wrong MIME, compressed
-body, over the size caps, bad magic bytes, or a raster Sharp refuses) are
-cached as an empty 404 for a day in the process cache, the browser and the
-edge, so the client's 5 s and 10 s retries never reach the origin. Transient
-failures (the 10-second deadline, a DNS failure, an upstream status other than
-200, a network error) keep the one-minute negative cache. A malformed pool id
-or any query string is refused with an empty 400 before any work; it never
-takes a process-cache slot but carries the same day-long negative
-`Cache-Control`. The lifetimes live in `imageLifetimes` in
-`apps/web/src/lib/token-image.ts`.
+`ipfs://<CID>/<optional-path>` maps to
+`https://gateway.pinata.cloud/ipfs/<CID>/<optional-path>` inside the store, and
+only on a pool's first view. Pinata documents this as its
+[public gateway](https://www.pinata.cloud/blog/whats-the-difference-between-a-public-ipfs-gateway-and-a-dedicated-gateway/).
+It is best-effort and can throttle or be unavailable. The fallback icon remains
+part of normal behavior, not a reason to bypass validation or try arbitrary
+gateway hosts.
 
-## Persistent store in the read API
+Pinata receives the read API's IP address and the requested CID, once per
+image rather than once per warm web instance. It does not receive the visitor's
+browser IP, wallet, cookies or page URL. Public gateways may record access
+metadata; the [IPFS privacy documentation](https://docs.ipfs.tech/how-to/privacy-best-practices/)
+describes this tradeoff. The store trusts gateway HTTPS retrieval; it does not
+implement independent IPFS DAG verification.
 
-`GET /v1/pools/<poolId>/image` on the read API (`apps/api`, documented under
-"Token icon store" in its README) serves the same 128 x 128 WebP from the
-`token_images` table in the read database. The first view of a pool runs the
-policy above, moved verbatim into the shared `@pools/token-image` package,
-with a 10-second upstream budget (the Pinata public gateway measured 3.9 s on
-a production success and up to the old 4 s deadline on two timeouts, so 10 s
-gives real fetches room to finish) and eight concurrent fetches per process. A
-separate 12-second per-request cap bounds one request's combined time
-queueing for a fetch slot and running the fetch, so a slow queue can never
-let a single request hold the pipeline past that regardless of the upstream
-budget. The bytes, their SHA-256 (the `ETag`) and the catalog `image_url` they
-came from are stored, so every later view anywhere is one primary-key read
-with a day-long browser lifetime and a month-long edge lifetime plus
-`stale-while-revalidate`. Rejections store a reason and a retry time instead
-of bytes: policy rejections for a day, transient fetch or decode failures for
-five minutes doubling per repeat up to a day, and a bare deadline expiry on
-the same doubling schedule but capped at an hour, since a timeout only proves
-that one fetch was slow rather than that the source is broken. All are
-answered as cacheable 404s so the generated icon stays the client's
-behaviour. A replaced catalog `image_url` re-encodes on the next view.
-Nothing prefetches: a request is the only trigger across the 62k-pool
-catalog. The store is cosmetic, carries no evidence linkage, and a lost row
-only costs one more encode.
-
-The website proxy's `resolveStoredImage` seam above is where it will read
-this endpoint; until that switch it still runs its own copy of the policy.
+The originally considered `ipfs.io` was rejected after a September 15, 2026
+check returned HTTP 429 and a September 21 Sunset header. The IPFS project
+[announced changes to its sponsored gateways](https://blog.ipfs.tech/2026-08-beyond-sponsored-gateways/).
 
 ## Verification
 
-Unit tests exercise the actual request/response boundary with controlled HTTPS
-transport, including the pinned lookup callback, mixed DNS answers, private
-address spellings, redirect rejection, streaming size limits, fake MIME types,
-real Sharp decoding/re-encoding, oversized raster dimensions, timeout behavior,
-exact catalog identity, query rejection, cache coalescing, the validator and
-304 path, both negative-cache classes and the stored-image seam. Browser tests
-cover lazy local requests, fallback after an image failure and the built route's
-invalid-request behavior. No test fetches a catalog's entire image population.
+Unit tests in `apps/web/src/lib/token-image.test.ts` exercise the route's own
+input validation, the documented store endpoint and the request it sends, each
+store status mapped onto a response class, the relayed validator and `304`
+path, `HEAD`, the negative lifetimes, the bounded-body and content-type checks
+on the store's response, a store that states unusable lifetimes or a weak
+validator, and an absent or unusable read API base. Browser tests cover lazy
+local requests, fallback after an image failure, bounded retries and the built
+route's invalid-request behavior. The store's own policy - DNS pinning,
+MIME/body checks and real Sharp re-encoding - is tested in
+`packages/token-image` and `apps/api`. No test fetches a catalog's entire image
+population.
