@@ -3,7 +3,8 @@ import { test, expect, type Page } from "@playwright/test";
 /* The wallet's positions table holds 25 rows open for the page height. Once
    the profile resolves, a row with no position behind it is blank, as the
    screener's reserved rows are: it never reads as three unavailable values,
-   and it keeps the height of a real row so the page does not shift. */
+   and it keeps the height of a real row so the page does not shift. A phone
+   shows the same rows as cards, held open the same way. */
 
 const wallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
@@ -15,8 +16,9 @@ async function settled(page: Page, url: string) {
   await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
 }
 
+const shown = ":is(tbody tr, .mobile-position)";
 const rows = (page: Page, state: "resolved" | "reserved") =>
-  page.locator(`.page tbody tr[data-row="${state}"]`);
+  page.locator(`.page ${shown}[data-row="${state}"]`).filter({ visible: true });
 
 test("a settled wallet blanks the rows it held open under its positions", async ({
   page,
@@ -26,25 +28,20 @@ test("a settled wallet blanks the rows it held open under its positions", async 
   const reserved = await rows(page, "reserved").count();
   expect(resolved, "the wallet has positions").toBeGreaterThan(0);
   expect(reserved, "rows are held open under them").toBeGreaterThan(0);
-  const heights = await page.evaluate(() => {
-    const height = (row: Element) => row.getBoundingClientRect().height;
-    return {
-      resolved: [
-        ...new Set(
-          [
-            ...document.querySelectorAll('.page tbody tr[data-row="resolved"]'),
-          ].map(height),
-        ),
-      ],
-      reserved: [
-        ...new Set(
-          [
-            ...document.querySelectorAll('.page tbody tr[data-row="reserved"]'),
-          ].map(height),
-        ),
-      ],
-    };
-  });
+  const heights = await page.evaluate((shown) => {
+    const heights = (state: string) => [
+      ...new Set(
+        [
+          ...document.querySelectorAll<HTMLElement>(
+            `.page ${shown}[data-row="${state}"]`,
+          ),
+        ]
+          .filter((row) => row.offsetParent !== null)
+          .map((row) => row.getBoundingClientRect().height),
+      ),
+    ];
+    return { resolved: heights("resolved"), reserved: heights("reserved") };
+  }, shown);
   await testInfo.attach("row-heights", {
     body: JSON.stringify({ resolved, reserved, heights }),
     contentType: "application/json",

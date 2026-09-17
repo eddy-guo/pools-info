@@ -124,7 +124,8 @@ test("leaderboard leads with signed realized, ROI and W/L over secondary columns
 
 /* Between the phone rows and a wide panel the fixed numeric columns used to
    squeeze the auto-width Trader column to nothing (0px at 768 and 1024, 27px
-   at 1180), so the address chip drew over the realized PnL beside it. */
+   at 1180), so the address chip drew over the realized PnL beside it. A board
+   too narrow for the table now shows its rows, which have no Trader column. */
 for (const width of [768, 1024, 1280]) {
   test(`the Trader column holds its address chip clear of the PnL at ${width}px`, async ({
     page,
@@ -133,10 +134,17 @@ for (const width of [768, 1024, 1280]) {
     test.skip(isMobile, "the phone rows have no Trader column");
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/traders/?window=All");
+    const cards = page.locator(".mobile-traders .mobile-trader");
     const row = page
       .locator(".desktop-traders tbody tr[data-row=resolved]")
       .first();
-    await expect(row).toBeVisible();
+    await expect(
+      row.or(cards.first()).filter({ visible: true }).first(),
+    ).toBeVisible();
+    if (await cards.first().isVisible()) {
+      await expect(page.locator(".desktop-traders")).toBeHidden();
+      return;
+    }
     const geometry = await row.evaluate((node) => {
       const [, trader, pnl] = [...node.children] as HTMLElement[];
       const chip = trader.querySelector(".address-chip")!;

@@ -45,6 +45,14 @@ function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
     return data.launchesTruncated ? null : data.launches.length;
   return null;
 }
+/** A position's token quantity in whole tokens, or null where the read has none. */
+function holding(p: AnalyticsWalletResponse["positions"][number]) {
+  return p.position && p.decimals !== null
+    ? new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
+        Number(p.position.quantity) / 10 ** p.decimals,
+      )
+    : null;
+}
 /** The export's four alert toggles, drawn off until alerts exist. */
 const alerts = (creator: boolean) => [
   ["Every trade", "Buy or sell, within the block"],
@@ -260,7 +268,7 @@ export function ProductWallet({ address }: { address: string }) {
                 />
               </div>
             </section>
-            <section className="panel live-section">
+            <section className="panel live-section wallet-activity">
               <div
                 className="table-tabs"
                 role="tablist"
@@ -353,10 +361,10 @@ export function ProductWallet({ address }: { address: string }) {
                               <td data-pending={!p && !data}>
                                 {p ? (
                                   <>
-                                    {p.position && p.decimals !== null ? (
-                                      `${new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(Number(p.position.quantity) / 10 ** p.decimals)} ${p.symbol}`
-                                    ) : (
+                                    {holding(p) === null ? (
                                       <Unavailable />
+                                    ) : (
+                                      `${holding(p)} ${p.symbol}`
                                     )}
                                   </>
                                 ) : data ? (
@@ -402,6 +410,69 @@ export function ProductWallet({ address }: { address: string }) {
                         </tbody>
                       </table>
                     </div>
+                    {/* The rows where the table does not fit: the token with
+                        its realized and unrealized PnL at the right, then the
+                        holding and its cost. */}
+                    <div
+                      className="mobile-wallet-rows"
+                      aria-busy={stale}
+                      data-stale-rows={stale}
+                    >
+                      {Array.from(
+                        { length: Math.max(25, data?.positions.length ?? 0) },
+                        (_, index) => data?.positions[index],
+                      ).map((p, index) => (
+                        <div
+                          className="mobile-position"
+                          key={index}
+                          aria-hidden={!p}
+                          data-row={p ? "resolved" : "reserved"}
+                        >
+                          {p ? (
+                            <Fragment key="resolved">
+                              <div className="mobile-wallet-row-top">
+                                <Link
+                                  className="wallet-token-cell"
+                                  href={poolHref({
+                                    id: p.poolId,
+                                    launchTx: p.launchTx,
+                                  })}
+                                >
+                                  <Avatar address={p.token} />
+                                  <span>{p.symbol}</span>
+                                </Link>
+                                <span className="mobile-position-pnl">
+                                  <Eth wei={p.realizedWei} signed />
+                                  <span>
+                                    Unrealized{" "}
+                                    <Eth wei={p.unrealizedWei} signed />
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="mobile-wallet-row-stats">
+                                Holding {holding(p) ?? <Unavailable />} · Cost{" "}
+                                <Eth wei={p.position?.costWei} />
+                              </div>
+                            </Fragment>
+                          ) : data ? null : (
+                            <Fragment key="pending">
+                              <div className="mobile-wallet-row-top">
+                                <span data-pending="true">Token pending</span>
+                                <span className="mobile-position-pnl">
+                                  <Eth wei={undefined} pending />
+                                </span>
+                              </div>
+                              <div
+                                className="mobile-wallet-row-stats"
+                                data-pending="true"
+                              >
+                                Pending
+                              </div>
+                            </Fragment>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                     {data && !data.positions.length && (
                       <EmptyState
                         title="No positions in this window"
@@ -423,7 +494,7 @@ export function ProductWallet({ address }: { address: string }) {
                     aria-busy={stale}
                     data-stale-rows={stale}
                   >
-                    <table className="data-table">
+                    <table className="data-table wallet-trades-table">
                       <thead>
                         <tr>
                           <th>Time (UTC)</th>
@@ -464,6 +535,40 @@ export function ProductWallet({ address }: { address: string }) {
                       </tbody>
                     </table>
                   </div>
+                  <div
+                    className="mobile-wallet-rows"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
+                    {data?.trades.map((e) => (
+                      <div
+                        className="mobile-wallet-row"
+                        key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
+                      >
+                        <div className="mobile-wallet-row-top">
+                          <strong>{e.symbol}</strong>
+                          <Eth wei={e.trade.ethWei} />
+                        </div>
+                        <div className="mobile-wallet-row-stats">
+                          <span
+                            className={
+                              e.trade.side === "buy" ? "positive" : "negative"
+                            }
+                          >
+                            {e.trade.side}
+                          </span>{" "}
+                          · {utc(e.trade.timestamp)} ·{" "}
+                          <a
+                            href={`${explorer}/tx/${e.trade.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {shortAddress(e.trade.txHash)} ↗
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   {data?.tradesTruncated && (
                     <p className="panel-footnote">
                       Showing the latest {data.trades.length} trades.
@@ -478,7 +583,7 @@ export function ProductWallet({ address }: { address: string }) {
                     aria-busy={stale}
                     data-stale-rows={stale}
                   >
-                    <table className="data-table">
+                    <table className="data-table wallet-launches-table">
                       <thead>
                         <tr>
                           <th>Token</th>
@@ -508,6 +613,31 @@ export function ProductWallet({ address }: { address: string }) {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div
+                    className="mobile-wallet-rows"
+                    aria-busy={stale}
+                    data-stale-rows={stale}
+                  >
+                    {data?.launches.map((p) => (
+                      <div className="mobile-wallet-row" key={p.id}>
+                        <div className="mobile-wallet-row-top">
+                          <Link href={poolHref(p)}>
+                            {p.name} ({p.symbol})
+                          </Link>
+                          <a
+                            href={`${explorer}/tx/${p.launchTx}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Launch transaction ↗
+                          </a>
+                        </div>
+                        <div className="mobile-wallet-row-stats">
+                          {utc(p.launchedAt)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   {data?.launchesTruncated && (
                     <p className="panel-footnote">

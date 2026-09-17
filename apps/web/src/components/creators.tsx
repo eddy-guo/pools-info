@@ -62,6 +62,83 @@ function StillTrading({
   );
 }
 
+/** The board's row where its table cannot fit: the screener's phone row shape,
+    identity with the headline launch count at the right, then one secondary
+    line. Median and Best stay out, as the table drops them first. */
+function MobileCreatorRow({
+  r,
+  index,
+  pending,
+}: {
+  r: CreatorRow | undefined;
+  index: number;
+  pending: boolean;
+}) {
+  return (
+    <div
+      className="mobile-creator"
+      data-row-index={index}
+      data-row={r ? "resolved" : "reserved"}
+      aria-hidden={!r}
+    >
+      {/* Keyed so the resolved row mounts new nodes rather than rewriting the
+          pending row's right-aligned text in place, which Chrome scores as a
+          layout shift. */}
+      {r ? (
+        <Fragment key="resolved">
+          <div className="mobile-creator-top">
+            <span className="rank-number">{index + 1}</span>
+            <AddressChip
+              address={r.address}
+              href={`/creators/${r.address}/`}
+              badge={
+                r.boughtOwnLaunch === true ? (
+                  <span className="badge lavender">BOUGHT OWN</span>
+                ) : undefined
+              }
+            />
+            <span className="mobile-creator-launches">
+              <strong>{r.launches}</strong>
+              <span>launches</span>
+            </span>
+          </div>
+          <div className="mobile-creator-stats">
+            <span>
+              {r.volumeWei !== null && (
+                <>
+                  Vol <Eth wei={r.volumeWei} />
+                </>
+              )}
+            </span>
+            {r.measured ? (
+              <StillTrading traded={r.traded} measured={r.measured} />
+            ) : (
+              <Unavailable reason="No measured launch" />
+            )}
+          </div>
+        </Fragment>
+      ) : pending ? (
+        <Fragment key="pending">
+          <div className="mobile-creator-top">
+            <span className="rank-number" data-pending="true">
+              Rank
+            </span>
+            <span className="mobile-creator-identity" data-pending="true">
+              Creator pending
+            </span>
+            <span className="mobile-creator-launches">
+              <strong data-pending="true">Pending</strong>
+            </span>
+          </div>
+          <div className="mobile-creator-stats">
+            <span data-pending="true">{"\u00a0"}</span>
+          </div>
+        </Fragment>
+      ) : null}
+    </div>
+  );
+}
+
 type Catalog = {
   items: AnalyticsPoolRow[];
   total: number | null;
@@ -251,9 +328,10 @@ function CreatorDirectory() {
     focusFromRef.current = null;
     const container = panelRef.current;
     if (!container) return;
-    const row = container.querySelector<HTMLElement>(
-      `[data-row-index="${index}"]`,
-    );
+    // The table and the rows both carry the index; only one of them is shown.
+    const row = [
+      ...container.querySelectorAll<HTMLElement>(`[data-row-index="${index}"]`),
+    ].find((node) => node.offsetParent !== null);
     const target = row?.querySelector<HTMLElement>(".address-chip-link") ?? row;
     target?.focus();
   }, [state.items.length, state.loading]);
@@ -301,7 +379,7 @@ function CreatorDirectory() {
             {state.error}
           </p>
         )}
-        <div className="table-scroll">
+        <div className="table-scroll desktop-creators">
           <table className="data-table">
             <thead>
               <tr>
@@ -386,7 +464,10 @@ function CreatorDirectory() {
                       <td data-pending={pending}>
                         {r ? (
                           r.bestLaunch ? (
-                            <Link className="mono" href={poolHref(r.bestLaunch)}>
+                            <Link
+                              className="mono"
+                              href={poolHref(r.bestLaunch)}
+                            >
                               {r.bestLaunch.symbol}
                             </Link>
                           ) : (
@@ -405,6 +486,18 @@ function CreatorDirectory() {
             </tbody>
           </table>
         </div>
+        <div className="mobile-creators">
+          {Array.from({ length: shown }, (_, index) => items[index]).map(
+            (r, index) => (
+              <MobileCreatorRow
+                key={index}
+                r={r}
+                index={index}
+                pending={!r && !knownAbsent(index)}
+              />
+            ),
+          )}
+        </div>
         {settled && total === 0 && (
           <div className="empty-state">
             <h3>No creators in this window</h3>
@@ -421,6 +514,15 @@ function CreatorDirectory() {
       </section>
     </div>
   );
+}
+
+/** A covered launch's trading state over the last 24 hours. */
+function launchActivity(p: AnalyticsPoolRow) {
+  return (p.stats.trades ?? 0) > 0
+    ? "Active"
+    : p.processed
+      ? "No swap observed"
+      : "Processing";
 }
 
 /**
@@ -456,7 +558,7 @@ function CreatorProfile({ address }: { address: string }) {
           {catalog.error}
         </p>
       )}
-      <section className="panel live-section">
+      <section className="panel live-section creator-launches">
         <div className="panel-heading">
           <h2>
             Launches{" "}
@@ -469,79 +571,99 @@ function CreatorProfile({ address }: { address: string }) {
           </Link>
         </div>
         {pools.length || pending ? (
-          <div className="table-scroll">
-            <table className="data-table creator-launches-table">
-              {/* Fixed widths so a row streamed in later, with a longer
+          <>
+            <div className="table-scroll desktop-creator-launches">
+              <table className="data-table creator-launches-table">
+                {/* Fixed widths so a row streamed in later, with a longer
                   token name or a resolved date, cannot reflow the columns
                   already on screen. */}
-              <colgroup>
-                <col />
-                <col className="col-launch" />
-                <col className="col-activity" />
-                <col className="col-volume" />
-                <col className="col-fees" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Token</th>
-                  <th>Launch (UTC)</th>
-                  <th>24h activity</th>
-                  <th>24h volume</th>
-                  <th>Creator fees</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Keyed by position, not pool id: `pools` only ever grows by
+                <colgroup>
+                  <col />
+                  <col className="col-launch" />
+                  <col className="col-activity" />
+                  <col className="col-volume" />
+                  <col className="col-fees" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Token</th>
+                    <th>Launch (UTC)</th>
+                    <th>24h activity</th>
+                    <th>24h volume</th>
+                    <th>Creator fees</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Keyed by position, not pool id: `pools` only ever grows by
                     appending later pages, so the row already on screen keeps
                     its node (and the single pending row becomes the first
                     real one) instead of remounting under a shift-scoring
                     swap. */}
-                {(pools.length ? pools : [undefined]).map((p, index) => (
-                  <tr key={index} aria-hidden={!p}>
-                    <td data-pending={!p}>
-                      {p ? (
-                        <Link href={poolHref(p)}>
-                          {p.name} ({p.symbol})
-                        </Link>
-                      ) : (
-                        "Token pending"
-                      )}
-                    </td>
-                    <td data-pending={!p}>
-                      {p ? utc(p.launchedAt) : "Launch pending"}
-                    </td>
-                    <td data-pending={!p}>
-                      {p
-                        ? (p.stats.trades ?? 0) > 0
-                          ? "Active"
-                          : p.processed
-                            ? "No swap observed"
-                            : "Processing"
-                        : "Pending"}
-                    </td>
-                    <td>
-                      <Eth wei={p?.stats.volumeWei} pending={!p} />
-                    </td>
-                    <td data-pending={!p}>
-                      {p ? (
-                        p.market ? (
-                          p.market.creatorFees ? (
-                            "On"
+                  {(pools.length ? pools : [undefined]).map((p, index) => (
+                    <tr key={index} aria-hidden={!p}>
+                      <td data-pending={!p}>
+                        {p ? (
+                          <Link href={poolHref(p)}>
+                            {p.name} ({p.symbol})
+                          </Link>
+                        ) : (
+                          "Token pending"
+                        )}
+                      </td>
+                      <td data-pending={!p}>
+                        {p ? utc(p.launchedAt) : "Launch pending"}
+                      </td>
+                      <td data-pending={!p}>
+                        {p ? launchActivity(p) : "Pending"}
+                      </td>
+                      <td>
+                        <Eth wei={p?.stats.volumeWei} pending={!p} />
+                      </td>
+                      <td data-pending={!p}>
+                        {p ? (
+                          p.market ? (
+                            p.market.creatorFees ? (
+                              "On"
+                            ) : (
+                              "Off"
+                            )
                           ) : (
-                            "Off"
+                            <Unavailable />
                           )
                         ) : (
-                          <Unavailable />
-                        )
-                      ) : (
-                        "Pending"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                          "Pending"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Below 768px: the token with its 24h volume at the right, then
+              the launch time and activity; creator fees stay out, as the
+              table drops that column first. */}
+            <div className="mobile-launches">
+              {(pools.length ? pools : [undefined]).map((p, index) => (
+                <div className="mobile-launch" key={index} aria-hidden={!p}>
+                  <div className="mobile-launch-top">
+                    {p ? (
+                      <Link href={poolHref(p)}>
+                        {p.name} ({p.symbol})
+                      </Link>
+                    ) : (
+                      <span data-pending="true">Token pending</span>
+                    )}
+                    <Eth wei={p?.stats.volumeWei} pending={!p} />
+                  </div>
+                  <div className="mobile-launch-stats" data-pending={!p}>
+                    {p
+                      ? `${utc(p.launchedAt)} · ${launchActivity(p)}`
+                      : "Launch pending"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <h3>No launches in current coverage</h3>

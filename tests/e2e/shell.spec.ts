@@ -89,6 +89,50 @@ for (const route of routes) {
   });
 }
 
+/* No list scrolls sideways at any width. The page never measured wider than
+   the viewport; the tables did, inside their own scroll boxes (the creators
+   board was 1000px in a 360px box on a phone, the trader leaderboard 1095px in
+   729px at 768), so every scrollable box is held to its own width too. The
+   Just launched rail is a designed card carousel, the one box that may. Every
+   width is pure CSS here, so one load is measured across all five. */
+for (const route of routes) {
+  test(`${route} fits every width without a sideways scroll`, async ({
+    page,
+    isMobile,
+  }) => {
+    await page.goto(route);
+    await page.waitForLoadState("networkidle");
+    const widths = isMobile
+      ? [page.viewportSize()!.width]
+      : [390, 768, 1024, 1280, 1440];
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 900 });
+      const overflow = await page.evaluate(async () => {
+        await new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        );
+        const root = document.scrollingElement!;
+        const boxes = [...document.querySelectorAll<HTMLElement>("body *")]
+          .filter((node) => {
+            if (node.closest(".launch-rail")) return false;
+            const { overflowX } = getComputedStyle(node);
+            return (
+              (overflowX === "auto" || overflowX === "scroll") &&
+              node.scrollWidth > node.clientWidth + 1
+            );
+          })
+          .map(
+            (node) =>
+              `${node.className}: ${node.scrollWidth}px in ${node.clientWidth}px`,
+          );
+        return { page: root.scrollWidth - root.clientWidth, boxes };
+      });
+      expect(overflow.page, `the page at ${width}px`).toBeLessThanOrEqual(1);
+      expect(overflow.boxes, `scroll boxes at ${width}px`).toEqual([]);
+    }
+  });
+}
+
 test("the H1 row carries a Trader leaderboard call to action at the right", async ({
   page,
 }) => {
@@ -209,9 +253,7 @@ test.describe("Wallet profile entry", () => {
       "the reserved box does not move when the wallet is set",
     ).toBe(before!.width);
     expect(
-      await page.evaluate(() =>
-        localStorage.getItem("poolsinfo.my-wallet.v1"),
-      ),
+      await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
     ).toBe(wallet);
   });
 
@@ -265,9 +307,7 @@ test.describe("Wallet profile entry", () => {
     await expect(menu).toBeHidden();
     await expect(trigger).toHaveAccessibleName("Set my wallet");
     expect(
-      await page.evaluate(() =>
-        localStorage.getItem("poolsinfo.my-wallet.v1"),
-      ),
+      await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
     ).toBeNull();
   });
 
@@ -309,9 +349,7 @@ test.describe("Wallet profile entry", () => {
     await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0, {
       timeout: 20000,
     });
-    await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(
-      0,
-    );
+    await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
     await expect(control(page)).toHaveAttribute("aria-haspopup", "menu");
     await page.evaluate(
       () =>
@@ -350,9 +388,7 @@ test.describe("ETH/USD unit toggle", () => {
     const usdButton = toggle(page).getByRole("button", { name: "USD" });
     await expect(ethButton).toHaveAttribute("aria-pressed", "true");
     await expect(usdButton).toHaveAttribute("aria-pressed", "false");
-    await expect(page.locator(".subnav-eth-price")).toHaveText(
-      "ETH $4,218.44",
-    );
+    await expect(page.locator(".subnav-eth-price")).toHaveText("ETH $4,218.44");
     await usdButton.click();
     await expect(usdButton).toHaveAttribute("aria-pressed", "true");
     await expect(ethButton).toHaveAttribute("aria-pressed", "false");

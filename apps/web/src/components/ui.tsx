@@ -161,7 +161,9 @@ export function AddressLabel({
     single-line row height, rather than adding a second line. `size="large"`
     is the export's 28px identity tile: no name field exists anywhere in this
     app, so the short address fills both the primary and secondary line, the
-    same fallback the export itself uses for an address without an ENS name. */
+    same fallback the export itself uses for an address without an ENS name.
+    Its badge follows the secondary line, as the export sets it, and stacks
+    beneath it in a column too narrow to hold both. */
 export function AddressChip({
   address,
   href,
@@ -186,13 +188,16 @@ export function AddressChip({
         {size === "large" ? (
           <span className="address-chip-lines">
             <span className="address-chip-name">{shortAddress(address)}</span>
-            <span className="mono">{shortAddress(address)}</span>
+            <span className="address-chip-meta">
+              <span className="mono">{shortAddress(address)}</span>
+              {badge}
+            </span>
           </span>
         ) : (
           <span className="mono">{shortAddress(address)}</span>
         )}
       </Link>
-      {badge}
+      {size !== "large" && badge}
       <span className="address-chip-actions">
         <CopyButton value={address} size={12} />
         <ExplorerLink address={address} size={12} className="icon-button" />
@@ -559,7 +564,14 @@ export function Chart({
         : "var(--muted)"
     : "var(--accent)";
   const [hover, setHover] = useState<number | null>(null);
-  const g = geometry(points, 820, 230, 8, profit, showUsd ? usdPerEth : undefined);
+  const g = geometry(
+    points,
+    820,
+    230,
+    8,
+    profit,
+    showUsd ? usdPerEth : undefined,
+  );
   const axisLabel = (v: number) =>
     showUsd ? `${v < 0 ? "-" : ""}$${compact(Math.abs(v))}` : compact(v);
   const index =
@@ -578,8 +590,7 @@ export function Chart({
   const oneDay =
     known.length > 1 &&
     known.every(
-      (p) =>
-        Math.floor(p.time / 86400) === Math.floor(known[0].time / 86400),
+      (p) => Math.floor(p.time / 86400) === Math.floor(known[0].time / 86400),
     );
   return (
     <div className="chart" aria-busy={pending}>

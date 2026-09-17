@@ -7,7 +7,9 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
    (a 28px identicon, the short address on both the name and address lines,
    since no name field exists anywhere in this app), so its shape and
    identicon size diverge from the screener's and leaderboard's shared small
-   chip by design, matching the export's row. */
+   chip by design, matching the export's row. Its phone rows, which replace
+   the table wherever the table cannot fit, carry the shared small chip as the
+   leaderboard's phone rows do. */
 
 const explorer = "https://robinhoodchain.blockscout.com/address/";
 const truncated = /^0x[0-9a-f]{4}…[0-9a-f]{4}$/;
@@ -21,8 +23,8 @@ type Cell = {
   href: RegExp;
   /** Row or card height that must survive the chip, per project. */
   height: { desktop: number; mobile: number };
-  /** 16px everywhere except creators' 28px identity tile. */
-  identicon: number;
+  /** 16px everywhere except the creators table's 28px identity tile. */
+  identicon: { desktop: number; mobile: number };
   /** Copy/explorer tap target on mobile: 44px where the row has room for
       it, the chip's own compact size on the screener's 104px card. */
   tapTarget: number;
@@ -39,7 +41,7 @@ const cells: Cell[] = [
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/$/,
     height: { desktop: 62, mobile: 104 },
-    identicon: 16,
+    identicon: { desktop: 16, mobile: 16 },
     tapTarget: 16,
   },
   {
@@ -51,19 +53,19 @@ const cells: Cell[] = [
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/\?window=All$/,
     height: { desktop: 62, mobile: 224 },
-    identicon: 16,
+    identicon: { desktop: 16, mobile: 16 },
     tapTarget: 44,
   },
   {
     name: "creators sender",
     url: { desktop: "/creators/", mobile: "/creators/" },
     rows: {
-      desktop: ".creators-panel [data-row='resolved']",
-      mobile: ".creators-panel [data-row='resolved']",
+      desktop: ".desktop-creators [data-row='resolved']",
+      mobile: ".mobile-creators [data-row='resolved']",
     },
     href: /^\/creators\/0x[0-9a-f]{40}\/$/,
-    height: { desktop: 62, mobile: 62 },
-    identicon: 28,
+    height: { desktop: 62, mobile: 104 },
+    identicon: { desktop: 28, mobile: 16 },
     tapTarget: 44,
   },
 ];
@@ -151,7 +153,9 @@ for (const cell of cells) {
       expect(chip.explorer, "the explorer link").toBe(
         `${explorer}${chip.title}`,
       );
-      expect(chip.identicon, "the identity tile's size").toBe(cell.identicon);
+      expect(chip.identicon, "the identity tile's size").toBe(
+        cell.identicon[project],
+      );
       expect(chip.copyLabel).toBe("Copy address");
       expect(chip.fits, "the chip stays inside its row").toBe(true);
       if (project === "mobile") {
@@ -239,8 +243,14 @@ test("the screener and leaderboard cells render one shared small chip, creators 
     shapeByCell.get("screener sender"),
     "screener and leaderboard share the small chip markup",
   ).toBe(shapeByCell.get("leaderboard trader"));
-  expect(
-    shapeByCell.get("creators sender"),
-    "creators' large chip carries the name and address lines, not just the address",
-  ).not.toBe(shapeByCell.get("screener sender"));
+  if (project === "desktop")
+    expect(
+      shapeByCell.get("creators sender"),
+      "creators' large chip carries the name and address lines, not just the address",
+    ).not.toBe(shapeByCell.get("screener sender"));
+  else
+    expect(
+      shapeByCell.get("creators sender"),
+      "the creators phone row carries the shared small chip, as the leaderboard's does",
+    ).toBe(shapeByCell.get("screener sender"));
 });
