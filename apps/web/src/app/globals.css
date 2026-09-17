@@ -716,14 +716,16 @@ main {
   border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 10px;
   justify-content: space-between;
   color: var(--faint);
   font-size: 12px;
 }
-.pagination > div {
-  display: flex;
-  align-items: center;
-  gap: 13px;
+/* Reserve the count's eventual width so the first real total never re-wraps the row. */
+.pagination-count {
+  display: inline-block;
+  min-width: 22ch;
 }
 .market-sidebar {
   display: flex;
@@ -2524,31 +2526,6 @@ main {
   font-size: 11px;
   color: var(--muted);
 }
-.live-price-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-.live-price-heading > .price {
-  font-size: 38px;
-}
-.live-changes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-.live-changes > span {
-  background: var(--panel);
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.live-six-stats {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 .live-eight-stats {
   margin-top: 24px;
 }
@@ -2619,14 +2596,6 @@ main {
 .coverage-notice p {
   margin: 8px 0 0;
 }
-.candle-readout {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  padding: 0 20px;
-  font-size: 12px;
-  color: var(--muted);
-}
 .candle-frame {
   display: flex;
   gap: 10px;
@@ -2678,9 +2647,6 @@ main {
     flex-direction: column;
     gap: 4px;
   }
-  .live-six-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .live-controls {
     padding: 16px;
     gap: 12px;
@@ -2710,16 +2676,6 @@ main {
   .live-lookup {
     padding: 20px;
   }
-  .live-price-heading > .price {
-    font-size: 30px;
-  }
-  .live-changes {
-    gap: 7px;
-  }
-  .live-changes > span {
-    padding: 8px;
-    font-size: 12px;
-  }
   .launch-rail {
     align-items: stretch;
   }
@@ -2737,22 +2693,18 @@ main {
     min-width: 0;
   }
 }
-.live-eight-stats .stat:nth-child(-n + 4),
-.live-six-stats .stat:nth-child(-n + 3) {
+.live-eight-stats .stat:nth-child(-n + 4) {
   border-bottom: 1px solid var(--line);
 }
 @media (max-width: 700px) {
-  .live-eight-stats .stat strong,
-  .live-six-stats .stat strong {
+  .live-eight-stats .stat strong {
     font-size: 18px;
   }
-  .live-eight-stats .stat .number,
-  .live-six-stats .stat .number {
+  .live-eight-stats .stat .number {
     white-space: normal;
     overflow-wrap: anywhere;
   }
-  .live-eight-stats .stat:nth-child(-n + 6),
-  .live-six-stats .stat:nth-child(-n + 4) {
+  .live-eight-stats .stat:nth-child(-n + 6) {
     border-bottom: 1px solid var(--line);
   }
 }
@@ -2937,67 +2889,52 @@ main {
     padding: 20px;
   }
 }
+/* The chart fills its region; the tooltip floats over it at the crosshair. */
 .interactive-chart {
+  position: relative;
   width: 100%;
-  height: 400px;
+  height: 100%;
   min-width: 0;
 }
-.chart-toolbar {
-  justify-content: space-between;
+.chart-surface {
+  position: absolute;
+  inset: 0;
 }
-.chart-toolbar strong small {
-  color: var(--faint);
-  font-weight: 400;
-  font-size: 11px;
-  margin-left: 6px;
-}
-.chart-selects {
-  display: flex;
-  gap: 14px;
-}
-.chart-selects label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 11px;
-  color: var(--muted);
-}
-.chart-selects select {
-  padding: 6px 8px;
-}
-.chart-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 12px 16px;
-}
-.chart-credit {
-  padding: 0 18px 14px;
+.chart-tooltip {
+  position: absolute;
+  top: 12px;
+  z-index: 1;
+  width: 196px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 9px;
+  background: var(--color-panel-raised);
+  box-shadow: 0 8px 24px #0006;
   font-size: 11.5px;
-  color: var(--faint);
+  line-height: 15px;
+  color: var(--color-text-3);
+  pointer-events: none;
 }
-.chart-credit a {
-  color: var(--muted);
+.chart-tooltip time {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--font-mono);
+  color: var(--color-text-2);
 }
-.candle-readout {
-  min-height: 50px;
+.chart-tooltip > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
-@media (max-width: 700px) {
-  .interactive-chart {
-    height: 350px;
-  }
-  .chart-selects {
-    gap: 8px;
-  }
-  .chart-selects label {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .chart-bottom .segmented button {
-    padding: 6px 8px;
-  }
+.chart-tooltip b {
+  font-weight: 400;
+}
+.chart-tooltip .price,
+.chart-tooltip .number {
+  font-size: 11.5px;
+  color: var(--text);
 }
 .stream-event {
   padding: 14px 18px;
@@ -4469,6 +4406,10 @@ main {
   .filter-input input {
     width: 100%;
   }
+  .pagination-count {
+    flex-basis: 100%;
+    min-width: 0;
+  }
   .segmented button {
     min-height: 40px;
     padding: 6px 8px;
@@ -5031,10 +4972,17 @@ main {
     padding: 6px 3px;
   }
 }
-.nullable-pool-page .page-heading {
-  height: 107px;
+/* The pool page laid out like the export: a 56px header, a chart panel whose
+   98px head holds the price, its unit and signed change, the windows the read
+   API sent and the range control, then 95px stat cards. Every slot below is
+   sized at first paint and never resized by a response. */
+.pool-page.page .page-heading {
+  align-items: center;
+  height: 57px;
+  margin-bottom: 20px;
+  gap: 24px;
 }
-.nullable-pool-page .page-heading > :first-child {
+.pool-page .page-heading > :first-child {
   flex: 1;
   min-width: 0;
 }
@@ -5047,40 +4995,154 @@ main {
   height: 54px;
   flex: 0 0 54px;
 }
-.pool-identity-title {
+.pool-page .pool-identity-title {
   height: 34px;
-  flex-wrap: nowrap !important;
-  overflow: auto;
+  flex-wrap: nowrap;
+  gap: 9px;
+  margin-bottom: 5px;
+  overflow: hidden;
 }
-.pool-identity-title h1 {
-  flex: 1;
+.pool-page .pool-identity-title h1 {
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.pool-identity-title > span:first-of-type {
-  width: 12ch;
+.pool-page .pool-identity-title > span {
   flex-shrink: 0;
 }
-.pool-address-slot {
-  height: 32px;
-  overflow: auto;
+/* The short address with its copy and explorer controls beside
+   `launched <age> by <sender>`, on one 18px line. */
+.pool-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 18px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--color-text-3);
+  white-space: nowrap;
 }
-/* The slot carries the token address in both forms; the phone shows the short
-   one with the same copy and explorer controls. */
-.pool-address-short {
-  display: none;
-}
+.pool-address-slot,
 .pool-launch-meta {
-  display: block !important;
-  height: 30px;
-  overflow: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  overflow: hidden;
+}
+/* The separator travels with the launch line, outside its text. */
+.pool-launch-meta::before {
+  content: "·";
+  margin-right: 10px;
+}
+.pool-meta .address-label {
+  gap: 6px;
+  color: var(--muted);
+}
+.pool-meta .address-label > .mono {
+  white-space: nowrap;
+}
+.pool-meta .icon-button {
+  min-height: 0;
+  min-width: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--color-text-3);
+}
+.pool-meta .icon-button svg {
+  width: 12px;
+  height: 12px;
+}
+.pool-launch-meta > span {
+  white-space: nowrap;
+}
+.pool-launch-meta time {
+  font-variant-numeric: tabular-nums;
+}
+.pool-launch-meta a {
+  color: var(--ac);
+}
+.pool-launch-meta a:hover {
+  text-decoration: underline;
+}
+.pool-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  height: 98px;
+  padding: 18px 18px 14px;
+  overflow: hidden;
+}
+.pool-chart-head > div {
+  min-width: 0;
+}
+.pool-page .live-price-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 42px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* The price box is the row's 42px whether or not a subscript hangs in it. */
+.pool-page .live-price-heading > .price {
+  display: inline-block;
+  height: 42px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 39px;
+  color: var(--text);
+}
+.pool-page .live-price-heading > .price sub {
+  color: var(--muted);
+  font-size: 17px;
+}
+.pool-page .live-price-heading > .price small {
+  margin-left: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--color-text-3);
+}
+.pool-page .live-price-heading .change {
+  font-size: 15px;
+  font-weight: 600;
+}
+.pool-page .live-price-heading > [data-pending] {
+  min-width: 6ch;
+}
+.pool-page .live-changes {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 17px;
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--color-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pool-page .live-changes b {
+  margin-right: 2px;
+  font-weight: 400;
+}
+.pool-page .live-changes .change {
+  font-size: 12.5px;
+  font-weight: 600;
 }
 /* The region holds a chart's height while one can still arrive. A page opened
    from a row with no market evidence knows at first paint that none can, and
    takes the empty state's height instead of reserving a chart of nothing. */
 .pool-chart-region {
-  height: 640px;
-  overflow: auto;
+  height: 390px;
+  margin: 0 0 8px;
+  overflow: hidden;
 }
 .pool-chart-region[data-chart="empty"] {
   height: 156px;
@@ -5091,25 +5153,45 @@ main {
   height: 100%;
   padding: 0 24px;
 }
-.nullable-pool-page .live-six-stats .stat {
-  height: 103px;
+.pool-page .live-six-stats {
+  margin-bottom: 0;
 }
-.nullable-pool-page .live-six-stats .stat > strong {
-  height: 47px;
-  overflow: auto;
+.pool-page .live-six-stats .stat {
+  height: 95px;
+  overflow: hidden;
 }
-/* The price line plus the box a subscript digit hangs below it. */
-.nullable-pool-page .live-price-heading {
-  height: 49px;
-  overflow: auto;
+.pool-page .live-six-stats .stat > span {
+  display: block;
+  line-height: 16px;
 }
-.nullable-pool-page .live-price-heading > .price {
-  display: inline-block;
-  width: 12ch;
+.pool-page .live-six-stats .stat > strong {
+  height: 23px;
+  line-height: 23px;
+  overflow: hidden;
+  white-space: nowrap;
 }
-.nullable-pool-page .live-changes .change {
-  display: inline-block;
-  width: 8ch;
+.pool-page .live-six-stats .stat > small {
+  min-height: 0;
+  line-height: 15px;
+}
+/* A pending card's quiet mark waits under the skeleton, not on top of it. */
+.pool-page .live-six-stats .stat > strong [data-pending="true"] .unavailable {
+  color: transparent;
+}
+.pool-page .live-section {
+  margin-top: 14px;
+}
+/* The export's 52px tab head: 31px pills, together at the left. */
+.pool-page .live-section > .table-tabs {
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-surface-4);
+}
+.pool-page .live-section > .table-tabs button {
+  min-height: 31px;
+  padding: 7px 12px;
+  font-size: 13px;
 }
 /* A concentration share keeps its width when the value replaces the mark. */
 .nullable-pool-page .live-facts dd > .number {
@@ -5119,20 +5201,6 @@ main {
 .pool-activity-region {
   height: calc(25 * 74px + 420px);
   overflow: auto;
-}
-.candle-readout {
-  height: 64px;
-  overflow: auto;
-  align-items: flex-start;
-}
-.candle-readout > span:first-child {
-  display: inline-block;
-  width: 30ch;
-}
-.candle-readout .price,
-.candle-readout .number {
-  display: inline-block;
-  width: 12ch;
 }
 .explore-leader-rows {
   height: calc(5 * 62px);
@@ -5472,51 +5540,82 @@ a.wallet-top-pool:hover {
     height: 168px;
     overflow: auto;
   }
-  /* The stacked heading: a two-row title (name and symbol, then the launch
-     mode badge), the short address at the 44px control height and the
-     two-line launch meta, then the two-column action grid. */
-  .nullable-pool-page .page-heading {
-    height: 259px;
+  /* The stacked heading, as the export stacks it: a two-row title (name and
+     symbol, then the launch mode chip), the short address and the launch line
+     on 44px rows, then the two-column action grid. */
+  .pool-page.page .page-heading {
+    align-items: stretch;
+    height: 276px;
+    gap: 24px;
   }
-  /* The price and its change box stack on a phone. */
-  .nullable-pool-page .live-price-heading {
-    height: 87px;
+  .pool-page.page .page-heading > :first-child {
+    align-items: center;
   }
-  .nullable-pool-page .live-six-stats .stat {
-    height: 101px;
+  .pool-page.page .page-heading h1 {
+    font-size: 26px;
   }
-  .pool-chart-region {
-    height: 720px;
+  /* The two icon controls share the Explorer button's row; Trade takes the
+     second row on its own. */
+  .pool-page.page .page-heading > :last-child {
+    grid-template-columns: 44px 44px minmax(0, 1fr);
   }
-  .nullable-pool-page .pool-identity-title {
-    flex-wrap: wrap !important;
+  .pool-page.page .page-heading > :last-child > .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+  .pool-page.page .page-heading > :last-child > .button:last-child {
+    grid-column: 1 / -1;
+  }
+  .pool-page .pool-identity-title {
+    flex-wrap: wrap;
     align-content: flex-start;
     row-gap: 0;
-    height: 58px;
+    height: 63px;
   }
-  /* A full-width break after the symbol puts the launch mode badge on the
+  /* A full-width break after the symbol puts the launch mode chip on the
      second row; its height is the row gap. */
-  .nullable-pool-page .pool-identity-title::before {
+  .pool-page .pool-identity-title::before {
     content: "";
     flex-basis: 100%;
     height: 7px;
   }
-  .nullable-pool-page .pool-identity-title > h1,
-  .nullable-pool-page .pool-identity-title > span:first-of-type {
+  .pool-page .pool-identity-title > h1,
+  .pool-page .pool-identity-title > span:first-of-type {
     order: -1;
   }
-  .nullable-pool-page .pool-identity-title > h1 {
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .pool-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    height: 88px;
   }
-  .pool-address-slot {
+  .pool-launch-meta::before {
+    content: none;
+  }
+  .pool-address-slot,
+  .pool-launch-meta {
     height: 44px;
   }
-  .pool-address-full {
-    display: none;
+  .pool-meta .icon-button {
+    width: 32px;
+    height: 32px;
   }
-  .pool-address-short {
-    display: inline;
+  .pool-meta .icon-button svg {
+    width: 14px;
+    height: 14px;
+  }
+  /* The price rows, then the range control under them on its own row. */
+  .pool-chart-head {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 20px;
+    height: 168px;
+  }
+  .pool-chart-head > div:first-child {
+    width: 100%;
+  }
+  .pool-chart-region {
+    height: 282px;
   }
 }
 .header-actions .currency-pill {

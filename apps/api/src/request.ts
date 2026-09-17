@@ -216,6 +216,10 @@ export function parseRequest(input: string): ReadRequest {
     minRaw = url.searchParams.get("minTrades") ?? "10";
   if (!/^(0|[1-9]\d{0,5})$/.test(offsetRaw))
     throw new RequestError(400, "invalid_offset");
+  // Creators is a top-100-per-window-and-sort leaderboard: no rank beyond
+  // 100 is ever served, so a page reaching past it is a request error.
+  if (route === "creators" && +offsetRaw + +rawLimit > 100)
+    throw new RequestError(400, "invalid_offset");
   if (!/^(0|[1-9]\d{0,2})$/.test(minRaw))
     throw new RequestError(400, "invalid_min_trades");
   const ids = (url.searchParams.get("ids") ?? "")

@@ -386,9 +386,9 @@ test("command search handles fuzzy names, keyboard navigation, real resolver res
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
 });
-test("chart separates interval from range, switches FDV and keeps seven trade pages local", async ({
+test("chart ranges from the panel head with no select, and keeps seven trade pages local", async ({
   page,
-}) => {
+}, testInfo) => {
   const update = structuredClone(chain);
   update.markets[0].series = Array.from({ length: 140 }, (_, i) => ({
     time: chain.toTimestamp - 140 + i,
@@ -410,23 +410,41 @@ test("chart separates interval from range, switches FDV and keeps seven trade pa
   await expect(
     page.getByRole("img", { name: /Price candle chart/ }),
   ).toBeVisible();
-  await page
-    .getByLabel("Candle interval", { exact: true })
-    .filter({ visible: true })
-    .selectOption("1s");
-  await page
-    .getByLabel("Chart display")
-    .filter({ visible: true })
-    .selectOption("FDV");
+  const panel = page.locator(".pool-chart-panel");
+  await expect(panel.locator("select")).toHaveCount(0);
+  const control = panel.locator(".pool-chart-head .segmented");
+  await expect(control.getByRole("button")).toHaveText([
+    "5m",
+    "1h",
+    "6h",
+    "24h",
+    "1W",
+    "All",
+  ]);
   await expect(
-    page.getByRole("img", { name: /FDV candle chart/ }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "6h", exact: true }).click();
+    control.getByRole("button", { name: "All", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await control.getByRole("button", { name: "6h", exact: true }).click();
   await expect(
-    page
-      .getByLabel("Candle interval", { exact: true })
-      .filter({ visible: true }),
-  ).toHaveValue("1s");
+    control.getByRole("button", { name: "6h", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    control.getByRole("button", { name: "All", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  /* The head is one row: price, unit, change and, on the desktop, the
+     control; the phone wraps the control under the windows. */
+  const [price, unit, change, segmented] = await Promise.all(
+    [
+      ".pool-chart-head .price",
+      ".pool-chart-head .price small",
+      ".pool-chart-head .live-price-heading .change",
+      ".pool-chart-head .segmented",
+    ].map((selector) => page.locator(selector).boundingBox()),
+  );
+  for (const box of testInfo.project.name === "desktop"
+    ? [unit, change, segmented]
+    : [unit, change])
+    expect(box!.y, "on the price's row").toBeLessThan(price!.y + price!.height);
   await page.getByRole("button", { name: "Trades", exact: true }).click();
   await expect(
     page.getByText("140 swap events", { exact: true }),
@@ -881,7 +899,7 @@ test("captured pool history loads without RPC and survives a failed refresh", as
   await expect(page.locator(".pagination")).toContainText(
     `${saved.trades.length} swap events`,
   );
-  await expect(page.locator(".live-candles canvas").first()).toBeVisible();
+  await expect(page.locator(".interactive-chart canvas").first()).toBeVisible();
   const initialRequests = marketRequests;
   for (let i = 0; i < 6; i++)
     await page.getByRole("button", { name: "Next", exact: true }).click();
