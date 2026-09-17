@@ -3,17 +3,10 @@ import Link from "next/link";
 import {
   Fragment,
   useEffect,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useSyncExternalStore,
   type ReactNode,
-  type RefObject,
 } from "react";
-import {
-  observeWindowOffset,
-  useWindowVirtualizer,
-} from "@tanstack/react-virtual";
 import { RefreshCw, Search } from "lucide-react";
 import { TradeStream } from "./trade-stream";
 import {
@@ -26,7 +19,7 @@ import {
   type AnalyticsPoolRow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
-import { PAGE_SIZE, useExplorePages } from "@/lib/use-explore-pages";
+import { useExploreRows } from "@/lib/use-explore-rows";
 import { rememberPoolRow } from "@/lib/pool-row-memory";
 import {
   MAX_WATCHLIST_QUERY_POOLS,
@@ -44,6 +37,7 @@ import {
 } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
+import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -58,29 +52,9 @@ const LAUNCH_VIEW = "new";
  */
 const launchOnly = (pool: AnalyticsPoolRow) =>
   !pool.processed && !pool.marketCoverage;
-/** The rows the page reserves before any data: the screener's first page. */
-const RESERVED_ROWS = PAGE_SIZE;
-const ROW_HEIGHT = 62;
-const CARD_HEIGHT = 168;
-/** Rows rendered beyond each edge of the viewport. */
-const OVERSCAN = 10;
-/** Rows past the viewport whose page is read before they scroll into it. */
-const PREFETCH_ROWS = 10;
-/** The viewport the server assumes: tall enough to paint every reserved row. */
-const SERVER_VIEWPORT = 1000;
-const SCROLL_SNAPSHOT_KEY = "poolsinfo.explore.scroll.v1";
-/** The list the container query shows, and where its rows begin in the document. */
-function shownList(table: Element | null, cards: Element | null) {
-  for (const [node, rowHeight] of [
-    [table, ROW_HEIGHT],
-    [cards, CARD_HEIGHT],
-  ] as const) {
-    const rect = node?.getBoundingClientRect();
-    if (rect && rect.width > 0)
-      return { top: rect.top + window.scrollY, rowHeight };
-  }
-  return null;
-}
+/** The most rows the screener shows at once: forty pages of Show more, and
+    the most a hand-edited or stale URL can make a page read and render. */
+const CAP = 1000;
 /** Brings the panel's head back under the site header when it has scrolled away. */
 function headIntoView(panel: HTMLElement | null) {
   const padding =
@@ -88,145 +62,6 @@ function headIntoView(panel: HTMLElement | null) {
     0;
   if (panel && panel.getBoundingClientRect().top < padding)
     panel.scrollIntoView({ block: "start" });
-}
-/** The rows in the viewport of a shown list, with the rows read ahead on either side. */
-function viewportSpan({ top, rowHeight }: { top: number; rowHeight: number }) {
-  const scrolled = window.scrollY - top;
-  return {
-    start: Math.floor(scrolled / rowHeight) - PREFETCH_ROWS,
-    end:
-      Math.floor((scrolled + window.innerHeight) / rowHeight) + PREFETCH_ROWS,
-  };
-}
-/**
- * One layout's rows, windowed against the document scroll: only the rows near
- * the viewport render, between two spacers that hold the list's full extent.
- * The offset it follows is measured from the list's own top, so nothing above
- * the list in the document enters the arithmetic, and a layout the container
- * query hides never hears the scroll: it keeps the reserved first page it
- * painted for the server. The server and the hydrating client both take the
- * list as unscrolled, which paints every reserved row.
- */
-function useRowWindow(
-  ref: RefObject<Element | null>,
-  count: number,
-  rowHeight: number,
-) {
-  const virtualizer = useWindowVirtualizer({
-    count,
-    estimateSize: () => rowHeight,
-    overscan: OVERSCAN,
-    initialRect: { width: 0, height: SERVER_VIEWPORT },
-    initialOffset: 0,
-    observeElementOffset: (instance, report) => {
-      const follow = (isScrolling: boolean) => {
-        const rect = ref.current?.getBoundingClientRect();
-        if (rect && rect.width > 0) report(-rect.top, isScrolling);
-      };
-      const unobserve = observeWindowOffset(instance, (_, isScrolling) =>
-        follow(isScrolling),
-      );
-      const resized = () => follow(false);
-      window.addEventListener("resize", resized);
-      return () => {
-        unobserve?.();
-        window.removeEventListener("resize", resized);
-      };
-    },
-    /* The page owns its scrolling: the virtualizer only reads the offset, so
-       its own scroll writes, such as the one it makes on mount, are inert. */
-    scrollToFn: () => {},
-  });
-  const items = virtualizer.getVirtualItems();
-  const first = items[0],
-    last = items[items.length - 1];
-  return {
-    rows: items.map((item) => item.index),
-    leading: first?.start ?? 0,
-    trailing: last ? virtualizer.getTotalSize() - last.end : 0,
-  };
-}
-/** Where the screener was left, in rows below the list's top, for this tab only. */
-type ScrollSnapshot = { query: string; total: number; rows: number };
-const subscribeSnapshot = (notify: () => void) => {
-  window.addEventListener("storage", notify);
-  return () => window.removeEventListener("storage", notify);
-};
-function readSnapshot() {
-  try {
-    return sessionStorage.getItem(SCROLL_SNAPSHOT_KEY);
-  } catch {
-    return null;
-  }
-}
-const noSnapshot = () => null;
-function parseSnapshot(saved: string | null): ScrollSnapshot | null {
-  try {
-    return saved ? JSON.parse(saved) : null;
-  } catch {
-    return null;
-  }
-}
-function writeSnapshot(snapshot: ScrollSnapshot) {
-  try {
-    sessionStorage.setItem(SCROLL_SNAPSHOT_KEY, JSON.stringify(snapshot));
-  } catch {
-    /* Storage may be unavailable in private browsers. */
-  }
-}
-/**
- * Back within the session lands where the list was left. The position is
- * written on leaving, in rows below the list's top so either layout can read
- * it, and read back on mount; the saved total sizes the list before its rows
- * arrive, so the position holds from the first paint and the page it lands on
- * is the first one read. Nothing is written while the page is shown, so the
- * snapshot never feeds back into the list it sized.
- */
-function useScrollMemory(
-  query: string,
-  total: number | undefined,
-  table: RefObject<Element | null>,
-  cards: RefObject<Element | null>,
-) {
-  const saved = useSyncExternalStore(
-    subscribeSnapshot,
-    readSnapshot,
-    noSnapshot,
-  );
-  const snapshot = useMemo(() => parseSnapshot(saved), [saved]);
-  const restore = snapshot?.query === query ? snapshot : null;
-  const applied = useRef(false);
-  useLayoutEffect(() => {
-    if (!restore || applied.current) return;
-    const list = shownList(table.current, cards.current);
-    if (!list) return;
-    applied.current = true;
-    window.scrollTo({
-      top: list.top + restore.rows * list.rowHeight,
-      behavior: "instant",
-    });
-  }, [restore, table, cards]);
-  const reserved = total ?? restore?.total ?? 0;
-  const latest = useRef({ query, total: reserved });
-  useLayoutEffect(() => {
-    latest.current = { query, total: reserved };
-  });
-  useLayoutEffect(() => {
-    const save = () => {
-      const list = shownList(table.current, cards.current);
-      if (list)
-        writeSnapshot({
-          ...latest.current,
-          rows: (window.scrollY - list.top) / list.rowHeight,
-        });
-    };
-    window.addEventListener("pagehide", save);
-    return () => {
-      window.removeEventListener("pagehide", save);
-      save();
-    };
-  }, [table, cards]);
-  return reserved;
 }
 /** Whole counts with the export's thousands separators: `1,284 trades`. */
 const integers = new Intl.NumberFormat("en-US");
@@ -340,10 +175,11 @@ export function ProductExplore() {
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
   /* A new query reads from the top: the panel's head comes back under the
-     site header while the previous rows dim. */
+     site header while the rows swap to skeletons, and the rows on show go
+     back to the first page. */
   const panelRef = useRef<HTMLElement>(null);
   const set = (updates: Record<string, string | null>) => {
-    setQuery(updates);
+    setQuery({ ...updates, limit: null });
     headIntoView(panelRef.current);
   };
   const view = (params.get("view") ??
@@ -354,12 +190,15 @@ export function ProductExplore() {
   const sort =
       params.get("sort") ?? (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = params.get("dir") ?? "desc";
+  /* The rows on show live in the URL as `limit`, as on the traders and
+     creators lists: absent or invalid, the first page; each Show more adds
+     the next page, and a reload or Back brings back what was on show. */
+  const rawLimit = Number(params.get("limit")),
+    shown =
+      Number.isInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, CAP)
+        : SHOW_MORE_STEP;
   const filter = useDebouncedInput(q, (next) => set({ q: next }));
-  /* Pages no longer live in the URL; a link that still names one reads from the top. */
-  const legacyOffset = params.has("offset");
-  useEffect(() => {
-    if (legacyOffset) setQuery({ offset: null });
-  }, [legacyOffset, setQuery]);
   /* Both read paths pin the launches view to launch order, so no header
      claims it there. */
   const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
@@ -409,40 +248,49 @@ export function ProductExplore() {
   const watched = shared?.ids ?? ids;
   if (view === "watchlist")
     query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
-  const listQuery = query.toString();
-  const pages = useExplorePages(listQuery);
-  const { list: data, loading, stale, error, refresh } = pages;
-  /* A view, sort, window or filter change swaps straight to skeleton rows
-     instead of dimming the previous view's; a same-query refresh keeps
-     showing the rows it already has while it quietly reloads them. */
-  const showSkeleton = stale && data?.query !== listQuery;
-  const tableRef = useRef<HTMLTableSectionElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
-  const total = useScrollMemory(
-    listQuery,
-    data?.head.total,
-    tableRef,
-    cardsRef,
+  const { list, loading, settled, error, refresh } = useExploreRows(
+    query.toString(),
+    shown,
   );
-  const count = Math.max(RESERVED_ROWS, total);
-  const table = useRowWindow(tableRef, count, ROW_HEIGHT);
-  const cards = useRowWindow(cardsRef, count, CARD_HEIGHT);
-  /* After every paint, the rows on screen decide which page reads next. */
+  const launchPage = !!list?.rows.length && list.rows.every(launchOnly);
+  const empty = settled && list?.total === 0;
+  /* The rows on show, reserved from the URL before any data so a read that
+     lands never resizes the table. A view, sort, window or filter change
+     swaps straight to skeleton rows instead of dimming the previous view's,
+     which the hook drops with the query; a same-query refresh keeps showing
+     the rows it already has while it quietly reloads them; a Show more adds
+     its rows as skeletons under the ones on show, and a row past the list's
+     end is left blank rather than shimmering for nothing. */
+  const shownRows = Array.from(
+    { length: shown },
+    (_, index) => list?.rows[index],
+  );
+  const skeletonAt = (index: number) =>
+    !list || (loading && index < list.total);
+  /* Show more keeps the reader where they are and lands them on the first
+     new row once it arrives, rather than bringing the panel's head back. It
+     asks for no more than the list holds, so the last page reserves the rows
+     it will fill and none past the end. */
+  const focusAt = useRef<number | null>(null);
+  const showMore = () => {
+    focusAt.current = shown;
+    setQuery({
+      limit: String(
+        Math.min(shown + SHOW_MORE_STEP, list?.total ?? Infinity, CAP),
+      ),
+    });
+  };
+  const rows = list?.rows;
   useEffect(() => {
-    const list = shownList(tableRef.current, cardsRef.current);
-    pages.reach(list && viewportSpan(list));
-  });
-  const launchPage =
-    !!data?.head.items.length && data.head.items.every(launchOnly);
-  const empty = pages.settled && data?.head.total === 0;
-  const tableRows = table.rows.map((index) => ({
-    index,
-    pool: showSkeleton ? undefined : pages.row(index),
-  }));
-  const cardRows = cards.rows.map((index) => ({
-    index,
-    pool: showSkeleton ? undefined : pages.row(index),
-  }));
+    const index = focusAt.current;
+    if (index === null || !rows || rows.length <= index) return;
+    focusAt.current = null;
+    const links = panelRef.current?.querySelectorAll<HTMLElement>(
+      `[data-row-index="${index}"] a.token-cell`,
+    );
+    /* Both layouts hold the row; the one the container query shows has a box. */
+    [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
+  }, [rows]);
   return (
     <div className="page explore-page">
       <div className="page-heading">
@@ -600,7 +448,7 @@ export function ProductExplore() {
                   value={window}
                   onChange={(value) => {
                     setWindow(value);
-                    headIntoView(panelRef.current);
+                    set({});
                   }}
                   options={["1h", "24h", "7d", "30d", "All"]}
                 />
@@ -615,7 +463,7 @@ export function ProductExplore() {
                 openPersonal={() => set({ watchlist: null })}
               />
             )}
-            {stale && (
+            {loading && (
               <span className="sr-only" role="status">
                 Updating saved pools
               </span>
@@ -630,7 +478,7 @@ export function ProductExplore() {
                 message reads directly under the toolbar instead of below a
                 screen and a half of blank rows. */}
             <div className="table-region" data-empty={empty}>
-              <div className="table-scroll desktop-pools" aria-busy={stale}>
+              <div className="table-scroll desktop-pools" aria-busy={loading}>
                 <table className="data-table pool-table">
                   {/* Column widths live here so a row that spans the metric
                       columns cannot move the ones before it. */}
@@ -666,18 +514,13 @@ export function ProductExplore() {
                       )}
                     </tr>
                   </thead>
-                  <tbody ref={tableRef}>
-                    {table.leading > 0 && (
-                      <tr className="spacer" aria-hidden="true">
-                        <td colSpan={9} style={{ height: table.leading }} />
-                      </tr>
-                    )}
-                    {tableRows.map(({ index, pool: p }) => {
-                      const skeleton = !p && (!data || showSkeleton);
+                  <tbody>
+                    {shownRows.map((p, index) => {
+                      const skeleton = !p && skeletonAt(index);
                       return (
                         <tr
                           key={index}
-                          data-index={index}
+                          data-row-index={index}
                           aria-hidden={!p}
                           data-row={
                             p ? "resolved" : skeleton ? "skeleton" : "reserved"
@@ -805,29 +648,17 @@ export function ProductExplore() {
                         </tr>
                       );
                     })}
-                    {table.trailing > 0 && (
-                      <tr className="spacer" aria-hidden="true">
-                        <td colSpan={9} style={{ height: table.trailing }} />
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
-              <div className="mobile-pools" ref={cardsRef} aria-busy={stale}>
-                {cards.leading > 0 && (
-                  <div
-                    className="spacer"
-                    aria-hidden="true"
-                    style={{ height: cards.leading }}
-                  />
-                )}
-                {cardRows.map(({ index, pool: p }) => {
-                  const skeleton = !p && (!data || showSkeleton);
+              <div className="mobile-pools" aria-busy={loading}>
+                {shownRows.map((p, index) => {
+                  const skeleton = !p && skeletonAt(index);
                   return (
                     <article
                       className="mobile-pool"
                       key={index}
-                      data-index={index}
+                      data-row-index={index}
                       data-row={
                         p ? "resolved" : skeleton ? "skeleton" : "reserved"
                       }
@@ -936,13 +767,6 @@ export function ProductExplore() {
                     </article>
                   );
                 })}
-                {cards.trailing > 0 && (
-                  <div
-                    className="spacer"
-                    aria-hidden="true"
-                    style={{ height: cards.trailing }}
-                  />
-                )}
               </div>
               {empty && (
                 <EmptyState
@@ -967,6 +791,13 @@ export function ProductExplore() {
                 />
               )}
             </div>
+            <ShowMore
+              shown={shown}
+              total={list?.total ?? null}
+              cap={CAP}
+              loading={loading}
+              onMore={showMore}
+            />
           </section>
         </div>
         <aside className="market-sidebar">
