@@ -316,6 +316,39 @@ test("marking a wallet as mine reframes its page as the portfolio", async ({
   await expect(mine).toHaveAttribute("aria-pressed", "false");
 });
 
+test("the header's wallet menu sets and forgets the browser wallet, reframing the wallet page and the traders YOU row with it", async ({
+  page,
+}) => {
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  const control = page.locator(".header-actions .connect-button");
+  const mine = page.getByRole("button", { name: "This is my wallet" });
+  const title = page.locator(".page-heading h1");
+  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  await expect(title).toHaveText("0x4745…bce1");
+
+  await control.click();
+  await page.getByLabel("Your wallet address").fill(topWallet);
+  await page.getByRole("button", { name: "Use this wallet" }).click();
+  await expect(page.getByRole("dialog", { name: "Set my wallet" })).toBeHidden();
+  await expect(mine).toHaveAttribute("aria-pressed", "true");
+  await expect(title).toHaveText("Portfolio");
+
+  await settled(page, "/traders/?window=All");
+  const myRank = page.locator(".my-rank");
+  await expect(myRank).toContainText("YOU");
+  await expect(myRank.locator(".mono")).toHaveText("0x4745…bce1");
+
+  await control.click();
+  await page.getByRole("menuitem", { name: "Forget this wallet" }).click();
+  await expect(myRank).toContainText(
+    "Mark your wallet on its page to see your rank here",
+  );
+
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  await expect(title).toHaveText("0x4745…bce1");
+});
+
 // The server paints the public framing and hydration swaps in the portfolio
 // framing for the stored wallet: whole nodes, so nothing on screen moves.
 test("a stored wallet's page paints as the portfolio with no layout shift", async ({

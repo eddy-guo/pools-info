@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Wallet } from "lucide-react";
 import { formatMoney } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
 import {
@@ -14,6 +13,7 @@ import {
 import { Search } from "./search";
 import { UnitToggle } from "./unit-toggle";
 import { useEthPrice } from "./eth-price-provider";
+import { WalletProfileEntry } from "./wallet-profile";
 
 const oneEthWei = (10n ** 18n).toString();
 const LIVE_FEED_POLL_MS = 15000;
@@ -153,18 +153,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <div className="header-actions">
             <Search />
             <UnitToggle />
-            {/* Holds the top-right slot where the wallet profile entry will live. */}
-            <button
-              type="button"
-              className="connect-button"
-              aria-disabled="true"
-              aria-label="Connect wallet, coming soon"
-              title="Wallet connection is coming soon"
-            >
-              <Wallet size={15} />
-              <span className="connect-label">Connect wallet</span>
-              <span className="connect-soon">Soon</span>
-            </button>
+            <WalletProfileEntry />
           </div>
         </div>
         <div className="network-subnav">

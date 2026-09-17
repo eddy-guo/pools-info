@@ -11,7 +11,9 @@ import { UserRound, UserRoundCheck } from "lucide-react";
  */
 const key = "poolsinfo.my-wallet.v1";
 const changed = "poolsinfo-my-wallet-changed";
-const valid = (address: string) => /^0x[0-9a-f]{40}$/i.test(address);
+/** The same 0x check the header's set-wallet dialog validates against. */
+export const isWalletAddress = (address: string) =>
+  /^0x[0-9a-f]{40}$/i.test(address);
 function read() {
   try {
     return localStorage.getItem(key) ?? "";
@@ -20,7 +22,7 @@ function read() {
   }
 }
 function parse(raw: string | null) {
-  return raw && valid(raw) ? raw.toLowerCase() : "";
+  return raw && isWalletAddress(raw) ? raw.toLowerCase() : "";
 }
 function subscribe(notify: () => void) {
   const storage = (event: StorageEvent) => {
@@ -41,7 +43,8 @@ export function useMyWallet() {
   const address = parse(raw);
   function set(next: string) {
     try {
-      if (next && valid(next)) localStorage.setItem(key, next.toLowerCase());
+      if (next && isWalletAddress(next))
+        localStorage.setItem(key, next.toLowerCase());
       else localStorage.removeItem(key);
       window.dispatchEvent(new Event(changed));
     } catch {
