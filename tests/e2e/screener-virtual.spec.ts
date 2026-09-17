@@ -142,7 +142,7 @@ test("only the rows near the viewport are in the DOM, and the next page reads as
     page.locator(`${list} [data-pending="true"]`),
     "no shimmer while a page appends",
   ).toHaveCount(0);
-  await expect(page.locator("[data-stale-rows='true']")).toHaveCount(0);
+  await expect(page.locator("[data-row='skeleton']")).toHaveCount(0);
   release();
   /* The held page still has its read API round trip ahead of it. */
   await expect
@@ -155,7 +155,7 @@ test("only the rows near the viewport are in the DOM, and the next page reads as
     )
     .toBe(1);
   expect(await resolved.count()).toBeGreaterThanOrEqual(before);
-  await expect(page.locator("[data-stale-rows='true']")).toHaveCount(0);
+  await expect(page.locator("[data-row='skeleton']")).toHaveCount(0);
 });
 
 test("the page controls are gone and the URL keeps sort, dir, view and q without offset", async ({
@@ -179,7 +179,7 @@ test("the page controls are gone and the URL keeps sort, dir, view and q without
   await expect(explore.getByRole("button", { name: "Next" })).toHaveCount(0);
 });
 
-test("a sort change brings the list back to the top and dims the rows until the first page arrives", async ({
+test("a sort change brings the list back to the top and swaps to skeleton rows until the first page arrives", async ({
   page,
 }, testInfo) => {
   const shown = layout(testInfo),
@@ -227,13 +227,21 @@ test("a sort change brings the list back to the top and dims the rows until the 
   await page.keyboard.press("Enter");
   await expect.poll(() => gated).toBe(true);
   const busy = page.locator(wrapper);
-  await expect(busy).toHaveAttribute("data-stale-rows", "true");
+  await expect(busy).not.toHaveAttribute("data-stale-rows", /.*/);
   await expect(busy).toHaveAttribute("aria-busy", "true");
+  /* No dim-then-redraw: the previous order's rows are gone the instant the
+     new one is requested, replaced in the same frame by skeleton rows of the
+     same row height and column layout, with the classic shimmer. */
   await expect(
-    page.locator(`${rows}[data-row='resolved']`).first(),
-    "the previous rows stay while the new order loads",
+    page.locator(`${rows}[data-row='resolved']`),
+    "the previous rows are gone, not dimmed in place",
+  ).toHaveCount(0);
+  await expect(
+    page.locator(`${rows}[data-row='skeleton']`).first(),
   ).toBeVisible();
-  await expect(page.locator(`${list} [data-pending="true"]`)).toHaveCount(0);
+  await expect(
+    page.locator(`${list} [data-pending="true"]`).first(),
+  ).toBeVisible();
   const padding = await page.evaluate(() =>
     parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
   );
@@ -244,10 +252,8 @@ test("a sort change brings the list back to the top and dims the rows until the 
     .toBe(Math.round(padding));
   release();
   /* The held page still has its read API round trip ahead of it. */
-  await expect(busy).toHaveAttribute("data-stale-rows", "false", {
-    timeout: 15000,
-  });
-  await expect(busy).toHaveAttribute("aria-busy", "false");
+  await expect(busy).toHaveAttribute("aria-busy", "false", { timeout: 15000 });
+  await expect(page.locator(`${rows}[data-row='skeleton']`)).toHaveCount(0);
   await expect(resolvedRows(page, rows).first()).toBeVisible();
   expect(
     await resolvedRows(page, rows)

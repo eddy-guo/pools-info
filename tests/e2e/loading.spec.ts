@@ -49,7 +49,7 @@ test("Explore retains saved rows during refresh", async ({ page, request }) => {
   ).toBeEnabled();
 });
 
-test("Explore keeps the previous rows dimmed while a sort change loads", async ({
+test("Explore swaps to skeleton rows, never a dimmed redraw, while a sort change loads", async ({
   page,
   request,
 }) => {
@@ -76,25 +76,10 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   });
   await page.goto("/");
   const rows = page.locator(".desktop-pools, .mobile-pools"),
-    first = rows
+    previousFirst = rows
       .getByText(byVolume.items[0].name, { exact: true })
-      .filter({ visible: true })
-      .first();
-  await expect(first).toBeVisible();
-  await expect(rows.locator("[data-stale-rows=true]")).toHaveCount(0);
-  await page.evaluate(() => {
-    const visible = () =>
-      [
-        ...document.querySelectorAll(
-          'tbody tr[data-row="resolved"], .mobile-pool a.token-cell',
-        ),
-      ].filter((row) => (row as HTMLElement).offsetParent !== null).length;
-    const watch = { min: visible() };
-    setInterval(() => {
-      watch.min = Math.min(watch.min, visible());
-    }, 50);
-    Object.assign(window, { rowWatch: watch });
-  });
+      .filter({ visible: true });
+  await expect(previousFirst).toBeVisible();
   // Sorting lives on the desktop column headers; the phone layout renders
   // cards with no header row, so drive its re-query the way the app does.
   if (await page.locator(".desktop-pools").isVisible())
@@ -113,9 +98,13 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
   await expect.poll(() => gated).toBe(true);
   const busy = rows.filter({ visible: true }).first();
   await expect(busy).toHaveAttribute("aria-busy", "true");
-  await expect(busy).toHaveAttribute("data-stale-rows", "true");
-  await expect(first).toBeVisible();
-  await expect(busy.locator("[data-pending=true]")).toHaveCount(0);
+  await expect(busy).not.toHaveAttribute("data-stale-rows", /.*/);
+  /* No intermediate render of the previous view's rows: the old order is
+     gone the instant the new one is requested, replaced by skeleton rows of
+     the same geometry, never dimmed in place. */
+  await expect(previousFirst).toHaveCount(0);
+  await expect(busy.locator('[data-row="skeleton"]').first()).toBeVisible();
+  await expect(busy.locator('[data-pending="true"]').first()).toBeVisible();
   release();
   await expect(
     rows
@@ -124,12 +113,7 @@ test("Explore keeps the previous rows dimmed while a sort change loads", async (
       .first(),
   ).toBeVisible();
   await expect(busy).toHaveAttribute("aria-busy", "false");
-  await expect(busy).toHaveAttribute("data-stale-rows", "false");
-  expect(
-    await page.evaluate(
-      () => (window as unknown as { rowWatch: { min: number } }).rowWatch.min,
-    ),
-  ).toBeGreaterThan(0);
+  await expect(busy.locator('[data-row="skeleton"]')).toHaveCount(0);
 });
 
 test("wallet and leaderboard show structured loading instead of empty analytics", async ({
