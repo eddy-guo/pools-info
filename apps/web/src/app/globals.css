@@ -4991,6 +4991,17 @@ main {
 }
 /* Leaderboard columns follow the reference: rank, trader, then right-aligned
    numerics with fixed widths so every row shares the same column edges. */
+/* Trader is the one auto-width column, so the fixed columns take their widths
+   first and leave it the remainder: nothing in a panel under 1094px, and the
+   address chip drew over the PnL. The table's floor is those fixed widths plus
+   168px for Trader (the 134px chip, its cell padding and slack for Linux's
+   wider glyphs); a narrower panel scrolls the table within .table-scroll. */
+.leaderboard-panel .data-table {
+  min-width: calc(
+    58px + 168px + 150px + 104px + 2 * 92px + 124px + 110px + 134px + 186px +
+      44px
+  );
+}
 .leaderboard-panel .data-table th:nth-child(1) {
   width: 58px;
 }

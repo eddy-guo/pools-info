@@ -121,3 +121,54 @@ test("leaderboard leads with signed realized, ROI and W/L over secondary columns
     "the card content fits its reserved height",
   ).toBe(true);
 });
+
+/* Between the phone rows and a wide panel the fixed numeric columns used to
+   squeeze the auto-width Trader column to nothing (0px at 768 and 1024, 27px
+   at 1180), so the address chip drew over the realized PnL beside it. */
+for (const width of [768, 1024, 1280]) {
+  test(`the Trader column holds its address chip clear of the PnL at ${width}px`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "the phone rows have no Trader column");
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/traders/?window=All");
+    const row = page
+      .locator(".desktop-traders tbody tr[data-row=resolved]")
+      .first();
+    await expect(row).toBeVisible();
+    const geometry = await row.evaluate((node) => {
+      const [, trader, pnl] = [...node.children] as HTMLElement[];
+      const chip = trader.querySelector(".address-chip")!;
+      let chipRight = chip.getBoundingClientRect().right;
+      for (const part of chip.querySelectorAll("*")) {
+        const box = part.getBoundingClientRect();
+        if (box.width) chipRight = Math.max(chipRight, box.right);
+      }
+      const walker = document.createTreeWalker(pnl, NodeFilter.SHOW_TEXT);
+      let pnlLeft = Infinity;
+      for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+        if (!text.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        pnlLeft = Math.min(pnlLeft, range.getBoundingClientRect().left);
+      }
+      const cell = trader.getBoundingClientRect();
+      return {
+        traderWidth: cell.width,
+        chipOverCell:
+          chipRight -
+          (cell.right - parseFloat(getComputedStyle(trader).paddingRight)),
+        chipToPnl: pnlLeft - chipRight,
+      };
+    });
+    expect(
+      geometry.chipOverCell,
+      `the chip stays inside its ${geometry.traderWidth}px cell`,
+    ).toBeLessThanOrEqual(0);
+    expect(
+      geometry.chipToPnl,
+      "the PnL text starts past the chip",
+    ).toBeGreaterThan(0);
+  });
+}
