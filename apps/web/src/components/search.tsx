@@ -2,29 +2,21 @@
 import Link from "next/link";
 import styles from "./detail-design.module.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Command,
-  Search as SearchIcon,
-  X,
-  ArrowUpRight,
-  Coins,
-  Wallet,
-  Users,
-  ArrowLeftRight,
-} from "lucide-react";
+import { Command, Search as SearchIcon, ArrowUpRight } from "lucide-react";
 import {
   searchGroups,
-  type SearchGroup,
+  shortAddress,
   type SearchResponse,
 } from "@pools/core";
 import { createSearchProvider } from "@/lib/search-provider";
+import { Avatar } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
-const icons = {
-  Tokens: Coins,
-  Wallets: Wallet,
-  Creators: Users,
-  Transactions: ArrowLeftRight,
+const kindHints: Record<SearchResponse["kind"], string> = {
+  text: "name",
+  address: "address",
+  hash: "tx hash",
+  ens: "ens",
 };
 export function Search() {
   const { snapshot, audits } = useLive();
@@ -34,22 +26,18 @@ export function Search() {
   );
   const dialog = useRef<HTMLDialogElement>(null),
     input = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState(""),
-    [group, setGroup] = useState<SearchGroup>();
+  const [query, setQuery] = useState("");
   const [isOpen, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const [result, setResult] = useState<{
     query: string;
-    group?: SearchGroup;
     provider: typeof provider;
     data?: SearchResponse & { indexNotice?: string };
     error?: string;
     pending?: boolean;
   }>();
   const current =
-    result?.query === query &&
-    result?.group === group &&
-    result?.provider === provider
+    result?.query === query && result?.provider === provider
       ? result
       : undefined;
   const data = current?.data;
@@ -57,6 +45,7 @@ export function Search() {
     isOpen &&
     (!current ||
       (!current.error && (!data || (!data.entries.length && current.pending))));
+  const kindHint = query.trim() && data?.kind ? kindHints[data.kind] : undefined;
   function open() {
     if (!dialog.current?.open) dialog.current?.showModal();
     setOpen(true);
@@ -90,19 +79,18 @@ export function Search() {
     const timer = setTimeout(
       () => {
         provider
-          .search(query, { group, signal: controller.signal })
+          .search(query, { signal: controller.signal })
           .then(async (data) => {
             if (controller.signal.aborted) return;
-            setResult({ query, group, provider, data, pending: true });
+            setResult({ query, provider, data, pending: true });
             const extended = await provider.extend(
               query,
-              { group, signal: controller.signal },
+              { signal: controller.signal },
               data,
             );
             if (!controller.signal.aborted)
               setResult({
                 query,
-                group,
                 provider,
                 data: extended,
                 pending: false,
@@ -112,12 +100,9 @@ export function Search() {
             if (!controller.signal.aborted)
               setResult((previous) => ({
                 query,
-                group,
                 provider,
                 data:
-                  previous?.query === query &&
-                  previous?.group === group &&
-                  previous?.provider === provider
+                  previous?.query === query && previous?.provider === provider
                     ? previous.data
                     : undefined,
                 pending: false,
@@ -131,7 +116,7 @@ export function Search() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, group, provider, isOpen]);
+  }, [query, provider, isOpen]);
   return (
     <>
       <button
@@ -154,7 +139,6 @@ export function Search() {
         onClose={() => {
           setOpen(false);
           setQuery("");
-          setGroup(undefined);
         }}
         onClick={(e) => {
           if (e.target === dialog.current) close();
@@ -189,7 +173,7 @@ export function Search() {
         }}
       >
         <div className="search-dialog-head">
-          <SearchIcon size={20} />
+          <SearchIcon size={18} />
           <input
             ref={input}
             name="global-search"
@@ -209,27 +193,7 @@ export function Search() {
             autoComplete="off"
             spellCheck={false}
           />
-          <button
-            className="icon-button"
-            onClick={close}
-            aria-label="Close search"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        <div className="search-categories" aria-label="Search categories">
-          {[undefined, ...searchGroups].map((g) => (
-            <button
-              key={g ?? "All"}
-              aria-pressed={group === g}
-              onClick={() => {
-                setGroup(g);
-                input.current?.focus();
-              }}
-            >
-              {g ?? "All"}
-            </button>
-          ))}
+          {kindHint && <span className="search-kind-hint">{kindHint}</span>}
         </div>
         <div className="search-results" aria-busy={Boolean(waiting)}>
           {data?.indexNotice && (
@@ -262,30 +226,36 @@ export function Search() {
           {searchGroups.map((type) => {
             const selected =
               data?.entries.filter((r) => r.group === type) ?? [];
-            const Icon = icons[type];
             return selected.length ? (
               <section key={type}>
                 <h2>{type}</h2>
-                {selected.map((r) => (
-                  <Link
-                    className="search-result"
-                    key={r.id}
-                    href={r.href}
-                    prefetch={false}
-                    onClick={close}
-                    target={r.external ? "_blank" : undefined}
-                    rel={r.external ? "noreferrer" : undefined}
-                  >
-                    <span className="search-type-icon">
-                      <Icon size={17} />
-                    </span>
-                    <span className="search-result-copy">
-                      <strong>{r.title}</strong>
-                      <small className="mono">{r.address}</small>
-                    </span>
-                    {r.external && <ArrowUpRight size={15} />}
-                  </Link>
-                ))}
+                {selected.map((r) => {
+                  const title = r.title.replace(
+                    /^(.*) \(([^()]+)\)$/,
+                    "$1 · $2",
+                  );
+                  const address = shortAddress(r.address);
+                  return (
+                    <Link
+                      className="search-result"
+                      key={r.id}
+                      href={r.href}
+                      prefetch={false}
+                      onClick={close}
+                      target={r.external ? "_blank" : undefined}
+                      rel={r.external ? "noreferrer" : undefined}
+                    >
+                      <Avatar address={r.address} />
+                      <span className="search-result-copy">
+                        <strong>{title}</strong>
+                        {address !== title && (
+                          <small className="mono">{address}</small>
+                        )}
+                      </span>
+                      {r.external && <ArrowUpRight size={15} />}
+                    </Link>
+                  );
+                })}
               </section>
             ) : null;
           })}
@@ -309,7 +279,6 @@ export function Search() {
         </div>
         <div className="search-dialog-footer">
           <span>↑ ↓ Navigate · Enter Open · Esc Close</span>
-          <span>Names allow typos. Addresses do not.</span>
         </div>
       </dialog>
     </>
