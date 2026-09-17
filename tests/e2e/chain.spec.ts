@@ -581,6 +581,52 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
   await expect(feed.getByText("No recent trades")).toBeVisible();
 });
 
+test("a live feed that has never started reads as offline, never as streaming or as zero trades", async ({
+  page,
+}) => {
+  const batch = liveBatch([], chain.toTimestamp);
+  batch.coverage = {
+    ...batch.coverage,
+    state: "uninitialized",
+    startBlock: null,
+    headBlock: null,
+    throughBlock: null,
+    throughHash: null,
+    asOf: null,
+    checkedAt: null,
+    lagBlocks: null,
+    discoveryThroughBlock: null,
+    discoveryLagBlocks: null,
+  };
+  let calls = 0;
+  await page.route("**/api/live-trades/**", (route) => {
+    calls++;
+    return route.fulfill({ json: batch });
+  });
+  await page.goto("/");
+  await expect.poll(() => calls).toBeGreaterThan(0);
+  const feed = page.getByRole("region", { name: "Recent trades" });
+  const state = feed.getByRole("status");
+  await expect(state).toHaveText("offline");
+  await expect(feed.getByText("Feed not running")).toBeVisible();
+  await expect(feed).not.toContainText("streaming");
+  await expect(feed).not.toContainText("No recent trades");
+  await expect(feed.locator(".stream-event")).toHaveCount(0);
+  const green = await state.locator("i").evaluate((dot) => {
+    const up = document.createElement("span");
+    up.style.color = "var(--color-up)";
+    document.body.append(up);
+    const color = getComputedStyle(up).color;
+    up.remove();
+    return getComputedStyle(dot).backgroundColor === color;
+  });
+  expect(green, "no green dot over a feed that never started").toBe(false);
+  // The header strip mirrors the rail: not streaming, and not left unknown.
+  const strip = page.locator(".subnav-live");
+  await expect(strip).toHaveAttribute("data-state", "paused");
+  await expect(strip).toHaveText("Paused");
+});
+
 test("live feed has bounded rows, no overlapping polls, stops when hidden, and recovers from a failed window", async ({
   page,
 }) => {
