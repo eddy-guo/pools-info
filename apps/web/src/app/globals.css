@@ -39,6 +39,12 @@
   --green: var(--color-up);
   --red: var(--color-down);
   --purple: #e894f0;
+  /* Pump.fun-style rank colours for a flat list's own ranks 1-3, shared with
+     the creators list (PR 76's own #e0b45c/#c9cbd4/#c98a5c) so both leaderboards
+     agree on the same three hues. */
+  --rank-gold: #e0b45c;
+  --rank-silver: #c9cbd4;
+  --rank-bronze: #c98a5c;
   color-scheme: dark;
 }
 * {
@@ -723,15 +729,6 @@ main {
 .pagination-count {
   display: inline-block;
   min-width: 22ch;
-}
-/* The rows-per-page segmented control is a `.pagination > div` too; keep its own tight gap. */
-.pagination > .segmented {
-  gap: 2px;
-}
-/* Reserve the count's eventual width so the first real total never re-wraps the row. */
-.pagination-count {
-  display: inline-block;
-  min-width: 15ch;
 }
 /* The Show more foot holds its button's row from first paint: the button
    goes once every row is on show, which a short list's first response
@@ -2476,7 +2473,10 @@ main {
   gap: 12px;
   padding: 20px;
 }
-.live-podium a {
+/* Direct-child only: `.leaderboard-panel .live-podium` (the traders
+   leaderboard) nests an `<a>` deep inside its own card (the address chip's
+   link), which must not pick up the pool traders' own podium card here. */
+.live-podium > a {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2636,7 +2636,7 @@ main {
   .live-podium {
     gap: 8px;
   }
-  .live-podium a {
+  .live-podium > a {
     padding: 14px;
   }
 }
@@ -2658,7 +2658,7 @@ main {
     grid-template-columns: 1fr;
     padding: 16px;
   }
-  .live-podium a {
+  .live-podium > a {
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
@@ -4103,14 +4103,14 @@ main {
   gap: 12px;
   padding: 0 16px 16px;
 }
-.live-podium a {
+.live-podium > a {
   position: relative;
   gap: 0;
   padding: 16px 18px;
   border-radius: 14px;
   background: #0b0b0e;
 }
-.live-podium a:first-child {
+.live-podium > a:first-child {
   border-color: #33333d;
 }
 .podium-identity {
@@ -4196,6 +4196,37 @@ main {
   color: var(--muted);
   font-size: 12px;
 }
+/* The trader leaderboard's own win/loss bar (podium, list and phone card):
+   a 5px two-colour fill plus "NW · NL" text, never the traders-by-pool
+   `.record-bar`/`.record-cell` pair above, which stays PoolTraders-only. */
+.wl-bar {
+  display: flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  height: 5px;
+  width: 56px;
+  border-radius: 3px;
+  background: #1c1c22;
+}
+.wl-bar i {
+  height: 100%;
+  background: var(--green);
+}
+.wl-bar b {
+  height: 100%;
+  background: var(--red);
+}
+.wl-record {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wl-text {
+  font-size: 12px;
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .live-filters {
   align-items: center;
   gap: 8px;
@@ -4279,6 +4310,15 @@ main {
 .rank-number {
   color: var(--color-text-3);
   font-size: 11px;
+}
+.rank-number.rank-gold {
+  color: var(--rank-gold);
+}
+.rank-number.rank-silver {
+  color: var(--rank-silver);
+}
+.rank-number.rank-bronze {
+  color: var(--rank-bronze);
 }
 .avatar.small {
   width: 26px;
@@ -4394,22 +4434,19 @@ main {
   gap: 7px;
 }
 @container site (max-width: 767px) {
-  /* Touch targets: the chip's link and actions reach 44px inside the 44px
-     trader heading, and inside the launch card's 16px sender line by the
-     negative margin its link already carries. The creators board's chip, in
-     its rows or its table, keeps the 44px the bare link had. */
-  .mobile-trader-heading .address-chip-link,
-  .mobile-trader-heading .address-chip .icon-button,
+  /* Touch targets: the chip's link and actions reach 44px inside the launch
+     card's 16px sender line by the negative margin its link already
+     carries. The creators board's chip, in its rows or its table, keeps the
+     44px the bare link had. The trader heading's own 44px targets live with
+     the rest of its card under the leaderboard panel's own box-width
+     container, below - not this viewport-wide one - so they never lag the
+     mobile-card switch by a container-mismatch gap. */
   .creators-page .address-chip-link,
   .creators-page .address-chip .icon-button {
     min-height: 44px;
   }
   .address-chip .icon-button {
     min-width: 28px;
-  }
-  .mobile-trader-heading .follow-toggle {
-    min-height: 44px;
-    min-width: 44px;
   }
 }
 .mobile-traders,
@@ -4928,18 +4965,17 @@ main {
 .leaderboard-panel .data-table {
   table-layout: fixed;
 }
-/* Leaderboard columns follow the reference: rank, trader, then right-aligned
-   numerics with fixed widths so every row shares the same column edges. */
-/* Trader is the one auto-width column, so the fixed columns take their widths
-   first and leave it the remainder: nothing in a panel under 1094px, and the
-   address chip drew over the PnL. The table's floor is those fixed widths plus
-   168px for Trader (the 134px chip, its cell padding and slack for Linux's
-   wider glyphs); a narrower panel drops columns, below. */
+/* Leaderboard columns follow the export's grid, scaled to the panel's own
+   width: rank, trader, then right-aligned numerics with fixed widths so
+   every row shares the same column edges. W/L is widened for its bar and
+   Last narrowed now that it carries a relative age rather than the full UTC
+   stamp. Trader is the one auto-width column, so the fixed columns take
+   their widths first and leave it the remainder: the table's floor is those
+   fixed widths (1024px) plus 168px for Trader (the 134px chip, its cell
+   padding and slack for Linux's wider glyphs); a narrower panel drops
+   columns rather than scrolling, below. */
 .leaderboard-panel .data-table {
-  min-width: calc(
-    58px + 168px + 150px + 104px + 2 * 92px + 124px + 110px + 134px + 186px +
-      44px
-  );
+  min-width: 1192px;
 }
 .leaderboard-panel .data-table th:nth-child(1) {
   width: 58px;
@@ -4950,9 +4986,11 @@ main {
 .leaderboard-panel .data-table th:nth-child(4) {
   width: 104px;
 }
-.leaderboard-panel .data-table th:nth-child(5),
+.leaderboard-panel .data-table th:nth-child(5) {
+  width: 130px;
+}
 .leaderboard-panel .data-table th:nth-child(6) {
-  width: 92px;
+  width: 80px;
 }
 .leaderboard-panel .data-table th:nth-child(7) {
   width: 124px;
@@ -4964,7 +5002,7 @@ main {
   width: 134px;
 }
 .leaderboard-panel .data-table th:nth-child(10) {
-  width: 186px;
+  width: 90px;
 }
 .leaderboard-panel .data-table th:nth-child(11) {
   width: 44px;
@@ -4988,6 +5026,20 @@ main {
    the secondary tone so the eye lands on the ranking figures first. */
 .leaderboard-panel .data-table td:nth-child(1) {
   color: var(--color-text-3);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+}
+/* Pump.fun-style gold/silver/bronze, keyed by the wallet's own rank (never
+   row position) so a flat list's real ranks 1-3 carry the colour even when
+   the Following tab's rows are not in rank order. */
+.leaderboard-panel .data-table td.rank-gold {
+  color: var(--rank-gold);
+}
+.leaderboard-panel .data-table td.rank-silver {
+  color: var(--rank-silver);
+}
+.leaderboard-panel .data-table td.rank-bronze {
+  color: var(--rank-bronze);
 }
 .leaderboard-panel .data-table td:nth-child(n + 3):nth-child(-n + 5) {
   font-size: var(--text-lg);
@@ -5793,50 +5845,78 @@ a.wallet-top-pool:hover {
 /* The Following tab reserves only the rows it actually has (fewer than 25 is
    common), so it keeps the row height but not the leaderboard's full-page
    reservation. */
+/* Ranks 1-3 sit in the podium above, so the reservation below covers only
+   the flat list's default 25-3=22 rows; the podium's own band (below) is
+   reserved separately and additively. */
 .leaderboard-panel .desktop-traders:not(.following-traders) {
-  min-height: calc(25 * 62px + 44px);
+  min-height: calc(22 * 60px + 44px);
 }
 .leaderboard-panel .data-table tbody tr,
 .leaderboard-panel .data-table tbody td {
-  height: 62px;
+  height: 60px;
 }
 /* The board fits its own width rather than scrolling sideways: under the full
-   table's 1262px it drops Last, under 1076px Positions as well, under 966px
-   Best sale, and under the 832px the remaining columns need it shows the rows,
-   which carry every figure. A phone is always under 832px. */
+   table's 1192px it drops Last, under 1102px Positions as well, under 992px
+   Best sale, and under the 858px the remaining columns need it shows the
+   rows, which carry every figure. A phone is always under 858px. */
 .leaderboard-panel {
   container: traders-board / inline-size;
 }
-@container traders-board (width < 1262px) {
+@container traders-board (width < 1192px) {
   .leaderboard-panel .data-table {
-    min-width: 1076px;
+    min-width: 1102px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(10) {
     display: none;
   }
 }
-@container traders-board (width < 1076px) {
+@container traders-board (width < 1102px) {
   .leaderboard-panel .data-table {
-    min-width: 966px;
+    min-width: 992px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(8) {
     display: none;
   }
 }
-@container traders-board (width < 966px) {
+@container traders-board (width < 992px) {
   .leaderboard-panel .data-table {
-    min-width: 832px;
+    min-width: 858px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(9) {
     display: none;
   }
 }
-@container traders-board (width < 832px) {
+@container traders-board (width < 858px) {
   .leaderboard-panel .desktop-traders {
     display: none;
   }
   .leaderboard-panel .mobile-traders {
     display: block;
+  }
+  /* AuditLeaderboard (the per-pool traders panel, traders.tsx's PoolTraders,
+     reached at /traders/?pool=... - it shares the .traders-page wrapper with
+     the ranked leaderboard below, so that class alone can't tell them apart)
+     shares this same .leaderboard-panel/.mobile-trader markup with its own
+     224px card; the ranked leaderboard's 97px redesign below is scoped to
+     .ranked-traders, a marker only ProductTraders's own root carries, so it
+     never shrinks the per-pool card it doesn't own. */
+  .leaderboard-results .mobile-traders:not(.following-traders) {
+    min-height: calc(25 * 224px);
+  }
+  .leaderboard-results .mobile-trader {
+    height: 224px;
+    overflow: auto;
+  }
+  /* The identity follows its rank now that no badge holds the right edge. */
+  .leaderboard-results .mobile-trader-heading {
+    justify-content: flex-start;
+  }
+  .ranked-traders .leaderboard-panel .mobile-traders:not(.following-traders) {
+    min-height: calc(22 * 101px);
+  }
+  .ranked-traders .leaderboard-panel .mobile-trader {
+    height: 101px;
+    overflow: auto;
   }
   .mobile-trader {
     padding: 15px 14px;
@@ -5867,64 +5947,168 @@ a.wallet-top-pool:hover {
     font-size: 11px;
     color: var(--muted);
   }
-  /* Same hierarchy as the desktop rows: ROI and W/L lead, the rest support. */
-  .mobile-trader-key,
-  .mobile-trader-stats {
-    display: grid;
-    gap: 12px;
-    margin-top: 12px;
-  }
-  .mobile-trader-key {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mobile-trader-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .mobile-trader-key > span,
-  .mobile-trader-stats > span {
-    display: block;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .mobile-trader-key strong,
-  .mobile-trader-stats strong {
-    display: block;
-    margin-top: 4px;
-    font-variant-numeric: tabular-nums;
-  }
-  .mobile-trader-key strong {
-    font-size: var(--text-lg);
-    font-weight: 600;
-    color: var(--text);
-  }
-  .mobile-trader-stats strong,
-  .mobile-trader-stats .number {
-    font-size: var(--text-base);
-    font-weight: 400;
-    color: var(--color-text-2);
-  }
   .mobile-trader > .record-cell {
     margin-top: 14px;
   }
-  .leaderboard-panel .mobile-traders:not(.following-traders) {
-    min-height: calc(25 * 224px);
+  /* The 97px phone trader row (the ranked leaderboard only): rank, identity and a copy
+     control on one line with PnL over ROI at the right, then the win/loss
+     bar with volume and hold on a second line. The heading's own
+     space-between only ever sees two groups - identity, then actions - so
+     PnL and the follow toggle stay pinned together at the right edge rather
+     than spreading across the row. Scoped to this box-width container, not
+     the viewport one, so the card's own styling never lags the display
+     switch above by a container-mismatch gap at an in-between panel width. */
+  .mobile-trader-identity {
+    min-width: 0;
   }
-  .leaderboard-panel .mobile-trader {
-    height: 224px;
-    overflow: auto;
+  .mobile-trader-actions {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 4px;
   }
-  /* The identity follows its rank now that no badge holds the right edge. */
-  .leaderboard-panel .mobile-trader-heading {
-    justify-content: flex-start;
+  .mobile-trader-pnl {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .mobile-trader-pnl .number {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .mobile-trader-pnl .change {
+    font-size: 11px;
+  }
+  .mobile-trader-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 11.5px;
+    color: var(--color-text-3);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .mobile-trader-foot .wl-text {
+    font-size: 11.5px;
+  }
+  .mobile-trader-foot-stat {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mobile-trader-foot-stat .number {
+    color: var(--color-text-2);
+  }
+  /* A 44px touch target without growing the row: the same -14px trick the
+     launch row's sender link uses for its own 44px target. */
+  .mobile-trader-actions .follow-toggle {
+    margin: -14px 0;
+  }
+  .mobile-trader-heading .address-chip-link,
+  .mobile-trader-heading .address-chip .icon-button {
+    min-height: 44px;
+  }
+  .mobile-trader-heading .follow-toggle {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 .leaderboard-panel .live-podium {
-  height: 215px;
-  padding-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 0 16px;
 }
-.leaderboard-panel .live-podium > * {
-  height: 183px;
+/* The export's podium card: a rank medallion in the trader's own identity
+   hue, the address chip, the headline PnL, a neutral realized/ROI line, the
+   win/loss bar and the record - 180±4px tall at 1440. */
+.trader-podium-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 180px;
+  padding: 18px;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background: var(--color-panel-inset);
   overflow: auto;
+}
+/* A top-3 wallet keeps the same follow control the list gives every other
+   rank; it sits over the card's corner so it never competes with the
+   medallion/chip row for width. */
+.trader-podium-card > .follow-toggle {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  opacity: 1;
+}
+.trader-podium-card-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-right: 28px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.trader-podium-card-rank {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--podium-rank-bg, var(--color-surface-5));
+  border: 1px solid var(--podium-rank-fg, var(--color-line-bright));
+  color: var(--podium-rank-fg, var(--color-text-3));
+  font-size: 13px;
+  font-weight: 700;
+}
+.trader-podium-card-identity {
+  font-size: 14px;
+  font-weight: 500;
+}
+.trader-podium-card-head .address-chip {
+  min-width: 0;
+}
+.trader-podium-card-head .address-chip .mono {
+  font-size: 14px;
+  font-weight: 500;
+}
+.trader-podium-card-pnl {
+  margin-bottom: 3px;
+}
+.trader-podium-card-pnl .number {
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.trader-podium-card-meta {
+  font-size: 12.5px;
+  color: var(--color-text-3);
+  margin-bottom: 13px;
+}
+/* Neutral, not up/down: the export keeps this line quiet so the headline
+   PnL above stays the card's one coloured figure. */
+.trader-podium-card-meta .change.positive,
+.trader-podium-card-meta .change.negative {
+  color: var(--color-text-2);
+}
+.trader-podium-card > .wl-bar {
+  width: 100%;
+  margin-bottom: 9px;
+}
+.trader-podium-card-record {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Creators: a top-100 leaderboard revealed 25 rows at a time, the same reserved-row pattern as the traders leaderboard. */
@@ -6255,36 +6439,14 @@ a.wallet-top-pool:hover {
     height: 330px;
   }
   .leaderboard-panel .live-podium {
-    height: 412px;
-    padding-top: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 0 12px;
   }
-  .leaderboard-panel .live-podium > * {
-    height: 120px;
-  }
-  /* Fixed tracks with start-aligned text: a resolved address or value cannot move
-     its neighbours now that the podium sits inside the first mobile screen. */
-  .leaderboard-panel .live-podium a {
-    display: grid;
-    grid-template-columns: 35px minmax(0, 1fr);
-    grid-template-areas:
-      "avatar label"
-      "avatar name"
-      ". value";
-    column-gap: 12px;
-    row-gap: 8px;
-    align-items: center;
-  }
-  .leaderboard-panel .live-podium a > small {
-    grid-area: label;
-  }
-  .leaderboard-panel .live-podium a > .avatar {
-    grid-area: avatar;
-  }
-  .leaderboard-panel .live-podium a > strong {
-    grid-area: name;
-  }
-  .leaderboard-panel .live-podium a > .number {
-    grid-area: value;
+  /* Taller than the 1440 card: the chip's copy/explorer icons grow to the
+     44px touch target here, which the fixed desktop height doesn't budget
+     for. */
+  .trader-podium-card {
+    height: 192px;
   }
   /* Mobile pools are cards with no header row, so the message starts flush. */
   .explore-page .table-region > .empty-state {

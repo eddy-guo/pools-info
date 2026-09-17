@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  identityTint,
   shortAddress,
   type AnalyticsLeaderboardResponse,
   type AnalyticsWalletResponse,
@@ -16,6 +17,51 @@ import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { AddressChip, Avatar, Change } from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
+
+/** The podium always holds ranks 1-3; the flat list starts past them when the
+    podium shows, and shows every rank (including 1-3, coloured) when it does
+    not - a window with fewer than three wallets, or the Following tab. */
+const PODIUM_SIZE = 3;
+/** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
+    by the wallet's actual rank rather than row position so the Following
+    tab's out-of-order rows never pick up a colour that isn't theirs. */
+const RANK_TIER_CLASS: Record<number, string> = {
+  1: "rank-gold",
+  2: "rank-silver",
+  3: "rank-bronze",
+};
+function rankTierClass(rank: number | null | undefined) {
+  return (rank && RANK_TIER_CLASS[rank]) || undefined;
+}
+/** `3m`, `2h`, `4d`: relative to a `now` frozen once at mount so an
+    unrelated re-render (a Show more click) never rewrites an already-painted
+    row's text out from under it. */
+function relativeAge(seconds: number, now: number) {
+  const delta = Math.max(0, now - seconds);
+  if (delta < 60) return `${delta}s`;
+  if (delta < 3600) return `${Math.floor(delta / 60)}m`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
+  return `${Math.floor(delta / 86400)}d`;
+}
+function WinLossBar({ wins, losses }: { wins: number; losses: number }) {
+  const total = wins + losses;
+  return (
+    <span className="wl-bar" aria-hidden="true">
+      <i style={{ width: `${total ? (wins / total) * 100 : 0}%` }} />
+      <b style={{ width: `${total ? (losses / total) * 100 : 0}%` }} />
+    </span>
+  );
+}
+function WinLossRecord({ wins, losses }: { wins: number; losses: number }) {
+  return (
+    <span className="wl-record">
+      <WinLossBar wins={wins} losses={losses} />
+      <span className="wl-text">
+        {wins}W · {losses}L
+      </span>
+    </span>
+  );
+}
 
 /** The leaderboard never requests past its top 100, whatever the API allows. */
 const CAP = 100;
@@ -111,12 +157,14 @@ function DesktopTraderRow({
   pending,
   metric,
   window,
+  now,
 }: {
   w: AnalyticsWalletSummary | undefined;
   index: number;
   pending: boolean;
   metric: Metric;
   window: LiveWindow;
+  now: number;
 }) {
   return (
     <tr
@@ -124,7 +172,7 @@ function DesktopTraderRow({
       aria-hidden={!w}
       data-row={w ? "resolved" : "reserved"}
     >
-      <td data-pending={pending}>
+      <td data-pending={pending} className={rankTierClass(w?.rank)}>
         {w ? <>#{w.rank}</> : pending ? "Pending" : " "}
       </td>
       <td data-pending={pending}>
@@ -157,9 +205,7 @@ function DesktopTraderRow({
       </td>
       <td data-pending={pending}>
         {w ? (
-          <>
-            {w.wins} / {w.losses}
-          </>
+          <WinLossRecord wins={w.wins} losses={w.losses} />
         ) : pending ? (
           "Pending"
         ) : (
@@ -192,7 +238,11 @@ function DesktopTraderRow({
       </td>
       <td data-pending={pending}>
         {w ? (
-          <>{w.last ? utc(w.last) : <Unavailable />}</>
+          w.last ? (
+            <span title={utc(w.last)}>{relativeAge(w.last, now)}</span>
+          ) : (
+            <Unavailable />
+          )
         ) : pending ? (
           "Pending"
         ) : (
@@ -212,6 +262,10 @@ function DesktopTraderRow({
   );
 }
 
+/** The 97px phone row: rank, identity and a copy control on one line with
+    PnL over ROI at the right, then the win/loss bar with volume and hold on
+    a second line. The follow toggle sits over the top-right corner so it
+    never competes with the identity/PnL row for width. */
 function MobileTraderCard({
   w,
   index,
@@ -226,58 +280,49 @@ function MobileTraderCard({
   window: LiveWindow;
 }) {
   return (
-    <div className="mobile-trader" data-row-index={index}>
+    <div
+      className="mobile-trader"
+      data-row-index={index}
+      data-row={w ? "resolved" : "reserved"}
+    >
       {w ? (
         <>
           <div className="mobile-trader-heading">
             <div className="mobile-trader-identity">
-              <span className="rank-number">#{w.rank}</span>
+              <span className={`rank-number ${rankTierClass(w.rank) ?? ""}`}>
+                #{w.rank}
+              </span>
               <AddressChip
                 address={w.address}
                 href={`/wallet/${w.address}/?window=${window}`}
               />
             </div>
-            <FollowRowButton address={w.address} />
-          </div>
-          <div className="mobile-trader-value">
-            <Eth
-              wei={metric === "realized" ? w.realizedWei : w.netWei}
-              signed
-            />
-            <span>{metric === "realized" ? "realized" : "net flow"}</span>
-          </div>
-          <div className="mobile-trader-key">
-            <span>
-              ROI
-              <strong>
+            <div className="mobile-trader-actions">
+              <div className="mobile-trader-pnl">
+                <Eth
+                  wei={metric === "realized" ? w.realizedWei : w.netWei}
+                  signed
+                />
                 {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
-              </strong>
-            </span>
-            <span>
-              W / L
-              <strong className="number">
-                {w.wins} / {w.losses}
-              </strong>
-            </span>
+              </div>
+              <FollowRowButton address={w.address} />
+            </div>
           </div>
-          <div className="mobile-trader-stats">
-            <span>
-              Trades
-              <strong className="number">
-                {w.rankingTradeCount ?? w.supportedTradeCount}
-              </strong>
+          <div className="mobile-trader-foot">
+            <WinLossBar wins={w.wins} losses={w.losses} />
+            <span className="wl-text">
+              {w.wins}W · {w.losses}L
             </span>
-            <span>
-              Volume
-              <strong>
-                <Eth wei={w.volumeWei} />
-              </strong>
+            <span className="mobile-trader-foot-stat">
+              Vol <Eth wei={w.volumeWei} />
             </span>
-            <span>
-              Best sale
-              <strong>
-                <Eth wei={w.bestWei} signed />
-              </strong>
+            <span className="mobile-trader-foot-stat">
+              Hold{" "}
+              {w.avgHold == null ? (
+                <Unavailable />
+              ) : (
+                `${Math.round(w.avgHold)}s`
+              )}
             </span>
           </div>
         </>
@@ -292,27 +337,14 @@ function MobileTraderCard({
                 Wallet pending
               </span>
             </div>
-          </div>
-          <div className="mobile-trader-value">
-            <span className="number" data-pending="true">
-              PnL pending
-            </span>
-          </div>
-          <div className="mobile-trader-key">
-            {["ROI", "W / L"].map((label) => (
-              <span key={label}>
-                {label}
-                <strong data-pending="true">Pending</strong>
+            <div className="mobile-trader-pnl">
+              <span className="number" data-pending="true">
+                Pending
               </span>
-            ))}
+            </div>
           </div>
-          <div className="mobile-trader-stats">
-            {["Trades", "Volume", "Best sale"].map((label) => (
-              <span key={label}>
-                {label}
-                <strong data-pending="true">Pending</strong>
-              </span>
-            ))}
+          <div className="mobile-trader-foot">
+            <span data-pending="true">Pending</span>
           </div>
         </>
       ) : null}
@@ -320,6 +352,88 @@ function MobileTraderCard({
   );
 }
 
+/**
+ * The export's podium card: a rank medallion in the trader's own identity
+ * hue, the address chip, the headline PnL, a neutral realized/ROI line, the
+ * win/loss bar and the record. Not a link itself - AddressChip already
+ * carries the wallet's navigation, copy and explorer actions, and nesting
+ * another interactive wrapper around those would be invalid HTML.
+ */
+function PodiumCard({
+  w,
+  rank,
+  pending,
+  metric,
+  window,
+}: {
+  w: AnalyticsWalletSummary | undefined;
+  rank: number;
+  pending: boolean;
+  metric: Metric;
+  window: LiveWindow;
+}) {
+  const tint = w ? identityTint(w.address) : undefined;
+  return (
+    <div className="trader-podium-card" data-row-index={rank - 1}>
+      {w && <FollowRowButton address={w.address} />}
+      <div className="trader-podium-card-head">
+        <span
+          className="trader-podium-card-rank"
+          style={
+            tint
+              ? ({
+                  "--podium-rank-bg": tint.background,
+                  "--podium-rank-fg": tint.foreground,
+                } as React.CSSProperties)
+              : undefined
+          }
+        >
+          {rank}
+        </span>
+        {w ? (
+          <AddressChip
+            address={w.address}
+            href={`/wallet/${w.address}/?window=${window}`}
+          />
+        ) : (
+          <span className="trader-podium-card-identity" data-pending={pending}>
+            {pending ? "Pending" : " "}
+          </span>
+        )}
+      </div>
+      <div className="trader-podium-card-pnl">
+        <Eth
+          pending={pending}
+          wei={w ? (metric === "realized" ? w.realizedWei : w.netWei) : undefined}
+          signed
+        />
+      </div>
+      <div className="trader-podium-card-meta">
+        {w ? (
+          <>
+            realized · ROI{" "}
+            {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
+          </>
+        ) : (
+          <span data-pending={pending}>{pending ? "Pending" : " "}</span>
+        )}
+      </div>
+      <WinLossBar wins={w?.wins ?? 0} losses={w?.losses ?? 0} />
+      <div className="trader-podium-card-record">
+        {w ? (
+          <>
+            <span>
+              {w.wins}W · {w.losses}L
+            </span>
+            <span>{w.rankingTradeCount ?? w.supportedTradeCount} trades</span>
+          </>
+        ) : (
+          <span data-pending={pending}>{pending ? "Pending" : " "}</span>
+        )}
+      </div>
+    </div>
+  );
+}
 /**
  * The export's "YOU · RANK N" row above the podium, for the wallet this
  * browser marked as its own. Its rank is the wallet read's, never derived
@@ -407,6 +521,14 @@ export function ProductTraders() {
   const items = forKey ? state.items.slice(0, shown) : [];
   const total = settled ? state.total : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
+  // Optimistic until settled, so the podium band never pops in after first
+  // paint; a settled total under 3 wallets is the one case it disappears.
+  const showPodium = total === null || total >= PODIUM_SIZE;
+  const listOffset = showPodium ? PODIUM_SIZE : 0;
+  const listCount = Math.max(0, shown - listOffset);
+  // Frozen at mount so a later re-render (a Show more click) never rewrites
+  // an already-painted "Last" cell's relative age out from under it.
+  const [now] = useState(() => Math.floor(Date.now() / 1000));
 
   const { addresses: followed } = useFollowing();
   const following = useFollowedLeaderboard(
@@ -459,7 +581,7 @@ export function ProductTraders() {
   }, [state.items.length, state.loading]);
 
   return (
-    <div className="page traders-page">
+    <div className="page traders-page ranked-traders">
       <div className="page-heading">
         <h1>
           Trader leaderboard<span className="title-dot">.</span>
@@ -521,48 +643,22 @@ export function ProductTraders() {
               </p>
             )}
             <>
-              <div className="live-podium">
-                {Array.from({ length: 3 }, (_, index) => items[index]).map(
-                  (w, index) => (
-                    <Link
-                      href={
-                        w
-                          ? `/wallet/${w.address}/?window=${window}`
-                          : "/traders/"
-                      }
-                      key={index}
-                      prefetch={!!w}
-                      aria-disabled={!w}
-                      tabIndex={w ? undefined : -1}
-                      onClick={(event) => {
-                        if (!w) event.preventDefault();
-                      }}
-                    >
-                      <small data-pending={!w && !knownAbsent(index)}>
-                        {w ? `#${w.rank}` : "Rank"}
-                      </small>
-                      {w ? (
-                        <Avatar address={w.address} />
-                      ) : (
-                        <span
-                          className="avatar"
-                          data-pending={!w && !knownAbsent(index)}
-                        >
-                          Wallet
-                        </span>
-                      )}
-                      <strong data-pending={!w && !knownAbsent(index)}>
-                        {w ? shortAddress(w.address) : "Wallet pending"}
-                      </strong>
-                      <Eth
-                        wei={metric === "realized" ? w?.realizedWei : w?.netWei}
-                        signed
+              {showPodium && (
+                <div className="live-podium">
+                  {Array.from({ length: PODIUM_SIZE }, (_, index) => items[index]).map(
+                    (w, index) => (
+                      <PodiumCard
+                        key={index}
+                        rank={index + 1}
+                        w={w}
                         pending={!w && !knownAbsent(index)}
+                        metric={metric}
+                        window={window}
                       />
-                    </Link>
-                  ),
-                )}
-              </div>
+                    ),
+                  )}
+                </div>
+              )}
               <div className="table-scroll desktop-traders">
                 <table className="data-table">
                   <thead>
@@ -576,39 +672,42 @@ export function ProductTraders() {
                       <th>Volume</th>
                       <th>Positions</th>
                       <th>Best sale</th>
-                      <th>Last (UTC)</th>
+                      <th>Last</th>
                       <th aria-label="Follow" />
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from({ length: shown }, (_, index) => items[index]).map(
-                      (w, index) => (
-                        <DesktopTraderRow
-                          key={index}
-                          index={index}
-                          w={w}
-                          pending={!w && !knownAbsent(index)}
-                          metric={metric}
-                          window={window}
-                        />
-                      ),
-                    )}
+                    {Array.from(
+                      { length: listCount },
+                      (_, i) => listOffset + i,
+                    ).map((index) => (
+                      <DesktopTraderRow
+                        key={index}
+                        index={index}
+                        w={items[index]}
+                        pending={!items[index] && !knownAbsent(index)}
+                        metric={metric}
+                        window={window}
+                        now={now}
+                      />
+                    ))}
                   </tbody>
                 </table>
               </div>
               <div className="mobile-traders">
-                {Array.from({ length: shown }, (_, index) => items[index]).map(
-                  (w, index) => (
-                    <MobileTraderCard
-                      key={index}
-                      index={index}
-                      w={w}
-                      pending={!w && !knownAbsent(index)}
-                      metric={metric}
-                      window={window}
-                    />
-                  ),
-                )}
+                {Array.from(
+                  { length: listCount },
+                  (_, i) => listOffset + i,
+                ).map((index) => (
+                  <MobileTraderCard
+                    key={index}
+                    index={index}
+                    w={items[index]}
+                    pending={!items[index] && !knownAbsent(index)}
+                    metric={metric}
+                    window={window}
+                  />
+                ))}
               </div>
             </>
             {settled && total === 0 && (
@@ -649,7 +748,7 @@ export function ProductTraders() {
                         <th>Volume</th>
                         <th>Positions</th>
                         <th>Best sale</th>
-                        <th>Last (UTC)</th>
+                        <th>Last</th>
                         <th aria-label="Follow" />
                       </tr>
                     </thead>
@@ -666,6 +765,7 @@ export function ProductTraders() {
                           pending={followedPending}
                           metric={metric}
                           window={window}
+                          now={now}
                         />
                       ))}
                     </tbody>

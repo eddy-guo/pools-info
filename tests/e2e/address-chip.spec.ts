@@ -52,7 +52,7 @@ const cells: Cell[] = [
       mobile: ".mobile-traders .mobile-trader:has(.address-chip)",
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/\?window=All$/,
-    height: { desktop: 62, mobile: 224 },
+    height: { desktop: 60, mobile: 101 },
     identicon: { desktop: 16, mobile: 16 },
     tapTarget: 44,
   },
