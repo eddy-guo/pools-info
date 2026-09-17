@@ -3,9 +3,12 @@ import { shortAddress } from "@pools/core";
 import catalog from "../../data/catalog/chain.json";
 import chain from "../../data/snapshots/chain.json";
 import captures from "../../data/pools/index.json";
+import { methodologyCopy } from "../support/pool-copy";
 
 /** The read API does not publish every catalog pool's detail. */
-const notPublished = { error: "This item is outside available saved coverage." };
+const notPublished = {
+  error: "This item is outside available saved coverage.",
+};
 /** Coverage talk the pool page must never carry back to the reader. */
 const explanations =
   /outside current coverage|retry to check coverage|does not prove|no available saved publication|coverage limit/i;
@@ -36,7 +39,10 @@ async function withheldDetail(page: Page, poolId: string) {
   });
   return release;
 }
-async function openFromScreener(page: Page, pool: { id: string; token: string }) {
+async function openFromScreener(
+  page: Page,
+  pool: { id: string; token: string },
+) {
   /* The launches view keeps rows a metric sort would drop. */
   await page.goto(`/?view=new&q=${pool.token}`);
   const row = page
@@ -51,6 +57,12 @@ async function openFromScreener(page: Page, pool: { id: string; token: string })
 }
 const boxes = (locators: Locator[]) =>
   Promise.all(locators.map((locator) => locator.boundingBox()));
+/** The page has heard back about the pool, published or not. */
+const settled = (page: Page) =>
+  expect(page.locator(".nullable-pool-page")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
 
 test("a pool whose detail is unpublished keeps the identity its row showed", async ({
   page,
@@ -61,9 +73,7 @@ test("a pool whose detail is unpublished keeps the identity its row showed", asy
   await expect(region).toHaveAttribute("data-chart", "empty");
   const before = await boxes([sentinel, region]);
   release();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
-  ).toBeVisible();
+  await settled(page);
   await expect(
     page.getByRole("heading", { name: launchOnly.name, exact: true }),
   ).toBeVisible();
@@ -85,6 +95,7 @@ test("a pool whose detail is unpublished keeps the identity its row showed", asy
     page.getByRole("link", { name: "Launch transaction ↗" }),
   ).toHaveAttribute("href", new RegExp(`/tx/${launchOnly.launchTx}$`, "i"));
   await expect(page.locator("body")).not.toContainText(explanations);
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(page.getByText("Price chart unavailable")).toBeVisible();
   await expect(page.locator(".interactive-chart")).toHaveCount(0);
   expect(
@@ -113,14 +124,13 @@ test("a measured row holds its chart region when the detail is unpublished", asy
   await expect(region).toHaveAttribute("data-chart", "reserved");
   const before = await boxes([sentinel, region]);
   release();
-  await expect(
-    page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
-  ).toBeVisible();
+  await settled(page);
   await expect(
     page.getByRole("heading", { name: measured.name, exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Price chart unavailable")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(explanations);
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   expect(
     await boxes([sentinel, region]),
     "the page and its chart region keep their first-paint geometry",
@@ -134,9 +144,7 @@ test("a pool opened by URL alone states plain unavailable values", async ({
     route.fulfill({ status: 404, json: notPublished }),
   );
   await page.goto(`/pool/${launchOnly.id}/`);
-  await expect(
-    page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
-  ).toBeVisible();
+  await settled(page);
   await expect(
     page.getByRole("heading", { name: "Pool name unavailable", exact: true }),
   ).toBeVisible();
@@ -146,8 +154,8 @@ test("a pool opened by URL alone states plain unavailable values", async ({
   await expect(page.locator(".pool-launch-meta")).toHaveText(
     "Launch time unavailable · sender unavailable",
   );
-  await expect(page.locator(".pool-coverage-note")).toHaveText("");
   await expect(page.locator("body")).not.toContainText(explanations);
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(page.getByText("Price chart unavailable")).toBeVisible();
 });
 
@@ -197,8 +205,8 @@ const resetShifts = (page: Page) =>
   });
 
 /** Nothing scrolls sideways, every control is on screen, each reserved slot
-    holds its content, the badges share the name's row on desktop and wrap
-    under it on the phone, and the address shows the form that fits. */
+    holds its content, the launch mode badge shares the name's row on desktop
+    and wraps under it on the phone, and the address shows the form that fits. */
 async function expectHeaderFits(page: Page, token: string, project: Project) {
   const { width } = viewports[project];
   const header = await page.evaluate(() => {
@@ -218,7 +226,7 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
         ...document.querySelectorAll(".page-heading a, .page-heading button"),
       ].map(rect),
       name: rect(document.querySelector(".pool-identity-title h1")!),
-      /* The launch mode and the evidence badge follow the symbol. */
+      /* The launch mode badge follows the symbol. */
       badges: [...document.querySelectorAll(".pool-identity-title > span")]
         .slice(1)
         .map(rect),
@@ -241,14 +249,14 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
   }
   for (const slot of header.slots)
     expect(slot.fits, `${slot.selector} holds its content`).toBe(true);
-  expect(header.badges).toHaveLength(2);
+  expect(header.badges).toHaveLength(1);
   for (const badge of header.badges)
     if (project === "desktop")
-      expect(badge.top, "badges share the name's row").toBeLessThan(
+      expect(badge.top, "the badge shares the name's row").toBeLessThan(
         header.name.bottom,
       );
     else
-      expect(badge.top, "badges wrap under the name").toBeGreaterThanOrEqual(
+      expect(badge.top, "the badge wraps under the name").toBeGreaterThanOrEqual(
         header.name.bottom,
       );
   const address = page.locator(".pool-address-slot");
@@ -293,9 +301,7 @@ test.describe("the pool header fits the viewport", () => {
     await openFromScreener(page, measured);
     await resetShifts(page);
     release();
-    await expect(
-      page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
-    ).toBeVisible();
+    await settled(page);
     await expectHeaderFits(
       page,
       measured.token,
@@ -311,9 +317,7 @@ test.describe("the pool header fits the viewport", () => {
     await openFromScreener(page, launchOnly);
     await resetShifts(page);
     release();
-    await expect(
-      page.getByRole("status").filter({ hasText: "Pool data is unavailable." }),
-    ).toBeVisible();
+    await settled(page);
     await expectHeaderFits(
       page,
       launchOnly.token,

@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import type { ObservedMarket } from "@pools/core";
 import captured from "../../data/pools/index.json";
 import { preloadedProduct } from "../../apps/web/src/lib/product-server";
+import { methodologyCopy } from "../support/pool-copy";
 const id = "0x" + "1".repeat(64),
   token = "0x" + "2".repeat(40),
   tx = "0x" + "3".repeat(64),
@@ -97,9 +98,6 @@ test("broad-only pool uses the real chart and exact market stats while accountin
     page.getByRole("img", { name: /Price candle chart/ }),
   ).toBeVisible();
   await expect(
-    page.getByText(/Prices use token units verified at block/),
-  ).toBeVisible();
-  await expect(
     page
       .locator(".stat")
       .filter({ has: page.getByText("Observed trades", { exact: true }) }),
@@ -113,13 +111,13 @@ test("broad-only pool uses the real chart and exact market stats while accountin
     path: testInfo.outputPath("broad-pool.png"),
     fullPage: true,
   });
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await page.getByRole("button", { name: "Holders", exact: true }).click();
   await expect(page.getByText("Holder accounting unavailable")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await page.getByRole("button", { name: "Trades", exact: true }).click();
-  await expect(
-    page.getByText(/No beneficiary attribution is inferred/),
-  ).toBeVisible();
   await expect(page.locator("main tbody tr")).toHaveCount(1);
+  await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(
     page.getByRole("option", { name: "FDV", exact: true }),
   ).toHaveCount(0);
@@ -133,7 +131,9 @@ test("quiet token retains its chart with a dated unit basis after the global mar
   page,
 }) => {
   let advanced = false;
+  let reads = 0;
   await page.route(`**/api/product/pools/${id}/`, (route) => {
+    reads++;
     const market = fixture();
     if (advanced)
       market.coverage.cutoff = {
@@ -153,15 +153,8 @@ test("quiet token retains its chart with a dated unit basis after the global mar
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
   advanced = true;
-  await page
-    .getByRole("button", { name: "Refresh pool data", exact: true })
-    .click();
-  await expect(
-    page.getByText(/Observed market coverage: blocks.*22,754,689/),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Prices use token units verified at block 22,754,679/),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
   await expect(
     page.getByRole("img", { name: /Price candle chart/ }),
   ).toBeVisible();
@@ -225,17 +218,12 @@ test("direct pool link preserves verified published deep accounting alongside br
   );
   await page.goto(`/pool/${deep.id}/`);
   await expect(page.getByRole("heading", { name: deep.name })).toBeVisible();
-  await expect(
-    page.getByText(/This pool’s market data is through block/),
-  ).toBeVisible();
   await expect(page.getByText("Trader PnL unavailable")).toHaveCount(0);
   await expect(
     page.locator(".trader-table, .mobile-traders").filter({ visible: true }),
   ).toBeVisible();
 });
-test("discovered-only pool shows unprocessed coverage without invented zero totals", async ({
-  page,
-}) => {
+test("discovered-only pool shows no invented zero totals", async ({ page }) => {
   const market = fixture();
   Object.assign(market, {
     decimals: null,
@@ -266,9 +254,7 @@ test("discovered-only pool shows unprocessed coverage without invented zero tota
     }),
   );
   await page.goto(`/pool/${id}/`);
-  await expect(
-    page.getByText(/Market history has not been processed/),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
   await expect(
     page
       .locator(".stat")

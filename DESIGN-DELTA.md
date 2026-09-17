@@ -90,14 +90,17 @@ height unless the row that opened it carried no market evidence, in which case
 it paints the empty state's height from the start (`pool-row-memory.ts` carries
 that row into the page, and hydration cannot read it, so a direct URL always
 reserves the chart). A pool whose detail the read API does not publish keeps
-whichever height it painted with.
+whichever height it painted with. The pool page reserves no slot for coverage
+or methodology copy (evidence badge, refresh status, coverage paragraph, chart
+footnote, stat captions): that copy is gone, and the price heading and stat
+cards are sized to the price, its change box and the value alone.
 
 Under 768px the pool heading stacks into one column that never wraps, and its
 slots are sized for a 390px phone: the title holds two rows (the name beside
-its fixed-width symbol, then the launch mode and evidence badges), the address
-slot holds the short address at the 44px control height (the full one is in
-the DOM for wider layouts), and the launch meta holds two lines; the heading
-is the sum of those, the avatar and the two-row action grid.
+its fixed-width symbol, then the launch mode badge), the address slot holds the
+short address at the 44px control height (the full one is in the DOM for wider
+layouts), and the launch meta holds two lines; the heading is the sum of those,
+the avatar and the two-row action grid.
 
 Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
 (`screener-before-desktop.png` / `screener-after-desktop.png`, and mobile peers).
