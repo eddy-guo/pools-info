@@ -3,6 +3,7 @@ import { parseRequest, RequestError, type ReadRequest } from "./request";
 import type { Reader } from "./reader";
 import { respondTokenImage, type TokenImageService } from "./token-image-store";
 import { createWalletHistory, type WalletHistory } from "./wallet-history";
+import { createEthPriceService, type EthPriceService } from "./eth-price";
 
 /** Small per-instance limits. We deliberately do not trust forwarded IP headers
  * or keep visitor/account records. Railway may add an edge limit separately. */
@@ -15,6 +16,7 @@ export function createApi(
     images = null as TokenImageService | null,
     maxImagesPerMinute = 1200,
     history = createWalletHistory({ client: null }) as WalletHistory,
+    ethPrice = createEthPriceService() as EthPriceService,
   } = {},
 ) {
   const cache = new Map<
@@ -84,6 +86,15 @@ export function createApi(
         } finally {
           activeImages--;
         }
+        return;
+      }
+      if (request.route === "eth-price") {
+        const result = await ethPrice.read();
+        res.setHeader(
+          "Cache-Control",
+          "public, max-age=60, stale-while-revalidate=540",
+        );
+        send(200, JSON.stringify(result));
         return;
       }
       // A rewound recent window must disappear on the very next poll.
