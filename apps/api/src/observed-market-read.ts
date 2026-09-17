@@ -39,6 +39,83 @@ export const literal = {
   hash: (column: string) =>
     `${column} ~ '^0x[0-9a-f]*$' AND length(${column})=66`,
 };
+/** The display price of a raw sqrt price state in the declared units: the
+ * same exact numeric expression as the raw path applies per swap. */
+const priceOf = (sqrt: string) =>
+  `trunc(6277101735386680763835789423207666416102355444464034512896::numeric * power(10::numeric,$5::integer) / (${sqrt}*${sqrt}))`;
+/** The market statement served from the canonical rollups for a broad-selected
+ * cut. $1 pool, $2 start block, $3 cutoff block, $4 window start, $5 decimals.
+ * Trades and volume come from whole batch summaries inside the window plus the
+ * edge batches' intersecting buckets, exactly as the explore read sums them.
+ * The latest and baseline price states are the newest bucket at or before the
+ * cutoff and the newest before the window. Candles fold the buckets by minute
+ * with hashable aggregates only, so the fold never sorts the pool's buckets
+ * and its memory is the pool's minutes: a minute is a candle when every swap
+ * in it is supported, and because the price is monotonic in the sqrt price
+ * its high and low are the prices of the lowest and highest sqrt among its
+ * swaps and the previous swap's state. Only the served candles then probe the
+ * pool price index for their opening, closing and previous states (the
+ * previous non-empty minute's last bucket), at most three probes each; an open
+ * is that previous state or, after an unsupported swap, the minute's own first.
+ * Observations are the newest fifty broad rows. Identity conflicts are the
+ * write-time caches touching this pool on either side; the projection
+ * validated provenance per row when it wrote the bucket. */
+const bucketState = (time: string, order: string) =>
+  `SELECT * FROM broad_market_buckets WHERE chain_id=4663 AND pool_id=$1 AND batch_end<=$3 AND timestamp=${time} ORDER BY ${order} LIMIT 1`;
+const rollupMarketSql = `WITH flow AS (
+    SELECT coalesce(sum(trades),0) AS trades,coalesce(sum(unsupported),0) AS unsupported,coalesce(sum(volume_wei),0) AS volume FROM (
+      SELECT trades,unsupported,volume_wei FROM broad_market_summaries
+        WHERE chain_id=4663 AND pool_id=$1 AND batch_end<=$3 AND first_timestamp>=$4
+      UNION ALL
+      SELECT k.trades,k.unsupported,k.volume_wei FROM broad_market_buckets k
+        JOIN broad_market_summaries s USING(chain_id,stream_key,batch_end,pool_id)
+        WHERE k.chain_id=4663 AND k.pool_id=$1 AND k.batch_end<=$3 AND k.timestamp>=$4 AND s.first_timestamp<$4
+    ) inputs
+  ), minutes AS (
+    SELECT timestamp/60 AS minute,sum(unsupported) AS unsupported,sum(volume_wei) AS volume,min(min_sqrt) AS min_sqrt,max(max_sqrt) AS max_sqrt,
+      min(timestamp) AS first_time,max(timestamp) AS last_time
+    FROM broad_market_buckets WHERE chain_id=4663 AND pool_id=$1 AND batch_end<=$3 GROUP BY timestamp/60
+  ), buckets AS (
+    SELECT * FROM (SELECT *,lag(last_time) OVER(ORDER BY minute) AS previous_time FROM minutes) ordered
+    WHERE $5::integer IS NOT NULL AND unsupported=0 AND min_sqrt>0
+  ), history AS (
+    SELECT b.minute*60 AS time,
+      ${priceOf("coalesce(previous.sqrt,opening.first_sqrt)")}::text AS open,
+      ${priceOf("least(previous.sqrt,b.min_sqrt)")}::text AS high,
+      ${priceOf("greatest(previous.sqrt,b.max_sqrt)")}::text AS low,
+      ${priceOf("closing.last_sqrt")}::text AS close,b.volume::text AS volume
+    FROM (SELECT * FROM buckets ORDER BY minute DESC LIMIT 1000) b
+    CROSS JOIN LATERAL (${bucketState("b.first_time", "first_block,first_log,first_tx")}) opening
+    CROSS JOIN LATERAL (${bucketState("b.last_time", "last_block DESC,last_log DESC,last_tx DESC")}) closing
+    LEFT JOIN LATERAL (SELECT CASE WHEN last_price_supported THEN last_sqrt END AS sqrt
+      FROM (${bucketState("b.previous_time", "last_block DESC,last_log DESC,last_tx DESC")}) state) previous ON true
+  ), observations AS (
+    SELECT tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei::text AS eth_wei,
+      CASE WHEN side IS NOT NULL THEN abs(amount1)::text END AS token_raw
+    FROM broad_swaps WHERE chain_id=4663 AND pool_id=$1 AND block_number BETWEEN $2 AND $3
+    ORDER BY block_number DESC,log_index DESC LIMIT 50
+  )
+  SELECT flow.trades,CASE WHEN flow.unsupported=0 THEN flow.volume::text END AS volume,false AS invalid,
+    CASE WHEN latest.last_price_supported THEN ${priceOf("latest.last_sqrt")}::text END AS price,
+    CASE WHEN baseline.last_price_supported THEN ${priceOf("baseline.last_sqrt")}::text END AS baseline_price,
+    baseline.last_block AS baseline_block,baseline.last_hash AS baseline_hash,baseline.timestamp AS baseline_timestamp,
+    (SELECT count(*) FROM buckets)>1000 AS truncated,
+    coalesce((SELECT jsonb_agg(jsonb_build_object('time',time,'open',open,'high',high,'low',low,'close',close,'volume',volume) ORDER BY time) FROM history),'[]'::jsonb) AS candles,
+    coalesce((SELECT jsonb_agg(jsonb_build_object('id',tx_hash||':'||log_index,'transactionHash',tx_hash,'logIndex',log_index,'block',block_number,'blockHash',block_hash,'timestamp',timestamp,'side',side,'ethWei',eth_wei,'tokenRaw',token_raw) ORDER BY block_number DESC,log_index DESC,tx_hash DESC) FROM observations),'[]'::jsonb) AS observations,
+    EXISTS(SELECT 1 FROM broad_market_conflicts c
+      JOIN broad_swaps b ON b.chain_id=c.chain_id AND b.tx_hash=c.tx_hash AND b.log_index=c.log_index
+      LEFT JOIN indexed_events e ON e.chain_id=c.chain_id AND e.stream_key=c.copy_stream AND e.tx_hash=c.tx_hash AND e.log_index=c.log_index
+      WHERE c.chain_id=4663 AND c.batch_end<=$3 AND (b.pool_id=$1 OR e.pool_id=$1)) OR
+    EXISTS(SELECT 1 FROM broad_market_recent_conflicts c
+      JOIN broad_swaps b ON b.chain_id=c.chain_id AND b.tx_hash=c.tx_hash AND b.log_index=c.log_index
+      LEFT JOIN recent_swaps e ON e.chain_id=c.chain_id AND e.tx_hash=c.tx_hash AND e.log_index=c.log_index
+      WHERE c.chain_id=4663 AND c.batch_end<=$3 AND (b.pool_id=$1 OR e.pool_id=$1)) AS conflict,
+    false AS other_pool_conflict
+  FROM flow
+  LEFT JOIN LATERAL (SELECT * FROM broad_market_buckets WHERE chain_id=4663 AND pool_id=$1 AND batch_end<=$3
+    ORDER BY timestamp DESC,last_block DESC,last_log DESC,last_tx DESC LIMIT 1) latest ON true
+  LEFT JOIN LATERAL (SELECT * FROM broad_market_buckets WHERE chain_id=4663 AND pool_id=$1 AND batch_end<=$3 AND timestamp<$4
+    ORDER BY timestamp DESC,last_block DESC,last_log DESC,last_tx DESC LIMIT 1) baseline ON true`;
 /** Pool-scoped evidence adapter. Recent copies may corroborate history, but do
  * not move the historical cutoff or imply transfer/accounting completeness. */
 export async function readObservedMarket(
@@ -53,15 +130,28 @@ export async function readObservedMarket(
       d.block_hash AS discovery_hash,d.content_hash AS discovery_content_hash,
       bb.discovery_hash AS pinned_hash,bb.discovery_content_hash AS pinned_content_hash,
       EXISTS(SELECT 1 FROM pool_launch_sources ps WHERE ps.chain_id=s.chain_id AND ps.pool_id=$1
-        AND ps.stream_key='discovery:v2' AND ps.batch_end<=bb.discovery_batch) AS pool_registered
+        AND ps.stream_key='discovery:v2' AND ps.batch_end<=bb.discovery_batch) AS pool_registered,
+      s.kind='broad' AND NOT EXISTS(SELECT 1 FROM broad_batches gap LEFT JOIN broad_market_batches m USING(chain_id,stream_key,batch_end)
+        WHERE gap.chain_id=s.chain_id AND gap.stream_key=s.stream_key AND gap.batch_end<=s.cursor_block AND m.batch_end IS NULL)
+        AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('broad_market_buckets') AND attname='max_sqrt' AND NOT attisdropped) AS projected
     FROM indexer_streams s LEFT JOIN indexer_batches b ON b.chain_id=s.chain_id AND b.stream_key=s.stream_key AND b.to_block=s.cursor_block
     LEFT JOIN broad_batches bb ON bb.chain_id=b.chain_id AND bb.stream_key=b.stream_key AND bb.batch_end=b.to_block
     LEFT JOIN indexer_batches d ON d.chain_id=bb.chain_id AND d.stream_key=bb.discovery_stream AND d.to_block=bb.discovery_batch
     WHERE s.chain_id=4663 AND (s.stream_key='swaps:broad:v1' OR s.kind='pool' AND s.pool_id=$1)`,
     [id],
   );
-  const cuts: { start: number; cutoff: MarketBoundary; indexedAt: string }[] =
-    [];
+  const cuts: {
+    start: number;
+    cutoff: MarketBoundary;
+    indexedAt: string;
+    // The canonical broad stream's own start and whether every batch through
+    // its cursor has its market projection with the bucket extremes of
+    // migration 018: the rollup path's preconditions. The schema check is per
+    // request because this service deploys on its own while migrations run
+    // from the indexer service's pre-deploy command, so a release ahead of the
+    // migration keeps the raw path until the migration lands.
+    rollups: { streamStart: number; projected: boolean } | null;
+  }[] = [];
   for (const s of streams.rows) {
     if (s.cursor_block === null) continue;
     if (
@@ -93,9 +183,19 @@ export async function readObservedMarket(
         asOf: n(timestamp),
       },
       indexedAt: new Date(s.updated_at).toISOString(),
+      rollups: broad
+        ? { streamStart: n(s.start_block), projected: s.projected }
+        : null,
     });
   }
-  cuts.sort((a, b) => b.cutoff.block - a.cutoff.block);
+  // The newest cutoff wins; at the same height the canonical broad cut does,
+  // because the identity check below makes the two interchangeable and only
+  // the broad cut has a bounded read.
+  cuts.sort(
+    (a, b) =>
+      b.cutoff.block - a.cutoff.block ||
+      Number(b.rollups !== null) - Number(a.rollups !== null),
+  );
   const cut = cuts[0];
   const empty: ObservedMarket = {
     poolId: id,
@@ -190,10 +290,27 @@ export async function readObservedMarket(
     decimals === null || !chosen
       ? null
       : { ...chosen.cutoff, decimals, source: chosen.source };
-  // Aggregate the entire canonical pool history in PostgreSQL. Only summary,
-  // fifty trade identities and one thousand candle buckets cross the wire.
-  const result = await query(
-    `WITH historical AS MATERIALIZED (
+  // Only summary totals, fifty trade identities and one thousand candle
+  // buckets cross the wire on either path. A cut on the canonical broad stream
+  // whose range the projections cover is served from the rollups; that path is
+  // bounded by the pool's summaries and one-second buckets rather than its
+  // swaps, which is what keeps the busiest pools inside the statement budget
+  // (docs/BROAD-MARKET-SERVING.md, "Pool page from the rollups"). Anything
+  // else, a deep-selected cut or a projection gap, aggregates the raw copies.
+  const rollups =
+    cut.rollups !== null &&
+    cut.rollups.projected &&
+    cut.start >= cut.rollups.streamStart;
+  const result = rollups
+    ? await query(rollupMarketSql, [
+        id,
+        cut.start,
+        cut.cutoff.block,
+        windowStart,
+        decimals,
+      ])
+    : await query(
+        `WITH historical AS MATERIALIZED (
     SELECT tx_hash,log_index,pool_id,token,block_number,block_hash,timestamp,
       amount0::text,amount1::text,side,eth_wei::text,sqrt_price_x96::text
     FROM broad_swaps WHERE chain_id=4663 AND pool_id=$1 AND block_number BETWEEN $2 AND $3
@@ -279,18 +396,18 @@ export async function readObservedMarket(
   FROM summary
   LEFT JOIN LATERAL (SELECT price FROM canonical ORDER BY block_number DESC,log_index DESC,tx_hash DESC LIMIT 1) latest ON true
   LEFT JOIN LATERAL (SELECT * FROM canonical WHERE timestamp<$4 ORDER BY block_number DESC,log_index DESC,tx_hash DESC LIMIT 1) baseline ON true`,
-    [
-      id,
-      cut.start,
-      cut.cutoff.block,
-      windowStart,
-      decimals,
-      cut.cutoff.asOf,
-      pool.token,
-      cut.cutoff.hash,
-      n(pool.launched_at),
-    ],
-  );
+        [
+          id,
+          cut.start,
+          cut.cutoff.block,
+          windowStart,
+          decimals,
+          cut.cutoff.asOf,
+          pool.token,
+          cut.cutoff.hash,
+          n(pool.launched_at),
+        ],
+      );
   const row = result.rows[0];
   if (row.conflict || row.other_pool_conflict)
     throw new RequestError(503, "market_identity_conflict");
