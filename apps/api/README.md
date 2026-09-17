@@ -167,7 +167,7 @@ jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
 | `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
-| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, and `bestLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination.                                                                                                                         |
+| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination.                                                                                                       |
 | `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                 |
 | `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |
 | `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                 |
@@ -234,7 +234,7 @@ Parameters: `window` (`1h`, `6h`, `24h`, `7d`, `30d`, `All`; default `All`),
 `invalid_direction`, `invalid_limit` or `invalid_offset`.
 
 Each row is `address` (lowercase), `launches`, `measured`, `traded`,
-`volumeWei`, `medianVolumeWei` and `bestLaunch`. A launch is measured under the
+`volumeWei`, `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. A launch is measured under the
 rule that gives an explore row its `stats.volumeWei`: canonical broad rollups
 when the broad cutoff covers the launch and no deep publication is newer, else
 the deep publication; a covered launch with no trades in the window is measured
@@ -243,14 +243,23 @@ unsupported swap signs, is unmeasured. So `measured` is the creator's share of
 `/v1/explore?sort=volume` and `launches` its share of `sort=launch`, in any
 window. `launches` counts every discovered launch by the sender; `measured`,
 `traded` (measured launches with at least one observed trade in the window),
-`volumeWei` (sum), `medianVolumeWei` and `bestLaunch` come from measured
-launches only, and an unmeasured launch counts in `launches` and nowhere else.
-The response repeats this rule as `note` and lists those five fields as
-`measuredFigures`. `volumeWei` and `medianVolumeWei` are exact integer wei
+`volumeWei` (sum), `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch` come
+from measured launches only, and an unmeasured launch counts in `launches` and
+nowhere else. The response repeats this rule as `note` and lists those six
+fields as `measuredFigures`. `volumeWei` and `medianVolumeWei` are exact integer wei
 strings, null when `measured` is 0; the median of an even count is the floor of
 the two middle values' mean, computed as SQL numeric, never a float percentile.
 `bestLaunch` is the measured launch with the highest window volume (lowest pool
-id on ties) as a `CatalogPool` plus its `volumeWei`, or null.
+id on ties) as a `CatalogPool` plus its `volumeWei`, or null. `boughtOwnLaunch`
+is sender-routed evidence: true when a measured launch's selected source holds
+a buy whose transaction sender is the creator's address, anywhere in that
+source's covered history (broad swaps at or below the served cutoff, or the
+deep publication's trades), false when the measured launches show none, null
+without a measured launch. It is not windowed, and a transaction sender is an
+initiator, not a proven beneficiary. A creator-fee flag is not served: the
+catalog holds no launch fee fact (the strategy contract decides it, and only
+the deep publication's `market` records it), so it waits for a per-launch
+catalog column.
 
 `sort=launches` lists every creator (launch-first, like explore's launch order)
 and breaks ties on `volumeWei DESC NULLS LAST`; `volume` and `median` list only
@@ -263,16 +272,19 @@ key and every order ends on `address ASC`. The response carries `coverage`,
 volumes without changing which launches are measured.
 
 The statement is one pass: explore's whole-catalog rank (`rankedFlowCtes` in
-`broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`)
-grouped by sender with ordered-array aggregates for the median and the best
-launch, then sorted and paged with `count(*) OVER ()`; the page's best launches
-are then looked up by primary key. Like explore it runs with `jit = off`,
+`broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`,
+here with its `ownBuys` column: deep own-buy evidence rides the deep-trades
+scan the rank already pays for and broad evidence is one hash semi-join over
+`broad_swaps`) grouped by sender with ordered-array aggregates for the median
+and the best launch, then sorted and paged with `count(*) OVER ()`; the page's
+best launches are then looked up by primary key. Like explore it runs with `jit = off`,
 because the planner prices the rank's per-launch coverage subplan far above
 `jit_optimize_above_cost` while the statement executes in well under a second.
 On the production-shaped copy (62,393 launches, 25,718 senders, 1,364 deep
-publications, 1,853 broad summaries; Postgres 18) every sort, first and last
-page, executed in 81-111 ms with a 0.7 ms identity lookup, and the whole read
-answered in 93-150 ms; the 52k-launch serial scale phase
+publications, 1,853 broad summaries, 165,417 broad swaps; Postgres 18) every
+sort, first and last page, executed in 131-157 ms (94-111 ms before the
+own-buy join) with a sub-millisecond identity lookup, and the whole read
+answered in 128-216 ms; the 52k-launch serial scale phase
 (`broad-explore.scale.test.ts`) bounds each variant at 2,000 ms and prints a
 `52k creators serving` line.
 

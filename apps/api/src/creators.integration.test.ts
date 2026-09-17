@@ -11,19 +11,22 @@ const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 // Above 2^53: the sum and the median must stay exact integers end to end.
 const high = 900719925474099300001n;
-/** Sender, deep window volume (null: never published) and trade timestamp. */
-const launches: [number, number, bigint | null, number][] = [
-  [1, 101, null, 0],
-  [2, 101, 10n, 100000],
-  [3, 101, high, 190000],
-  [4, 102, 0n, 0],
-  [5, 102, 21n, 190000],
-  [7, 104, 1n, 190000],
-  [8, 104, 2n, 190000],
-  [9, 104, 3n, 190000],
-  [10, 104, 4n, 190000],
-  [11, 104, 4n, 190000],
-  [12, 105, 5n, 190000],
+/** Sender, deep window volume (null: never published), trade timestamp and
+ * the trade's attributed wallet (null: unattributed). Sender 104 bought its
+ * own launch 7; sender 105's launch was bought by someone else, and sender
+ * 101's launch 3 was sold, not bought, by its sender. */
+const launches: [number, number, bigint | null, number, number | null][] = [
+  [1, 101, null, 0, null],
+  [2, 101, 10n, 100000, null],
+  [3, 101, high, 190000, 101],
+  [4, 102, 0n, 0, null],
+  [5, 102, 21n, 190000, null],
+  [7, 104, 1n, 190000, 104],
+  [8, 104, 2n, 190000, null],
+  [9, 104, 3n, 190000, null],
+  [10, 104, 4n, 190000, null],
+  [11, 104, 4n, 190000, null],
+  [12, 105, 5n, 190000, 106],
 ];
 
 test(
@@ -54,7 +57,7 @@ test(
         "INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence) VALUES(4663,'discovery:v1',100,10000,$1,'fixture','{}')",
         [word(10000)],
       );
-      for (const [i, sender, volume, at] of launches) {
+      for (const [i, sender, volume, at, wallet] of launches) {
         await db.query(
           "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES(4663,$1,$2,$3,$4,$5,$6,$7,1000,'discovery:v1',10000)",
           [
@@ -99,11 +102,24 @@ test(
           "INSERT INTO analytics_accounting_pools(chain_id,pool_id,projection_version,through_block,through_hash,from_block,from_timestamp,asof_timestamp,generated_at,source_kind,market,liquidity_wei) VALUES(4663,$1,1,10000,$2,100,1000,200000,$3,'rpc_capture',$4,NULL)",
           [word(i), word(10000), generatedAt, market],
         );
-        if (volume > 0n)
+        if (volume === 0n) continue;
+        if (wallet !== null)
           await db.query(
-            "INSERT INTO analytics_accounting_trades(chain_id,pool_id,transaction_hash,log_index,block_number,timestamp,side,eth_wei,token_raw,execution_supported) VALUES(4663,$1,$2,0,9000,$3,'buy',$4,1,false)",
-            [word(i), word(1000 + i), at, volume.toString()],
+            "INSERT INTO analytics_accounting_positions(chain_id,pool_id,wallet,supported,flags) VALUES(4663,$1,$2,false,'{unknown_basis}')",
+            [word(i), address(wallet)],
           );
+        await db.query(
+          "INSERT INTO analytics_accounting_trades(chain_id,pool_id,transaction_hash,log_index,block_number,timestamp,side,eth_wei,token_raw,wallet,execution,execution_supported) VALUES(4663,$1,$2,0,9000,$3,$4,$5,1,$6,$7,false)",
+          [
+            word(i),
+            word(1000 + i),
+            at,
+            i === 3 ? "sell" : "buy",
+            volume.toString(),
+            wallet === null ? null : address(wallet),
+            wallet === null ? null : { flags: ["unknown_basis"] },
+          ],
+        );
       }
       // A recent-only launch belongs to the blended catalog: it counts as a
       // launch for its sender and nowhere else.
@@ -132,6 +148,7 @@ test(
         "volumeWei",
         "medianVolumeWei",
         "bestLaunch",
+        "boughtOwnLaunch",
       ]);
       assert.match(all.note, /^launches counts every discovered launch/);
       assert.equal(all.broadMarketCutoff, null);
@@ -141,7 +158,8 @@ test(
       assert.equal(all.nextOffset, null);
       const [d, a, b, e, c] = all.items;
       // Sender 101: an unmeasured launch counts once, in launches; the sum
-      // and the floor median of {10, high} stay exact above 2^53.
+      // and the floor median of {10, high} stay exact above 2^53; its own
+      // sell is not a bought launch.
       assert.deepEqual(a, {
         address: address(101),
         launches: 3,
@@ -149,6 +167,7 @@ test(
         traded: 2,
         volumeWei: (high + 10n).toString(),
         medianVolumeWei: ((high + 10n) / 2n).toString(),
+        boughtOwnLaunch: false,
         bestLaunch: {
           id: word(3),
           token: address(3),
@@ -173,6 +192,7 @@ test(
           volumeWei: "21",
           medianVolumeWei: "10",
           bestLaunch: word(5),
+          boughtOwnLaunch: false,
         },
       );
       // Sender 103: the recent-only launch alone, so no measured figure.
@@ -184,8 +204,10 @@ test(
         volumeWei: null,
         medianVolumeWei: null,
         bestLaunch: null,
+        boughtOwnLaunch: null,
       });
-      // Sender 104: odd count median; the best launch tie goes to the lowest id.
+      // Sender 104: odd count median; the best launch tie goes to the lowest
+      // id; its own buy of launch 7 is sender-routed evidence.
       assert.deepEqual(
         { ...d, bestLaunch: [d.bestLaunch?.id, d.bestLaunch?.volumeWei] },
         {
@@ -196,10 +218,13 @@ test(
           volumeWei: "14",
           medianVolumeWei: "3",
           bestLaunch: [word(10), "4"],
+          boughtOwnLaunch: true,
         },
       );
       assert.equal(e.launches, 1);
       assert.equal(e.volumeWei, "5");
+      // Someone else's buy of sender 105's launch is not the sender's.
+      assert.equal(e.boughtOwnLaunch, false);
       // The launches tie between 105 and 103 breaks on volume, in both directions.
       assert.deepEqual(
         senders(await read("direction=asc")),
@@ -260,8 +285,15 @@ test(
           volumeWei: high.toString(),
           medianVolumeWei: (high / 2n).toString(),
           bestLaunch: word(3),
+          boughtOwnLaunch: false,
         },
       );
+      // The flag reads the whole covered history, not the window: sender
+      // 104's own buy predates a 1h window and still counts.
+      const hour = await read("window=1h&sort=launches&limit=1");
+      assert.equal(hour.items[0].address, address(104));
+      assert.equal(hour.items[0].traded, 0);
+      assert.equal(hour.items[0].boughtOwnLaunch, true);
     } finally {
       await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);

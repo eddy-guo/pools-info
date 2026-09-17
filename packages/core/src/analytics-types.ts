@@ -99,6 +99,9 @@ export interface CreatorRow {
   volumeWei: string | null;
   medianVolumeWei: string | null;
   bestLaunch: (CatalogPool & { volumeWei: string }) | null;
+  /** Sender-routed evidence: a buy in a measured launch whose transaction
+   * sender is this address; null without a measured launch. */
+  boughtOwnLaunch: boolean | null;
 }
 export interface CreatorsResponse {
   coverage: AnalyticsCoverage;
@@ -113,6 +116,7 @@ export interface CreatorsResponse {
     "volumeWei",
     "medianVolumeWei",
     "bestLaunch",
+    "boughtOwnLaunch",
   ];
   note: string;
   items: CreatorRow[];

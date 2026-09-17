@@ -106,15 +106,33 @@ export function broadFlowCte(source: "catalog" | "page") {
 // one rule. `where` filters the catalog rows; $1-$6 bind as above. The CTE is
 // materialized so its CASE expressions, each carrying the coverage subplan,
 // evaluate once per launch however many aggregates read the columns.
-export function rankedFlowCtes(where = "") {
+// With `ownBuys` every launch also carries `own`: whether the selected
+// source holds a buy whose transaction sender is the launch sender, over that
+// source's whole covered history rather than the window. Deep evidence rides
+// the flow scan the rank already pays for; broad evidence is one hash
+// semi-join over broad_swaps at or below the served cutoff.
+export function rankedFlowCtes(where = "", { ownBuys = false } = {}) {
   const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
+  const flow = ownBuys
+    ? `SELECT t.pool_id,sum(t.eth_wei) FILTER (WHERE t.timestamp >= $1) AS volume,count(*) FILTER (WHERE t.timestamp >= $1)::integer AS trades,
+      bool_or(t.side='buy' AND t.wallet=p.launch_sender) AS own
+    FROM analytics_accounting_trades t LEFT JOIN indexed_pools p ON p.chain_id=t.chain_id AND p.pool_id=t.pool_id WHERE t.chain_id=4663 GROUP BY t.pool_id
+  ), broad_own AS (
+    SELECT DISTINCT bs.pool_id FROM broad_swaps bs JOIN indexed_pools p ON p.chain_id=bs.chain_id AND p.pool_id=bs.pool_id AND p.launch_sender=bs.transaction_sender
+    WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2`
+    : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
   return `${catalogCte}, flow AS (
-    SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id
+    ${flow}
   )${broadFlowCte("catalog")}, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
       CASE WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
-      CASE WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume
-    FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id
+      CASE WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
+        ownBuys
+          ? `,
+      CASE WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(f.own,false) END AS own`
+          : ""
+      }
+    FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id${ownBuys ? " LEFT JOIN broad_own bo ON bo.pool_id=p.pool_id" : ""}
     LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
     LEFT JOIN flow f ON f.pool_id=p.pool_id ${where}
   )`;

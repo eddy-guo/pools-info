@@ -13,13 +13,14 @@ import { catalogCte, type ReadQuery } from "./catalog-read";
 import { catalogPool } from "./explore-read";
 
 export const creatorsNote =
-  "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei and bestLaunch come from measured launches only. An unmeasured launch counts in launches and nowhere else; no figure is invented for it.";
+  "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei, bestLaunch and boughtOwnLaunch come from measured launches only. An unmeasured launch counts in launches and nowhere else; no figure is invented for it. boughtOwnLaunch is sender-routed evidence: a buy in one of the sender's measured launches whose transaction sender is that address, and a transaction sender is an initiator, not a proven beneficiary.";
 export const measuredFigures = [
   "measured",
   "traded",
   "volumeWei",
   "medianVolumeWei",
   "bestLaunch",
+  "boughtOwnLaunch",
 ] as const;
 
 /** Creators are launch transaction senders grouped over the whole catalog.
@@ -62,20 +63,24 @@ export async function readCreators(
   // middle element, or the floor of the two middle elements' mean for an
   // even count; both index expressions name the same element when the count
   // is odd. The best launch is the highest volume, lowest pool id on ties.
+  // bought_own is null without a measured launch, since only measured
+  // launches carry swap evidence.
+  const ranked = rankedFlowCtes("", { ownBuys: true });
   const rows = (
     await query(
-      `${rankedFlowCtes()}, creators AS (
+      `${ranked}, creators AS (
     SELECT launch_sender,count(*)::integer AS launches,count(volume)::integer AS measured,
       count(*) FILTER (WHERE volume IS NOT NULL AND trades>0)::integer AS traded,
       sum(volume) AS volume,
       array_agg(volume ORDER BY volume) FILTER (WHERE volume IS NOT NULL) AS volumes,
       (array_agg(pool_id ORDER BY volume DESC,pool_id) FILTER (WHERE volume IS NOT NULL))[1] AS best_pool,
-      max(volume) AS best_volume
+      max(volume) AS best_volume,
+      bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own
     FROM ranked GROUP BY launch_sender
   ), figures AS (
     SELECT launch_sender,launches,measured,traded,volume,
       CASE WHEN measured>0 THEN div(volumes[(measured+1)/2]+volumes[(measured+2)/2],2) END AS median,
-      best_pool,best_volume
+      best_pool,best_volume,bought_own
     FROM creators
   ) SELECT *,count(*) OVER () AS total FROM figures ${filter} ORDER BY ${order} LIMIT $7 OFFSET $8`,
       [...values, limit, offset],
@@ -87,7 +92,7 @@ export async function readCreators(
     : Number(
         (
           await query(
-            `${rankedFlowCtes()} SELECT count(*)::text AS count FROM (SELECT launch_sender FROM ranked GROUP BY launch_sender ${sort === "launches" ? "" : "HAVING count(volume)>0"}) creators`,
+            `${ranked} SELECT count(*)::text AS count FROM (SELECT launch_sender FROM ranked GROUP BY launch_sender ${sort === "launches" ? "" : "HAVING count(volume)>0"}) creators`,
             values,
           )
         ).rows[0].count,
@@ -119,6 +124,7 @@ export async function readCreators(
             ...catalogPool(best.get(r.best_pool)!),
             volumeWei: String(r.best_volume),
           },
+    boughtOwnLaunch: r.bought_own === null ? null : Boolean(r.bought_own),
   }));
   return {
     coverage,

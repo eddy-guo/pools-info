@@ -479,6 +479,8 @@ test(
         volumeWei: canonicalVolume,
         medianVolumeWei: "0",
         bestLaunch: word(1),
+        // The canonical market's buys were sent by its launch sender.
+        boughtOwnLaunch: true,
       },
     );
     assert.equal(
@@ -499,6 +501,7 @@ test(
         volumeWei: "0",
         medianVolumeWei: "0",
         bestLaunch: "0x" + (76000).toString(16).padStart(64, "0"),
+        boughtOwnLaunch: false,
       },
     );
     const lastLaunches = await creators(
