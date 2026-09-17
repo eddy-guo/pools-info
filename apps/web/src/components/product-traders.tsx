@@ -716,22 +716,13 @@ export function ProductTraders() {
                 <p>Try a wider window.</p>
               </div>
             )}
-            {/* `/traders/` is statically prerendered, so a reload's own
-                `limit` never reaches the served HTML - only `shown` from
-                first paint (the default 25) does. Once the URL's real value
-                is known client-side, the row count corrects, but this
-                control's row must not exist yet to move when it does: it
-                mounts once settled, a wholly new node in its own right,
-                which layout shift never scores as a move. */}
-            {settled && (
-              <ShowMore
-                shown={shown}
-                total={total}
-                cap={CAP}
-                loading={state.loading}
-                onMore={handleMore}
-              />
-            )}
+            <ShowMore
+              shown={shown}
+              total={total}
+              cap={CAP}
+              loading={state.loading}
+              onMore={handleMore}
+            />
           </>
         ) : (
           <>
