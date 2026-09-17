@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 import pg from "pg";
 import sharp from "sharp";
 import { TokenImageError } from "@pools/token-image";
 import { createReader } from "./reader";
+import { applyTestMigrations } from "./test-migrations";
 import { parseRequest } from "./request";
 import { createApi } from "./server";
 import {
@@ -29,14 +29,7 @@ test(
     await db.connect();
     await db.query(`CREATE SCHEMA ${schema}`);
     await db.query(`SET search_path TO ${schema}`);
-    const directory = new URL(
-      "../../../packages/db/migrations/",
-      import.meta.url,
-    );
-    for (const name of (await readdir(directory))
-      .filter((n) => n.endsWith(".sql"))
-      .sort())
-      await db.query(await readFile(new URL(name, directory), "utf8"));
+    await applyTestMigrations(db);
     const reader = createReader(process.env.TEST_DATABASE_URL, schema);
     const store = createTokenImageStore(process.env.TEST_DATABASE_URL, schema);
     let clock = Date.parse("2026-09-16T02:17:00Z");

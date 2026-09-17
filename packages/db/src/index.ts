@@ -703,3 +703,21 @@ export {
 } from "./recent";
 
 export { rebuildBroadMarket } from "./market-rollups";
+
+export {
+  ledgerStream,
+  ledgerRules,
+  ledgerContentHash,
+  ensureLedgerStream,
+  readLedgerStream,
+  ledgerCheckpoints,
+  acquireLedgerWriter,
+  releaseLedgerWriter,
+  applyLedgerBatch,
+  walkBackLedger,
+  type LedgerMode,
+  type LedgerStreamState,
+  type LedgerLaunch,
+  type LedgerBatch,
+  type LedgerApplied,
+} from "./ledger";

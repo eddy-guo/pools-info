@@ -158,6 +158,9 @@ importers:
       '@pools/chain':
         specifier: workspace:*
         version: link:../chain
+      '@pools/core':
+        specifier: workspace:*
+        version: link:../core
       pg:
         specifier: ^8.16.3
         version: 8.23.0
