@@ -51,6 +51,10 @@ test("the trader leaderboard header holds only the title and its ranking control
   ).toBe(true);
 });
 
+// The podium always holds ranks 1-3, so the flat list's own row count runs
+// three behind the "shown" total the pagination count and URL track.
+const LIST_OFFSET = 3;
+
 test("the trader leaderboard grows with a Show more button and a running Gmail-style count", async ({
   page,
   request,
@@ -92,8 +96,8 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await expect(count).toHaveText(`Showing 25 of ${total.toLocaleString()}`);
   await expect(page).not.toHaveURL(/[?&]limit=/);
   await expect(page).not.toHaveURL(/[?&]offset=/);
-  await expect(desktopRows).toHaveCount(25);
-  await expect(mobileRows).toHaveCount(25);
+  await expect(desktopRows).toHaveCount(25 - LIST_OFFSET);
+  await expect(mobileRows).toHaveCount(25 - LIST_OFFSET);
   await expect(more).toBeVisible();
 
   // First click: the next 25, the URL, the running count, the reserved row
@@ -105,17 +109,19 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await expect(count).toHaveText(
     `Showing ${shown50.toLocaleString()} of ${total.toLocaleString()}`,
   );
-  await expect(desktopRows).toHaveCount(50);
-  await expect(mobileRows).toHaveCount(50);
-  await expect(rows.nth(25).locator(".address-chip-link")).toBeFocused();
+  await expect(desktopRows).toHaveCount(shown50 - LIST_OFFSET);
+  await expect(mobileRows).toHaveCount(shown50 - LIST_OFFSET);
+  await expect(
+    rows.nth(25 - LIST_OFFSET).locator(".address-chip-link"),
+  ).toBeFocused();
 
   // Reload restores the exact shown count from the URL, in one request.
   await page.reload();
   await expect(count).toHaveText(
     `Showing ${shown50.toLocaleString()} of ${total.toLocaleString()}`,
   );
-  await expect(desktopRows).toHaveCount(50);
-  await expect(mobileRows).toHaveCount(50);
+  await expect(desktopRows).toHaveCount(shown50 - LIST_OFFSET);
+  await expect(mobileRows).toHaveCount(shown50 - LIST_OFFSET);
 
   // Back, after navigating away, restores the same state too.
   await rows.first().locator(".address-chip-link").click();
@@ -137,9 +143,11 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
     await expect(count).toHaveText(
       `Showing ${next.toLocaleString()} of ${total.toLocaleString()}`,
     );
-    await expect(desktopRows).toHaveCount(next);
-    await expect(mobileRows).toHaveCount(next);
-    await expect(rows.nth(shown).locator(".address-chip-link")).toBeFocused();
+    await expect(desktopRows).toHaveCount(next - LIST_OFFSET);
+    await expect(mobileRows).toHaveCount(next - LIST_OFFSET);
+    await expect(
+      rows.nth(shown - LIST_OFFSET).locator(".address-chip-link"),
+    ).toBeFocused();
     shown = next;
   }
   if (total <= 100) await expect(more).toHaveCount(0);
@@ -160,8 +168,8 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await metric.click();
   await expect(page).not.toHaveURL(/[?&]limit=/);
   await expect(count).toHaveText(`Showing 25 of ${total.toLocaleString()}`);
-  await expect(desktopRows).toHaveCount(25);
-  await expect(mobileRows).toHaveCount(25);
+  await expect(desktopRows).toHaveCount(25 - LIST_OFFSET);
+  await expect(mobileRows).toHaveCount(25 - LIST_OFFSET);
 
   const measurement = await page.evaluate(
     () =>

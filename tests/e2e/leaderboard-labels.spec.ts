@@ -39,10 +39,12 @@ test("the leaderboard carries no evidence labels across its window controls", as
   await settled(page);
   await expectStripped(page);
   const main = page.locator("main");
-  const podium = main.locator(".live-podium > a");
+  const podium = main.locator(".trader-podium-card");
   await expect(podium).toHaveCount(3);
   for (const card of await podium.all())
-    await expect(card.locator("small")).toHaveText(/^#\d+$/);
+    await expect(card.locator(".trader-podium-card-rank")).toHaveText(
+      /^\d+$/,
+    );
   const desktop = main.locator(".desktop-traders");
   if (await desktop.isVisible()) {
     const row = desktop.locator("tbody tr[data-row=resolved]").first();
@@ -89,6 +91,43 @@ test("an empty window asks for a wider one and nothing else", async ({
   );
   await expect(empty.locator("p")).toHaveText("Try a wider window.");
   await expectStripped(page);
+});
+
+test("ranks 1-3 take gold, silver and bronze in the flat list once the podium is hidden", async ({
+  page,
+}) => {
+  await page.route("**/api/product/leaderboard/**", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...payload, items: payload.items.slice(0, 2), total: 2 },
+    });
+  });
+  await page.goto("/traders/?window=All");
+  await settled(page);
+  await expect(page.locator(".live-podium")).toHaveCount(0);
+  const desktop = page.locator(".desktop-traders");
+  const gold = "rgb(224, 180, 92)",
+    silver = "rgb(201, 203, 212)";
+  if (await desktop.isVisible()) {
+    const rows = desktop.locator("tbody tr[data-row=resolved]");
+    await expect(rows).toHaveCount(2);
+    const rank = (index: number) => rows.nth(index).locator("td").first();
+    await expect(rank(0)).toHaveClass(/rank-gold/);
+    await expect(rank(1)).toHaveClass(/rank-silver/);
+    await expect(rank(0)).toHaveCSS("color", gold);
+    await expect(rank(1)).toHaveCSS("color", silver);
+  } else {
+    const cards = page.locator(".mobile-trader[data-row=resolved]");
+    await expect(cards).toHaveCount(2);
+    const rank = (index: number) =>
+      cards.nth(index).locator(".rank-number");
+    await expect(rank(0)).toHaveClass(/rank-gold/);
+    await expect(rank(1)).toHaveClass(/rank-silver/);
+    await expect(rank(0)).toHaveCSS("color", gold);
+    await expect(rank(1)).toHaveCSS("color", silver);
+  }
 });
 
 // The Layout Instability API only counts a shift inside the viewport, so a
