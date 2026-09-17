@@ -5,18 +5,22 @@ import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { AddressChip, Avatar, Change } from "./ui";
-import { ProductPagination } from "./product-common";
+import { PAGE_SIZES, ProductPagination, type PageSize } from "./product-common";
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
   const metric = params.get("metric") ?? "realized",
     offset = Number(params.get("offset") ?? 0);
+  const rawLimit = Number(params.get("limit"));
+  const limit: PageSize = PAGE_SIZES.includes(rawLimit as PageSize)
+    ? (rawLimit as PageSize)
+    : 25;
   // The read API applies its own minimum-trade gate; the page exposes no control.
   const query = new URLSearchParams({
     window,
     metric,
     offset: String(offset),
-    limit: "25",
+    limit: String(limit),
   });
   const { data, loading, stale, error } =
     useProduct<AnalyticsLeaderboardResponse>(`leaderboard?${query}`);
@@ -35,7 +39,9 @@ export function ProductTraders() {
               <button
                 key={key}
                 aria-pressed={metric === key}
-                onClick={() => set({ metric: key, offset: null })}
+                onClick={() =>
+                  set({ metric: key, offset: null, limit: String(limit) })
+                }
               >
                 {label}
               </button>
@@ -45,7 +51,7 @@ export function ProductTraders() {
             value={window}
             onChange={(value) => {
               setWindow(value);
-              set({ offset: null });
+              set({ offset: null, limit: String(limit) });
             }}
           />
         </div>
@@ -127,7 +133,7 @@ export function ProductTraders() {
               </thead>
               <tbody>
                 {Array.from(
-                  { length: Math.max(25, data?.items.length ?? 0) },
+                  { length: Math.max(limit, data?.items.length ?? 0) },
                   (_, index) => data?.items[index],
                 ).map((w, index) => (
                   <tr
@@ -229,7 +235,7 @@ export function ProductTraders() {
             data-stale-rows={stale}
           >
             {Array.from(
-              { length: Math.max(25, data?.items.length ?? 0) },
+              { length: Math.max(limit, data?.items.length ?? 0) },
               (_, index) => data?.items[index],
             ).map((w, index) => (
               <div className="mobile-trader" key={index}>
@@ -335,9 +341,11 @@ export function ProductTraders() {
         )}
         <ProductPagination
           offset={offset}
+          limit={limit}
           total={data?.total ?? 0}
           nextOffset={data?.nextOffset ?? null}
-          onPage={(n) => set({ offset: String(n) })}
+          onPage={(n) => set({ offset: String(n), limit: String(limit) })}
+          onLimit={(size) => set({ limit: String(size), offset: null })}
           loading={loading}
         />
       </section>

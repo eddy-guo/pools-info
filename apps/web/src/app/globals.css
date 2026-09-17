@@ -716,6 +716,8 @@ main {
   border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 10px;
   justify-content: space-between;
   color: var(--faint);
   font-size: 12px;
@@ -724,6 +726,15 @@ main {
   display: flex;
   align-items: center;
   gap: 13px;
+}
+/* The rows-per-page segmented control is a `.pagination > div` too; keep its own tight gap. */
+.pagination > .segmented {
+  gap: 2px;
+}
+/* Reserve the count's eventual width so the first real total never re-wraps the row. */
+.pagination-count {
+  display: inline-block;
+  min-width: 15ch;
 }
 .market-sidebar {
   display: flex;
@@ -4403,6 +4414,10 @@ main {
   }
   .filter-input input {
     width: 100%;
+  }
+  .pagination-count {
+    flex-basis: 100%;
+    min-width: 0;
   }
   .segmented button {
     min-height: 40px;
