@@ -1,5 +1,7 @@
 import { productRequest } from "@/lib/product-request";
 import {
+  EthPriceUnavailableError,
+  readEthPrice,
   readProduct,
   readWalletHistory,
   WalletHistoryUnavailableError,
@@ -35,6 +37,29 @@ export async function GET(
           : new WalletHistoryUnavailableError("upstream_unavailable", 30);
       return Response.json(
         { error: "wallet_history_unavailable", reason: failure.reason },
+        {
+          status: 503,
+          headers: {
+            "Retry-After": String(failure.retryAfter),
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
+  // Display-only market context with no saved counterpart: an outage stays an
+  // outage instead of falling back to the preloaded dataset or a stale rate.
+  if (path.length === 2 && path[0] === "prices" && path[1] === "eth-usd")
+    try {
+      return Response.json(await readEthPrice(path, query), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      const failure =
+        error instanceof EthPriceUnavailableError
+          ? error
+          : new EthPriceUnavailableError(30);
+      return Response.json(
+        { error: "price_unavailable" },
         {
           status: 503,
           headers: {

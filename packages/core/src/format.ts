@@ -18,13 +18,13 @@ export function compact(n: number): string {
 export function formatMoney(
   wei: string,
   currency: "ETH" | "USD",
-  ethUsd: string,
+  ethUsd: number,
   signed = false,
 ): string {
-  const n = displayEth(wei) * (currency === "USD" ? Number(ethUsd) : 1);
-  const prefix = signed && n > 0 ? "+" : n < 0 ? "−" : "";
+  const n = displayEth(wei) * (currency === "USD" ? ethUsd : 1);
+  const prefix = signed && n > 0 ? "+" : n < 0 ? "-" : "";
   const abs = Math.abs(n);
-  return `${prefix}${currency === "USD" ? "$" : ""}${abs >= 10000 ? compact(abs) : new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(abs)}${currency === "ETH" ? " ETH" : ""}`;
+  return `${prefix}${currency === "USD" ? "$" : ""}${abs >= 1_000_000 ? compact(abs) : new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(abs)}${currency === "ETH" ? " ETH" : ""}`;
 }
 export function since(timestamp: number, asOf: number): string {
   const seconds = Math.max(0, asOf - timestamp);

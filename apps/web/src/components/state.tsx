@@ -129,3 +129,13 @@ export function useWatchlist() {
       ),
   };
 }
+export type Unit = "ETH" | "USD";
+const savedUnit = () => readLocal("poolsinfo.unit.v1");
+export function useUnit() {
+  const value = useSyncExternalStore(subscribePrefs, savedUnit, empty);
+  const unit: Unit = value === "USD" ? "USD" : "ETH";
+  return {
+    unit,
+    setUnit: (next: Unit) => writeLocal("poolsinfo.unit.v1", next),
+  };
+}

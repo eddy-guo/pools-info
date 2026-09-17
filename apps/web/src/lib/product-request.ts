@@ -17,12 +17,14 @@ export function productRequest(path: string[], input: URLSearchParams) {
     path[0] === "wallets" &&
     wallet.test(path[1]) &&
     path[2] === "history";
+  const ethPrice = endpoint === "prices/eth-usd";
   if (!(
     ["explore", "leaderboard", "search", "following", "creators"].includes(
       endpoint,
     ) ||
     tradeShare ||
     walletHistory ||
+    ethPrice ||
     (path.length === 2 &&
       ((path[0] === "wallets" && wallet.test(path[1])) ||
         (path[0] === "pools" && pool.test(path[1]))))

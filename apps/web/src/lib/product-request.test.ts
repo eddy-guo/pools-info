@@ -918,6 +918,72 @@ test("explorer history keeps the read API's outage contract and never falls back
   );
 });
 
+test("public proxy admits the eth/usd price with no query and rejects extras", () => {
+  const checked = productRequest(
+    ["prices", "eth-usd"],
+    new URLSearchParams(""),
+  );
+  assert.equal(checked.endpoint, "prices/eth-usd");
+  assert.equal(checked.params.toString(), "");
+  assert.throws(() =>
+    productRequest(["prices", "eth-usd"], new URLSearchParams("window=24h")),
+  );
+  assert.throws(() =>
+    productRequest(["prices", "eth-usd", "extra"], new URLSearchParams("")),
+  );
+});
+
+test("eth/usd price keeps the read API's outage contract and never falls back", async (t) => {
+  const { readEthPrice, EthPriceUnavailableError } =
+    await import("./product-server");
+  const path = ["prices", "eth-usd"];
+  withIndexer(t);
+  await assert.rejects(readEthPrice(path, new URLSearchParams("")), (error) => {
+    assert.ok(error instanceof EthPriceUnavailableError);
+    assert.equal(error.retryAfter, 60);
+    return true;
+  });
+  withIndexer(t, "https://index.example");
+  let requested = "";
+  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
+    requested = String(input);
+    return Response.json(
+      { error: "price_unavailable" },
+      { status: 503, headers: { "Retry-After": "45" } },
+    );
+  });
+  await assert.rejects(readEthPrice(path, new URLSearchParams("")), (error) => {
+    assert.ok(error instanceof EthPriceUnavailableError);
+    assert.equal(error.retryAfter, 45);
+    return true;
+  });
+  assert.equal(requested, "https://index.example/v1/prices/eth-usd");
+});
+
+test("eth/usd price validates the upstream shape before trusting it", async (t) => {
+  const { readEthPrice, EthPriceUnavailableError } =
+    await import("./product-server");
+  const path = ["prices", "eth-usd"];
+  withIndexer(t, "https://index.example");
+  let call = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    call += 1;
+    return call === 1
+      ? Response.json({
+          usdPerEth: 4218.44,
+          asOf: "2026-09-15T00:00:00.000Z",
+          source: "coinbase",
+        })
+      : Response.json({ usdPerEth: -1, source: "coinbase" });
+  });
+  const price = await readEthPrice(path, new URLSearchParams(""));
+  assert.equal(price.usdPerEth, 4218.44);
+  await assert.rejects(
+    readEthPrice(path, new URLSearchParams("")),
+    EthPriceUnavailableError,
+  );
+});
+
 test("explorer history rejects another wallet's page and unshowable rows", async (t) => {
   const { readWalletHistory } = await import("./product-server");
   const { validateWalletHistoryResponse } =
