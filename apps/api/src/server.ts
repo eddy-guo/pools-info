@@ -143,7 +143,17 @@ export function createApi(
       send(200, await result);
     } catch (error) {
       const known = error instanceof RequestError;
-      if (!known) process.stderr.write('{"event":"read_failed"}\n');
+      // The SQLSTATE names the failure class (57014 is the statement budget)
+      // without the message, which may quote SQL or values.
+      if (!known)
+        process.stderr.write(
+          JSON.stringify({
+            event: "read_failed",
+            ...(typeof (error as { code?: unknown })?.code === "string"
+              ? { code: (error as { code: string }).code }
+              : {}),
+          }) + "\n",
+        );
       if (known && error.retryAfter)
         res.setHeader("Retry-After", String(error.retryAfter));
       send(
