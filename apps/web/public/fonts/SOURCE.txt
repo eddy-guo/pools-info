@@ -1,3 +1,7 @@
 Geist and Geist Mono variable fonts from the official geist npm package, version 1.7.2.
 Source: https://www.npmjs.com/package/geist/v/1.7.2
 Unmodified fonts distributed under the SIL Open Font License, included in LICENSE.txt.
+
+Geist-Regular.ttf, Geist-SemiBold.ttf and GeistMono-Medium.ttf are the unmodified
+static instances from the same package; the server-rendered PnL card reads them
+because its renderer (Satori) takes TTF, OTF or WOFF and not WOFF2.

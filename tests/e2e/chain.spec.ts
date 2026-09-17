@@ -320,6 +320,10 @@ test("server-generated card uses captured RPC audit data and returns a 1200 by 6
   expect(image.readUInt32BE(16)).toBe(1200);
   expect(image.readUInt32BE(20)).toBe(630);
   expect((await request.get("/cards/not-an-address.png")).status()).toBe(404);
+  // A wallet without saved PnL has no card, not an empty one.
+  expect(
+    (await request.get(`/cards/0x${"2".repeat(40)}.png?window=All`)).status(),
+  ).toBe(404);
   const spoofed = await request.get(
     `/cards/${address}.png?window=All&realized=999999`,
   );
@@ -1147,12 +1151,17 @@ test("default saved leaderboard opens matching global wallet positions, trades a
       json: { ...profile, delivery: { source: "indexer", notice: null } },
     }),
   );
-  await page.route(`**/cards/${wallet}.png?**`, (r) =>
-    r.fulfill({
+  // The card is served slowly on purpose: the modal must show its skeleton
+  // first and swap the image in without moving.
+  const cardRequests: string[] = [];
+  await page.route(`**/cards/${wallet}.png?**`, async (r) => {
+    cardRequests.push(new URL(r.request().url()).search);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await r.fulfill({
       contentType: "image/svg+xml",
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect width="1200" height="630" fill="#0B0B0E"/></svg>',
-    }),
-  );
+    });
+  });
   await page.goto("/traders/?window=All");
   await expect(page.getByRole("button", { name: /Audit traders/ })).toHaveCount(
     0,
@@ -1181,14 +1190,57 @@ test("default saved leaderboard opens matching global wallet positions, trades a
   await page
     .getByRole("button", { name: "Share PnL card", exact: true })
     .click();
-  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  const dialog = page.getByRole("dialog", { name: /Share PnL card/ });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("img")).toHaveAttribute(
+  const preview = dialog.locator("[data-state]"),
+    card = dialog.getByRole("img");
+  await expect(preview).toHaveAttribute("data-state", "loading");
+  await expect(preview.locator("span").first()).toBeVisible();
+  await expect(card).toHaveAttribute("src", `/cards/${wallet}.png?window=All`);
+  // The dialog's own entrance settles first; what must not move is the slot.
+  await dialog.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished)),
+  );
+  await expect(preview).toHaveAttribute("data-state", "loading");
+  const reserved = await preview.boundingBox();
+  await expect(preview).toHaveAttribute("data-state", "ready");
+  expect(await preview.boundingBox()).toEqual(reserved);
+  expect(reserved!.width / reserved!.height).toBeCloseTo(1200 / 630, 2);
+  // Every customize control re-renders the same route with a query parameter.
+  await dialog.getByRole("radio", { name: "Mint" }).click();
+  await expect(card).toHaveAttribute(
     "src",
-    `/cards/${wallet}.png?window=All`,
+    `/cards/${wallet}.png?window=All&theme=mint`,
+  );
+  await dialog.getByRole("switch", { name: /Anonymous mode/ }).click();
+  await expect(card).toHaveAttribute(
+    "src",
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1`,
+  );
+  await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "download",
+    "poolsinfo-pnl-all.png",
+  );
+  await dialog.getByRole("switch", { name: /Show notional/ }).click();
+  await expect(card).toHaveAttribute(
+    "src",
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
+  );
+  await expect(preview).toHaveAttribute("data-state", "ready");
+  expect(cardRequests).toEqual([
+    "?window=All",
+    "?window=All&theme=mint",
+    "?window=All&theme=mint&anon=1",
+    "?window=All&theme=mint&anon=1&notional=1",
+  ]);
+  expect(await dialog.innerText()).not.toMatch(
+    /reconcil|coverage|captur|excluded|methodolog|before gas|processed pools/i,
   );
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Share PnL card", exact: true }),
+  ).toBeFocused();
   expect(reads).toEqual([]);
   expect(
     await page.evaluate(
@@ -1457,15 +1509,27 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   await page
     .getByRole("button", { name: "Share PnL card", exact: true })
     .click();
-  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  const dialog = page.getByRole("dialog", { name: /Share PnL card/ });
   const card = dialog.getByRole("img");
   await expect(card).toBeVisible();
   await expect
     .poll(() => card.evaluate((image: HTMLImageElement) => image.naturalWidth))
     .toBe(1200);
-  await expect(
-    dialog.getByRole("link", { name: /Download PNG/ }),
-  ).toHaveAttribute("href", `/cards/${top.address}.png?window=All`);
+  expect(
+    await card.evaluate((image: HTMLImageElement) => image.naturalHeight),
+  ).toBe(630);
+  // Centred in the viewport, never in its top-left corner.
+  const viewport = page.viewportSize()!,
+    box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThan(0);
+  expect(box.y).toBeGreaterThan(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+  expect(Math.abs(box.x + box.width / 2 - viewport.width / 2)).toBeLessThan(2);
+  await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "href",
+    `/cards/${top.address}.png?window=All`,
+  );
   const response = await request.get(`/cards/${top.address}.png?window=All`);
   expect(response.status()).toBe(200);
   const png = await response.body();

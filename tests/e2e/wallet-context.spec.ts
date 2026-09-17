@@ -102,10 +102,10 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     expect(lines, "no stat value wraps").toEqual(statLabels.map(() => 1));
   }
   await page.getByRole("button", { name: "Share PnL card" }).click();
-  const dialog = page.getByRole("dialog", { name: "PnL share card preview" });
+  const dialog = page.getByRole("dialog", { name: "Share PnL card" });
   await expect(dialog).toBeVisible();
   expect(await dialog.innerText()).not.toContain("1200 × 630");
-  await page.getByRole("button", { name: "Close card preview" }).click();
+  await page.getByRole("button", { name: "Close share card" }).click();
 
   const actions = page.locator(".page-heading .button");
   await expect(actions).toHaveText([
