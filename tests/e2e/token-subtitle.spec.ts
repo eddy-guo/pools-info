@@ -1,10 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 /* A token's subtitle stays inside its own cell. On the desktop the export's
-   `SYMBOL · age · N trades` line has a 250px column at both widths (the table
-   holds its 1030px and scrolls below it), so page one reads whole, with no
-   ellipsis; the mobile card keeps its symbol and launch date and is checked
-   against its price slot too. */
+   `SYMBOL · age · N trades` line has at least a 250px column at both widths
+   (the table holds its 842px and scrolls below it), so page one reads whole,
+   with no ellipsis; the mobile card keeps its symbol and launch date and is
+   checked against its price slot too. */
 
 const widths = { desktop: [1200, 1440], mobile: [390] };
 

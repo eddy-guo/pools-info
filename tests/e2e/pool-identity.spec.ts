@@ -51,7 +51,7 @@ async function openFromScreener(
     .first();
   await expect(row).toBeVisible();
   await row.click();
-  const sentinel = page.locator(".nullable-pool-page .workspace-grid");
+  const sentinel = page.locator(".nullable-pool-page .live-six-stats");
   await expect(sentinel).toBeVisible();
   return sentinel;
 }
@@ -102,9 +102,6 @@ test("a pool whose detail is unpublished keeps the identity its row showed", asy
     "href",
     `/creators/${launchOnly.launchSender.toLowerCase()}/`,
   );
-  await expect(
-    page.getByRole("link", { name: "Launch transaction ↗" }),
-  ).toHaveAttribute("href", new RegExp(`/tx/${launchOnly.launchTx}$`, "i"));
   await expect(page.locator("body")).not.toContainText(explanations);
   await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(page.getByText("Price chart unavailable")).toBeVisible();
@@ -287,7 +284,7 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
     ETH unit, the signed change and the range control on one row with no
     select anywhere in the panel; the panel opens high enough for the whole
     canvas to show without scrolling on the desktop; the stat cards under it
-    are the export's 95px. */
+    are the export's 95px, and nothing follows them. */
 async function expectChartPanelLikeExport(page: Page, project: Project) {
   const panel = page.locator(".pool-chart-panel");
   await expect(
@@ -305,9 +302,13 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       control: rect(".pool-chart-head .segmented"),
       canvas: rect(".pool-chart-region"),
       stats: [...document.querySelectorAll(".live-six-stats .stat")].map(
-        (stat) => stat.getBoundingClientRect().height,
+        (stat) => ({
+          label: stat.querySelector(":scope > span")!.textContent,
+          height: stat.getBoundingClientRect().height,
+        }),
       ),
-      tabs: rect(".pool-page .live-section"),
+      statsTop: rect(".live-six-stats").y,
+      last: document.querySelector(".pool-page")!.lastElementChild!.className,
       scrollWidth: document.documentElement.scrollWidth,
       innerHeight: window.innerHeight,
     };
@@ -328,9 +329,14 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       Math.abs(centre(box) - centre(rows.price)),
       `the ${name} sits on the price's row`,
     ).toBeLessThanOrEqual(4);
-  expect(rows.stats.length).toBeGreaterThanOrEqual(5);
-  for (const height of rows.stats)
+  expect(rows.stats.map((stat) => stat.label)).toEqual([
+    "FDV",
+    "Volume 24h",
+    "Creator fee",
+  ]);
+  for (const { height } of rows.stats)
     expect(Math.abs(height - 95), "a 95px stat card").toBeLessThanOrEqual(4);
+  expect(rows.last, "the stat cards end the page").toContain("live-six-stats");
   if (project === "desktop") {
     expect(
       rows.control.y,
@@ -353,8 +359,8 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       "the whole chart shows without scrolling",
     ).toBeLessThanOrEqual(rows.innerHeight);
     expect(
-      rows.tabs.y,
-      "the tabs panel starts by the first screen's end",
+      rows.statsTop,
+      "the stat cards start by the first screen's end",
     ).toBeLessThanOrEqual(1000);
   } else
     expect(

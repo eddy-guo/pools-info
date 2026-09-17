@@ -1243,24 +1243,6 @@ main {
   padding: 17px 19px;
   border-top: 1px solid var(--line);
 }
-.holder-unavailable {
-  padding: 24px 19px;
-  color: var(--faint);
-  font-size: 12px;
-}
-.holder-unavailable svg {
-  color: var(--muted);
-  margin-bottom: 12px;
-}
-.holder-unavailable h3 {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-.holder-unavailable p {
-  line-height: 1.8;
-}
 .trades-table .trade-side {
   display: flex;
   gap: 5px;
@@ -3871,8 +3853,8 @@ main {
 }
 /* One face for the figures: sans 14/400 right-aligned, price in mono 13/400
    with its muted subscript, and the signed change the only bold, coloured
-   number. Volume carries the row in the text colour; liquidity and holders
-   support it one step down; the sender sits in the muted tone at 12.5px. */
+   number. Volume carries the row in the text colour; the sender sits in the
+   muted tone at 12.5px. */
 .desktop-pools .price {
   font-size: 13px;
 }
@@ -3886,15 +3868,11 @@ main {
 .desktop-pools .change {
   font-weight: 600;
 }
-.desktop-pools .data-table td:nth-child(6),
-.desktop-pools .data-table td:nth-child(7) {
-  color: var(--color-text-2);
-}
-.desktop-pools .data-table td:nth-child(8) .mono {
+.desktop-pools .data-table td:nth-child(6) .mono {
   color: var(--color-muted);
   font-size: 12.5px;
 }
-.desktop-pools .data-table td:nth-child(8) a:hover .mono {
+.desktop-pools .data-table td:nth-child(6) a:hover .mono {
   color: var(--color-accent);
 }
 .corpus-footer {
@@ -5164,20 +5142,19 @@ main {
 .explore-page .pool-table tbody td {
   height: 62px;
 }
-/* Nine columns share the panel on the export's grid, each measured against
+/* Seven columns share the panel on the export's grid, each measured against
    its widest real value plus the cell padding: a six-significant-digit
    volume, a four-digit signed change, a mono price with its subscript, the
-   sender chip. The narrower gutter is what lets them all fit; the token
-   column takes the remainder, 250px at the 1030px the panel gives a 1440px
-   viewport, which holds page one's longest `SYMBOL · age · N trades`
-   subtitle with room to spare, and the table scrolls rather than clip below
-   that. The 11.5px head sizes two of them: holders and launch sender hold
-   their labels without reaching into the next column, with half a pixel per
-   glyph to spare for a renderer that rounds glyph advances to whole pixels:
-   Linux Chromium, where CI runs the browser suite, sets "Launch sender" 2px
-   wider than macOS. */
+   sender chip. The token column takes the remainder, 438px at the 1030px the
+   panel gives a 1440px viewport; the table holds 842px, where that column is
+   250px and still holds page one's longest `SYMBOL · age · N trades`
+   subtitle with room to spare, and scrolls rather than clip below that. The
+   11.5px head sizes the launch sender column: it holds its label without
+   reaching into the next column, with half a pixel per glyph to spare for a
+   renderer that rounds glyph advances to whole pixels: Linux Chromium, where
+   CI runs the browser suite, sets "Launch sender" 2px wider than macOS. */
 .explore-page .pool-table {
-  min-width: 1030px;
+  min-width: 842px;
 }
 .explore-page .pool-table th,
 .explore-page .pool-table td {
@@ -5193,12 +5170,8 @@ main {
 .explore-page .col-change {
   width: 98px;
 }
-.explore-page .col-volume,
-.explore-page .col-liquidity {
+.explore-page .col-volume {
   width: 112px;
-}
-.explore-page .col-holders {
-  width: 76px;
 }
 .explore-page .col-sender {
   width: 122px;
@@ -5212,11 +5185,11 @@ main {
    fills its cell so the pending-to-value swap changes only the text, never
    the box (a resized inline-block would move its edge, which Chrome scores
    as a shift). */
-.explore-page .pool-table th:nth-child(n + 3):nth-child(-n + 7):not([colspan]),
+.explore-page .pool-table th:nth-child(n + 3):nth-child(-n + 5):not([colspan]),
 .explore-page
   .pool-table
-  td:nth-child(n + 3):nth-child(-n + 7):not(.launch-cell),
-.explore-page .pool-table th:nth-child(9) {
+  td:nth-child(n + 3):nth-child(-n + 5):not(.launch-cell),
+.explore-page .pool-table th:nth-child(7) {
   text-align: right;
 }
 .explore-page .pool-table td > .number,
@@ -5226,7 +5199,7 @@ main {
   min-width: 0;
 }
 /* A pool with no market evidence reads as one quiet launch line rather than
-   seven unavailable cells; it spans the metric columns the row cannot fill. */
+   five unavailable cells; it spans the metric columns the row cannot fill. */
 .explore-page .launch-cell {
   font-size: 13px;
   line-height: 18px;
@@ -5485,8 +5458,9 @@ main {
   height: 100%;
   padding: 0 24px;
 }
+/* The export's 14px column gap between the chart panel and its stat cards. */
 .pool-page .live-six-stats {
-  margin-bottom: 0;
+  margin: 14px 0 0;
 }
 .pool-page .live-six-stats .stat {
   height: 95px;
@@ -5509,30 +5483,6 @@ main {
 /* A pending card's quiet mark waits under the skeleton, not on top of it. */
 .pool-page .live-six-stats .stat > strong [data-pending="true"] .unavailable {
   color: transparent;
-}
-.pool-page .live-section {
-  margin-top: 14px;
-}
-/* The export's 52px tab head: 31px pills, together at the left. */
-.pool-page .live-section > .table-tabs {
-  justify-content: flex-start;
-  gap: 2px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--color-surface-4);
-}
-.pool-page .live-section > .table-tabs button {
-  min-height: 31px;
-  padding: 7px 12px;
-  font-size: 13px;
-}
-/* A concentration share keeps its width when the value replaces the mark. */
-.nullable-pool-page .live-facts dd > .number {
-  display: inline-block;
-  width: 7ch;
-}
-.pool-activity-region {
-  height: calc(25 * 74px + 420px);
-  overflow: auto;
 }
 .explore-leader-rows {
   height: calc(5 * 62px);

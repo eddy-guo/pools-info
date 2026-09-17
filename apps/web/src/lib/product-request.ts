@@ -1,8 +1,6 @@
 import { parseFollowingWallets } from "@pools/core";
 const wallet = /^0x[0-9a-f]{40}$/i;
 const pool = /^0x[0-9a-f]{64}$/i;
-/** The explorer's own opaque page token, base64url and never interpreted here. */
-const cursor = /^[A-Za-z0-9_-]{1,4096}$/;
 export function productRequest(path: string[], input: URLSearchParams) {
   const endpoint = path.join("/");
   const tradeShare =
@@ -12,18 +10,12 @@ export function productRequest(path: string[], input: URLSearchParams) {
     pool.test(path[2]) &&
     /^(0|[1-9]\d{0,9})$/.test(path[3]) &&
     Number(path[3]) <= 2147483647;
-  const walletHistory =
-    path.length === 3 &&
-    path[0] === "wallets" &&
-    wallet.test(path[1]) &&
-    path[2] === "history";
   const ethPrice = endpoint === "prices/eth-usd";
   if (!(
     ["explore", "leaderboard", "search", "following", "creators"].includes(
       endpoint,
     ) ||
     tradeShare ||
-    walletHistory ||
     ethPrice ||
     (path.length === 2 &&
       ((path[0] === "wallets" && wallet.test(path[1])) ||
@@ -43,11 +35,9 @@ export function productRequest(path: string[], input: URLSearchParams) {
             ? ["window", "sort", "direction", "limit", "offset"]
             : endpoint === "search"
               ? ["q", "group"]
-              : walletHistory
-                ? ["kind", "cursor"]
-                : path[0] === "wallets" || path[0] === "pools"
-                  ? ["window"]
-                  : [];
+              : path[0] === "wallets" || path[0] === "pools"
+                ? ["window"]
+                : [];
   for (const [key, value] of input) {
     if (!allowed.includes(key) || input.getAll(key).length !== 1)
       throw Error("Invalid product query");
@@ -76,10 +66,6 @@ export function productRequest(path: string[], input: URLSearchParams) {
       throw Error("Invalid sort");
     if (key === "direction" && !["asc", "desc"].includes(value))
       throw Error("Invalid direction");
-    if (key === "kind" && !["transactions", "token-transfers"].includes(value))
-      throw Error("Invalid history kind");
-    if (key === "cursor" && !cursor.test(value))
-      throw Error("Invalid history cursor");
     if (key === "metric" && !["realized", "net"].includes(value))
       throw Error("Invalid metric");
     if (
@@ -123,7 +109,5 @@ export function productRequest(path: string[], input: URLSearchParams) {
   }
   if (tradeShare && !output.has("wallet"))
     throw Error("A trade wallet is required");
-  if (walletHistory && !output.has("kind"))
-    throw Error("A history kind is required");
   return { endpoint: endpoint.toLowerCase(), params: output };
 }

@@ -512,8 +512,6 @@ export function ProductExplore() {
                     <col className="col-price" />
                     <col className="col-change" />
                     <col className="col-volume" />
-                    <col className="col-liquidity" />
-                    <col className="col-holders" />
                     <col className="col-sender" />
                     <col className="col-trend" />
                   </colgroup>
@@ -522,7 +520,7 @@ export function ProductExplore() {
                       <th aria-label="Watchlist" />
                       <th>Token</th>
                       {launchPage ? (
-                        <th colSpan={7}>Launch</th>
+                        <th colSpan={5}>Launch</th>
                       ) : (
                         <>
                           <th>Price</th>
@@ -530,8 +528,6 @@ export function ProductExplore() {
                               so its head names the window as the export's does. */}
                           {sortable(window, "change")}
                           {sortable("Volume", "volume")}
-                          <th>Liquidity</th>
-                          <th>Holders</th>
                           <th>Launch sender</th>
                           <th>Trend</th>
                         </>
@@ -574,7 +570,7 @@ export function ProductExplore() {
                             )}
                           </td>
                           {p && launchOnly(p) ? (
-                            <td className="launch-cell" colSpan={7}>
+                            <td className="launch-cell" colSpan={5}>
                               <LaunchLine pool={p} now={now} />
                             </td>
                           ) : (
@@ -605,31 +601,6 @@ export function ProductExplore() {
                                     pending={skeleton}
                                     wei={p?.stats.volumeWei}
                                   />
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={skeleton}>
-                                {p || skeleton ? (
-                                  <Eth
-                                    pending={skeleton}
-                                    wei={p?.stats.liquidityWei}
-                                  />
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={skeleton}>
-                                {p ? (
-                                  <>
-                                    {p.stats.holders === null ? (
-                                      <Unavailable />
-                                    ) : (
-                                      integers.format(p.stats.holders)
-                                    )}
-                                  </>
-                                ) : skeleton ? (
-                                  "Pending"
                                 ) : (
                                   "\u00a0"
                                 )}

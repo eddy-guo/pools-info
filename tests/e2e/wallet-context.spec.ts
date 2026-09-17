@@ -140,8 +140,6 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     /^Positions\s*1$/,
     /^Trades\s*11$/,
     /^Launches\s*0$/,
-    "Transactions",
-    "Token transfers",
   ]);
   // No separate "Positions by pool" heading or underlined tab row: the
   // counts above carry that information inside the panel head instead.
