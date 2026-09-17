@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 const unfiltered =
   "/api/product/explore/?window=24h&view=all&offset=0&limit=25&q=&sort=launch&direction=desc";
 
-test("typing a screener filter issues at most two explore requests and keeps the rows", async ({
+test("typing a screener filter issues at most two explore requests and skeletons the rows while it resolves", async ({
   page,
   request,
 }) => {
@@ -52,9 +52,16 @@ test("typing a screener filter issues at most two explore requests and keeps the
   );
   expect(issued.at(-1)).toBe("foss");
 
-  // The rows of the previous query stay up while the debounced request loads.
-  await expect(first).toBeVisible();
-  await expect(rows.locator('[data-pending="true"]')).toHaveCount(0);
+  // The moment the debounced request is issued, the previous query's rows
+  // are gone, replaced by skeleton rows rather than left dimmed in place.
+  const visibleRows = rows.filter({ visible: true }).first();
+  await expect(first).toHaveCount(0);
+  await expect(
+    visibleRows.locator('[data-row="skeleton"]').first(),
+  ).toBeVisible();
+  await expect(
+    visibleRows.locator('[data-pending="true"]').first(),
+  ).toBeVisible();
   for (const release of releases) release();
   await expect(
     page.getByRole("heading", { name: "No pools match these filters" }),

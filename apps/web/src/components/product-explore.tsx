@@ -363,6 +363,10 @@ export function ProductExplore() {
   const listQuery = query.toString();
   const pages = useExplorePages(listQuery);
   const { list: data, loading, stale, error, refresh } = pages;
+  /* A view, sort, window or filter change swaps straight to skeleton rows
+     instead of dimming the previous view's; a same-query refresh keeps
+     showing the rows it already has while it quietly reloads them. */
+  const showSkeleton = stale && data?.query !== listQuery;
   const tableRef = useRef<HTMLTableSectionElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
   const total = useScrollMemory(
@@ -384,11 +388,11 @@ export function ProductExplore() {
   const empty = pages.settled && data?.head.total === 0;
   const tableRows = table.rows.map((index) => ({
     index,
-    pool: pages.row(index),
+    pool: showSkeleton ? undefined : pages.row(index),
   }));
   const cardRows = cards.rows.map((index) => ({
     index,
-    pool: pages.row(index),
+    pool: showSkeleton ? undefined : pages.row(index),
   }));
   return (
     <div className="page explore-page">
@@ -577,11 +581,7 @@ export function ProductExplore() {
                 message reads directly under the toolbar instead of below a
                 screen and a half of blank rows. */}
             <div className="table-region" data-empty={empty}>
-              <div
-                className="table-scroll desktop-pools"
-                aria-busy={stale}
-                data-stale-rows={stale}
-              >
+              <div className="table-scroll desktop-pools" aria-busy={stale}>
                 <table className="data-table pool-table">
                   {/* Column widths live here so a row that spans the metric
                       columns cannot move the ones before it. */}
@@ -623,131 +623,139 @@ export function ProductExplore() {
                         <td colSpan={10} style={{ height: table.leading }} />
                       </tr>
                     )}
-                    {tableRows.map(({ index, pool: p }) => (
-                      <tr
-                        key={index}
-                        data-index={index}
-                        aria-hidden={!p}
-                        data-row={p ? "resolved" : "reserved"}
-                      >
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <>
-                              <WatchButton id={p.id} />
-                            </>
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        <td data-pending={!p && !data}>
-                          {p ? (
-                            <PoolCell pool={p} />
-                          ) : data ? (
-                            "\u00a0"
-                          ) : (
-                            "Pending"
-                          )}
-                        </td>
-                        {p && launchOnly(p) ? (
-                          <td className="launch-cell" colSpan={8}>
-                            <LaunchLine pool={p} now={now} />
+                    {tableRows.map(({ index, pool: p }) => {
+                      const skeleton = !p && (!data || showSkeleton);
+                      return (
+                        <tr
+                          key={index}
+                          data-index={index}
+                          aria-hidden={!p}
+                          data-row={
+                            p ? "resolved" : skeleton ? "skeleton" : "reserved"
+                          }
+                        >
+                          <td data-pending={skeleton}>
+                            {p ? (
+                              <>
+                                <WatchButton id={p.id} />
+                              </>
+                            ) : skeleton ? (
+                              "Pending"
+                            ) : (
+                              "\u00a0"
+                            )}
                           </td>
-                        ) : (
-                          <>
-                            <td data-pending={!p && !data}>
-                              {p || !data ? (
-                                <Price
-                                  wei={p?.stats.priceWei}
-                                  pending={!data}
-                                />
-                              ) : (
-                                "\u00a0"
-                              )}
+                          <td data-pending={skeleton}>
+                            {p ? (
+                              <PoolCell pool={p} />
+                            ) : skeleton ? (
+                              "Pending"
+                            ) : (
+                              "\u00a0"
+                            )}
+                          </td>
+                          {p && launchOnly(p) ? (
+                            <td className="launch-cell" colSpan={8}>
+                              <LaunchLine pool={p} now={now} />
                             </td>
-                            <td data-pending={!p && !data}>
-                              {p || !data ? (
-                                <Change
-                                  value={p?.stats.change}
-                                  pending={!data}
-                                />
-                              ) : (
-                                "\u00a0"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p || !data ? (
-                                <Eth pending={!data} wei={p?.stats.volumeWei} />
-                              ) : (
-                                "\u00a0"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>{p.stats.trades ?? <Unavailable />}</>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p || !data ? (
-                                <Eth
-                                  pending={!data}
-                                  wei={p?.stats.liquidityWei}
-                                />
-                              ) : (
-                                "\u00a0"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>{p.stats.holders ?? <Unavailable />}</>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <AddressChip
-                                  address={p.launchSender}
-                                  href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                  stacked
-                                />
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                            <td data-pending={!p && !data}>
-                              {p ? (
-                                <>
-                                  {p.marketCoverage?.source !==
-                                    "canonical_broad" &&
-                                  p.market?.series.length ? (
-                                    <Sparkline
-                                      points={p.market.series}
-                                      positive={(p.stats.change ?? 0) >= 0}
-                                    />
-                                  ) : (
-                                    <Unavailable />
-                                  )}
-                                </>
-                              ) : data ? (
-                                "\u00a0"
-                              ) : (
-                                "Pending"
-                              )}
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
+                          ) : (
+                            <>
+                              <td data-pending={skeleton}>
+                                {p || skeleton ? (
+                                  <Price
+                                    wei={p?.stats.priceWei}
+                                    pending={skeleton}
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p || skeleton ? (
+                                  <Change
+                                    value={p?.stats.change}
+                                    pending={skeleton}
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p || skeleton ? (
+                                  <Eth
+                                    pending={skeleton}
+                                    wei={p?.stats.volumeWei}
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p ? (
+                                  <>{p.stats.trades ?? <Unavailable />}</>
+                                ) : skeleton ? (
+                                  "Pending"
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p || skeleton ? (
+                                  <Eth
+                                    pending={skeleton}
+                                    wei={p?.stats.liquidityWei}
+                                  />
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p ? (
+                                  <>{p.stats.holders ?? <Unavailable />}</>
+                                ) : skeleton ? (
+                                  "Pending"
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p ? (
+                                  <AddressChip
+                                    address={p.launchSender}
+                                    href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                                    stacked
+                                  />
+                                ) : skeleton ? (
+                                  "Pending"
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                              <td data-pending={skeleton}>
+                                {p ? (
+                                  <>
+                                    {p.marketCoverage?.source !==
+                                      "canonical_broad" &&
+                                    p.market?.series.length ? (
+                                      <Sparkline
+                                        points={p.market.series}
+                                        positive={(p.stats.change ?? 0) >= 0}
+                                      />
+                                    ) : (
+                                      <Unavailable />
+                                    )}
+                                  </>
+                                ) : skeleton ? (
+                                  "Pending"
+                                ) : (
+                                  "\u00a0"
+                                )}
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
                     {table.trailing > 0 && (
                       <tr className="spacer" aria-hidden="true">
                         <td colSpan={10} style={{ height: table.trailing }} />
@@ -756,12 +764,7 @@ export function ProductExplore() {
                   </tbody>
                 </table>
               </div>
-              <div
-                className="mobile-pools"
-                ref={cardsRef}
-                aria-busy={stale}
-                data-stale-rows={stale}
-              >
+              <div className="mobile-pools" ref={cardsRef} aria-busy={stale}>
                 {cards.leading > 0 && (
                   <div
                     className="spacer"
@@ -769,114 +772,121 @@ export function ProductExplore() {
                     style={{ height: cards.leading }}
                   />
                 )}
-                {cardRows.map(({ index, pool: p }) => (
-                  <article
-                    className="mobile-pool"
-                    key={index}
-                    data-index={index}
-                    data-row={p ? "resolved" : "reserved"}
-                  >
-                    {p ? (
-                      <>
-                        <div className="mobile-pool-top">
-                          <PoolCell pool={p} />
-                          <WatchButton id={p.id} />
-                        </div>
-                        {launchOnly(p) ? (
-                          /* The card holds a fixed height, so the launch
+                {cardRows.map(({ index, pool: p }) => {
+                  const skeleton = !p && (!data || showSkeleton);
+                  return (
+                    <article
+                      className="mobile-pool"
+                      key={index}
+                      data-index={index}
+                      data-row={
+                        p ? "resolved" : skeleton ? "skeleton" : "reserved"
+                      }
+                    >
+                      {p ? (
+                        <>
+                          <div className="mobile-pool-top">
+                            <PoolCell pool={p} />
+                            <WatchButton id={p.id} />
+                          </div>
+                          {launchOnly(p) ? (
+                            /* The card holds a fixed height, so the launch
                              facts take the stat slots rather than leaving
                              most of it empty. */
-                          <div
-                            className="mobile-pool-stats"
-                            data-launch-row="true"
-                          >
-                            <span>
-                              Launched
-                              <strong>
-                                <time
-                                  data-pending={now === null}
-                                  dateTime={new Date(
-                                    p.launchedAt * 1000,
-                                  ).toISOString()}
-                                  title={utc(p.launchedAt)}
-                                >
-                                  {now === null
-                                    ? "Pending"
-                                    : `${since(p.launchedAt, now)} ago`}
-                                </time>
-                              </strong>
-                            </span>
-                            <span>
-                              Sender
-                              <strong>
-                                <AddressChip
-                                  address={p.launchSender}
-                                  href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                />
-                              </strong>
+                            <div
+                              className="mobile-pool-stats"
+                              data-launch-row="true"
+                            >
+                              <span>
+                                Launched
+                                <strong>
+                                  <time
+                                    data-pending={now === null}
+                                    dateTime={new Date(
+                                      p.launchedAt * 1000,
+                                    ).toISOString()}
+                                    title={utc(p.launchedAt)}
+                                  >
+                                    {now === null
+                                      ? "Pending"
+                                      : `${since(p.launchedAt, now)} ago`}
+                                  </time>
+                                </strong>
+                              </span>
+                              <span>
+                                Sender
+                                <strong>
+                                  <AddressChip
+                                    address={p.launchSender}
+                                    href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                                  />
+                                </strong>
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="mobile-pool-stats">
+                              <span>
+                                Price
+                                <strong>
+                                  <Price wei={p.stats.priceWei} />
+                                </strong>
+                              </span>
+                              <span>
+                                {window} volume
+                                <strong>
+                                  <Eth wei={p.stats.volumeWei} />
+                                </strong>
+                              </span>
+                              <span>
+                                Trades
+                                <strong>
+                                  {p.stats.trades ?? <Unavailable />}
+                                </strong>
+                              </span>
+                              <span>
+                                Change
+                                <strong>
+                                  <Change value={p.stats.change} />
+                                </strong>
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      ) : skeleton ? (
+                        <>
+                          <div className="mobile-pool-top">
+                            <span className="token-cell">
+                              <span className="chain-token" data-pending="true">
+                                Token
+                              </span>
+                              <span>
+                                <strong data-pending="true">
+                                  Pool pending
+                                </strong>
+                                <small data-pending="true">
+                                  Coverage pending
+                                </small>
+                              </span>
                             </span>
                           </div>
-                        ) : (
                           <div className="mobile-pool-stats">
-                            <span>
-                              Price
-                              <strong>
-                                <Price wei={p.stats.priceWei} />
-                              </strong>
-                            </span>
-                            <span>
-                              {window} volume
-                              <strong>
-                                <Eth wei={p.stats.volumeWei} />
-                              </strong>
-                            </span>
-                            <span>
-                              Trades
-                              <strong>
-                                {p.stats.trades ?? <Unavailable />}
-                              </strong>
-                            </span>
-                            <span>
-                              Change
-                              <strong>
-                                <Change value={p.stats.change} />
-                              </strong>
-                            </span>
+                            {[
+                              "Price",
+                              `${window} volume`,
+                              "Trades",
+                              "Change",
+                            ].map((label) => (
+                              <span key={label}>
+                                {label}
+                                <strong data-pending="true">Pending</strong>
+                              </span>
+                            ))}
                           </div>
-                        )}
-                      </>
-                    ) : !data ? (
-                      <>
-                        <div className="mobile-pool-top">
-                          <span className="token-cell">
-                            <span className="chain-token" data-pending="true">
-                              Token
-                            </span>
-                            <span>
-                              <strong data-pending="true">Pool pending</strong>
-                              <small data-pending="true">
-                                Coverage pending
-                              </small>
-                            </span>
-                          </span>
-                        </div>
-                        <div className="mobile-pool-stats">
-                          {[
-                            "Price",
-                            `${window} volume`,
-                            "Trades",
-                            "Change",
-                          ].map((label) => (
-                            <span key={label}>
-                              {label}
-                              <strong data-pending="true">Pending</strong>
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    ) : null}
-                  </article>
-                ))}
+                        </>
+                      ) : null}
+                    </article>
+                  );
+                })}
                 {cards.trailing > 0 && (
                   <div
                     className="spacer"
