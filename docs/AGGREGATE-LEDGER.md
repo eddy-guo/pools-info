@@ -147,7 +147,11 @@ from HyperSync once and folds it through phase 1's writer. It is manual, off
 by default (`LEDGER_PASS_ENABLED=1` and `ENVIO_API_TOKEN`; the variables are
 in `.env.example`) and never started by the indexer service. `status` reads
 the streams and writes nothing; `calibrate <from> <to>` collects one range
-exactly as the pass would and reports its counts without writing.
+exactly as the pass would and reports its counts without writing; `compare
+<from> <to>` collects one range with each swap selection (below) and fails
+unless both give the fold the same rows. Both spend about seven HyperSync
+requests per collection on the token the production tip loop uses, so neither
+runs while that loop does.
 
 **One range** (report 7.1). From the ledger cursor (or block 23,467,030, the
 first launch) to at most `archive_height - 128`, three lanes over the same
@@ -163,13 +167,17 @@ requested per page, 16 pages, 24 MiB per lane query):
    supply are read through one Multicall3 `aggregate3` per 50 launches over
    `ROBINHOOD_RPC_URL`, which must be the public RPC: an Alchemy URL is
    refused.
-2. The swap lane, with the registry as of the range end leading the filter
+2. The swap lane, with the registry as of the range end selecting the swaps
    (report 3.4): every pool registered before the range plus the range's own
-   launches, sorted, split evenly over the fewest queries of at most 25,000
-   pool ids, one selection per query (`ledgerChunks`; the 62,858 pools of
-   17 Sep 2026 are three queries of about 21,000 ids, 1.45 MB against the
-   2 MiB limit, where the pass's fixed 20,000-id chunks took four). Every
-   returned log is validated, joined to a successful
+   launches. A range longer than `ledgerPassPolicy.managerSwapBlocks` (2,000
+   blocks) sends it as pool-id lists, sorted and split evenly over the fewest
+   queries of at most 25,000 ids, one selection per query (`ledgerChunks`;
+   the 62,858 pools of 17 Sep 2026 are three queries of about 21,000 ids,
+   1.45 MB against the 2 MiB limit, where the pass's fixed 20,000-id chunks
+   took four). A range of at most 2,000 blocks selects every PoolManager
+   `Swap` with one 527-byte query and drops the swaps of pools outside the
+   registry locally, counted as `unregisteredSwaps` (phase 3, "The swap lane
+   at the tip"). Every kept log is validated, joined to a successful
    transaction (the initiator, `to` for the route label) and its block, and
    decoded; a swap whose amounts share a sign is not a trade and is counted
    as `unsupportedSwaps`.
@@ -212,8 +220,14 @@ the counters report sections 3.6 and 5 are checked against.
 **What the batch rows keep.** `agg_batches.query` holds the launch query
 body verbatim and, for each swap and transfer query, its range, the number
 of values and a SHA-256 of the sorted value list (the list is the registry as
-of the range end, reconstructible from the catalog); `pages` holds the page
-records per query and the header reads. The launch stream's
+of the range end, reconstructible from the catalog); a manager-wide swap
+query (`selection: "manager"`) sent no list and keeps its range, the same
+count and digest of the registry it was filtered by, and the number of the
+range's manager swaps outside it (`unregistered`). `pages` holds the page
+records per query and the header reads. The content hash covers the rows, not
+the query, so a range folds to the same batch whichever selection fetched it;
+`agg_batches.unregistered_swaps` stays the writer's count of committed swaps
+whose pool it could not find, 0 in both. The launch stream's
 `indexer_batches.evidence` keeps the HyperSync launch variant: the launch,
 launcher and metadata logs, the launch transactions, the launch blocks and
 the cutoff header, the metadata issues and the raw Multicall3 replies;
@@ -282,9 +296,11 @@ is a committed batch or nothing, so the loop can stop at any point:
 5. At the confirmed tip the loop waits `LEDGER_TIP_POLL_MS` (60 s); behind
    it, the next cycle starts at once. A quiet tip cycle is three HyperSync
    requests (height, head, cursor) and a cycle with new blocks adds the launch
-   query, one query per swap and transfer selection (three and two at the 17
-   Sep catalogue), the cutoff header and any extra pages, all paced at one
-   request per 2 s or slower.
+   query, the manager-wide swap query (one or two pages), one query per
+   transfer selection (two at the 17 Sep catalogue), the cutoff header and
+   any extra pages, all paced at one request per 2 s or slower. The
+   `ledger_tip_cycle` line logs the cycle's `requests`, response `bytes` and
+   `sentBytes`, the request bodies uploaded.
 
 **The launch lane arrives complete.** Each launch's name, symbol, decimals
 and `totalSupply()` are read in the same Multicall3 aggregate over the public
@@ -358,6 +374,29 @@ ends the loop on a committed batch.
   of being removed with its changes left in place.
 - **Value lists split evenly over the fewest queries**, two requests fewer
   per range at the 17 Sep catalogue (see the lanes above).
+- **The swap lane at the tip selects every manager swap** (17 Sep 2026). The
+  pool-id lists cost the tip loop about 7.2 MB of upload per 80-second cycle
+  (5.3 MB a minute on Railway, most of the service's bill) to ask for a few
+  hundred swaps. A range of at most `managerSwapBlocks` (2,000) blocks now
+  sends one 527-byte manager-wide query and keeps the registry's swaps
+  locally; the transfer lane keeps its token lists, since a chain-wide
+  `Transfer` selection over 780 blocks overflowed HyperSync's 32 MB response.
+  Replaying the recorded answers of four 17 Sep tip ranges through the
+  production client on a local TLS server, a cycle uploads 2.84 MB instead of
+  7.19 MB (TLS bytes, handshakes and HTTP headers included) in 8 or 9
+  requests instead of 10, and downloads about 5.3 to 5.8 MB instead of 0.05
+  to 1.1 MB. The threshold is the tip loop's base range: tip ranges are 760
+  to 822 blocks, a 2,000-block manager-wide query is 12.1 MB in two pages at
+  16 Sep's busy rate (manager swaps run 3.2 to 6.5 a block at about 1,170
+  bytes each), and only catch-up ranges are longer, where the lists answer
+  64,000 blocks in one page per query and a manager-wide query would be cut
+  near 3,300 blocks at the busiest rate. Both selections gave identical rows and content hashes
+  over seven real ranges (launches, the busiest morning, a quiet evening,
+  the threshold); two are committed as recorded fixtures
+  (`apps/indexer/src/ledger-swap-selection.test.ts`) and
+  `pnpm ledger:pass compare` reruns the comparison live. Envio does not
+  accept a gzip request body (HTTP 400), so the transfer lists stay
+  uncompressed.
 - **Ranks are row numbers kept for the top 100**, not the report's dense rank
   over every eligible wallet: the leaderboard today ranks by position with
   the address breaking ties, and serves no rank past 100 (captain, 17 Sep

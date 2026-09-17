@@ -53,3 +53,40 @@ Recorded the same way for the live worker's HyperSync source
   blocks without a selected log.
 - `rollback_guard` is null on the tip page (2,800 blocks below the archive
   height) and present on the head block's header response.
+
+## Ledger swap selection fixtures (2026-09-17, 17:35 to 17:39 UTC)
+
+`ledger-swap-selection-<from>-<to>.json.br` (brotli JSON) hold both ways the
+ledger's swap lane can select one real range, recorded from the requests
+`compareLedgerSwapSelections` (`pnpm ledger:pass compare <from> <to>`) sent
+with the registry of the local tip-loop ledger (62,892 and 62,426 pools before
+the ranges): the launch query, the three pool-id queries the registry split
+into, the manager-wide query (`address` the PoolManager, `topics` the Swap
+selector, no pool ids), the two transfer queries and the boundary headers.
+Each answer is the body received for the exact request the collector builds
+for the range, matched by the request body's SHA-256, parsed and serialised
+again with every row and its order unchanged. The pool-id and token lists are
+not kept: `pools` holds the registered pools the answers name and `registry` a
+digest of the full sorted pool id list. `expected` is what the live comparison
+derived. `apps/indexer/src/ledger-swap-selection.test.ts` replays both
+selections through `collectLedgerRange` and requires the same rows and
+content hash.
+
+| Range (inclusive)     | Blocks | Launches | Registered swaps | Transfers | Manager swaps (pages) | Pool-id answers (logs) | Content hash    |
+| --------------------- | -----: | -------: | ---------------: | --------: | --------------------- | ---------------------- | --------------- |
+| 65,402,717-65,403,527 |    811 |        1 |              236 |       307 | 4,296 (1)             | 196, 35, 5             | `0x094b79e6...` |
+| 64,340,780-64,342,779 |  2,000 |        2 |            2,071 |     2,208 | 4,441 + 5,965 (2)     | 377, 452, 1,242        | `0x3b8574b5...` |
+
+The first is a tip range exactly as the local tip loop committed it (its
+`agg_batches.content_hash` is the same); the second is the busiest morning of
+16 Sep at the swap lane's `managerSwapBlocks` threshold. Wire facts:
+
+- A manager-wide answer is about 1,170 bytes per swap log with its joined
+  transactions and blocks; a page held up to 5,965 logs and 6.9 MB, ending on
+  a server partition (65,405,074-65,405,859 split at 3,530 logs, the 2,000-block
+  range at 4,441).
+- The same query can come back with its rows split over a different number of
+  `data` chunks; compare rows, not chunks.
+- A gzip request body (`content-encoding: gzip`) is rejected with HTTP 400
+  `invalid JSON: expected value at line 1 column 1`: the server does not
+  decompress requests.

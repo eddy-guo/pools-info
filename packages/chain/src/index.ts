@@ -167,6 +167,7 @@ export {
   ledgerChunks,
   ledgerLaunchQuery,
   ledgerLaunchStream,
+  ledgerManagerQueryRecord,
   ledgerPassPolicy,
   ledgerQueryRecord,
   planLedgerRange,
@@ -180,4 +181,5 @@ export {
   type LedgerRangeCollection,
   type LedgerRangeInput,
   type LedgerRegistryPool,
+  type LedgerSwapSelection,
 } from "./hypersync-ledger";

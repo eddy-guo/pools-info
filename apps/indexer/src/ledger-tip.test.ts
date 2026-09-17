@@ -5,6 +5,7 @@ import {
   decodeFunctionData,
   encodeFunctionResult,
   erc20Abi,
+  toEventSelector,
   type Hex,
 } from "viem";
 import {
@@ -16,6 +17,7 @@ import {
   decodeAggregateRequest,
   encodeAggregateReply,
   ledgerPassPolicy,
+  swapEvent,
   type HyperSyncRetryEvent,
 } from "@pools/chain";
 import {
@@ -493,12 +495,40 @@ test(
       [null, true, 3, null],
     );
     // Fifty new blocks without a launch or trade: the three lanes of the
-    // three-pool registry and the cutoff header make it seven.
+    // three-pool registry and the cutoff header make it seven. A tip range
+    // selects every manager swap and sends no pool-id list.
     fake.height += 50;
+    const sent = fake.requests.length;
     const small = await runLedgerTipCycle(db, passClient(fake), cycleOptions);
     assert.deepEqual(
       [small.range?.from, small.range?.to, small.atTip, small.requests],
       [start + 500, start + 549, true, 7],
+    );
+    assert.equal(small.range?.swapSelection, "manager");
+    const swapBodies = fake.requests
+      .slice(sent)
+      .map((r) => r.body)
+      .filter((b) => b?.logs?.[0].address?.[0] === contracts.manager);
+    assert.deepEqual(
+      swapBodies.map((b) => b!.logs),
+      [
+        [
+          {
+            address: [contracts.manager],
+            topics: [[toEventSelector(swapEvent)]],
+          },
+        ],
+      ],
+    );
+    assert.equal(
+      small.sentBytes,
+      fake.requests
+        .slice(sent)
+        .reduce(
+          (n, r) =>
+            n + (r.body ? Buffer.byteLength(JSON.stringify(r.body)) : 0),
+          0,
+        ),
     );
     assert.equal(small.windows?.throughBlock, start + 549);
   },

@@ -36,10 +36,21 @@ test.describe("persisted broad market explore", () => {
   test("real explore API and page retain all launches, exact market values and URL sort state", async ({
     page,
     request,
+    isMobile,
   }, info) => {
     // Block unrelated live transport. Product requests use the actual local API
     // and canonical Postgres rows through the unchanged production proxy.
     await page.route("**/api/markets/**", (route) => route.abort());
+    /* The screener's own read, not the launch rail's six. */
+    const screenerRead = () =>
+      page.waitForRequest(
+        (r) =>
+          r.url().includes("/api/product/explore") &&
+          !r.url().includes("limit=6"),
+      );
+    const sortOf = async (read: ReturnType<typeof screenerRead>) =>
+      new URL((await read).url()).searchParams.get("sort");
+    const byTrades = screenerRead();
     await page.goto("/?sort=trades&window=All");
     const response = await request.get(
       "/api/product/explore?sort=trades&window=All&limit=1",
@@ -55,33 +66,39 @@ test.describe("persisted broad market explore", () => {
     );
     expect(data.items[0].stats.priceWei).toBe("4000000000000000000");
     expect(data.items[0].processed).toBe(false);
-    await expect(
-      page.getByRole("combobox", { name: "Sort all pools" }),
-    ).toHaveValue("trades");
+    // No header offers trade order, but a URL naming it still reads by it.
+    expect(await sortOf(byTrades)).toBe("trades");
     const row = page
       .locator(".desktop-pools tbody tr, .mobile-pool")
       .filter({ visible: true })
       .filter({ has: page.getByRole("link", { name: /Canonical market/ }) });
     await expect(row).toBeVisible();
-    await expect(row).toContainText("21001");
+    await expect(row).toContainText("21,001 trades");
     await expect(
       row.locator(`[title="${BigInt(marketAmount) * 21001n} wei"]`),
     ).toBeVisible();
-    await page
-      .getByRole("combobox", { name: "Sort all pools" })
-      .selectOption("volume");
+    // Volume order from its column header; phones render cards with no head,
+    // so there the order arrives by URL.
+    const byVolume = screenerRead();
+    if (isMobile) await page.goto("/?sort=volume&window=All");
+    else
+      await page
+        .locator(".desktop-pools thead")
+        .getByRole("button", { name: "Volume" })
+        .click();
+    expect(await sortOf(byVolume)).toBe("volume");
     await expect(page).toHaveURL(/sort=volume/);
-    await expect(
-      page.getByRole("combobox", { name: "Sort all pools" }),
-    ).toHaveValue("volume");
+    if (!isMobile)
+      await expect(
+        page.locator(".desktop-pools thead th").filter({ hasText: "Volume" }),
+      ).toHaveAttribute("aria-sort", "descending");
     await page.getByRole("textbox", { name: "Filter pools" }).fill("Launch 31");
     await expect(
       page.getByRole("heading", { name: "No pools match these filters" }),
     ).toBeVisible();
-    await page
-      .getByRole("combobox", { name: "Sort all pools" })
-      .selectOption("launch");
-    await expect(page).toHaveURL(/sort=launch/);
+    // Launch order keeps the launch the market cutoff leaves unmeasured.
+    await page.getByRole("button", { name: "All launches →" }).click();
+    await expect(page).toHaveURL(/view=new/);
     await expect(
       page
         .locator(".desktop-pools .token-cell, .mobile-pools .token-cell")

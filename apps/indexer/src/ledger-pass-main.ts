@@ -9,6 +9,7 @@ import {
 import { errorDetails } from "./errors";
 import {
   calibrateLedgerRange,
+  compareLedgerSwapSelections,
   createLedgerPassClient,
   createLedgerPassRpc,
   ledgerPassConfig,
@@ -22,18 +23,27 @@ import { RPC_RATE_LIMIT_EXIT_CODE } from "./supervisor";
 // Manual, off by default, never started by service.ts:
 //   pnpm ledger:pass status                      reads the streams, writes nothing
 //   pnpm ledger:pass calibrate <from> <to>       collects one range, writes nothing
+//   pnpm ledger:pass compare <from> <to>         collects one range with both swap
+//                                                selections and requires the same rows
 //   pnpm ledger:pass run                         folds ranges from the cursor to the cutoff
 // A sustained HyperSync or RPC throttle ends `run` with the reserved exit
 // code 75 and nothing restarts it.
 const stop = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => stop.abort());
+const usage =
+  "Expected run, calibrate <from> <to>, compare <from> <to> or status";
 const emit = (event: Record<string, unknown>) =>
   console.log(JSON.stringify(event));
 async function main() {
   const mode = process.argv[2];
-  if (mode !== "run" && mode !== "calibrate" && mode !== "status")
-    throw Error("Expected run, calibrate <from> <to> or status");
+  if (
+    mode !== "run" &&
+    mode !== "calibrate" &&
+    mode !== "compare" &&
+    mode !== "status"
+  )
+    throw Error(usage);
   const config = ledgerPassConfig();
   const db = createClient(undefined, {
     statementTimeoutMs: 600000,
@@ -72,16 +82,34 @@ async function main() {
       maxRequests: config.maxRequests,
       maxRanges: config.maxRanges,
     });
-    if (mode === "calibrate") {
-      const fromBlock = Number(process.argv[3]),
-        toBlock = Number(process.argv[4]);
-      if (
-        !Number.isSafeInteger(fromBlock) ||
+    const fromBlock = Number(process.argv[3]),
+      toBlock = Number(process.argv[4]);
+    if (
+      (mode === "calibrate" || mode === "compare") &&
+      (!Number.isSafeInteger(fromBlock) ||
         !Number.isSafeInteger(toBlock) ||
         fromBlock < 0 ||
-        toBlock < fromBlock
-      )
-        throw Error("Expected run, calibrate <from> <to> or status");
+        toBlock < fromBlock)
+    )
+      throw Error(usage);
+    if (mode === "compare") {
+      const started = performance.now();
+      const comparison = await compareLedgerSwapSelections(
+        db,
+        client,
+        () => createLedgerPassRpc(config, stop.signal),
+        { fromBlock, toBlock },
+        config.maxPages,
+      );
+      emit({
+        event: "ledger_swap_selections_compared",
+        ...comparison,
+        throttled,
+        elapsedMs: Math.round(performance.now() - started),
+      });
+      return;
+    }
+    if (mode === "calibrate") {
       const started = performance.now();
       const calibration = await calibrateLedgerRange(
         db,

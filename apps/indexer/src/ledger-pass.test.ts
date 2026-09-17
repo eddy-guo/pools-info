@@ -252,6 +252,7 @@ const runOptions = (
     throttled?: () => number;
     maxRangeBlocks?: number;
     catchUpMargin?: number;
+    swapSelection?: "manager" | "pool_ids";
   } = {},
 ) => ({
   rangeBlocks: 100,
@@ -274,6 +275,116 @@ async function batches(db: Client) {
   );
   return r.rows;
 }
+
+/** Everything the fold wrote, keyed by addresses and pool ids rather than
+ * the surrogates. */
+async function ledgerRows(db: Client) {
+  const rows = async (sql: string) => (await db.query(sql)).rows;
+  return {
+    positions: await positions(db),
+    walletHours: await rows(
+      `SELECT encode(w.address,'hex') AS wallet,p.pool_id,to_jsonb(x)-'wallet_ref'-'pool_ref' AS row FROM agg_wallet_hours x JOIN agg_wallets w USING (wallet_ref) JOIN indexed_pools p USING (pool_ref) ORDER BY 1,2,x.hour`,
+    ),
+    poolHours: await rows(
+      `SELECT p.pool_id,to_jsonb(x)-'pool_ref' AS row FROM agg_pool_hours x JOIN indexed_pools p USING (pool_ref) ORDER BY 1,x.hour`,
+    ),
+    poolState: await rows(
+      `SELECT p.pool_id,to_jsonb(x)-'pool_ref' AS row FROM agg_pool_state x JOIN indexed_pools p USING (pool_ref) ORDER BY 1`,
+    ),
+    liveTrades: await rows(
+      `SELECT p.pool_id,encode(w.address,'hex') AS wallet,to_jsonb(x)-'pool_ref'-'wallet_ref' AS row FROM agg_live_trades x JOIN indexed_pools p USING (pool_ref) LEFT JOIN agg_wallets w USING (wallet_ref) ORDER BY x.block_number,x.log_index`,
+    ),
+    batches: (
+      await rows(
+        "SELECT from_block::int AS from_block,to_block::int AS to_block,encode(from_parent_hash,'hex') AS parent,encode(block_hash,'hex') AS hash,encode(content_hash,'hex') AS content,to_timestamp,registry_pools,swaps,transfers,launches,attributed,unattributed,unregistered_swaps FROM agg_batches ORDER BY to_block",
+      )
+    ).map((r) => ({ ...r, to_timestamp: Number(r.to_timestamp) })),
+  };
+}
+
+test(
+  "the pass folds the same ledger whichever way the swap lane selects, and records how it did",
+  dbTest,
+  async (t) => {
+    const other = word(0xdead);
+    const run = async (swapSelection: "manager" | "pool_ids") => {
+      const db = await database(t);
+      await writer(db);
+      const { fake } = fakeChain();
+      // A pool outside the registry trades beside the registered ones, once
+      // inside a registered swap's transaction.
+      fake.logs.push(
+        fakeSwap({
+          block: start + 5,
+          logIndex: 7,
+          poolId: other,
+          from: W,
+          transactionHash: word(0xc1),
+        }),
+        fakeSwap({ block: start + 160, logIndex: 3, poolId: other, from: V }),
+        fakeSwap({ block: start + 250, logIndex: 0, poolId: other, from: V }),
+      );
+      const log: Record<string, unknown>[] = [];
+      const summary = await runLedgerPass(
+        db,
+        passClient(fake),
+        runOptions(log, { swapSelection }),
+      );
+      assert.equal(summary.stopped, "complete");
+      const query = await db.query(
+        "SELECT query->'swaps' AS swaps FROM agg_batches ORDER BY to_block",
+      );
+      const rows = await ledgerRows(db);
+      await releaseLedgerWriter(db);
+      return {
+        rows,
+        swapQueries: query.rows.map((r) => r.swaps),
+        progress: log.filter((e) => e.event === "ledger_progress"),
+      };
+    };
+    const lists = await run("pool_ids");
+    const manager = await run("manager");
+    assert.deepEqual(manager.rows, lists.rows);
+    assert.equal(manager.rows.batches.length, 3);
+    assert.ok(manager.rows.positions.length > 0);
+    assert.ok(manager.rows.poolHours.length > 0);
+    // The writer found every committed swap registered either way.
+    assert.ok(manager.rows.batches.every((b) => b.unregistered_swaps === 0));
+    assert.deepEqual(
+      manager.progress.map((p) => [p.swapSelection, p.unregisteredSwaps]),
+      [
+        ["manager", 1],
+        ["manager", 1],
+        ["manager", 1],
+      ],
+    );
+    assert.deepEqual(
+      lists.progress.map((p) => [p.swapSelection, p.unregisteredSwaps]),
+      [
+        ["pool_ids", 0],
+        ["pool_ids", 0],
+        ["pool_ids", 0],
+      ],
+    );
+    assert.ok(manager.progress.every((p) => (p.sentBytes as number) > 0));
+    assert.deepEqual(
+      manager.swapQueries.map((q) =>
+        q.map((r: Record<string, unknown>) => [
+          r.selection,
+          (r.registry as { count: number }).count,
+          r.unregistered,
+        ]),
+      ),
+      [[["manager", 1, 1]], [["manager", 2, 1]], [["manager", 2, 1]]],
+    );
+    assert.deepEqual(
+      lists.swapQueries.map((q) =>
+        q.map((r: Record<string, unknown>) => [r.selection, r.count]),
+      ),
+      [[["pool_ids", 1]], [["pool_ids", 2]], [["pool_ids", 2]]],
+    );
+  },
+);
 
 test(
   "a recorded pass folds launches, swaps and transfers into the ledger, hands over at the cutoff and replays as a no-op",
@@ -633,8 +744,7 @@ test(
     // not keep polling height after the gap fell under the margin.
     assert.equal(heightCalls, 3);
     const complete = log.find((e) => e.event === "ledger_pass_complete") as
-      | { cursor: number; archiveHeight: number; safeTo: number }
-      | undefined;
+      { cursor: number; archiveHeight: number; safeTo: number } | undefined;
     assert.deepEqual(
       complete && [complete.cursor, complete.archiveHeight, complete.safeTo],
       [start + 399, start + 567, start + 439],
@@ -938,9 +1048,11 @@ test("the progress counters accumulate per run and per million blocks of history
     newPositions: 5,
     newWallets: 2,
     registryPools: 3,
+    swapSelection: "manager",
     pages: 3,
     requests: 6,
     bytes: 500,
+    sentBytes: 2000,
     elapsedMs: 10,
     archiveHeight: start + 5_000_000,
     replayed: false,
