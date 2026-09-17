@@ -59,12 +59,18 @@ async function reconcile(
 ) {
   const s = await recentStream(db, key);
   if (s.cursor === null || (await canonicalHash(s.cursor)) === s.hash) return s;
+  const checkpoints = await recentCheckpoints(db, key);
   let ancestor: number | null = null;
-  for (const b of await recentCheckpoints(db, key))
+  for (const b of checkpoints)
     if ((await canonicalHash(b.to)) === b.hash) {
       ancestor = b.to;
       break;
     }
+  // A source that matches none of up to 256 saved checkpoints is answering
+  // for the wrong chain, not reorging; rewinding to null would delete every
+  // checkpoint and let it commit empty batches with foreign hashes.
+  if (ancestor === null && checkpoints.length > 0)
+    throw Error("No matching recent checkpoint; refusing a full rewind");
   await rewindRecent(db, s, ancestor);
   console.log(
     JSON.stringify({

@@ -56,6 +56,20 @@ export async function broadExploreCut(
     rebuildPending: r.missing !== null,
   };
 }
+/** The announced shape only: `startBlock` and `discoveryBatch` are internal
+ * cut bookkeeping the frontend contract does not include. */
+export function announcedBroadMarketCutoff(
+  cut: BroadExploreCut | null,
+): (MarketBoundary & { rebuildPending: boolean }) | null {
+  return cut
+    ? {
+        block: cut.block,
+        hash: cut.hash,
+        asOf: cut.asOf,
+        rebuildPending: cut.rebuildPending,
+      }
+    : null;
+}
 export function broadWindowStart(
   cut: BroadExploreCut | null,
   window: LiveWindow,

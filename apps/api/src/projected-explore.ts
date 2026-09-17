@@ -11,6 +11,7 @@ import {
 } from "./catalog-read";
 import { catalogPool } from "./explore-read";
 import {
+  announcedBroadMarketCutoff,
   broadExploreCut,
   broadWindowStart,
   broadExploreCtes,
@@ -289,7 +290,7 @@ export async function readProjectedExplore(
     items,
     total,
     nextOffset: offset + limit < total ? offset + limit : null,
-    broadMarketCutoff: broadCut,
+    broadMarketCutoff: announcedBroadMarketCutoff(broadCut),
     ...(options.view === "crowd"
       ? {
           message:

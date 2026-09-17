@@ -48,20 +48,38 @@ function integer(
     throw Error(`Invalid ${name}`);
   return n;
 }
+/** A HyperSync endpoint for another chain answers requests without error, so
+ * a wrong URL is caught here rather than by the chain's own data disagreeing
+ * with saved checkpoints later (see reconcile's matching guard). */
+function hypersyncHostname(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    throw Error("Invalid HYPERSYNC_URL");
+  }
+}
 export function recentSourceConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): RecentSourceConfig {
-  const source = env.RECENT_SOURCE ?? "rpc";
+  const source = env.RECENT_SOURCE?.trim() || "rpc";
   if (source === "rpc") return { source, defaultBatchBlocks: 1000 };
   if (source !== "hypersync")
     throw Error("Invalid RECENT_SOURCE; expected rpc or hypersync");
   const token = env.ENVIO_API_TOKEN?.trim();
   if (!token)
     throw Error("ENVIO_API_TOKEN is required for RECENT_SOURCE=hypersync");
+  const url = env.HYPERSYNC_URL ?? hypersyncPolicy.defaultUrl;
+  const hostname = hypersyncHostname(url);
+  if (
+    hostname !== "4663.hypersync.xyz" &&
+    hostname !== "127.0.0.1" &&
+    hostname !== "localhost"
+  )
+    throw Error("HYPERSYNC_URL must be chain 4663's HyperSync endpoint");
   return {
     source,
     defaultBatchBlocks: recentHyperSyncDefaults.batchBlocks,
-    url: env.HYPERSYNC_URL ?? hypersyncPolicy.defaultUrl,
+    url,
     token,
     minIntervalMs: integer(
       env,

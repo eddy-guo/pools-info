@@ -175,6 +175,56 @@ test("recorded pages normalize to the stable display shape", async () => {
   );
 });
 
+test("display strings map an empty upstream value to null and clip past 256 characters, the website validator's exact bound", () => {
+  const over = "x".repeat(300);
+  const emptyTx = normalizeTransaction({
+    hash: "0x" + "c".repeat(64),
+    block_number: 1,
+    timestamp: "2026-09-15T00:00:00.000000Z",
+    from: { hash: wallet },
+    to: { hash: wallet },
+    method: "",
+    status: "ok",
+    value: "1",
+    fee: null,
+  });
+  assert.equal(emptyTx.method, null);
+  const longTx = normalizeTransaction({
+    hash: "0x" + "d".repeat(64),
+    block_number: 1,
+    timestamp: "2026-09-15T00:00:00.000000Z",
+    from: { hash: wallet },
+    to: { hash: wallet },
+    method: over,
+    status: "ok",
+    value: "1",
+    fee: null,
+  });
+  assert.equal(longTx.method, over.slice(0, 256));
+  assert.equal(longTx.method!.length, 256);
+  const transfer = normalizeTokenTransfer({
+    transaction_hash: "0x" + "e".repeat(64),
+    log_index: 1,
+    block_number: 1,
+    timestamp: "2026-09-15T00:00:00.000000Z",
+    from: { hash: wallet },
+    to: { hash: wallet },
+    token: {
+      address_hash: wallet,
+      symbol: "",
+      name: over,
+      decimals: "18",
+      type: "",
+    },
+    total: { value: "1" },
+    method: "",
+  });
+  assert.equal(transfer.token.symbol, null);
+  assert.equal(transfer.token.type, null);
+  assert.equal(transfer.token.name, over.slice(0, 256));
+  assert.equal(transfer.method, null);
+});
+
 test("client authenticates with the key, passes page parameters through and reads the credit header", async (t) => {
   const { baseUrl, seen } = await upstream(t, async (req) => ({
     body: await fixture(

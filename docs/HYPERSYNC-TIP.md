@@ -157,7 +157,11 @@ free tier's measured sustained rate with zero 429s; 60 throttled), and
 `RECENT_HYPERSYNC_MIN_INTERVAL_MS` can only slow it. A cycle is also capped at
 300 requests. Sustained 429s (four throttled attempts) exit with the JSON-RPC
 stop's reserved code 75, which the supervisor treats as a clean pause of the
-service without an automatic restart; a rejected token fails at once.
+service without an automatic restart. A page over HyperSync's own caps (a
+block group too dense to split, `HyperSyncPageCapacity`) fails at once with
+the broad worker's reserved code 76, the same indivisible-range stop. A
+rejected token (`HyperSyncUnauthorized`) also fails at once, with its own
+reserved code 77, since restarting cannot fix a bad token either.
 
 The logs report a gap larger than one batch as `recent_gap_fill` events:
 `started` (gap blocks, batches, a floor on minutes), `progress` per batch

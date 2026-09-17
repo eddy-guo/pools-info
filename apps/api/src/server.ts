@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { parseRequest, RequestError } from "./request";
+import { parseRequest, RequestError, type ReadRequest } from "./request";
 import type { Reader } from "./reader";
 import { respondTokenImage, type TokenImageService } from "./token-image-store";
 import { createWalletHistory, type WalletHistory } from "./wallet-history";
@@ -48,6 +48,8 @@ export function createApi(
   let active = 0,
     activeImages = 0;
   const server = createServer(async (req, res) => {
+    const startedAt = now();
+    let request: ReadRequest | undefined;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-store");
@@ -60,7 +62,7 @@ export function createApi(
         res.setHeader("Allow", "GET, HEAD");
         throw new RequestError(405, "method_not_allowed");
       }
-      const request = parseRequest(req.url ?? "/");
+      request = parseRequest(req.url ?? "/");
       if (request.route === "health") {
         send(200, '{"ok":true}');
         return;
@@ -74,7 +76,8 @@ export function createApi(
       }
       if (request.route === "pool-image") {
         if (!images) throw new RequestError(404, "not_found");
-        if (activeImages >= 64) throw new RequestError(503, "busy");
+        if (activeImages >= 64)
+          throw new RequestError(503, "busy", { retryAfter: 5 });
         activeImages++;
         try {
           respondTokenImage(req, res, await images.resolve(request.poolId!));
@@ -100,7 +103,8 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (active >= 16) throw new RequestError(503, "busy");
+        if (active >= 16)
+          throw new RequestError(503, "busy", { retryAfter: 5 });
         active++;
         result = (async () => {
           try {
@@ -134,9 +138,10 @@ export function createApi(
         })();
         pending.set(request.cacheKey, result);
         // Both handlers are required to avoid an unhandled rejecting finally promise.
+        const cacheKey = request.cacheKey;
         void result.then(
-          () => pending.delete(request.cacheKey),
-          () => pending.delete(request.cacheKey),
+          () => pending.delete(cacheKey),
+          () => pending.delete(cacheKey),
         );
       }
       res.setHeader("X-Data-Cache", "MISS");
@@ -149,9 +154,12 @@ export function createApi(
         process.stderr.write(
           JSON.stringify({
             event: "read_failed",
-            ...(typeof (error as { code?: unknown })?.code === "string"
-              ? { code: (error as { code: string }).code }
-              : {}),
+            route: request?.route ?? null,
+            code:
+              typeof (error as { code?: unknown })?.code === "string"
+                ? (error as { code: string }).code
+                : null,
+            ms: now() - startedAt,
           }) + "\n",
         );
       if (known && error.retryAfter)
