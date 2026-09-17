@@ -83,7 +83,7 @@ for (const [name, url] of [
     await expect(resolved.first()).toBeAttached();
     if (testInfo.project.name !== "desktop" && name === "measured") {
       /* The card's reserved height fits the identity/price row and the one
-         Vol · Liq · Holders line with no coverage text; a launch card's
+         Vol and trade count line with no coverage text; a launch card's
          single line shares that height. */
       const fit = await resolved
         .filter({ visible: true })

@@ -4719,8 +4719,10 @@ main {
     text-align: right;
     font-size: 12.5px;
   }
-  /* One line of Vol / Liq / Holders with the sparkline slot past it, empty
-     when the read sends no series (never a placeholder mark). */
+  /* One line of Vol and its trade count, with the sparkline slot past it,
+     empty when the read sends no series (never a placeholder mark). Liquidity
+     and holders are out of the product; this row reserves no space for
+     either. */
   .mobile-pool-stats {
     display: flex;
     align-items: center;
@@ -6006,7 +6008,7 @@ a.wallet-top-pool:hover {
     inset: 0 0 auto;
   }
   /* Identity + price row held to the 44px token-cell target, then the one
-     Vol · Liq · Holders line matching the sparkline's 24px: 13 + 44 + 10 + 24
+     Vol and trade count line matching the sparkline's 24px: 13 + 44 + 10 + 24
      + 13, following the export's 104px row (gap-mobile-rows-390.png). */
   .explore-page .mobile-pool {
     height: 104px;

@@ -737,12 +737,11 @@ export function ProductExplore() {
                             <div className="mobile-pool-stats">
                               <span>
                                 Vol <Eth wei={p.stats.volumeWei} />
-                                {" · "}Liq <Eth wei={p.stats.liquidityWei} />
-                                {" · "}Holders{" "}
-                                {p.stats.holders === null ? (
-                                  <Unavailable />
-                                ) : (
-                                  integers.format(p.stats.holders)
+                                {p.stats.trades !== null && (
+                                  <>
+                                    {" · "}
+                                    {integers.format(p.stats.trades)} trades
+                                  </>
                                 )}
                               </span>
                               <span className="mobile-pool-spark">
