@@ -23,17 +23,19 @@ clipboard denial exposes a selectable link. Personal lists larger than the API's
 200-ID read bound remain saved, with an explicit notice that the first 200 are
 shown.
 
-## Following and wallet signals
+## Following activity
 
 Follow a wallet from its profile, then open the Wallet directory. Following
 activity shows up to 50 newest verified trades across the followed selection.
-View copy signals on an individual wallet opens the same read-only view for that
-address without adding it to the local following list.
+A wallet profile no longer opens this view for its own address: its Copy trade
+action opens the designed copy-trading card as a read-only preview instead
+(`apps/web/src/components/copy-trade-preview.tsx`), with every control
+disabled and no order, wallet connection or backtest behind it.
 
 Each row links to the wallet, pool and original transaction, shows the exact
 underlying ETH amount and average execution price, and offers Open on Pools.
 The latter opens the token page on pools.xyz. No trade is signed, submitted,
-simulated or executed. The surface is labelled beta and informational, not advice.
+simulated or executed. The surface is informational, not advice.
 
 Only attributed trades with supported wallet positions and matching current
 accounting publications appear. Transaction initiators, unsupported accounting,

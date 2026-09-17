@@ -137,33 +137,3 @@ test("followed activity keeps dated trades on outage, pauses and replaces a remo
     release();
   }
 });
-
-test("wallet copy signals show read-only executions without changing follows", async ({
-  page,
-}) => {
-  await page.route("**/api/product/following/?*", (route) =>
-    route.fulfill({ json: snapshot }),
-  );
-  await page.goto(`/wallet/${wallet}/`);
-  await page
-    .getByRole("button", { name: "View copy signals", exact: true })
-    .click();
-  const signals = page.getByRole("region", {
-    name: "Wallet signals",
-    exact: true,
-  });
-  await expect(signals.getByText("Bought", { exact: true })).toBeVisible();
-  await expect(
-    signals.getByText(/Trades are never executed here/),
-  ).toBeVisible();
-  await expect(
-    signals.getByRole("link", { name: "Open on Pools" }),
-  ).toHaveAttribute("href", `https://pools.xyz/t/robinhood/${token}`);
-  expect(
-    await page.evaluate(() => localStorage.getItem("poolsinfo.following.v1")),
-  ).toBeNull();
-  await page
-    .getByRole("button", { name: "Hide copy signals", exact: true })
-    .click();
-  await expect(signals).toHaveCount(0);
-});
