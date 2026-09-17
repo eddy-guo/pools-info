@@ -854,7 +854,8 @@ test("catalog token search opens a verified pool link and loads its details on d
   const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
   await dialog.getByRole("textbox").fill(entry.token);
   const result = dialog.locator(`a[href^="/pool/${entry.id}/"]`);
-  await expect(result).toContainText(new RegExp(entry.token, "i"));
+  const shortToken = `${entry.token.slice(0, 6)}…${entry.token.slice(-4)}`;
+  await expect(result).toContainText(new RegExp(shortToken, "i"));
   await result.click();
   await expect(page).toHaveURL(new RegExp(`/pool/${entry.id}/`));
   await expect(

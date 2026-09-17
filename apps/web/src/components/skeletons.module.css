@@ -129,7 +129,7 @@
 }
 .search .row {
   grid-template-columns: 32px 1fr;
-  min-height: 66px;
+  min-height: 51px;
 }
 @container site (max-width:767px) {
   .stats {
@@ -144,7 +144,7 @@
     display: none;
   }
   .search .row {
-    min-height: 66px;
+    min-height: 51px;
   }
   .launches {
     grid-template-columns: repeat(2, minmax(0, 1fr));
