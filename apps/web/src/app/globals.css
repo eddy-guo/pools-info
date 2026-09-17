@@ -727,6 +727,15 @@ main {
   display: inline-block;
   min-width: 22ch;
 }
+/* The rows-per-page segmented control is a `.pagination > div` too; keep its own tight gap. */
+.pagination > .segmented {
+  gap: 2px;
+}
+/* Reserve the count's eventual width so the first real total never re-wraps the row. */
+.pagination-count {
+  display: inline-block;
+  min-width: 15ch;
+}
 .market-sidebar {
   display: flex;
   flex-direction: column;
@@ -5325,12 +5334,12 @@ a.wallet-top-pool:hover {
   overflow: auto;
 }
 
-/* Creators: a fixed scroll surface owns the virtualised table, so the panel never grows with the catalog. */
-.creators-page .creators-scroll {
-  position: relative;
-  height: calc(11 * 62px + 34px);
-  overflow: auto;
-  overscroll-behavior: contain;
+/* Creators: a top-100 leaderboard revealed 25 rows at a time, the same reserved-row pattern as the traders leaderboard. */
+.creators-page .page-heading p {
+  max-width: 560px;
+}
+.creators-page .table-scroll {
+  min-height: calc(25 * 62px + 44px);
 }
 /* Column widths follow the export's grid, which keeps the creator column at its
    width (about 600px at 1440) and at least the export's 180px on a phone: 192px
@@ -5338,16 +5347,6 @@ a.wallet-top-pool:hover {
 .creators-page .data-table {
   table-layout: fixed;
   min-width: 1000px;
-}
-.creators-page .data-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  height: 34px;
-  padding-top: 0;
-  padding-bottom: 0;
-  border-bottom: 0;
-  box-shadow: inset 0 -1px 0 var(--color-surface-4);
 }
 .creators-page .data-table th:nth-child(1) {
   width: 64px;
@@ -5391,67 +5390,6 @@ a.wallet-top-pool:hover {
   align-items: center;
   min-height: 44px;
 }
-.creators-page .data-table tr.spacer,
-.creators-page .data-table tr.spacer td {
-  height: auto;
-  padding: 0;
-  border: 0;
-}
-.creators-page .data-table tr.spacer:hover {
-  background: transparent;
-}
-.survival-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 132px;
-}
-.survival-bar {
-  display: flex;
-  overflow: hidden;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--color-surface-5);
-}
-.survival-bar i {
-  height: 100%;
-  background: var(--ac);
-}
-.survival-cell small {
-  font-size: 11.5px;
-  color: var(--color-text-3);
-  font-variant-numeric: tabular-nums;
-}
-.creators-page .creators-scroll .empty-state {
-  position: absolute;
-  inset: 34px 0 0;
-  display: grid;
-  place-content: center;
-}
-/* The footer holds the Load more button's height (the button's own
-   max(38px, --ctl-min) plus the pagination padding and border) whether it
-   shows the progress bar, the button or nothing, so the panel never grows
-   when a batch ends. */
-.creators-page .creators-progress {
-  position: relative;
-  justify-content: flex-end;
-  min-height: calc(max(38px, var(--ctl-min)) + 31px);
-  gap: 12px;
-}
-.creators-page .creators-progress-bar {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--ac);
-  transition: width 0.3s ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  .creators-page .creators-progress-bar {
-    transition: none;
-  }
-}
-
 .cell-sub,
 .panel-footnote {
   color: var(--color-text-3);

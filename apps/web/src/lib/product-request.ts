@@ -18,7 +18,9 @@ export function productRequest(path: string[], input: URLSearchParams) {
     wallet.test(path[1]) &&
     path[2] === "history";
   if (!(
-    ["explore", "leaderboard", "search", "following"].includes(endpoint) ||
+    ["explore", "leaderboard", "search", "following", "creators"].includes(
+      endpoint,
+    ) ||
     tradeShare ||
     walletHistory ||
     (path.length === 2 &&
@@ -35,13 +37,15 @@ export function productRequest(path: string[], input: URLSearchParams) {
         ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
         : endpoint === "leaderboard"
           ? ["window", "minTrades", "metric", "limit", "offset"]
-          : endpoint === "search"
-            ? ["q", "group"]
-            : walletHistory
-              ? ["kind", "cursor"]
-              : path[0] === "wallets" || path[0] === "pools"
-                ? ["window"]
-                : [];
+          : endpoint === "creators"
+            ? ["window", "sort", "direction", "limit", "offset"]
+            : endpoint === "search"
+              ? ["q", "group"]
+              : walletHistory
+                ? ["kind", "cursor"]
+                : path[0] === "wallets" || path[0] === "pools"
+                  ? ["window"]
+                  : [];
   for (const [key, value] of input) {
     if (!allowed.includes(key) || input.getAll(key).length !== 1)
       throw Error("Invalid product query");
@@ -62,7 +66,10 @@ export function productRequest(path: string[], input: URLSearchParams) {
       throw Error("Invalid search group");
     if (
       key === "sort" &&
-      !["volume", "trades", "change", "launch", "liquidity"].includes(value)
+      !(endpoint === "creators"
+        ? ["launches", "volume", "median"]
+        : ["volume", "trades", "change", "launch", "liquidity"]
+      ).includes(value)
     )
       throw Error("Invalid sort");
     if (key === "direction" && !["asc", "desc"].includes(value))

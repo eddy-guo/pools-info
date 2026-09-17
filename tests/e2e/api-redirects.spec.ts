@@ -5,7 +5,7 @@ const routes = [
   { path: "/", endpoint: "/api/product/explore/" },
   { path: "/traders/", endpoint: "/api/product/leaderboard/" },
   { path: `/wallet/${wallet}/`, endpoint: `/api/product/wallets/${wallet}/` },
-  { path: "/creators/", endpoint: "/api/product/explore/" },
+  { path: "/creators/", endpoint: "/api/product/creators/" },
 ];
 
 test("saved-data requests reach the API without a trailing-slash redirect", async ({

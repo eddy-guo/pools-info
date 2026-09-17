@@ -15,6 +15,7 @@ import type {
   AnalyticsExploreResponse,
   AnalyticsLeaderboardResponse,
   AnalyticsWalletResponse,
+  CreatorsResponse,
 } from "@pools/core";
 
 test("public proxy permits bounded product reads and rejects arbitrary upstream paths", () => {
@@ -63,6 +64,34 @@ test("preloaded catalog preserves unprocessed launches and global sorting before
     BigInt(first.items[0].stats.volumeWei!) >=
       BigInt(second.items[0].stats.volumeWei!),
   );
+});
+
+test("creators proxy scopes sort to the read API's own keys and preload groups by sender", async () => {
+  assert.equal(
+    productRequest(
+      ["creators"],
+      new URLSearchParams(
+        "window=All&sort=median&direction=asc&limit=10&offset=0",
+      ),
+    ).endpoint,
+    "creators",
+  );
+  for (const q of ["sort=launch", "sort=volume&sort=median", "metric=realized"])
+    assert.throws(() => productRequest(["creators"], new URLSearchParams(q)));
+  const launches = (await preloadedProduct(
+    "creators",
+    new URLSearchParams("limit=1000"),
+  )) as CreatorsResponse;
+  assert.equal(launches.window, "All");
+  assert.ok(launches.items.length > 0);
+  for (let i = 1; i < launches.items.length; i++)
+    assert.ok(launches.items[i].launches <= launches.items[i - 1].launches);
+  const volume = (await preloadedProduct(
+    "creators",
+    new URLSearchParams("sort=volume&limit=1000"),
+  )) as CreatorsResponse;
+  assert.ok(volume.items.every((r) => r.measured > 0 && r.volumeWei !== null));
+  assert.ok(volume.total <= launches.total);
 });
 
 test("preloaded leaderboard and wallet share one supported-position calculation", async () => {

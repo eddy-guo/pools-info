@@ -153,15 +153,18 @@ export function AddressLabel({
 /** An address in a table cell: identicon and both-end truncation opening
     `href`, then copy and explorer, at the row's own height. `stacked` puts
     the two actions under the address for a column too narrow to hold them
-    beside it. */
+    beside it. `badge` sits inline after the address, inside the same
+    single-line row height, rather than adding a second line. */
 export function AddressChip({
   address,
   href,
   stacked = false,
+  badge,
 }: {
   address: string;
   href: string;
   stacked?: boolean;
+  badge?: React.ReactNode;
 }) {
   return (
     <span className="address-chip" data-stacked={stacked || undefined}>
@@ -169,6 +172,7 @@ export function AddressChip({
         <Avatar address={address} />
         <span className="mono">{shortAddress(address)}</span>
       </Link>
+      {badge}
       <span className="address-chip-actions">
         <CopyButton value={address} size={12} />
         <ExplorerLink address={address} size={12} className="icon-button" />
