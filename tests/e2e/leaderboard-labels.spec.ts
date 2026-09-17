@@ -47,11 +47,11 @@ test("the leaderboard carries no evidence labels across its window controls", as
   if (await desktop.isVisible()) {
     const row = desktop.locator("tbody tr[data-row=resolved]").first();
     const trader = row.locator("td").nth(1);
-    // The address link is the whole cell: nothing sits under it.
+    // The address chip is the whole cell: nothing sits under it.
     await expect(trader.locator("> *")).toHaveCount(1);
-    await expect(trader.locator("> a")).toHaveText(
-      /^0x[0-9a-f]{4}…[0-9a-f]{4}$/,
-    );
+    await expect(
+      trader.locator("> .address-chip .address-chip-link .mono"),
+    ).toHaveText(/^0x[0-9a-f]{4}…[0-9a-f]{4}$/);
     await expect(row.locator("td").nth(7)).toHaveText(/^\d+$/);
   } else {
     const card = main.locator(".mobile-trader").first();

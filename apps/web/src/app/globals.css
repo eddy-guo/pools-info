@@ -41,21 +41,6 @@
   --purple: #e894f0;
   color-scheme: dark;
 }
-.evidence-badge {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--muted);
-  background: var(--panel);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: normal;
-}
 * {
   box-sizing: border-box;
 }
