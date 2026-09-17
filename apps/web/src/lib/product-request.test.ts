@@ -4,6 +4,7 @@ import { productRequest } from "./product-request";
 import { preloadedProduct, readProduct } from "./product-server";
 import {
   cardCurve,
+  cardExportTrio,
   cardHero,
   cardStats,
   cardTopPosition,
@@ -208,23 +209,42 @@ test("share card options round-trip through the query the modal and the route sh
   assert.deepEqual(parseCardOptions(new URLSearchParams("")), {
     window: "All",
     preset: "pink",
+    design: "liquid",
     anonymous: false,
     notional: false,
   });
   const chosen = {
     window: "7d" as const,
     preset: "mint" as const,
+    design: "export" as const,
     anonymous: true,
     notional: true,
   };
   assert.deepEqual(parseCardOptions(cardQuery(chosen)), chosen);
   assert.equal(
-    cardUrl(`0x${"A".repeat(40)}`, { ...chosen, anonymous: false }),
+    cardUrl(`0x${"A".repeat(40)}`, {
+      ...chosen,
+      anonymous: false,
+      design: "liquid",
+    }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&notional=1`,
+  );
+  // The non-default design still round-trips into the URL, and independently
+  // of the preset: neither toggle depends on the other's default.
+  assert.equal(
+    cardUrl(`0x${"a".repeat(40)}`, {
+      ...chosen,
+      anonymous: false,
+      notional: false,
+      preset: "pink",
+    }),
+    `/cards/0x${"a".repeat(40)}.png?window=7d&design=export`,
   );
   // A stale or hand-edited link still renders with the defaults.
   assert.deepEqual(
-    parseCardOptions(new URLSearchParams("window=2y&theme=neon&anon=yes")),
+    parseCardOptions(
+      new URLSearchParams("window=2y&theme=neon&anon=yes&design=bogus"),
+    ),
     parseCardOptions(new URLSearchParams("")),
   );
 });
@@ -285,6 +305,19 @@ test("share card figures are signed, amount-free without notional and never plac
     ),
     ["Record", "Trades", "Positions"],
   );
+  // The export design's trio is fixed: Record always renders (even 0W · 0L
+  // is real data), Best trade names the caller's own top position, and a
+  // missing ROI leaves its slot empty rather than a placeholder.
+  assert.deepEqual(cardExportTrio(wallet, "ORBIT"), {
+    roi: "-16.04%",
+    record: "3W · 5L",
+    bestTrade: "ORBIT",
+  });
+  assert.deepEqual(cardExportTrio({ ...wallet, roi: null }, null), {
+    roi: null,
+    record: "3W · 5L",
+    bestTrade: null,
+  });
 });
 
 test("share card chart follows the wallet's own curve and names its top position", () => {
@@ -1056,9 +1089,8 @@ test("explorer history rejects another wallet's page and unshowable rows", async
 });
 
 test("explorer history display strings accept null and up to 256 characters, and reject empty or longer", async () => {
-  const { validateWalletHistoryResponse } = await import(
-    "./wallet-history-response"
-  );
+  const { validateWalletHistoryResponse } =
+    await import("./wallet-history-response");
   const valid = historyPage();
   const withMethod = (method: string | null) =>
     historyPage({ items: [{ ...valid.items[0], method }] });
