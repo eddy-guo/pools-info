@@ -47,8 +47,8 @@ for (const route of routes) {
     await expect(page.locator(".header-actions .search-trigger")).toBeVisible();
     const connect = page.locator(".header-actions .connect-button");
     await expect(connect).toBeVisible();
-    await expect(connect).toHaveAttribute("aria-disabled", "true");
-    await expect(connect).toHaveAccessibleName("Connect wallet, coming soon");
+    await expect(connect).toHaveAttribute("aria-haspopup", "dialog");
+    await expect(connect).toHaveAccessibleName("Set my wallet");
     const search = await page
       .locator(".header-actions .search-trigger")
       .boundingBox();
@@ -58,7 +58,7 @@ for (const route of routes) {
     );
     if (isMobile) {
       // Under 768 px the control is an icon-only 44 px square: its name
-      // carries the coming-soon note and no chip text is drawn.
+      // carries the label and no chip text is drawn.
       expect((await connect.innerText()).trim()).toBe("");
       expect(box!.width).toBe(44);
       expect(box!.height).toBe(44);
@@ -70,12 +70,14 @@ for (const route of routes) {
         "the control clears the unit toggle",
       ).toBeGreaterThanOrEqual(toggle!.x + toggle!.width);
     } else {
-      await expect(connect).toContainText("Connect wallet");
-      await expect(connect).toContainText("Soon");
+      await expect(connect).toContainText("Set my wallet");
       expect(box!.height).toBeGreaterThanOrEqual(36);
     }
-    await connect.click({ force: true });
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await connect.click();
+    const setWalletDialog = page.getByRole("dialog", { name: "Set my wallet" });
+    await expect(setWalletDialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(setWalletDialog).toBeHidden();
     await expect(page.locator(".footer")).toContainText(
       "Independent analytics. Not affiliated with Uniswap Labs.",
     );
@@ -170,6 +172,162 @@ test("the strip's Live dot shows Paused, never Live, when the feed read fails", 
   await expect(dot).toHaveText("");
   await expect(dot).toHaveAttribute("data-state", "paused");
   await expect(dot).toHaveText("Paused");
+});
+
+test.describe("Wallet profile entry", () => {
+  const control = (page: import("@playwright/test").Page) =>
+    page.locator(".header-actions .connect-button");
+
+  test("the set-wallet dialog validates the address and the chip updates without reload", async ({
+    page,
+    isMobile,
+  }) => {
+    await page.goto("/");
+    const trigger = control(page);
+    await trigger.click();
+    const dialog = page.getByRole("dialog", { name: "Set my wallet" });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText("Saved only in this browser. No connection is made."),
+    ).toBeVisible();
+    const input = dialog.getByLabel("Your wallet address");
+    await input.fill("not-an-address");
+    await dialog.getByRole("button", { name: "Use this wallet" }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(
+      "Enter a valid 0x address.",
+    );
+    await expect(dialog).toBeVisible();
+    const before = await trigger.boundingBox();
+    await input.fill(wallet);
+    await dialog.getByRole("button", { name: "Use this wallet" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    if (!isMobile) await expect(trigger).toContainText("0x4745…bce1");
+    const after = await trigger.boundingBox();
+    expect(
+      after!.width,
+      "the reserved box does not move when the wallet is set",
+    ).toBe(before!.width);
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("poolsinfo.my-wallet.v1"),
+      ),
+    ).toBe(wallet);
+  });
+
+  test("the connected menu reaches every destination, closes on Escape with focus returned, and forgets the wallet", async ({
+    page,
+  }) => {
+    await page.addInitScript((address) => {
+      localStorage.setItem("poolsinfo.my-wallet.v1", address);
+    }, wallet);
+    await page.goto("/");
+    const trigger = control(page);
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const menu = page.getByRole("menu", { name: "Wallet menu" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      "Portfolio",
+      "Following",
+      "Watchlist",
+      "Share PnL card",
+      "Forget this wallet",
+    ]);
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await menu.getByRole("menuitem", { name: "Portfolio" }).click();
+    await expect(page).toHaveURL(`/wallet/${wallet}/`);
+    await expect(page.locator(".page-heading h1")).toHaveText("Portfolio");
+
+    await trigger.click();
+    await menu.getByRole("menuitem", { name: "Following" }).click();
+    await expect(page).toHaveURL(/\/traders\/\?view=following$/);
+
+    await trigger.click();
+    await menu.getByRole("menuitem", { name: "Watchlist" }).click();
+    await expect(page).toHaveURL(/\/\?view=watchlist$/);
+
+    await trigger.click();
+    await menu.getByRole("menuitem", { name: "Share PnL card" }).click();
+    const share = page.getByRole("dialog", { name: "Share PnL card" });
+    await expect(share).toBeVisible();
+    await page.getByRole("button", { name: "Close share card" }).click();
+    await expect(share).toBeHidden();
+
+    await trigger.click();
+    await menu.getByRole("menuitem", { name: "Forget this wallet" }).click();
+    await expect(menu).toBeHidden();
+    await expect(trigger).toHaveAccessibleName("Set my wallet");
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("poolsinfo.my-wallet.v1"),
+      ),
+    ).toBeNull();
+  });
+
+  test("the mobile chip collapses to the identity tile only", async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!isMobile, "desktop keeps the full chip");
+    await page.addInitScript((address) => {
+      localStorage.setItem("poolsinfo.my-wallet.v1", address);
+    }, wallet);
+    await page.goto("/");
+    const trigger = control(page);
+    const box = await trigger.boundingBox();
+    expect(box!.width).toBe(44);
+    expect(box!.height).toBe(44);
+    expect((await trigger.innerText()).trim()).toBe("");
+    await expect(trigger.locator(".avatar")).toBeVisible();
+  });
+
+  test("a stored wallet paints the connected chip on the screener with zero layout shift", async ({
+    page,
+  }) => {
+    await page.addInitScript((address) => {
+      localStorage.setItem("poolsinfo.my-wallet.v1", address);
+      const state = { cls: 0 };
+      Object.assign(window, { layoutMeasurement: state });
+      new PerformanceObserver((list) => {
+        for (const raw of list.getEntries()) {
+          const shift = raw as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!shift.hadRecentInput) state.cls += shift.value;
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    }, wallet);
+    await page.goto("/");
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0, {
+      timeout: 20000,
+    });
+    await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(
+      0,
+    );
+    await expect(control(page)).toHaveAttribute("aria-haspopup", "menu");
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { layoutMeasurement: { cls: number } })
+            .layoutMeasurement.cls,
+      ),
+      "every non-input layout shift since navigation",
+    ).toBe(0);
+  });
 });
 
 const ethPriceFixture = {

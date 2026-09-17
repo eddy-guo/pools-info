@@ -16,7 +16,7 @@ const secondary = [
   faint,
 ];
 /* Chips keep their 10px caps; the price subscript is the export's own 9.5px. */
-const chips = ".badge, .subtle-badge, .connect-soon, kbd, sub";
+const chips = ".badge, .subtle-badge, kbd, sub";
 
 function measure(page: Page) {
   return page.evaluate((chips) => {
