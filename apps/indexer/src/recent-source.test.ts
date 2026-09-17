@@ -32,7 +32,13 @@ test("RECENT_SOURCE defaults to the JSON-RPC cycle and accepts only rpc or hyper
   });
   // The token is only required once HyperSync is selected.
   assert.equal(recentSourceConfig({ ENVIO_API_TOKEN: token }).source, "rpc");
-  for (const value of ["", "HyperSync", "alchemy", "1"])
+  // A Railway variable created but left blank must default to rpc, not throw.
+  for (const value of ["", "  "])
+    assert.deepEqual(recentSourceConfig({ RECENT_SOURCE: value }), {
+      source: "rpc",
+      defaultBatchBlocks: 1000,
+    });
+  for (const value of ["HyperSync", "alchemy", "1"])
     assert.throws(
       () => recentSourceConfig({ RECENT_SOURCE: value }),
       /Invalid RECENT_SOURCE; expected rpc or hypersync/,
@@ -82,6 +88,29 @@ test("the HyperSync source paces at 30 requests per minute or slower and never f
     assert.throws(
       () => recentSourceConfig({ ...env, RECENT_HYPERSYNC_MAX_PAGES: value }),
       /Invalid RECENT_HYPERSYNC_MAX_PAGES/,
+    );
+});
+
+test("HYPERSYNC_URL is pinned to chain 4663's endpoint, with a loopback escape for tests", () => {
+  const env = { RECENT_SOURCE: "hypersync", ENVIO_API_TOKEN: token };
+  for (const url of [
+    "https://4663.hypersync.xyz",
+    "http://127.0.0.1:1",
+    "http://localhost:1",
+  ]) {
+    const config = recentSourceConfig({ ...env, HYPERSYNC_URL: url });
+    assert.ok(config.source === "hypersync");
+    assert.equal(config.url, url);
+  }
+  for (const url of [
+    "https://1.hypersync.xyz",
+    "https://eth.hypersync.xyz",
+    "https://evil.example/4663.hypersync.xyz",
+    "not-a-url",
+  ])
+    assert.throws(
+      () => recentSourceConfig({ ...env, HYPERSYNC_URL: url }),
+      /HYPERSYNC_URL/,
     );
 });
 

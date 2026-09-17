@@ -7,6 +7,7 @@ import {
   superviseWorkers,
   RPC_RATE_LIMIT_EXIT_CODE,
   BROAD_CAPACITY_EXIT_CODE,
+  HYPERSYNC_UNAUTHORIZED_EXIT_CODE,
   type WorkerSpec,
 } from "./supervisor";
 
@@ -103,6 +104,21 @@ test("broad single-block capacity exit drains siblings with a distinct clean pau
   assert.deepEqual(f.children[0].signals, ["SIGTERM", "SIGKILL"]);
 });
 
+test("a rejected HyperSync token exit drains siblings with its own distinct clean pause", (t) => {
+  const f = fixture(t);
+  f.children[0].emit("exit", HYPERSYNC_UNAUTHORIZED_EXIT_CODE, null);
+  assert.equal(f.exitCode(), 0);
+  assert.deepEqual(f.logs, [
+    { event: "service_paused_hypersync_unauthorized", worker: "recent" },
+  ]);
+  assert.deepEqual(
+    f.children.map((c) => c.signals),
+    [[], ["SIGTERM"], ["SIGTERM"]],
+  );
+  t.mock.timers.tick(20000);
+  assert.deepEqual(f.children[1].signals, ["SIGTERM", "SIGKILL"]);
+});
+
 test("external shutdown drains all three workers successfully and cancels the escalation timer", (t) => {
   const f = fixture(t);
   f.supervisor.stop();
@@ -152,7 +168,7 @@ test("synchronous spawn failure stops startup without creating replacement worke
 
 test("actual service entry maps reserved pauses to exit0 and ordinary exits to exit1", () => {
   const service = fileURLToPath(new URL("./service.ts", import.meta.url));
-  for (const childCode of [75, 76, 1]) {
+  for (const childCode of [75, 76, 77, 1]) {
     const script = `
       import cp from "node:child_process";
       import {syncBuiltinESMExports} from "node:module";
@@ -176,7 +192,10 @@ test("actual service entry maps reserved pauses to exit0 and ordinary exits to e
       },
     );
     assert.equal(result.error, undefined);
-    assert.equal(result.status, childCode === 75 || childCode === 76 ? 0 : 1);
+    assert.equal(
+      result.status,
+      childCode === 75 || childCode === 76 || childCode === 77 ? 0 : 1,
+    );
     const lines = result.stdout
       .trim()
       .split("\n")
@@ -193,6 +212,12 @@ test("actual service entry maps reserved pauses to exit0 and ordinary exits to e
       lines.filter((line) => line.event === "service_paused_broad_capacity")
         .length,
       childCode === 76 ? 1 : 0,
+    );
+    assert.equal(
+      lines.filter(
+        (line) => line.event === "service_paused_hypersync_unauthorized",
+      ).length,
+      childCode === 77 ? 1 : 0,
     );
   }
 });

@@ -1,11 +1,13 @@
 import { rpcPacing } from "./rpc-pacing";
 import {
   rpcRateLimitObserver,
+  throwIfHyperSyncPageCapacity,
+  throwIfHyperSyncUnauthorized,
   throwIfRateLimitExhausted,
   workerFailureExitCode,
 } from "./rpc-operations";
 import { setTimeout as sleep } from "node:timers/promises";
-import { HyperSyncPacer, HyperSyncUnauthorized, Rpc } from "@pools/chain";
+import { HyperSyncPacer, Rpc } from "@pools/chain";
 import { createClient, migrate, recentResumeBatchBlocks } from "@pools/db";
 import {
   smallerRecentBatch,
@@ -190,7 +192,10 @@ async function main() {
         if (stop.signal.aborted) break;
         throwIfRateLimitExhausted(e);
         // A rejected token cannot recover by retrying.
-        if (e instanceof HyperSyncUnauthorized) throw e;
+        throwIfHyperSyncUnauthorized(e);
+        // Neither can a block group over HyperSync's own caps: it is the
+        // same indivisible-range shape as the broad worker's overflow.
+        throwIfHyperSyncPageCapacity(e);
         goodCycles = 0;
         const smaller = smallerRecentBatch(e, batchBlocks);
         if (smaller < batchBlocks) {
