@@ -275,6 +275,10 @@ export function ObservedPoolDetail({
           10n ** BigInt(accountedMarket.decimals)
         ).toString()
       : (market?.fdvWei ?? undefined);
+  /* The accounted cut knows the setting; the ledger's market carries it when
+     known. Only a real boolean is a setting, so an absent flag stays
+     unavailable rather than reading as Disabled. */
+  const creatorFees = accountedMarket?.creatorFees ?? market?.creatorFees;
   const showChart = candles || (chart && pending);
   return (
     <div
@@ -382,12 +386,10 @@ export function ObservedPoolDetail({
           <Eth wei={volume} pending={pending} digits={5} />
         </Stat>
         <Stat label="Creator fee" pending={pending}>
-          {accountedMarket ? (
-            accountedMarket.creatorFees ? (
-              "Enabled"
-            ) : (
-              "Disabled"
-            )
+          {creatorFees === true ? (
+            "Enabled"
+          ) : creatorFees === false ? (
+            "Disabled"
           ) : (
             <Unavailable />
           )}

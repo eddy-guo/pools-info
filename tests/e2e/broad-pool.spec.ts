@@ -120,6 +120,43 @@ test("broad-only pool uses the real chart and exact market stats, with nothing u
     ),
   ).toBe(true);
 });
+/* A bare pool link has only its observed market, and the ledger's market
+   carries the creator-fee flag when it is known. Only a real boolean renders
+   a setting: an absent flag is the unavailable mark, never Disabled. */
+for (const [creatorFees, expected] of [
+  [true, "Enabled"],
+  [false, "Disabled"],
+  [undefined, "\u2013"],
+] as const) {
+  test(`observed market with creator fee ${String(creatorFees)} renders ${expected}`, async ({
+    page,
+  }) => {
+    const market = fixture();
+    if (creatorFees !== undefined) market.creatorFees = creatorFees;
+    await page.route(`**/api/product/pools/${id}/`, (route) =>
+      route.fulfill({
+        json: {
+          pool,
+          analytics: null,
+          market,
+          delivery: { source: "indexer", notice: null },
+        },
+      }),
+    );
+    await page.goto(`/pool/${id}/`);
+    await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
+    const stat = page
+      .locator(".stat")
+      .filter({ has: page.getByText("Creator fee", { exact: true }) })
+      .locator("strong");
+    await expect(stat).toHaveText(expected);
+    if (creatorFees === undefined)
+      await expect(
+        stat.locator(".unavailable"),
+        "a missing flag is unavailable, not an inferred Disabled",
+      ).toHaveText("\u2013");
+  });
+}
 test("quiet token retains its chart with a dated unit basis after the global market cutoff advances", async ({
   page,
 }) => {
