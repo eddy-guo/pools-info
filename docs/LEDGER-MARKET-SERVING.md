@@ -79,8 +79,9 @@ its `completeWindow` is false. All is the pool's whole history.
 - **FDV** (`market.fdvWei`, pool page only): the served price times the
   token's measured `indexed_pools.token_total_supply_raw` (migration 019) over
   `10^decimals`, null until the supply has been read. The supply is written by
-  a separate read of `totalSupply()` with the block it was read at
-  (`token_supply_block`).
+  `pnpm supply:read run`, a Multicall3 read of `totalSupply()` over the public
+  RPC with the block it was read at (`token_supply_block`); see
+  `docs/LEDGER-CUTOVER.md`.
 
 Not served from the ledger: holders and liquidity keep today's values (both
 are being removed from the product; `agg_pool_state.liquidity` is raw active

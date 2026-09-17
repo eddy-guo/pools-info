@@ -1,8 +1,10 @@
 # The ledger's production cutover
 
-The record of moving the aggregate ledger ([AGGREGATE-LEDGER.md](AGGREGATE-LEDGER.md))
-into production: the database, the token supplies FDV needs, the switch and the
-live feed. Every figure here was read on 17 Sep 2026; nothing touched Alchemy.
+The record of moving the aggregate ledger
+([AGGREGATE-LEDGER.md](AGGREGATE-LEDGER.md), served as described in
+[LEDGER-MARKET-SERVING.md](LEDGER-MARKET-SERVING.md)) into production: the
+database, the token supplies FDV needs, the switch and the live feed. Every
+figure here was read on 17 Sep 2026; nothing touched Alchemy.
 
 ## The ledger database
 
