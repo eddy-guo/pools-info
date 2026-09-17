@@ -722,19 +722,10 @@ main {
   color: var(--faint);
   font-size: 12px;
 }
-.pagination > div {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-/* The rows-per-page segmented control is a `.pagination > div` too; keep its own tight gap. */
-.pagination > .segmented {
-  gap: 2px;
-}
 /* Reserve the count's eventual width so the first real total never re-wraps the row. */
 .pagination-count {
   display: inline-block;
-  min-width: 15ch;
+  min-width: 22ch;
 }
 .market-sidebar {
   display: flex;
