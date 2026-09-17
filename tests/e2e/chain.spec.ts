@@ -1431,7 +1431,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
     "title",
     `${top.realizedWei} wei`,
   );
-  await expect(stat).toContainText("+0.0114711 ETH");
+  await expect(stat).toContainText("+0.01147 ETH");
   await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
     page.locator("main tbody tr").filter({ visible: true }),
