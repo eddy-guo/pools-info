@@ -258,7 +258,7 @@ test("a stale upstream window cannot masquerade as the newly selected window", a
 test("share card options round-trip through the query the modal and the route share", () => {
   assert.deepEqual(parseCardOptions(new URLSearchParams("")), {
     window: "All",
-    preset: "pink",
+    preset: "lime",
     design: "liquid",
     anonymous: false,
     notional: false,
@@ -286,7 +286,7 @@ test("share card options round-trip through the query the modal and the route sh
       ...chosen,
       anonymous: false,
       notional: false,
-      preset: "pink",
+      preset: "lime",
     }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&design=export`,
   );

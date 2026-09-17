@@ -479,7 +479,7 @@ Priority order is not negotiable tonight:
 
 `DESIGN-DELTA.md` holds the full analysis from the user's Claude Design export (`design/poolsinfo.html`). Structure, five-step text ramp, type scale, radii and implementation order are correct.
 
-**Stale in that document:** the accent. It reads `#fc72ff` (pink); the user is switching to lime and will supply a fresh export. That is a single-token change — the design file uses `--ac: {{ accent }}` as a template variable, so nothing else in the theme needs revisiting.
+**Stale in that document:** the accent. It reads `#fc72ff` (pink); the app's accent is now lime `#bbf451` (Tailwind `lime-300`, 17 Sep), set once in `packages/core/src/visual-theme.ts`, since no lime export arrived.
 
 Root cause already fixed: Tailwind v4 was imported with no `@theme` block, so all 566 classNames resolved to Tailwind's stock palette rather than the design tokens. `@theme static` is now in place and body type dropped 14px → 13px.
 

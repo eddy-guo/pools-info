@@ -168,7 +168,7 @@ for (const route of ["/", "/traders/?window=All"]) {
       expect(button.fontSize).toBe("13px");
     }
     for (const color of found.colors)
-      if (color !== "rgb(242, 242, 245)" && color !== "rgb(252, 114, 255)")
+      if (color !== "rgb(242, 242, 245)" && color !== "rgb(187, 244, 81)")
         expect(secondary, `${color} is a secondary text token`).toContain(
           color,
         );
@@ -180,7 +180,7 @@ for (const route of ["/", "/traders/?window=All"]) {
       expect(avatar.initials).toMatch(/^[0-9A-F]{2}$/);
       expect(avatar.text, "the letters are decoration, not cell text").toBe("");
       expect(avatar.background, "a hue of its own, never the accent").not.toBe(
-        "rgb(252, 114, 255)",
+        "rgb(187, 244, 81)",
       );
     }
   });

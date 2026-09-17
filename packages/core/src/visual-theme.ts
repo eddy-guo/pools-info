@@ -20,8 +20,9 @@ const colors = {
   text3: "#9a9aa4",
   muted: "#8a8a94",
   faint: "#7a7a85",
-  accent: "#fc72ff",
-  accentDeep: "#45184f",
+  // Tailwind v4's lime-300 and lime-950: the design export names no lime.
+  accent: "#bbf451",
+  accentDeep: "#192e03",
   up: "#3fd68c",
   upSoft: "#7fd9a6",
   upBg: "#06120d",
