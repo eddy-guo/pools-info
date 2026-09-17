@@ -26,7 +26,7 @@ export const metadata: Metadata = {
     template: "%s | Pools Info",
   },
   description:
-    "Explore real Robinhood Chain instant launches, swaps, and per-pool trader audits with explicit block coverage.",
+    "Explore real Robinhood Chain instant launches, swaps, and per-pool trader audits.",
   robots: { index: false, follow: false },
 };
 export default function RootLayout({

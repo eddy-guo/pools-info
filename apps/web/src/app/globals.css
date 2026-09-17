@@ -4429,11 +4429,6 @@ main {
   .creators-page .address-chip .icon-button {
     min-height: 44px;
   }
-  .mobile-pool-stats[data-launch-row] .address-chip .icon-button {
-    min-height: 44px;
-    margin: -14px 0;
-    color: var(--color-text-3);
-  }
   .address-chip .icon-button {
     min-width: 28px;
   }
@@ -4668,58 +4663,108 @@ main {
   .mobile-traders {
     display: block;
   }
-  .mobile-pool,
+  .mobile-pool {
+    padding: 13px 14px;
+    border-bottom: 1px solid #17171c;
+  }
   .mobile-trader {
     padding: 15px 14px;
     border-bottom: 1px solid #17171c;
   }
-  .mobile-pool-top,
   .mobile-trader-heading {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 8px;
   }
+  /* Identity takes the remaining width; price stacks over its signed change
+     at the right, as the export's row sets it, with the star past both. */
+  .mobile-pool-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
   .mobile-pool-top .token-cell {
+    flex: 1;
     min-width: 0;
     min-height: 44px;
   }
   .mobile-pool .token-cell strong {
-    max-width: 240px;
+    max-width: 100%;
   }
-  .mobile-pool-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 14px;
-  }
-  .mobile-pool-stats > span {
+  .mobile-pool .token-cell small {
     display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A fixed width, as the desktop table's price/change cells reserve: the
+     skeleton's "Pending" text and the resolved figure would otherwise render
+     at different widths and move the box, which Chrome scores as a shift. */
+  .mobile-pool-price {
+    flex-shrink: 0;
+    min-width: 90px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+  .mobile-pool-price .price,
+  .mobile-pool-price .change {
+    /* The span itself, not just the column: a right-aligned value that
+       replaces a placeholder in place still moves its own start, which
+       Chrome scores as a shift even when the column around it does not. */
+    display: inline-block;
+    min-width: 90px;
+    text-align: right;
+    font-size: 12.5px;
+  }
+  /* One line of Vol and its trade count, with the sparkline slot past it,
+     empty when the read sends no series (never a placeholder mark). Liquidity
+     and holders are out of the product; this row reserves no space for
+     either. */
+  .mobile-pool-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+    min-height: 24px;
     font-size: 12px;
     color: var(--muted);
   }
-  .mobile-pool-stats strong {
-    display: block;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text);
-    margin-top: 4px;
+  .mobile-pool-stats > span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .mobile-pool-stats .number {
+    display: inline;
     font-size: 12px;
+    color: var(--muted);
+    margin-top: 0;
   }
-  /* The launch facts read in the secondary tone; the sender keeps a 44px
-     target without changing the card's reserved height. */
-  .mobile-pool-stats[data-launch-row] strong {
-    font-weight: 400;
+  .mobile-pool-spark {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    min-height: 24px;
+  }
+  .mobile-pool-spark .sparkline {
+    width: 60px;
+    height: 24px;
+  }
+  /* A launch-only row keeps the identity line with age and sender, in the
+     secondary tone; the sender is the same shared small chip the
+     leaderboard's mobile row uses, at its own compact size, rather than a
+     44px target that would no longer fit the card's shorter reserved
+     height. */
+  .mobile-pool-stats[data-launch-row] {
     color: var(--color-text-3);
   }
-  .mobile-pool-stats[data-launch-row] a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    margin: -14px 0;
-    color: var(--color-text-2);
+  .mobile-pool-stats[data-launch-row] time {
+    font-variant-numeric: tabular-nums;
   }
   .mobile-pool-footer {
     display: flex;
@@ -5973,10 +6018,11 @@ a.wallet-top-pool:hover {
   .explore-page .table-region > .empty-state {
     inset: 0 0 auto;
   }
-  /* Identity row, then the two stat rows of 12px labels and values on the
-     body's 1.25 line: 15 + 44 + 14 + 80 + 15. */
+  /* Identity + price row held to the 44px token-cell target, then the one
+     Vol and trade count line matching the sparkline's 24px: 13 + 44 + 10 + 24
+     + 13, following the export's 104px row (gap-mobile-rows-390.png). */
   .explore-page .mobile-pool {
-    height: 168px;
+    height: 104px;
     overflow: auto;
   }
   /* The stacked heading, as the export stacks it: a two-row title (name and

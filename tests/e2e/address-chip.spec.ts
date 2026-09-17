@@ -23,6 +23,9 @@ type Cell = {
   height: { desktop: number; mobile: number };
   /** 16px everywhere except creators' 28px identity tile. */
   identicon: number;
+  /** Copy/explorer tap target on mobile: 44px where the row has room for
+      it, the chip's own compact size on the screener's 104px card. */
+  tapTarget: number;
 };
 const cells: Cell[] = [
   {
@@ -35,8 +38,9 @@ const cells: Cell[] = [
       mobile: ".mobile-pools [data-row='resolved']",
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/$/,
-    height: { desktop: 62, mobile: 168 },
+    height: { desktop: 62, mobile: 104 },
     identicon: 16,
+    tapTarget: 16,
   },
   {
     name: "leaderboard trader",
@@ -48,6 +52,7 @@ const cells: Cell[] = [
     href: /^\/wallet\/0x[0-9a-f]{40}\/\?window=All$/,
     height: { desktop: 62, mobile: 224 },
     identicon: 16,
+    tapTarget: 44,
   },
   {
     name: "creators sender",
@@ -59,6 +64,7 @@ const cells: Cell[] = [
     href: /^\/creators\/0x[0-9a-f]{40}\/$/,
     height: { desktop: 62, mobile: 62 },
     identicon: 28,
+    tapTarget: 44,
   },
 ];
 
@@ -150,12 +156,12 @@ for (const cell of cells) {
       expect(chip.fits, "the chip stays inside its row").toBe(true);
       if (project === "mobile") {
         expect(chip.copyBox.bottom - chip.copyBox.top, "copy tap target").toBe(
-          44,
+          cell.tapTarget,
         );
         expect(
           chip.openBox.bottom - chip.openBox.top,
           "explorer tap target",
-        ).toBe(44);
+        ).toBe(cell.tapTarget);
       }
     }
     expect(
