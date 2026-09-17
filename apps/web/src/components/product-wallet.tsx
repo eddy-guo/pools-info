@@ -1,5 +1,4 @@
 "use client";
-import { FollowActivity } from "./follow-activity";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -23,6 +22,7 @@ import { FollowButton } from "./following";
 import { useQuery } from "./state";
 import { WalletTokenTransfers, WalletTransactions } from "./wallet-history";
 import { PnlCardModal } from "./pnl-card-modal";
+import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 /** Saved profile tabs first, then the wallet's own on-demand explorer history. */
 const tabs = [
@@ -41,7 +41,7 @@ export function ProductWallet({ address }: { address: string }) {
   );
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
     [opened, setOpened] = useState<string[]>([]),
-    [showSignals, setShowSignals] = useState(false),
+    [copyTrade, setCopyTrade] = useState(false),
     [card, setCard] = useState(false);
   // An explorer page costs credits, so a tab keeps its pages once opened
   // instead of paying for them again on every visit.
@@ -79,15 +79,6 @@ export function ProductWallet({ address }: { address: string }) {
           </div>
         </div>
         <div className={styles.actions}>
-          <button
-            className="button"
-            aria-expanded={showSignals}
-            aria-controls="wallet-signals"
-            onClick={() => setShowSignals(!showSignals)}
-          >
-            {showSignals ? "Hide copy signals" : "View copy signals"}
-          </button>
-          <FollowButton address={address} />
           <a
             className="button secondary"
             href={`${explorer}/address/${address}`}
@@ -99,11 +90,16 @@ export function ProductWallet({ address }: { address: string }) {
           <button className="button secondary" onClick={() => setCard(true)}>
             Share PnL card
           </button>
+          <FollowButton address={address} />
+          <button
+            className="button"
+            aria-haspopup="dialog"
+            onClick={() => setCopyTrade(true)}
+          >
+            Copy trade
+          </button>
         </div>
       </div>
-      {showSignals && (
-        <FollowActivity addresses={[address.toLowerCase()]} mode="wallet" />
-      )}
       {loading && data && (
         <span className="sr-only" role="status">
           Updating saved wallet activity
@@ -469,6 +465,7 @@ export function ProductWallet({ address }: { address: string }) {
           </aside>
         </div>
       </>
+      <CopyTradePreview open={copyTrade} onClose={() => setCopyTrade(false)} />
       <PnlCardModal
         address={address}
         window={period}

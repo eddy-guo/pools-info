@@ -8,13 +8,7 @@ import { Eth, Unavailable, utc } from "./live-ui";
 import { RowsSkeleton } from "./skeletons";
 import styles from "./following.module.css";
 
-export function FollowActivity({
-  addresses,
-  mode = "following",
-}: {
-  addresses: string[];
-  mode?: "following" | "wallet";
-}) {
+export function FollowActivity({ addresses }: { addresses: string[] }) {
   const params = new URLSearchParams({
     wallets: [...addresses].sort().join(","),
     limit: "50",
@@ -42,14 +36,11 @@ export function FollowActivity({
   return (
     <section
       className={styles.activity}
-      aria-label={mode === "wallet" ? "Wallet signals" : "Following activity"}
-      id={mode === "wallet" ? "wallet-signals" : "following-activity"}
+      aria-label="Following activity"
+      id="following-activity"
     >
       <div className={styles.activityHeading}>
-        <div>
-          <span className="eyebrow">COPY SIGNALS · BETA</span>
-          <h2>{mode === "wallet" ? "Wallet signals" : "Following activity"}</h2>
-        </div>
+        <h2>Following activity</h2>
         <div className={styles.activityControls}>
           <button
             className="button secondary"
@@ -67,10 +58,8 @@ export function FollowActivity({
         </div>
       </div>
       <p>
-        {mode === "wallet"
-          ? "Verified activity for this wallet."
-          : "Verified activity from wallets you follow."}{" "}
-        Informational, not advice. Trades are never executed here.
+        Verified activity from wallets you follow. Informational, not advice.
+        Trades are never executed here.
       </p>
       {data && (
         <p className={styles.freshness}>
