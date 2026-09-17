@@ -78,7 +78,7 @@ function fixture(): ObservedMarket {
     },
   };
 }
-test("broad-only pool uses the real chart and exact market stats while accounting remains unavailable", async ({
+test("broad-only pool uses the real chart and exact market stats, with nothing under them", async ({
   page,
 }, testInfo) => {
   await page.route(`**/api/product/pools/${id}/`, (route) =>
@@ -93,10 +93,16 @@ test("broad-only pool uses the real chart and exact market stats while accountin
   );
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
-  await expect(page.getByText("Trader PnL unavailable")).toBeVisible();
   await expect(
     page.getByRole("img", { name: /Price candle chart/ }),
   ).toBeVisible();
+  await expect(page.locator(".stat > span")).toHaveText([
+    "FDV",
+    "Volume 24h",
+    "Creator fee",
+  ]);
+  /* Holders, liquidity, fees, top traders and the trade history are cut. */
+  await expect(page.locator(".table-tabs, .market-sidebar")).toHaveCount(0);
   const volume = page
     .locator(".stat")
     .filter({ has: page.getByText("Volume 24h", { exact: true }) });
@@ -106,12 +112,6 @@ test("broad-only pool uses the real chart and exact market stats while accountin
     path: testInfo.outputPath("broad-pool.png"),
     fullPage: true,
   });
-  await expect(page.locator("body")).not.toContainText(methodologyCopy);
-  await page.getByRole("button", { name: "Holders", exact: true }).click();
-  await expect(page.getByText("Holder accounting unavailable")).toBeVisible();
-  await expect(page.locator("body")).not.toContainText(methodologyCopy);
-  await page.getByRole("button", { name: "Trades", exact: true }).click();
-  await expect(page.locator("main tbody tr")).toHaveCount(1);
   await expect(page.locator("body")).not.toContainText(methodologyCopy);
   await expect(page.locator(".pool-chart-panel select")).toHaveCount(0);
   expect(
@@ -211,10 +211,13 @@ test("direct pool link preserves verified published deep accounting alongside br
   );
   await page.goto(`/pool/${deep.id}/`);
   await expect(page.getByRole("heading", { name: deep.name })).toBeVisible();
-  await expect(page.getByText("Trader PnL unavailable")).toHaveCount(0);
+  /* The accounted market is what knows the pool's creator fee setting. */
   await expect(
-    page.locator(".trader-table, .mobile-traders").filter({ visible: true }),
-  ).toBeVisible();
+    page
+      .locator(".stat")
+      .filter({ has: page.getByText("Creator fee", { exact: true }) })
+      .locator("strong"),
+  ).toHaveText(deep.creatorFees ? "Enabled" : "Disabled");
 });
 test("discovered-only pool shows no invented zero totals", async ({ page }) => {
   const market = fixture();

@@ -70,7 +70,7 @@ export const ledgerPassDefaults = Object.freeze({
   maxRequests: 100000,
   rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
 });
-function integer(
+export function integer(
   env: NodeJS.ProcessEnv,
   name: string,
   fallback: number,
@@ -84,6 +84,27 @@ function integer(
     throw Error(`Invalid ${name}`);
   return n;
 }
+/** The JSON-RPC endpoint for the launch reads: ROBINHOOD_RPC_URL or the
+ * public RPC. The ledger's writers never read Alchemy, so an Alchemy URL is
+ * refused rather than used. */
+export function ledgerRpcUrl(
+  env: NodeJS.ProcessEnv,
+  writer: "pass" | "tip loop",
+) {
+  const rpcUrl = env.ROBINHOOD_RPC_URL?.trim() || ledgerPassDefaults.rpcUrl;
+  let url: URL;
+  try {
+    url = new URL(rpcUrl);
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw Error();
+  } catch {
+    throw Error("Invalid ROBINHOOD_RPC_URL");
+  }
+  if (/alchemy/i.test(url.hostname) || /alchemy/i.test(rpcUrl))
+    throw Error(
+      `ROBINHOOD_RPC_URL must be the public RPC; the ledger ${writer} never reads Alchemy`,
+    );
+  return rpcUrl;
+}
 export function ledgerPassConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): LedgerPassConfig {
@@ -91,19 +112,7 @@ export function ledgerPassConfig(
   if (flag !== undefined && flag !== "0" && flag !== "1")
     throw Error("Invalid LEDGER_PASS_ENABLED; expected 0 or 1");
   const token = env.ENVIO_API_TOKEN?.trim();
-  const rpcUrl = env.ROBINHOOD_RPC_URL?.trim() || ledgerPassDefaults.rpcUrl;
-  let host: string;
-  try {
-    const url = new URL(rpcUrl);
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw Error();
-    host = url.hostname;
-  } catch {
-    throw Error("Invalid ROBINHOOD_RPC_URL");
-  }
-  if (/alchemy/i.test(host))
-    throw Error(
-      "ROBINHOOD_RPC_URL must be the public RPC; the ledger pass never reads Alchemy",
-    );
+  const rpcUrl = ledgerRpcUrl(env, "pass");
   return {
     enabled: flag === "1",
     url: env.HYPERSYNC_URL ?? hypersyncPolicy.defaultUrl,
@@ -187,7 +196,7 @@ export function createLedgerPassClient(
 /** One JSON-RPC transport per range: the class carries a lifetime budget and
  * the Multicall3 fallback is sticky per instance. */
 export function createLedgerPassRpc(
-  config: LedgerPassConfig,
+  config: Pick<LedgerPassConfig, "rpcUrl">,
   signal?: AbortSignal,
 ) {
   return new Rpc(config.rpcUrl, {
@@ -372,6 +381,9 @@ export async function runLedgerRange(
       ...(p.description === undefined ? {} : { description: p.description }),
       ...(p.externalUrl === undefined ? {} : { externalUrl: p.externalUrl }),
       decimals: p.decimals,
+      ...(p.totalSupplyRaw === undefined
+        ? {}
+        : { totalSupplyRaw: p.totalSupplyRaw, supplyBlock: p.supplyBlock }),
     })),
   });
   const applied = await applyLedgerBatch(db, ledgerBatchOf(collection));
@@ -926,7 +938,7 @@ export function ledgerPassSafeError(e: unknown): string {
   )
     return `ledger_pass_disabled: ${message}`;
   if (
-    /^(Invalid (LEDGER_PASS_[A-Z_]+|ROBINHOOD_RPC_URL)|ROBINHOOD_RPC_URL must be the public RPC)/.test(
+    /^(Invalid (LEDGER_(PASS|TIP)_[A-Z_]+|ROBINHOOD_RPC_URL|HYPERSYNC_URL)|ROBINHOOD_RPC_URL must be the public RPC|HYPERSYNC_URL must be)/.test(
       message,
     )
   )

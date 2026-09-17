@@ -5,7 +5,6 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import {
   poolWindow,
-  shortAddress,
   type AnalyticsPoolDetail,
   type ObservedMarket,
 } from "@pools/core";
@@ -14,11 +13,8 @@ import { useRememberedPoolRow } from "@/lib/pool-row-memory";
 import { useQuery } from "./state";
 import { useLive } from "./live-provider";
 import { WatchButton } from "./ui";
-import { Eth, Stat, Trades, Unavailable, explorer, useMarket } from "./live-ui";
-import { RowsSkeleton } from "./skeletons";
-import { TradeStream } from "./trade-stream";
+import { Eth, Stat, explorer, useMarket } from "./live-ui";
 import { Candles, type ChartRange } from "./candles";
-import { AuditLeaderboard } from "./traders";
 import {
   ObservedPoolDetail,
   PoolChartHead,
@@ -79,7 +75,6 @@ export function PoolDetail({
       publication!.snapshot.toBlock > loadedSnapshot.toBlock);
   const m = usePublished ? publishedMarket : loadedMarket;
   const s = usePublished ? publication!.snapshot : loadedSnapshot;
-  const [tab, setTab] = useState("Top traders");
   const [range, setRange] = useState<ChartRange>("All");
   if (!preloadedIds.has(id)) {
     const pool =
@@ -109,9 +104,7 @@ export function PoolDetail({
         market={saved.data?.market}
         accountedMarket={m}
         snapshot={m ? s : undefined}
-        publication={publication ?? undefined}
         chart={expectChart}
-        audit={publication?.audit ?? audits[id]}
         refresh={() => {
           refresh();
           saved.refresh();
@@ -149,42 +142,8 @@ export function PoolDetail({
         <Link className="button" href="/">
           Explore pools
         </Link>
-        {saved.data && (
-          <div className="live-section" style={{ maxWidth: 420 }}>
-            <TradeStream poolId={id} />
-          </div>
-        )}
       </div>
     );
-  const a = m.accounting?.executions
-    ? {
-        poolId: m.id,
-        market: m,
-        toBlock: s.toBlock,
-        toTimestamp: s.toTimestamp,
-        generatedAt: s.generatedAt,
-        ...m.accounting,
-        executions: m.accounting.executions,
-      }
-    : audits[m.id];
-  const holders = saved.data?.analytics?.holders;
-  const holderRows = holders?.balances ?? [];
-  const sum = (rows: typeof holderRows) =>
-    rows.reduce((n, h) => n + BigInt(h.balanceRaw), 0n);
-  const users = holderRows.filter((h) => h.kind !== "infrastructure");
-  const ratio = (numerator: bigint, denominator: bigint) =>
-    denominator > 0n
-      ? `${(Number((numerator * 10000n) / denominator) / 100).toFixed(2)}%`
-      : null;
-  const concentration = holders?.complete
-    ? {
-        raw: ratio(
-          sum(holderRows.slice(0, 10)),
-          BigInt(holders.totalSupplyRaw),
-        ),
-        adjusted: ratio(sum(users.slice(0, 10)), sum(users)),
-      }
-    : null;
   const stats = poolWindow(m, s, "24h"),
     fdv =
       m.priceWei === null
@@ -246,210 +205,31 @@ export function PoolDetail({
           Trade on Pools ↗
         </a>
       </PoolHeading>
-      <div className="workspace-grid">
-        <div>
-          <section className="panel pool-chart-panel">
-            <PoolChartHead
-              price={m.priceWei}
-              change={stats.change}
-              windows={windowChanges(m, s, undefined)}
-              range={range}
-              onRange={setRange}
-            />
-            <div className="pool-chart-region" data-chart="reserved">
-              <Candles range={range} market={m} snapshot={s} />
-            </div>
-          </section>
-          <div className="stats-grid live-six-stats">
-            <Stat label="FDV">
-              <Eth wei={fdv} digits={5} />
-            </Stat>
-            <Stat label="Liquidity">
-              <Unavailable />
-            </Stat>
-            <Stat
-              label="Volume 24h"
-              note={`${stats.trades.length.toLocaleString("en-US")} trades`}
-            >
-              <Eth wei={stats.volumeWei} digits={5} />
-            </Stat>
-            <Stat label="Holders" pending={saved.loading && !saved.data}>
-              {holders?.complete ? (
-                holders.positiveHoldersExcludingInfrastructure.toLocaleString(
-                  "en-US",
-                )
-              ) : saved.loading && !saved.data ? null : (
-                <Unavailable />
-              )}
-            </Stat>
-            <Stat label="Fees compounded">
-              <Unavailable />
-            </Stat>
-            <Stat label="Creator fee">
-              {m.creatorFees ? "Enabled" : "Disabled"}
-            </Stat>
-          </div>
-
-          <section className="panel live-section">
-            <div className="table-tabs live-controls">
-              {["Top traders", "Holders", "Trades"].map((t) => (
-                <button
-                  key={t}
-                  className={t === tab ? "active" : ""}
-                  onClick={() => setTab(t)}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            {tab === "Trades" ? (
-              <Trades
-                trades={s.trades.filter((t) => t.poolId === m.id)}
-                markets={[m]}
-              />
-            ) : tab === "Top traders" ? (
-              a ? (
-                <AuditLeaderboard audit={a} />
-              ) : (
-                <div className="empty-state">
-                  <h3>Trader PnL unavailable</h3>
-                </div>
-              )
-            ) : saved.loading && !saved.data ? (
-              <RowsSkeleton label="Loading holder balances" />
-            ) : holders ? (
-              <div className="table-scroll">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Holder</th>
-                      <th>Balance</th>
-                      <th>Classification</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {holderRows.slice(0, 100).map((h) => (
-                      <tr key={h.address}>
-                        <td>
-                          <Link className="mono" href={`/wallet/${h.address}/`}>
-                            {shortAddress(h.address)}
-                          </Link>
-                        </td>
-                        <td>
-                          {(
-                            Number(h.balanceRaw) /
-                            10 ** m.decimals
-                          ).toLocaleString("en-US", {
-                            maximumSignificantDigits: 8,
-                          })}
-                        </td>
-                        <td>{h.infrastructureLabel ?? "Holder"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="empty-state">
-                <h3>Holder accounting unavailable</h3>
-              </div>
-            )}
-          </section>
+      <section className="panel pool-chart-panel">
+        <PoolChartHead
+          price={m.priceWei}
+          change={stats.change}
+          windows={windowChanges(m, s, undefined)}
+          range={range}
+          onRange={setRange}
+        />
+        <div className="pool-chart-region" data-chart="reserved">
+          <Candles range={range} market={m} snapshot={s} />
         </div>
-        <aside className="market-sidebar">
-          <TradeStream poolId={m.id} />
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Concentration</h2>
-            </div>
-            <dl className="live-facts">
-              {["Raw top 10", "Adjusted top 10", "Gini"].map((label) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>
-                    {label === "Raw top 10" ? (
-                      (concentration?.raw ?? <Unavailable />)
-                    ) : label === "Adjusted top 10" ? (
-                      (concentration?.adjusted ?? <Unavailable />)
-                    ) : (
-                      <Unavailable />
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Launch facts</h2>
-            </div>
-            <dl className="live-facts">
-              <div>
-                <dt>Pool ID</dt>
-                <dd className="mono">{m.id}</dd>
-              </div>
-              <div>
-                <dt>Launcher</dt>
-                <dd>
-                  <a
-                    href={`${explorer}/address/0x0000ffffbe8efe702c8703ae3477ff5de3d319c0`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    LiquidityLauncher ↗
-                  </a>
-                </dd>
-              </div>
-              <div>
-                <dt>LP fee</dt>
-                <dd>{m.fee / 10000}%</dd>
-              </div>
-              <div>
-                <dt>Hooks</dt>
-                <dd>None · verified PoolKey</dd>
-              </div>
-              <div>
-                <dt>Supply</dt>
-                <dd>
-                  {(Number(m.supply) / 10 ** m.decimals).toLocaleString(
-                    "en-US",
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt>Decimals</dt>
-                <dd>{m.decimals}</dd>
-              </div>
-              <div>
-                <dt>Position recipient</dt>
-                <dd>
-                  <a
-                    className="mono"
-                    href={`${explorer}/address/${m.positionRecipient}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {shortAddress(m.positionRecipient)} ↗
-                  </a>
-                </dd>
-              </div>
-              <div>
-                <dt>Permanent lock</dt>
-                <dd>
-                  <Unavailable reason="Recipient withdrawal behavior not independently verified by this collector" />
-                </dd>
-              </div>
-            </dl>
-            <a
-              className="leader-link"
-              href={`${explorer}/tx/${m.launchTx}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Launch transaction ↗
-            </a>
-          </section>
-        </aside>
+      </section>
+      <div className="stats-grid live-six-stats">
+        <Stat label="FDV">
+          <Eth wei={fdv} digits={5} />
+        </Stat>
+        <Stat
+          label="Volume 24h"
+          note={`${stats.trades.length.toLocaleString("en-US")} trades`}
+        >
+          <Eth wei={stats.volumeWei} digits={5} />
+        </Stat>
+        <Stat label="Creator fee">
+          {m.creatorFees ? "Enabled" : "Disabled"}
+        </Stat>
       </div>
     </div>
   );

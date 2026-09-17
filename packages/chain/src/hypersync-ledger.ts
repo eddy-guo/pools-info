@@ -77,11 +77,15 @@ export const ledgerPassPolicy = Object.freeze({
   /** Blocks per range; a dense range ends early on a whole page. */
   rangeBlocks: 100000,
   maxRangeBlocks: 1000000,
-  /** Measured (report 3.1): 20,000 pool ids in one topics[1] selection are a
-   * 1.38 MB body and 31,200 token addresses 1.40 MB; the limit is the 2 MiB
-   * body, so one selection per query. */
-  poolIdsPerQuery: 20000,
-  tokensPerQuery: 31000,
+  /** At most this many values per query, one selection each, split evenly
+   * over the fewest queries (ledgerChunks). Measured (report 3.1): 20,000
+   * pool ids in one topics[1] selection are a 1.38 MB body and 31,200 token
+   * addresses 1.40 MB, and the limit is the 2 MiB body; these caps are about
+   * 1.8 MB at the widest. The 62,858-pool registry of 17 Sep 2026 is three swap queries of
+   * about 21k ids and two transfer queries of about 31k addresses, the report's
+   * shape, where fixed 20k and 31k chunks took four and three. */
+  poolIdsPerQuery: 25000,
+  tokensPerQuery: 40000,
   /** Whole pages consumed per lane query before the range is cut short. */
   maxPages: 16,
   maxLogs: 80000,
@@ -100,6 +104,14 @@ const discoverySources: readonly string[] = [
   ...contracts.strategies,
   tokenMetadataFactory,
 ];
+/** The fewest chunks of at most `max` values, split evenly. */
+export function ledgerChunks<T>(values: readonly T[], max: number): T[][] {
+  if (!Number.isSafeInteger(max) || max < 1)
+    throw Error("Invalid HyperSync chunk size");
+  if (!values.length) return [];
+  const queries = Math.ceil(values.length / max);
+  return chunkValues(values, Math.ceil(values.length / queries));
+}
 const hash = (v: unknown): v is string =>
   typeof v === "string" && /^0x[\da-f]{64}$/i.test(v);
 const address = (v: unknown): v is string =>
@@ -188,6 +200,11 @@ export interface LedgerRegistryPool {
 export interface LedgerCatalogPool extends CatalogPool {
   /** ERC-20 decimals; null when the read did not decode to 0..36. */
   decimals: number | null;
+  /** totalSupply() in raw units and the block it was read at, both null when
+   * the reply was not one word. Absent on a batch collected before supply
+   * joined the launch reads (evidence schema version 1). */
+  totalSupplyRaw?: string | null;
+  supplyBlock?: number | null;
   /** The launch log's site, which the ledger batch names per launch. */
   launchBlockHash: string;
   launchLogIndex: number;
@@ -200,7 +217,8 @@ export interface LedgerCatalogPool extends CatalogPool {
 export interface LedgerLaunchEvidence {
   source: "hypersync";
   stream: typeof ledgerLaunchStream;
-  schemaVersion: 1;
+  /** 1: name, symbol and decimals per launch; 2: and totalSupply. */
+  schemaVersion: 1 | 2;
   url: string;
   query: HyperSyncQuery;
   pages: HyperSyncPageRecord[];
@@ -215,7 +233,9 @@ export interface LedgerLaunchEvidence {
     reason: TokenMetadataIssue | "unmatched_token" | "ambiguous_metadata";
   }[];
   /** Read at the provider's head, not the cutoff: the public RPC serves no
-   * historical state, and these fields are immutable for factory tokens. */
+   * historical state, and these fields are immutable for factory tokens (the
+   * supply is fixed at launch: every one of the 62,858 catalogue tokens read
+   * 1e27 raw on 17 Sep 2026). */
   calls: ContractReadEvidence[];
   archiveHeight: number;
 }
@@ -227,10 +247,16 @@ export interface LedgerLaunchBatch {
   pools: LedgerCatalogPool[];
   evidence: LedgerLaunchEvidence;
 }
-const metadataFields = ["name", "symbol", "decimals"] as const;
+/** The contract reads per launch, by evidence schema version. */
+const launchReadFields = {
+  1: ["name", "symbol", "decimals"],
+  2: ["name", "symbol", "decimals", "totalSupply"],
+} as const;
+const currentLaunchSchema = 2 as const;
+type LaunchReadField = (typeof launchReadFields)[2][number];
 const readKey = (to: string, data: string) =>
   `${to.toLowerCase()}:${data.toLowerCase()}`;
-const metadataRead = (token: string, field: (typeof metadataFields)[number]) =>
+const metadataRead = (token: string, field: LaunchReadField) =>
   ({
     to: token as Hex,
     data: encodeFunctionData({ abi: erc20Abi, functionName: field }),
@@ -305,7 +331,7 @@ function ledgerLaunchRows(
   if (
     evidence.source !== "hypersync" ||
     evidence.stream !== ledgerLaunchStream ||
-    evidence.schemaVersion !== 1 ||
+    (evidence.schemaVersion !== 1 && evidence.schemaVersion !== 2) ||
     typeof evidence.url !== "string" ||
     !Array.isArray(evidence.logs) ||
     !Array.isArray(evidence.launcherLogs) ||
@@ -465,16 +491,24 @@ function decodedDecimals(data: Hex): number | null {
     return null;
   }
 }
+/** One uint256 word, or null: an unreadable supply is stored as unread, never 0. */
+function decodedSupply(data: Hex): string | null {
+  return /^0x[\da-f]{64}$/i.test(data) ? BigInt(data).toString() : null;
+}
 function launchPools(
   rows: ReturnType<typeof ledgerLaunchRows>["launches"],
   matched: ReadonlyMap<string, TokenMetadata | null>,
   results: readonly Hex[],
+  schemaVersion: LedgerLaunchEvidence["schemaVersion"],
+  readBlock: number | null,
 ): LedgerCatalogPool[] {
   const pools = new Map<string, LedgerCatalogPool>();
+  const fields = launchReadFields[schemaVersion];
   for (const [i, { log, decoded, transaction, block }] of rows.entries()) {
     const id = decoded.poolId.toLowerCase();
     if (pools.has(id)) throw Error("Duplicate ledger launch identity");
-    const at = i * metadataFields.length;
+    const at = i * fields.length;
+    const supply = schemaVersion === 2 ? decodedSupply(results[at + 3]) : null;
     pools.set(id, {
       ...presentation(
         matched.get(
@@ -498,6 +532,12 @@ function launchPools(
         }),
       ).slice(0, 40),
       decimals: decodedDecimals(results[at + 2]),
+      ...(schemaVersion === 2
+        ? {
+            totalSupplyRaw: supply,
+            supplyBlock: supply === null ? null : readBlock,
+          }
+        : {}),
       launchTx: log.transaction_hash.toLowerCase(),
       launchSender: transaction.from.toLowerCase(),
       launchBlock: log.block_number,
@@ -525,10 +565,15 @@ export function verifyLedgerLaunchBatch(batch: LedgerLaunchBatch): void {
   const { evidence, ...claimed } = batch;
   const rows = ledgerLaunchRows(batch, evidence);
   const replies = new Map<string, Hex | null>();
-  for (const read of expandContractReads(evidence.calls))
+  const blocks = new Set<string>();
+  for (const read of expandContractReads(evidence.calls)) {
     replies.set(readKey(read.to, read.data), read.result);
+    blocks.add(read.block.toLowerCase());
+  }
+  if (blocks.size > 1)
+    throw Error("HyperSync ledger launch calls disagree with the evidence");
   const results = rows.launches.flatMap(({ decoded }) =>
-    metadataFields.map((field) => {
+    launchReadFields[evidence.schemaVersion].map((field) => {
       const read = metadataRead(decoded.token, field);
       const result = replies.get(readKey(read.to, read.data));
       if (result === undefined || result === null)
@@ -538,12 +583,19 @@ export function verifyLedgerLaunchBatch(batch: LedgerLaunchBatch): void {
   );
   if (replies.size !== results.length)
     throw Error("HyperSync ledger evidence retains unrelated rows");
+  const [readBlock] = blocks;
   const derived = {
     fromBlock: batch.fromBlock,
     toBlock: batch.toBlock,
     blockHash: rows.blockHash,
     toTimestamp: rows.toTimestamp,
-    pools: launchPools(rows.launches, rows.matched, results),
+    pools: launchPools(
+      rows.launches,
+      rows.matched,
+      results,
+      evidence.schemaVersion,
+      readBlock === undefined ? null : Number(readBlock),
+    ),
   };
   if (
     !isDeepStrictEqual(claimed, derived) ||
@@ -551,8 +603,9 @@ export function verifyLedgerLaunchBatch(batch: LedgerLaunchBatch): void {
   )
     throw Error("HyperSync ledger rows disagree with retained evidence");
 }
-/** Name, symbol and decimals for the launched tokens through Multicall3 at
- * the provider's current head. `eth_chainId` guards the endpoint first. */
+/** Name, symbol, decimals and total supply for the launched tokens through
+ * Multicall3 at the provider's current head, four reads per token.
+ * `eth_chainId` guards the endpoint first. */
 export async function readLaunchMetadata(
   rpc: Rpc,
   tokens: readonly string[],
@@ -566,7 +619,9 @@ export async function readLaunchMetadata(
   const reads = await readContracts(
     rpc,
     tokens.flatMap((token) =>
-      metadataFields.map((field) => metadataRead(token, field)),
+      launchReadFields[currentLaunchSchema].map((field) =>
+        metadataRead(token, field),
+      ),
     ),
     head,
     multicall,
@@ -753,7 +808,7 @@ export async function collectLedgerRange(
   const swapRecords: LedgerQueryRecord[] = [];
   const swapPages: HyperSyncPageRecord[][] = [];
   const poolIds = [...byPool.keys()].sort();
-  const poolChunks = chunkValues(poolIds, ledgerPassPolicy.poolIdsPerQuery);
+  const poolChunks = ledgerChunks(poolIds, ledgerPassPolicy.poolIdsPerQuery);
   for (const chunk of poolChunks) {
     const query = swapLogQuery(
       { fromBlock, toBlock },
@@ -773,7 +828,7 @@ export async function collectLedgerRange(
   const transferRecords: LedgerQueryRecord[] = [];
   const transferPages: HyperSyncPageRecord[][] = [];
   const tokens = [...byToken.keys()].sort();
-  for (const chunk of chunkValues(tokens, ledgerPassPolicy.tokensPerQuery)) {
+  for (const chunk of ledgerChunks(tokens, ledgerPassPolicy.tokensPerQuery)) {
     const query = transferLogQuery(
       { fromBlock, toBlock },
       chunk,
@@ -921,7 +976,7 @@ export async function collectLedgerRange(
   const partial = {
     source: "hypersync" as const,
     stream: ledgerLaunchStream,
-    schemaVersion: 1 as const,
+    schemaVersion: currentLaunchSchema,
     url: client.url,
     query: launchQuery,
     pages: launchPages.pages,
@@ -945,12 +1000,21 @@ export async function collectLedgerRange(
     rows.launches.map(({ decoded }) => decoded.token.toLowerCase()),
     input.multicall,
   );
+  const readBlocks = new Set(metadata.calls.map((c) => c.block.toLowerCase()));
+  if (readBlocks.size > 1) throw Error("Launch metadata reads span blocks");
+  const [readBlock] = readBlocks;
   const launch: LedgerLaunchBatch = {
     fromBlock,
     toBlock,
     blockHash: rows.blockHash,
     toTimestamp: rows.toTimestamp,
-    pools: launchPools(rows.launches, rows.matched, metadata.results),
+    pools: launchPools(
+      rows.launches,
+      rows.matched,
+      metadata.results,
+      currentLaunchSchema,
+      readBlock === undefined ? null : Number(readBlock),
+    ),
     evidence: {
       ...partial,
       tokenMetadataIssues: rows.issues,

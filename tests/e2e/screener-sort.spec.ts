@@ -1,28 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const px = (value: string) => Number.parseFloat(value);
-/* The headers order by these; every other column, liquidity included, stays
-   a plain header. The change column's head names the window it is measured
+/* The headers order by these; every other column stays a plain header. The change column's head names the window it is measured
    over, as the export's does, so the default page reads it as "24h". */
 const sortable = [
   { label: "24h", key: "change", column: 4 },
   { label: "Volume", key: "volume", column: 5 },
 ];
-const plain = [
-  "Token",
-  "Price",
-  "Liquidity",
-  "Holders",
-  "Launch sender",
-  "Trend",
-];
+const plain = ["Token", "Price", "Launch sender", "Trend"];
 /* With no sort in the URL the screener reads by volume, highest first. */
 const defaultColumn = 5;
 /* The export's grid at the 1030px the panel gives a 1440px viewport: watch,
-   token, price, 24h, volume, liquidity, holders, launch sender, trend. */
-const columns = [44, 250, 116, 98, 112, 112, 76, 122, 100];
-/* Price through holders read from the right, as do their heads. */
-const rightAligned = [3, 4, 5, 6, 7];
+   token, price, 24h, volume, launch sender, trend. Liquidity and holders are
+   not served, so their columns are gone and the token column takes the room. */
+const columns = [44, 438, 116, 98, 112, 122, 100];
+/* Price through volume read from the right, as do their heads. */
+const rightAligned = [3, 4, 5];
 
 const head = (page: Page) => page.locator(".explore-page .desktop-pools thead");
 const header = (page: Page, column: number) =>
@@ -276,8 +269,8 @@ test.describe("screener column sorting", () => {
   });
 });
 
-/* No header offers liquidity order, so a link that still names it opens the
-   default order and the URL follows at the next change. */
+/* The screener has no liquidity column, so a link that still names that order
+   opens the default order and the URL follows at the next change. */
 test.describe("a stale liquidity sort in the URL", () => {
   test("opens the default order and leaves the URL at the next change", async ({
     page,
@@ -301,16 +294,7 @@ test.describe("a stale liquidity sort in the URL", () => {
         "descending",
       );
       await expect(header(page, defaultColumn)).toContainText("↓");
-      const liquidity = head(page)
-        .locator("th")
-        .filter({ hasText: "Liquidity" });
-      await expect(liquidity).toHaveText("Liquidity");
-      await expect(liquidity.locator("button")).toHaveCount(0);
-      await expect(liquidity).not.toHaveAttribute("aria-sort", /.*/);
-      await expect(
-        head(page).getByRole("button", { name: /liquidity/i }),
-        "no keyboard stop leads to a liquidity order",
-      ).toHaveCount(0);
+      await expect(head(page)).not.toContainText(/liquidity|holders/i);
     }
 
     const changed = exploreRequest(page);

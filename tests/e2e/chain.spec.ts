@@ -6,14 +6,12 @@ import { preloadedProduct } from "../../apps/web/src/lib/product-server";
 import { methodologyCopy } from "../support/pool-copy";
 import type {
   AnalyticsExploreResponse,
-  AnalyticsPoolDetail,
   AnalyticsLeaderboardResponse,
   AnalyticsWalletResponse,
   LiveTradeFeedResponse,
   LiveTradeEvent,
 } from "@pools/core";
 import {
-  buildHolderLedger,
   buildAnalyticsModel,
   leaderboardAnalytics,
   walletAnalytics,
@@ -116,17 +114,11 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
     page.getByRole("heading", { name: market.name, exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Launch transaction" }),
+    page.getByRole("link", { name: "Explorer ↗", exact: true }),
   ).toHaveAttribute(
     "href",
-    `https://robinhoodchain.blockscout.com/tx/${market.launchTx}`,
+    `https://robinhoodchain.blockscout.com/token/${market.token}`,
   );
-  await page.getByRole("button", { name: "Holders", exact: true }).click();
-  await expect(
-    page.getByRole("heading", {
-      name: "Holder accounting unavailable",
-    }),
-  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -386,7 +378,7 @@ test("command search handles fuzzy names, keyboard navigation, real resolver res
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
 });
-test("chart ranges from the panel head with no select, and keeps seven trade pages local", async ({
+test("chart ranges from the panel head with no select", async ({
   page,
 }, testInfo) => {
   const update = structuredClone(chain);
@@ -401,11 +393,9 @@ test("chart ranges from the panel head with no select, and keeps seven trade pag
     logIndex: i,
     timestamp: chain.toTimestamp - i,
   }));
-  let requests = 0;
-  await page.route(`**/api/markets/${market.id}/?*`, (r) => {
-    requests++;
-    return r.fulfill({ json: update });
-  });
+  await page.route(`**/api/markets/${market.id}/?*`, (r) =>
+    r.fulfill({ json: update }),
+  );
   await page.goto(poolHref(market));
   await expect(
     page.getByRole("img", { name: /Price candle chart/ }),
@@ -445,15 +435,6 @@ test("chart ranges from the panel head with no select, and keeps seven trade pag
     ? [unit, change, segmented]
     : [unit, change])
     expect(box!.y, "on the price's row").toBeLessThan(price!.y + price!.height);
-  await page.getByRole("button", { name: "Trades", exact: true }).click();
-  await expect(
-    page.getByText("140 swap events", { exact: true }),
-  ).toBeVisible();
-  const before = requests;
-  for (let i = 0; i < 6; i++)
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText("7 / 7", { exact: true })).toBeVisible();
-  expect(requests).toBe(before);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -600,7 +581,53 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
   await expect(feed.getByText("No recent trades")).toBeVisible();
 });
 
-test("pool live feed has bounded rows, no overlapping polls, stops when hidden, and rejects another pool", async ({
+test("a live feed that has never started reads as offline, never as streaming or as zero trades", async ({
+  page,
+}) => {
+  const batch = liveBatch([], chain.toTimestamp);
+  batch.coverage = {
+    ...batch.coverage,
+    state: "uninitialized",
+    startBlock: null,
+    headBlock: null,
+    throughBlock: null,
+    throughHash: null,
+    asOf: null,
+    checkedAt: null,
+    lagBlocks: null,
+    discoveryThroughBlock: null,
+    discoveryLagBlocks: null,
+  };
+  let calls = 0;
+  await page.route("**/api/live-trades/**", (route) => {
+    calls++;
+    return route.fulfill({ json: batch });
+  });
+  await page.goto("/");
+  await expect.poll(() => calls).toBeGreaterThan(0);
+  const feed = page.getByRole("region", { name: "Recent trades" });
+  const state = feed.getByRole("status");
+  await expect(state).toHaveText("offline");
+  await expect(feed.getByText("Feed not running")).toBeVisible();
+  await expect(feed).not.toContainText("streaming");
+  await expect(feed).not.toContainText("No recent trades");
+  await expect(feed.locator(".stream-event")).toHaveCount(0);
+  const green = await state.locator("i").evaluate((dot) => {
+    const up = document.createElement("span");
+    up.style.color = "var(--color-up)";
+    document.body.append(up);
+    const color = getComputedStyle(up).color;
+    up.remove();
+    return getComputedStyle(dot).backgroundColor === color;
+  });
+  expect(green, "no green dot over a feed that never started").toBe(false);
+  // The header strip mirrors the rail: not streaming, and not left unknown.
+  const strip = page.locator(".subnav-live");
+  await expect(strip).toHaveAttribute("data-state", "paused");
+  await expect(strip).toHaveText("Paused");
+});
+
+test("live feed has bounded rows, no overlapping polls, stops when hidden, and recovers from a failed window", async ({
   page,
 }) => {
   const timestamp = chain.toTimestamp;
@@ -617,15 +644,18 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
       await new Promise<void>((resolve) => {
         release = resolve;
       });
+    if (calls === 2)
+      return route.fulfill({
+        status: 503,
+        json: { error: "Recent trades are temporarily unavailable." },
+      });
     const events =
       calls === 1
         ? Array.from({ length: 50 }, (_, i) => liveEvent(i + 1, timestamp))
-        : calls === 2
-          ? [liveEvent(1, timestamp, { poolId: `0x${"f".repeat(64)}` })]
-          : [liveEvent(51, timestamp)];
-    await route.fulfill({ json: liveBatch(events, timestamp, market.id) });
+        : [liveEvent(51, timestamp)];
+    await route.fulfill({ json: liveBatch(events, timestamp) });
   });
-  await page.goto(poolHref(market), { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   const feed = page.getByRole("region", { name: "Recent trades" });
   await expect.poll(() => calls).toBe(1);
   await expect(feed.getByRole("status")).toHaveText("streaming");
@@ -659,7 +689,7 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   await expect.poll(() => calls).toBe(3);
   await expect(feed.getByRole("status")).toHaveText("streaming");
   await expect(feed.locator(".stream-event")).toHaveCount(1);
-  expect(filters).toEqual([market.id, market.id, market.id]);
+  expect(filters, "the rail reads the whole feed").toEqual(["", "", ""]);
   await page.clock.fastForward(181000);
   await expect(feed.getByRole("status")).toHaveText("delayed");
   expect(
@@ -887,26 +917,12 @@ test("captured pool history loads without RPC and survives a failed refresh", as
 }) => {
   const saved = Object.values(captured.snapshots)[0];
   const pool = saved.markets[0];
-  let marketRequests = 0;
-  page.on("request", (r) => {
-    if (r.url().includes(`/api/markets/${pool.id}/`)) marketRequests++;
-  });
   await page.goto(poolHref(pool));
   await expect(
     page.getByRole("heading", { name: pool.name, exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Trades", exact: true }).click();
-  await expect(page.locator(".pagination")).toContainText(
-    `${saved.trades.length} swap events`,
-  );
-  await expect(page.locator(".interactive-chart canvas").first()).toBeVisible();
-  const initialRequests = marketRequests;
-  for (let i = 0; i < 6; i++)
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.locator(".pagination")).toContainText(
-    `7 / ${Math.ceil(saved.trades.length / 20)}`,
-  );
-  expect(marketRequests).toBe(initialRequests);
+  const chart = page.locator(".interactive-chart canvas").first();
+  await expect(chart).toBeVisible();
   let failed = 0;
   await page.route(`**/api/markets/${pool.id}/**`, (r) => {
     failed++;
@@ -916,9 +932,7 @@ test("captured pool history loads without RPC and survives a failed refresh", as
   await refresh.click();
   await expect.poll(() => failed).toBe(1);
   await expect(refresh).toBeEnabled();
-  await expect(page.locator(".pagination")).toContainText(
-    `${saved.trades.length} swap events`,
-  );
+  await expect(chart).toBeVisible();
   // The expanded capture includes saved accounting, available without a network audit.
   const audit = await page.request.get(
     `/api/markets/${pool.id}/accounting/?launch=${pool.launchTx}`,
@@ -1034,23 +1048,6 @@ test("saved global catalog shows unprocessed pools and pages the global sort", a
   const all = (await response.json()) as AnalyticsExploreResponse;
   expect(all.total).toBeGreaterThan(25);
   const unprocessed = all.items.find((p) => !p.processed)!;
-  await page.route(`**/api/live-trades/?poolId=${unprocessed.id}`, (route) =>
-    route.fulfill({
-      json: liveBatch(
-        [
-          liveEvent(1, chain.toTimestamp, {
-            poolId: unprocessed.id,
-            token: unprocessed.token,
-            name: unprocessed.name,
-            symbol: unprocessed.symbol,
-            launchTx: unprocessed.launchTx,
-          }),
-        ],
-        chain.toTimestamp,
-        unprocessed.id,
-      ),
-    }),
-  );
   await page.goto("/?sort=launch&window=All");
   const shown = page.locator(".explore-page [data-row='resolved']").filter({
     visible: true,
@@ -1088,11 +1085,6 @@ test("saved global catalog shows unprocessed pools and pages the global sort", a
     "false",
   );
   await expect(page.locator("body")).not.toContainText(methodologyCopy);
-  await expect(
-    page
-      .getByRole("region", { name: "Recent trades" })
-      .locator(".stream-event"),
-  ).toHaveCount(1);
 });
 
 test("default saved leaderboard opens matching global wallet positions, trades and card without audits", async ({
@@ -1423,66 +1415,6 @@ test("ENS wallet fallback stays usable while saved search is slow or unavailable
   await expect(link).toHaveAttribute("href", walletHref(address));
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/wallet/${address}/`));
-});
-
-test("saved pool details show reconciled holders and label infrastructure separately", async ({
-  page,
-}) => {
-  const payload = (await preloadedProduct(
-    `pools/${market.id}`,
-    new URLSearchParams("window=All"),
-  )) as { analytics: AnalyticsPoolDetail };
-  const infrastructure = `0x${"2".repeat(40)}` as Address;
-  const zero = `0x${"0".repeat(40)}` as Address;
-  const hash = `0x${"a".repeat(64)}` as Address;
-  payload.analytics.holders = buildHolderLedger(
-    [wallet, infrastructure].map((address, index) => ({
-      token: market.token,
-      txHash: hash,
-      blockHash: hash,
-      block: market.launchBlock,
-      logIndex: index,
-      from: zero,
-      to: address as Address,
-      valueRaw: "100000000000000000000",
-    })),
-    {
-      token: market.token,
-      coverage: {
-        fromBlock: market.launchBlock,
-        toBlock: chain.toBlock,
-        cutoffBlockHash: hash,
-        tokenBirthBlock: market.launchBlock,
-      },
-      totalSupplyRaw: "200000000000000000000",
-      infrastructure: [{ address: infrastructure, label: "PoolManager" }],
-    },
-  );
-  let savedReads = 0;
-  await page.route(`**/api/product/pools/${market.id}/`, (r) => {
-    savedReads++;
-    return r.fulfill({
-      json: { ...payload, delivery: { source: "indexer", notice: null } },
-    });
-  });
-  await page.goto(poolHref(market));
-  await page.getByRole("button", { name: "Holders", exact: true }).click();
-  await expect(page.locator("main tbody tr")).toHaveCount(2);
-  await expect(
-    page.getByRole("cell", { name: "PoolManager", exact: true }),
-  ).toBeVisible();
-  const holders = page
-    .locator(".stat")
-    .filter({ has: page.getByText("Holders", { exact: true }) });
-  await expect(holders.locator("strong").filter({ visible: true })).toHaveText(
-    "1",
-  );
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect.poll(() => savedReads).toBe(2);
-  await expect(page.locator("main tbody tr")).toHaveCount(2);
-  await expect(holders.locator("strong").filter({ visible: true })).toHaveText(
-    "1",
-  );
 });
 
 test("real preloaded leaderboard opens its profitable top wallet and generates the same global card", async ({

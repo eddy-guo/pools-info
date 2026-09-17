@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import chain from "../../data/snapshots/chain.json";
-import { poolHref, type LiveTradeFeedResponse } from "@pools/core";
+import type { LiveTradeFeedResponse } from "@pools/core";
 
 /* W6: the phone rows read like the export - the screener card at 104px, the
    live rail row at 51px on both viewports - with no coverage copy anywhere
@@ -127,11 +127,5 @@ test("the live rail rows match the export's 51px row at both viewports", async (
 }) => {
   await serveLiveFeed(page);
   await page.goto("/");
-  await expectRailRows(page.locator(".trade-stream"));
-});
-
-test("a pool page's live rail keeps the same 51px row", async ({ page }) => {
-  await serveLiveFeed(page);
-  await page.goto(poolHref(chain.markets[0]));
   await expectRailRows(page.locator(".trade-stream"));
 });
