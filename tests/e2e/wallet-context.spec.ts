@@ -173,7 +173,8 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
       .locator(".stat")
       .filter({ has: page.getByText("Realized PnL", { exact: true }) })
       .locator(".unavailable"),
-  ).toHaveText("N/A");
+    "a stat card's unknown value is the quiet mark",
+  ).toHaveText("\u2013");
   await expect(
     main.getByText("No realized PnL in this window.", { exact: true }),
   ).toBeVisible();

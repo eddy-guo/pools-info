@@ -12,6 +12,8 @@ import {
 } from "@pools/core";
 import { useLive } from "./live-provider";
 import { useQuery } from "./state";
+import { QuietUnavailable, Unavailable, useUnavailable } from "./ui";
+export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
   new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
@@ -32,7 +34,10 @@ export function Eth({
   digits?: number;
 }) {
   const known = wei !== null && wei !== undefined;
-  const n = known ? Number(wei) / 1e18 : null;
+  const unavailable = useUnavailable("Not collected yet", pending);
+  if (!known || pending)
+    return <span className="number unavailable" {...unavailable} />;
+  const n = Number(wei) / 1e18;
   const format = new Intl.NumberFormat(
     "en-US",
     digits === undefined
@@ -45,38 +50,11 @@ export function Eth({
   );
   return (
     <span
-      className={`number ${!known ? "muted unavailable" : signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
-      title={known ? `${wei} wei` : "Not collected yet"}
-      data-pending={pending}
-      aria-label={
-        !known && !pending ? "Unavailable: Not collected yet" : undefined
-      }
+      className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
+      title={`${wei} wei`}
     >
-      {pending ? (
-        "Pending"
-      ) : n === null ? (
-        "N/A"
-      ) : (
-        <>
-          {signed && n > 0 ? "+" : ""}
-          {format.format(n)} ETH
-        </>
-      )}
-    </span>
-  );
-}
-export function Unavailable({
-  reason = "Not collected yet",
-}: {
-  reason?: string;
-}) {
-  return (
-    <span
-      className="muted unavailable"
-      title={reason}
-      aria-label={`Unavailable: ${reason}`}
-    >
-      N/A
+      {signed && n > 0 ? "+" : ""}
+      {format.format(n)} ETH
     </span>
   );
 }
@@ -96,7 +74,9 @@ export function Stat({
       <span>{label}</span>
       <strong>
         <span data-pending={pending}>
-          {pending && children == null ? "Pending" : children}
+          <QuietUnavailable value="quiet">
+            {pending && children == null ? "Pending" : children}
+          </QuietUnavailable>
         </span>
       </strong>
       {note && <small>{note}</small>}

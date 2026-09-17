@@ -1,6 +1,11 @@
 "use client";
 
-/** Pending values occupy the same line box as resolved values, without fake data. */
+/**
+ * Pending values occupy the same line box as resolved values, without fake
+ * data. The skeleton and the value are separate nodes: a text run that changes
+ * width inside one right-aligned node moves its start, which Chrome reports as
+ * a layout shift even when the box around it holds still.
+ */
 export function PendingValue({
   pending = false,
   children,
@@ -8,7 +13,15 @@ export function PendingValue({
   pending?: boolean;
   children: React.ReactNode;
 }) {
-  return <span data-pending={pending}>{pending ? "Pending" : children}</span>;
+  return pending ? (
+    <span key="pending" data-pending="true">
+      Pending
+    </span>
+  ) : (
+    <span key="value" data-pending="false">
+      {children}
+    </span>
+  );
 }
 
 export function ProductPagination({

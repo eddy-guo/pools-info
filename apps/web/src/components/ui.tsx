@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState } from "react";
+import { createContext, useContext, useId, useState } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -13,8 +13,8 @@ import {
 import {
   compact,
   displayEth,
+  identityTint,
   shortAddress,
-  visualTheme,
   type PricePoint,
 } from "@pools/core";
 import { useWatchlist } from "./state";
@@ -36,42 +36,32 @@ export function TokenIcon({
     </span>
   );
 }
+/**
+ * The identity tile where no image exists: the export's two-character
+ * monogram on the address's own tint, so no row carries the accent. The
+ * letters are decoration drawn by the stylesheet from `data-initials`, so a
+ * cell's text stays the address and nothing else.
+ */
 export function Avatar({
   address,
-  color = visualTheme.accent,
   small = false,
 }: {
   address: string;
-  color?: string;
   small?: boolean;
 }) {
-  const bits = address
-    .slice(2, 11)
-    .split("")
-    .map((x) => parseInt(x, 16) % 2 === 0);
+  const tint = identityTint(address);
   return (
     <span
       aria-hidden="true"
       className={`avatar ${small ? "small" : ""}`}
-      style={{ "--token": color } as React.CSSProperties}
-    >
-      <svg viewBox="0 0 5 5">
-        {Array.from({ length: 25 }, (_, i) => {
-          const col = i % 5;
-          const row = Math.floor(i / 5);
-          return bits[(row * 3 + Math.min(col, 4 - col)) % bits.length] ? (
-            <rect
-              key={i}
-              x={col}
-              y={row}
-              width="1"
-              height="1"
-              fill="currentColor"
-            />
-          ) : null;
-        })}
-      </svg>
-    </span>
+      data-initials={address.slice(2, 4).toUpperCase()}
+      style={
+        {
+          "--avatar-bg": tint.background,
+          "--avatar-fg": tint.foreground,
+        } as React.CSSProperties
+      }
+    />
   );
 }
 export function CopyButton({
@@ -186,6 +176,43 @@ export function AddressChip({
     </span>
   );
 }
+/**
+ * How an unknown datum reads. A table cell stays empty, as the export leaves
+ * one; a stat card's value slot carries a quiet mark so its label does not
+ * float over nothing. Either way the reason travels in the accessible name.
+ */
+const UnavailableMark = createContext<"empty" | "quiet">("empty");
+export const QuietUnavailable = UnavailableMark.Provider;
+/**
+ * The attributes of an unavailable slot. A value component spreads them on
+ * the same `span` it renders a value into, so the node a skeleton painted is
+ * the node the value resolves into and nothing is remounted.
+ */
+export function useUnavailable(reason: string, pending: boolean) {
+  const mark = useContext(UnavailableMark);
+  return {
+    "data-pending": pending,
+    title: pending ? undefined : reason,
+    "aria-label": pending ? undefined : `Unavailable: ${reason}`,
+    children: pending ? "Pending" : mark === "quiet" ? "\u2013" : "",
+  };
+}
+export function Unavailable({
+  reason = "Not collected yet",
+  className = "",
+  pending = false,
+}: {
+  reason?: string;
+  className?: string;
+  pending?: boolean;
+}) {
+  return (
+    <span
+      className={`unavailable ${className}`}
+      {...useUnavailable(reason, pending)}
+    />
+  );
+}
 export function Money({
   wei,
   signed = false,
@@ -197,14 +224,10 @@ export function Money({
   className?: string;
   pending?: boolean;
 }) {
+  const unavailable = useUnavailable("Not collected yet", pending);
   if (wei == null)
     return (
-      <span
-        className={`number muted unavailable ${className}`}
-        data-pending={pending}
-      >
-        {pending ? "Pending" : "N/A"}
-      </span>
+      <span className={`number unavailable ${className}`} {...unavailable} />
     );
   return (
     <span
@@ -226,17 +249,9 @@ export function Price({
   wei?: string | null;
   pending?: boolean;
 }) {
+  const unavailable = useUnavailable("No observed swap price", pending);
   if (wei == null)
-    return (
-      <span
-        className="number price muted unavailable"
-        data-pending={pending}
-        title="No observed swap price"
-        aria-label={pending ? undefined : "Unavailable: No observed swap price"}
-      >
-        {pending ? "Pending" : "N/A"}
-      </span>
-    );
+    return <span className="number price unavailable" {...unavailable} />;
   const currency = "ETH";
   const value = displayEth(wei);
   const prefix = "";
@@ -271,19 +286,9 @@ export function Change({
   pending?: boolean;
   digits?: number;
 }) {
+  const unavailable = useUnavailable("No opening price observation", pending);
   if (value == null)
-    return (
-      <span
-        className="number change muted unavailable"
-        data-pending={pending}
-        title="No opening price observation"
-        aria-label={
-          pending ? undefined : "Unavailable: No opening price observation"
-        }
-      >
-        {pending ? "Pending" : "N/A"}
-      </span>
-    );
+    return <span className="number change unavailable" {...unavailable} />;
   const displayed = Number(value.toFixed(digits));
   return (
     <span

@@ -33,7 +33,7 @@ test("chart, card, and default avatar colors cannot drift into private hex palet
     const code = await source(path);
     assert.match(
       code,
-      /visualTheme/,
+      /visualTheme|identityTint/,
       `${path} must consume the shared palette`,
     );
     assert.doesNotMatch(
