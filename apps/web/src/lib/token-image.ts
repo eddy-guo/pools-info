@@ -1,527 +1,328 @@
-import { createHash } from "node:crypto";
-import { Resolver } from "node:dns/promises";
-import https from "node:https";
-import { BlockList, isIP, type LookupFunction } from "node:net";
-import sharp from "sharp";
-
-export const imagePolicy = {
-  ipfsGateway: "https://gateway.pinata.cloud",
-  timeoutMs: 10000,
-  maxBytes: 2 * 1024 * 1024,
-  maxPixels: 4_000_000,
-  maxOutputBytes: 256 * 1024,
-  edge: 128,
-  cacheEntries: 64,
-  concurrentImages: 8,
+// This route is a proxy over the read API's token icon store. The store owns
+// the whole upstream pipeline - host allowlist, DNS checks, size and
+// content-type limits, Sharp decode and WebP re-encode - and keeps one encoded
+// 128 px icon per pool, so the website only relays its bytes, its validator
+// and the lifetimes it states. Nothing here fetches a creator host or an IPFS
+// gateway, and nothing prefetches: a browser request is the only trigger.
+export const imageProxy = {
+  // The store caps one request at 12 s (queueing for a fetch slot plus its
+  // 10 s upstream budget), so a first view receives the store's own answer
+  // before this deadline; later views are one primary-key read.
+  timeoutMs: 13000,
+  // The store caps its output at 256 KiB; this only bounds what we buffer.
+  maxBytes: 512 * 1024,
 } as const;
-// Lifetimes in seconds. The edge keeps a served icon for a week and may keep
-// serving it stale for another week while one request refreshes it; browsers
-// and the process cache keep it for a day. A content-addressed IPFS CID cannot
-// change but a creator-hosted URL can, so nothing is marked immutable. A
-// permanent rejection (policy, invalid URL, unusable bytes) is remembered for
-// a day; a transient failure (timeout, upstream error, network) for a minute.
+// Lifetimes in seconds. The store states the authoritative ones in its own
+// Cache-Control and these are the fallbacks for a header it did not send.
+// `absent` is also the store's shortest stated negative lifetime, used when no
+// read API is configured at all. `invalid` answers a request that can never
+// become valid. Nothing is immutable: a creator can replace an image, and the
+// store re-encodes it on the pool's next view.
 export const imageLifetimes = {
   browser: 86400,
-  edge: 604800,
+  edge: 2592000,
   staleWhileRevalidate: 604800,
-  rejected: 86400,
-  unavailable: 60,
+  absent: 300,
+  invalid: 86400,
+  retryAfter: 5,
+  maxSeconds: 2592000,
 } as const;
-// Exact hosts found in reviewed launch proof metadata, plus the chosen IPFS
-// gateway. Expanding this set is a reviewed code change, never a query option.
-export const imageHosts = new Set([
-  "gateway.pinata.cloud",
-  "pools.trade",
-  "8c.pw",
-  "coffeegoofld.mypinata.cloud",
-]);
-/** Permanent rejections follow the long negative cache, transient failures the short one. */
-export class ImageRejection extends Error {
-  constructor(
-    readonly permanent: boolean,
-    options?: ErrorOptions,
-  ) {
-    super("Token image unavailable", options);
-  }
-}
-const rejected = () => new ImageRejection(true);
-const unavailable = () => new ImageRejection(false);
+
 const poolPattern = /^0x[0-9a-f]{64}$/i;
-const denied = new BlockList();
-// Conservative IANA special-purpose exclusions, including globally reachable
-// special-use ranges. No image fetch needs these protocol/service destinations.
-for (const [network, bits] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["100.64.0.0", 10],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.0.0.0", 24],
-  ["192.0.2.0", 24],
-  ["192.31.196.0", 24],
-  ["192.52.193.0", 24],
-  ["192.88.99.0", 24],
-  ["192.168.0.0", 16],
-  ["192.175.48.0", 24],
-  ["198.18.0.0", 15],
-  ["198.51.100.0", 24],
-  ["203.0.113.0", 24],
-  ["224.0.0.0", 4],
-  ["240.0.0.0", 4],
-] as const)
-  denied.addSubnet(network, bits, "ipv4");
-for (const [network, bits] of [
-  ["2001::", 23],
-  ["2001:db8::", 32],
-  ["2002::", 16],
-  ["2620:4f:8000::", 48],
-  ["3ffe::", 16],
-  ["3fff::", 20],
-] as const)
-  denied.addSubnet(network, bits, "ipv6");
-const globalV6 = new BlockList();
-globalV6.addSubnet("2000::", 3, "ipv6");
+// RFC 9110 entity-tag: a quoted string of etagc octets. Only a strong
+// validator is relayed; the store's tag is its content hash.
+const etagPattern = /^"[\x21\x23-\x7e]{1,128}"$/u;
+const servedHeaders = {
+  "Content-Type": "image/webp",
+  "X-Content-Type-Options": "nosniff",
+  "Content-Security-Policy": "default-src 'none'; sandbox",
+  "Content-Disposition": 'inline; filename="token.webp"',
+} as const;
 
-export function publicImageAddress(address: string): boolean {
-  const family = isIP(address);
-  if (family === 4) return !denied.check(address, "ipv4");
-  // Only global unicast. This also rejects mapped/compatible IPv4, NAT64,
-  // loopback, unspecified, link-local, ULA, multicast and scoped addresses.
-  return (
-    family === 6 &&
-    !address.includes("%") &&
-    globalV6.check(address, "ipv6") &&
-    !denied.check(address, "ipv6")
-  );
-}
-
-export function tokenImageUrl(source: string): URL {
-  if (
-    !source ||
-    source.length > 2048 ||
-    /[\u0000-\u0020\u007f-\u009f\\]/u.test(source)
-  )
-    throw rejected();
-  if (source.startsWith("ipfs://")) {
-    // Keep CIDv0 case intact; URL.hostname would lowercase a base58 CID.
-    const ipfs = /^ipfs:\/\/(?:ipfs\/)?([^/?#]+)(\/[^?#]*)?$/u.exec(source);
-    if (
-      !ipfs ||
-      !/^(?:Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{31,119})$/u.test(ipfs[1])
-    )
-      throw rejected();
-    const path = ipfs[2] ?? "";
-    for (const segment of path.split("/")) {
-      const decoded = decodeURIComponent(segment);
-      if (
-        decoded === "." ||
-        decoded === ".." ||
-        /[\/\\\u0000-\u0020\u007f]/u.test(decoded)
-      )
-        throw rejected();
-    }
-    source = `${imagePolicy.ipfsGateway}/ipfs/${ipfs[1]}${path}`;
+/** One comma-delimited `name=seconds` directive, clamped, or null when absent. */
+function directiveSeconds(header: string | null, name: string): number | null {
+  for (const directive of (header ?? "").split(",")) {
+    const separator = directive.indexOf("=");
+    if (separator < 0) continue;
+    if (directive.slice(0, separator).trim().toLowerCase() !== name) continue;
+    const value = directive
+      .slice(separator + 1)
+      .trim()
+      .replace(/^"|"$/gu, "");
+    // A numeric lifetime is clamped; anything else falls back to ours.
+    return value.length <= 18 && /^\d+$/u.test(value)
+      ? Math.min(Number(value), imageLifetimes.maxSeconds)
+      : null;
   }
-  const url = new URL(source);
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    (url.port && url.port !== "443") ||
-    !url.hostname ||
-    url.hash
-  )
-    throw rejected();
-  const host = url.hostname.replace(/^\[|\]$/gu, "");
-  if (!imageHosts.has(host)) throw rejected();
-  if (isIP(host) && !publicImageAddress(host)) throw rejected();
-  if (
-    !isIP(host) &&
-    (!host.includes(".") ||
-      host.endsWith(".") ||
-      /(?:^|\.)(?:localhost|local|internal|home|lan|test|invalid)$/iu.test(
-        host,
-      ))
-  )
-    throw rejected();
-  return url;
+  return null;
 }
-
-type Resolved = { address: string; family: number };
-export type ImageResolver = (
-  host: string,
-  signal: AbortSignal,
-) => Promise<Resolved[]>;
-const resolveImage: ImageResolver = async (host, signal) => {
-  const resolver = new Resolver();
-  const cancel = () => resolver.cancel();
-  signal.throwIfAborted();
-  signal.addEventListener("abort", cancel, { once: true });
-  const absent = (error: NodeJS.ErrnoException): string[] => {
-    if (error.code === "ENODATA" || error.code === "ENOTFOUND") return [];
-    throw unavailable();
-  };
-  try {
-    const [v4, v6] = await Promise.all([
-      resolver.resolve4(host).catch(absent),
-      resolver.resolve6(host).catch(absent),
-    ]);
-    return [
-      ...v4.map((address) => ({ address, family: 4 })),
-      ...v6.map((address) => ({ address, family: 6 })),
-    ];
-  } finally {
-    signal.removeEventListener("abort", cancel);
-    resolver.cancel();
-  }
+const strongEntityTag = (header: string | null) =>
+  header && etagPattern.test(header) ? header : null;
+// A client validator is relayed as sent so the store does its own weak
+// comparison; only a header that cannot be a valid field value is dropped.
+const relayedValidator = (header: string | null) =>
+  header && header.length <= 1024 && /^[\x20-\x7e]+$/u.test(header)
+    ? header
+    : null;
+const retryAfterSeconds = (header: string | null) => {
+  const seconds = Number(header);
+  return /^\d{1,4}$/u.test(header ?? "") && seconds >= 1
+    ? Math.min(seconds, 60)
+    : imageLifetimes.retryAfter;
 };
-function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(unavailable());
-    signal.addEventListener("abort", abort, { once: true });
-    operation
-      .then(resolve, reject)
-      .finally(() => signal.removeEventListener("abort", abort));
-  });
-}
+const advertisedLength = (header: string | null) =>
+  /^\d{1,10}$/u.test(header ?? "") && Number(header) <= imageProxy.maxBytes
+    ? Number(header)
+    : null;
 
-async function imageBytes(
-  url: URL,
-  signal: AbortSignal,
-  resolver: ImageResolver,
-) {
-  const hostname = url.hostname.replace(/^\[|\]$/gu, "");
-  const addresses = isIP(hostname)
-    ? [{ address: hostname, family: isIP(hostname) }]
-    : await abortable(resolver(hostname, signal), signal);
-  if (
-    !addresses.length ||
-    addresses.some(
-      (a) => !publicImageAddress(a.address) || isIP(a.address) !== a.family,
-    )
-  )
-    throw unavailable();
-  signal.throwIfAborted();
-  const pinned = addresses[0];
-  // Node may ask for all addresses. Return only the checked address in either
-  // form. The TLS hostname remains the original URL hostname, not the IP.
-  const pinnedLookup: LookupFunction = (_host, options, callback) => {
-    if (options.all) callback(null, [pinned]);
-    else callback(null, pinned.address, pinned.family);
-  };
-  return abortable(
-    new Promise<{ bytes: Buffer; mime: string }>((resolve, reject) => {
-      const request = https.request(
-        url,
-        {
-          method: "GET",
-          agent: false,
-          lookup: pinnedLookup,
-          family: pinned.family,
-          signal,
-          maxHeaderSize: 16384,
-          rejectUnauthorized: true,
-          headers: {
-            Accept: "image/png,image/jpeg,image/webp,image/gif",
-            "Accept-Encoding": "identity",
-          },
-        },
-        (response) => {
-          const fail = (error: ImageRejection) => {
-            response.destroy();
-            request.destroy();
-            reject(error);
-          };
-          // Anything but a 200 may be a passing upstream condition; what a
-          // 200 actually serves is the host's chosen representation.
-          if (response.statusCode !== 200) return fail(unavailable());
-          const mime = String(response.headers["content-type"] ?? "")
-            .split(";")[0]
-            .trim()
-            .toLowerCase();
-          const length = response.headers["content-length"];
-          if (
-            !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
-              mime,
-            ) ||
-            (response.headers["content-encoding"] &&
-              response.headers["content-encoding"] !== "identity") ||
-            (length !== undefined &&
-              (!/^\d+$/u.test(length) || Number(length) > imagePolicy.maxBytes))
-          )
-            return fail(rejected());
-          const chunks: Buffer[] = [];
-          let bytes = 0;
-          response.on("data", (chunk: Buffer) => {
-            bytes += chunk.length;
-            if (bytes > imagePolicy.maxBytes) fail(rejected());
-            else chunks.push(chunk);
-          });
-          response.once("end", () =>
-            resolve({ bytes: Buffer.concat(chunks), mime }),
-          );
-          response.once("error", () => reject(unavailable()));
-          response.once("aborted", () => reject(unavailable()));
-        },
-      );
-      request.once("error", () => reject(unavailable()));
-      request.end();
-    }),
-    signal,
-  );
-}
+export type StoredLifetimes = {
+  browser: number;
+  edge: number;
+  staleWhileRevalidate: number;
+};
+const storedLifetimes = (header: string | null): StoredLifetimes => ({
+  browser: directiveSeconds(header, "max-age") ?? imageLifetimes.browser,
+  edge: directiveSeconds(header, "s-maxage") ?? imageLifetimes.edge,
+  staleWhileRevalidate:
+    directiveSeconds(header, "stale-while-revalidate") ??
+    imageLifetimes.staleWhileRevalidate,
+});
+const servedCacheControl = (lifetimes: StoredLifetimes) =>
+  `public, max-age=${lifetimes.browser}, s-maxage=${lifetimes.edge}, stale-while-revalidate=${lifetimes.staleWhileRevalidate}`;
+const negativeCacheControl = (seconds: number) =>
+  `public, max-age=${seconds}, s-maxage=${seconds}`;
 
-function rasterMatches(bytes: Buffer, mime: string): boolean {
-  if (mime === "image/png")
-    return bytes
-      .subarray(0, 8)
-      .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-  if (mime === "image/jpeg")
-    return bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-  if (mime === "image/gif")
-    return ["GIF87a", "GIF89a"].includes(
-      bytes.subarray(0, 6).toString("ascii"),
-    );
-  return (
-    mime === "image/webp" &&
-    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
-    bytes.subarray(8, 12).toString("ascii") === "WEBP"
-  );
-}
-
-export async function transformedTokenImage(
-  source: string,
-  signal: AbortSignal,
-  resolver = resolveImage,
-): Promise<Buffer> {
-  const { bytes, mime } = await imageBytes(
-    tokenImageUrl(source),
-    signal,
-    resolver,
-  );
-  if (!rasterMatches(bytes, mime)) throw rejected();
-  signal.throwIfAborted();
-  const transform = sharp(bytes, {
-    limitInputPixels: imagePolicy.maxPixels,
-    failOn: "warning",
-    animated: false,
-    pages: 1,
-  })
-    .rotate()
-    .resize(imagePolicy.edge, imagePolicy.edge, {
-      fit: "cover",
-      withoutEnlargement: true,
-    })
-    .webp({ quality: 80 })
-    .timeout({ seconds: 3 });
-  const abort = () => transform.destroy();
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    let output: Buffer;
-    try {
-      output = await abortable(transform.toBuffer(), signal);
-    } catch (error) {
-      // Sharp refused the raster itself; only the deadline is transient.
-      if (error instanceof ImageRejection || signal.aborted) throw error;
-      throw new ImageRejection(true, { cause: error });
+export type StoredImageResult =
+  /** The store served the icon; `bytes` is null for a HEAD view. */
+  | {
+      state: "stored";
+      etag: string | null;
+      bytes: Uint8Array<ArrayBuffer> | null;
+      length: number | null;
+      lifetimes: StoredLifetimes;
     }
-    if (!output.length || output.length > imagePolicy.maxOutputBytes)
-      throw rejected();
-    return output;
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
-}
+  /** The store matched the client's validator. */
+  | { state: "unchanged"; etag: string | null; lifetimes: StoredLifetimes }
+  /** No icon for this pool, for as long as the store says it will not retry. */
+  | { state: "absent"; seconds: number }
+  /** The store is saturated, rate limited or unreachable; retry, cache nothing. */
+  | { state: "busy"; retryAfter: number };
 
-async function boundedJson(response: Response, signal: AbortSignal) {
-  if (!response.ok || !response.body) throw unavailable();
-  const reader = response.body.getReader();
-  let length = 0;
-  const chunks: Uint8Array[] = [];
-  try {
-    for (;;) {
-      const { done, value } = await abortable(reader.read(), signal);
-      if (done) break;
-      length += value.byteLength;
-      if (length > 128 * 1024) throw unavailable();
-      chunks.push(value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-}
-
-export async function indexedImageUrl(
+export type StoredImageView = {
+  method: "GET" | "HEAD";
+  ifNoneMatch: string | null;
+};
+export type StoredImageSource = (
   poolId: string,
+  view: StoredImageView,
   signal: AbortSignal,
-): Promise<string | null> {
-  if (!poolPattern.test(poolId)) throw rejected();
+) => Promise<StoredImageResult>;
+
+/** The read API base, validated the same way the product proxy validates it. */
+function storeOrigin(): URL | null {
   const configured = process.env.INDEXER_API_URL;
   if (!configured || process.env.CHAIN_REFRESH_DISABLED === "1") return null;
-  const origin = new URL(configured);
-  if (
-    origin.protocol !== "https:" ||
-    origin.username ||
-    origin.password ||
-    origin.pathname !== "/" ||
-    origin.search ||
-    origin.hash
-  )
-    throw rejected();
-  const url = new URL("/v1/explore", origin);
-  url.search = new URLSearchParams({
-    view: "watchlist",
-    ids: poolId.toLowerCase(),
-    limit: "1",
-  }).toString();
-  const response = await fetch(url, {
-    cache: "no-store",
-    redirect: "error",
-    signal,
-  });
-  const data = await boundedJson(response, signal);
-  if (
-    !data ||
-    !Array.isArray(data.items) ||
-    data.items.length !== 1 ||
-    data.items[0]?.id?.toLowerCase() !== poolId.toLowerCase()
-  )
+  let origin: URL;
+  try {
+    origin = new URL(configured);
+  } catch {
     return null;
-  return typeof data.items[0].imageUrl === "string"
-    ? data.items[0].imageUrl
+  }
+  return ["http:", "https:"].includes(origin.protocol) &&
+    !origin.username &&
+    !origin.password &&
+    origin.pathname === "/" &&
+    !origin.search &&
+    !origin.hash
+    ? origin
     : null;
 }
 
-export type StoredImageSource = (
-  poolId: string,
-  signal: AbortSignal,
-) => Promise<Buffer | null>;
-/**
- * Persistent per-pool image store: the 128 px WebP encoded once on first view
- * and served from storage afterwards. The data side plugs its store in here;
- * until then nothing is stored and a process-cache miss takes the live path.
- */
-export const resolveStoredImage: StoredImageSource = async () => null;
+async function boundedBytes(
+  response: Response,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const header = response.headers.get("content-length");
+  const advertised = advertisedLength(header);
+  if ((header !== null && advertised === null) || !response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > imageProxy.maxBytes) return null;
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  if (!length || (advertised !== null && length !== advertised)) return null;
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
 
-type Outcome =
-  { bytes: Buffer; etag: string } | { bytes: null; permanent: boolean };
-const entityTag = (bytes: Buffer) =>
-  `"${createHash("sha256").update(bytes).digest("hex")}"`;
-// If-None-Match uses weak comparison, so a W/ prefix still matches.
-const matchesEntityTag = (header: string | null, etag: string) =>
-  (header ?? "")
-    .split(",")
-    .map((tag) => tag.trim().replace(/^W\//u, ""))
-    .some((tag) => tag === "*" || tag === etag);
-const servedCacheControl = `public, max-age=${imageLifetimes.browser}, s-maxage=${imageLifetimes.edge}, stale-while-revalidate=${imageLifetimes.staleWhileRevalidate}`;
-const negativeCacheControl = (permanent: boolean) => {
-  const seconds = permanent
-    ? imageLifetimes.rejected
-    : imageLifetimes.unavailable;
-  return `public, max-age=${seconds}, s-maxage=${seconds}`;
+/**
+ * Reads one pool's stored icon from the read API's token icon store
+ * (`GET`/`HEAD /v1/pools/<poolId>/image`, documented under "Token icon store"
+ * in `apps/api/README.md`). Only the client's validator is forwarded; no
+ * browser cookie, authorization or referer header reaches the store, and no
+ * store response header reaches the browser except through the typed result.
+ */
+export const resolveStoredImage: StoredImageSource = async (
+  poolId,
+  view,
+  signal,
+) => {
+  const origin = storeOrigin();
+  if (!origin) return { state: "absent", seconds: imageLifetimes.absent };
+  const busy = {
+    state: "busy",
+    retryAfter: imageLifetimes.retryAfter,
+  } as const;
+  let response: Response;
+  try {
+    response = await fetch(new URL(`/v1/pools/${poolId}/image`, origin), {
+      method: view.method,
+      cache: "no-store",
+      redirect: "error",
+      signal,
+      headers: {
+        Accept: "image/webp",
+        ...(view.ifNoneMatch ? { "If-None-Match": view.ifNoneMatch } : {}),
+      },
+    });
+  } catch {
+    return busy;
+  }
+  const cacheControl = response.headers.get("cache-control");
+  const etag = strongEntityTag(response.headers.get("etag"));
+  try {
+    if (response.status === 304)
+      return {
+        state: "unchanged",
+        etag,
+        lifetimes: storedLifetimes(cacheControl),
+      };
+    // The store's 404 is a JSON reason the website never shows; the generated
+    // icon is the fallback, cached for exactly as long as the store states.
+    if (response.status === 404)
+      return {
+        state: "absent",
+        seconds:
+          directiveSeconds(cacheControl, "max-age") ?? imageLifetimes.absent,
+      };
+    // 503 is the store's own busy signal and 429 its request budget. Both are
+    // this gateway being temporarily unable to serve, not the visitor's doing.
+    if (response.status === 503 || response.status === 429)
+      return {
+        state: "busy",
+        retryAfter: retryAfterSeconds(response.headers.get("retry-after")),
+      };
+    if (
+      response.status !== 200 ||
+      (response.headers.get("content-type") ?? "")
+        .split(";")[0]
+        .trim()
+        .toLowerCase() !== "image/webp"
+    )
+      return busy;
+    const lifetimes = storedLifetimes(cacheControl);
+    if (view.method === "HEAD")
+      return {
+        state: "stored",
+        etag,
+        bytes: null,
+        length: advertisedLength(response.headers.get("content-length")),
+        lifetimes,
+      };
+    const bytes = await boundedBytes(response);
+    return bytes
+      ? { state: "stored", etag, bytes, length: bytes.byteLength, lifetimes }
+      : busy;
+  } catch {
+    return busy;
+  } finally {
+    // A body left unread on an early return would hold the connection open.
+    if (response.body && !response.bodyUsed && !response.body.locked)
+      await response.body.cancel().catch(() => {});
+  }
 };
 
-/** Factory makes process-local caching testable; no pool scan or image prefetch. */
+/** Factory makes the store seam testable; no pool scan or image prefetch. */
 export function createTokenImageHandler(
-  readUrl = indexedImageUrl,
-  resolver = resolveImage,
-  timeoutMs: number = imagePolicy.timeoutMs,
-  storedImage = resolveStoredImage,
+  storedImage: StoredImageSource = resolveStoredImage,
+  timeoutMs: number = imageProxy.timeoutMs,
 ) {
-  const cache = new Map<string, { expires: number; outcome: Outcome }>();
-  const pending = new Map<string, Promise<Outcome>>();
   return async (request: Request, poolId: string): Promise<Response> => {
     if (!poolPattern.test(poolId) || new URL(request.url).search)
-      // Refused before any work, so it never takes a process cache slot; the
-      // browser and edge may still hold the empty response for a day.
+      // Refused before the store is contacted. The browser and edge may hold
+      // the empty response for a day; a malformed request cannot become valid.
       return new Response(null, {
         status: 400,
-        headers: { "Cache-Control": negativeCacheControl(true) },
+        headers: {
+          "Cache-Control": negativeCacheControl(imageLifetimes.invalid),
+        },
       });
-    const key = poolId.toLowerCase();
-    const remembered = cache.get(key);
-    let outcome: Outcome;
-    if (remembered && remembered.expires > Date.now())
-      outcome = remembered.outcome;
-    else {
-      let task = pending.get(key);
-      if (!task) {
-        if (pending.size >= imagePolicy.concurrentImages)
-          return new Response(null, {
-            status: 503,
-            headers: { "Cache-Control": "no-store", "Retry-After": "5" },
-          });
-        task = (async (): Promise<Outcome> => {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
-          try {
-            const stored = await abortable(
-              storedImage(key, controller.signal),
-              controller.signal,
-            );
-            if (stored) return { bytes: stored, etag: entityTag(stored) };
-            const source = await abortable(
-              readUrl(key, controller.signal),
-              controller.signal,
-            );
-            if (!source) return { bytes: null, permanent: true };
-            const bytes = await transformedTokenImage(
-              source,
-              controller.signal,
-              resolver,
-            );
-            return { bytes, etag: entityTag(bytes) };
-          } catch (error) {
-            return {
-              bytes: null,
-              permanent: error instanceof ImageRejection && error.permanent,
-            };
-          } finally {
-            clearTimeout(timer);
-          }
-        })();
-        pending.set(key, task);
-      }
-      outcome = await task;
-      pending.delete(key);
-      cache.delete(key);
-      if (cache.size >= imagePolicy.cacheEntries)
-        cache.delete(cache.keys().next().value!);
-      const seconds = outcome.bytes
-        ? imageLifetimes.browser
-        : outcome.permanent
-          ? imageLifetimes.rejected
-          : imageLifetimes.unavailable;
-      cache.set(key, { outcome, expires: Date.now() + seconds * 1000 });
+    const head = request.method === "HEAD";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let result: StoredImageResult;
+    try {
+      result = await storedImage(
+        poolId.toLowerCase(),
+        {
+          method: head ? "HEAD" : "GET",
+          ifNoneMatch: relayedValidator(request.headers.get("if-none-match")),
+        },
+        controller.signal,
+      );
+    } catch {
+      result = { state: "busy", retryAfter: imageLifetimes.retryAfter };
+    } finally {
+      clearTimeout(timer);
     }
-    if (!outcome.bytes)
+    if (result.state === "busy")
+      return new Response(null, {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": String(result.retryAfter),
+        },
+      });
+    if (result.state === "absent")
       return new Response(null, {
         status: 404,
         headers: {
-          "Content-Type": "image/webp",
-          "X-Content-Type-Options": "nosniff",
-          "Content-Security-Policy": "default-src 'none'; sandbox",
-          "Cache-Control": negativeCacheControl(outcome.permanent),
-          "Content-Disposition": 'inline; filename="token.webp"',
+          ...servedHeaders,
+          "Cache-Control": negativeCacheControl(result.seconds),
         },
       });
-    if (matchesEntityTag(request.headers.get("if-none-match"), outcome.etag))
+    const cacheControl = servedCacheControl(result.lifetimes);
+    if (result.state === "unchanged")
       return new Response(null, {
         status: 304,
-        headers: { ETag: outcome.etag, "Cache-Control": servedCacheControl },
+        headers: {
+          ...servedHeaders,
+          "Cache-Control": cacheControl,
+          ...(result.etag ? { ETag: result.etag } : {}),
+        },
       });
-    return new Response(Uint8Array.from(outcome.bytes), {
+    return new Response(result.bytes, {
       status: 200,
       headers: {
-        "Content-Type": "image/webp",
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": servedCacheControl,
-        ETag: outcome.etag,
-        "Content-Disposition": 'inline; filename="token.webp"',
+        ...servedHeaders,
+        "Cache-Control": cacheControl,
+        ...(result.etag ? { ETag: result.etag } : {}),
+        ...(result.length === null
+          ? {}
+          : { "Content-Length": String(result.length) }),
       },
     });
   };
