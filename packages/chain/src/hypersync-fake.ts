@@ -1,6 +1,6 @@
 import { encodeAbiParameters, keccak256, toEventSelector } from "viem";
 import type { HyperSyncQuery } from "./hypersync";
-import { contracts, launchEvent, swapEvent } from "./events";
+import { contracts, launchEvent, swapEvent, transferEvent } from "./events";
 import { instantDeployments } from "./deployments";
 import { tokenMetadataEvent, tokenMetadataFactory } from "./token-metadata";
 
@@ -139,6 +139,35 @@ export function fakeSwap(options: {
       [amount0, amount1, 1n << 96n, 1n, 0, 2500],
     ),
     from: options.from,
+  };
+}
+/** One ERC-20 Transfer of a token; the transaction initiator defaults to
+ * `from`, as when a wallet moves its own tokens. */
+export function fakeTransfer(options: {
+  block: number;
+  logIndex: number;
+  token: string;
+  from: string;
+  to: string;
+  value: bigint;
+  transactionHash?: string;
+  sender?: string;
+}): FakeHyperSyncLog {
+  const topic = (a: string) =>
+    `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
+  return {
+    block: options.block,
+    logIndex: options.logIndex,
+    transactionHash:
+      options.transactionHash ?? word(options.block * 100 + options.logIndex),
+    address: options.token,
+    topics: [
+      toEventSelector(transferEvent),
+      topic(options.from),
+      topic(options.to),
+    ],
+    data: encodeAbiParameters([{ type: "uint256" }], [options.value]),
+    from: options.sender ?? options.from,
   };
 }
 export class FakeHyperSync {
