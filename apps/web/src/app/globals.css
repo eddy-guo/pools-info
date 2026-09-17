@@ -1055,8 +1055,7 @@ main {
 .search-results section {
   margin: 3px 0 14px;
 }
-.search-results h2,
-.search-hint {
+.search-results h2 {
   color: var(--faint);
   font-size: 12px;
   text-transform: uppercase;
@@ -1605,6 +1604,9 @@ main {
 .not-found h1 {
   font-size: 34px;
   margin-bottom: 14px;
+}
+.not-found h1 + .button {
+  margin-top: 10px;
 }
 .not-found p {
   color: var(--muted);
@@ -3042,12 +3044,6 @@ main {
   background: #f2a4ce13;
   border-color: #f2a4ce40;
   color: var(--accent);
-}
-.search-hint {
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: 0;
-  line-height: 1.5;
 }
 .search-help,
 .search-explainer {
@@ -4533,11 +4529,19 @@ main {
     display: none;
   }
   .connect-button {
-    min-width: 44px;
+    flex: 0 0 44px;
+    display: grid;
+    place-items: center;
+    width: 44px;
     height: 44px;
-    padding: 0 10px;
+    padding: 0;
   }
-  .connect-label {
+  .connect-button svg {
+    width: 16px;
+    height: 16px;
+  }
+  .connect-label,
+  .connect-soon {
     display: none;
   }
   .currency-pill {
@@ -4924,15 +4928,8 @@ main {
     transition: opacity 150ms ease-out;
   }
 }
-.wallet-page .live-eight-stats .stat {
-  height: 144px;
-}
 .wallet-page .live-eight-stats .stat > strong {
   height: 47px;
-  overflow: auto;
-}
-.wallet-page .live-eight-stats .stat > small {
-  height: 32px;
   overflow: auto;
 }
 .wallet-list-region .data-table,

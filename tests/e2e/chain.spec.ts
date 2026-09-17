@@ -374,9 +374,7 @@ test("command search handles fuzzy names, keyboard navigation, real resolver res
   await expect(dialog.getByRole("textbox")).toHaveValue("");
   await dialog.getByRole("textbox").fill("example.eth");
   await dialog.getByRole("textbox").fill("nonsensexyz");
-  await expect(
-    dialog.getByText("No matches in current coverage"),
-  ).toBeVisible();
+  await expect(dialog.getByText("No matches")).toBeVisible();
   await expect(dialog.getByRole("link", { name: /example.eth/ })).toHaveCount(
     0,
   );
@@ -850,9 +848,8 @@ test("catalog token search opens a verified pool link and loads its details on d
   await page.keyboard.press("Control+k");
   const dialog = page.getByRole("dialog", { name: "Search Pools Info" });
   await dialog.getByRole("textbox").fill(entry.token);
-  const result = dialog
-    .getByRole("link", { name: new RegExp(entry.token, "i") })
-    .filter({ hasText: "details load on demand" });
+  const result = dialog.locator(`a[href^="/pool/${entry.id}/"]`);
+  await expect(result).toContainText(new RegExp(entry.token, "i"));
   await result.click();
   await expect(page).toHaveURL(new RegExp(`/pool/${entry.id}/`));
   await expect(
@@ -1238,7 +1235,9 @@ test("command search extends instant local matches with saved-only tokens and wa
   ).toBeVisible();
   await expect.poll(() => pending).toBe(true);
   release();
-  await expect(dialog.getByText(/Saved search is unavailable/)).toBeVisible();
+  await expect(
+    dialog.getByText("Some results are unavailable. Try again shortly."),
+  ).toBeVisible();
   await expect(
     dialog.getByRole("link", { name: new RegExp(market.symbol) }).first(),
   ).toBeVisible();
@@ -1282,7 +1281,7 @@ test("ENS creator search reaches saved-only creators and opens their profile", a
   const link = dialog.locator(`a[href="/creators/${creator}/"]`);
   await expect(link).toBeVisible();
   await expect.poll(() => queries).toContain(`creator:${creator}`);
-  await expect(link).not.toContainText("creator status not verified");
+  await expect(link).not.toContainText("Look up launch sender");
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/creators/${creator}/`));
 });
@@ -1320,7 +1319,9 @@ test("ENS wallet fallback stays usable while saved search is slow or unavailable
   await expect.poll(() => pending).toBe(true);
   await expect(dialog.getByRole("link")).toHaveCount(1);
   release();
-  await expect(dialog.getByText(/Saved search is unavailable/)).toBeVisible();
+  await expect(
+    dialog.getByText("Some results are unavailable. Try again shortly."),
+  ).toBeVisible();
   await expect(link).toHaveAttribute("href", walletHref(address));
   await link.click();
   await expect(page).toHaveURL(new RegExp(`/wallet/${address}/`));
@@ -1431,7 +1432,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
     "title",
     `${top.realizedWei} wei`,
   );
-  await expect(stat).toContainText("+0.0114711 ETH");
+  await expect(stat).toContainText("+0.01147 ETH");
   await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
     page.locator("main tbody tr").filter({ visible: true }),

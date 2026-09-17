@@ -35,10 +35,9 @@ const historyTabs = ["transactions", "token-transfers"];
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
   const { params, set } = useQuery();
-  const { data, loading, stale, error, refresh } =
-    useProduct<AnalyticsWalletResponse>(
-      `wallets/${address.toLowerCase()}?window=${period}`,
-    );
+  const { data, loading, stale, error } = useProduct<AnalyticsWalletResponse>(
+    `wallets/${address.toLowerCase()}?window=${period}`,
+  );
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
     [opened, setOpened] = useState<string[]>([]),
     [showSignals, setShowSignals] = useState(false),
@@ -118,16 +117,6 @@ export function ProductWallet({ address }: { address: string }) {
       {showSignals && (
         <FollowActivity addresses={[address.toLowerCase()]} mode="wallet" />
       )}
-      <div className="live-controls">
-        <WindowTabs value={period} onChange={setWindow} />
-        <button
-          className="button secondary"
-          disabled={loading}
-          onClick={refresh}
-        >
-          Refresh saved profile
-        </button>
-      </div>
       {loading && data && (
         <span className="sr-only" role="status">
           Updating saved wallet activity
@@ -140,52 +129,41 @@ export function ProductWallet({ address }: { address: string }) {
       )}
       <>
         <div className="stats-grid live-eight-stats">
-          <Stat
-            pending={loading && !data}
-            label="Realized PnL"
-            note="Before gas"
-          >
-            <Eth pending={!data} wei={w?.realizedWei} signed />
+          <Stat pending={loading && !data} label="Realized PnL">
+            <Eth pending={!data} wei={w?.realizedWei} signed digits={5} />
           </Stat>
-          <Stat pending={loading && !data} label="Unrealized PnL">
-            <Eth pending={!data} wei={w?.unrealizedWei} signed />
+          <Stat pending={loading && !data} label="Unrealized">
+            <Eth pending={!data} wei={w?.unrealizedWei} signed digits={5} />
           </Stat>
-          <Stat
-            pending={loading && !data}
-            label="Realized ROI"
-            note="Profit / disposed cost"
-          >
+          <Stat pending={loading && !data} label="ROI">
             {w?.roi == null ? (
               <Unavailable />
             ) : (
               <Change value={w.roi} digits={1} />
             )}
           </Stat>
-          <Stat
-            pending={loading && !data}
-            label="Win rate"
-            note="Closed inventory cycles"
-          >
+          <Stat pending={loading && !data} label="Win rate">
             {pct(w?.winRate)}
           </Stat>
-          <Stat pending={loading && !data} label="Ranking trades">
+          <Stat pending={loading && !data} label="Trades">
             {w?.rankingTradeCount ?? w?.supportedTradeCount ?? <Unavailable />}
           </Stat>
-          <Stat pending={loading && !data} label="Observed volume">
-            <Eth pending={!data} wei={w?.volumeWei} />
+          <Stat pending={loading && !data} label="Volume">
+            <Eth pending={!data} wei={w?.volumeWei} digits={5} />
           </Stat>
-          <Stat pending={loading && !data} label="Avg closed hold">
+          <Stat pending={loading && !data} label="Avg hold">
             {w?.avgHold == null ? <Unavailable /> : `${Math.round(w.avgHold)}s`}
           </Stat>
-          <Stat pending={loading && !data} label="Best realized sale">
-            <Eth pending={!data} wei={w?.bestWei} signed />
+          <Stat pending={loading && !data} label="Best trade">
+            <Eth pending={!data} wei={w?.bestWei} signed digits={5} />
           </Stat>
         </div>
         <div className="workspace-grid">
           <div>
             <section className="panel">
               <div className="panel-heading">
-                <h2>Cumulative realized PnL · {period}</h2>
+                <h2>Cumulative realized PnL</h2>
+                <WindowTabs value={period} onChange={setWindow} />
               </div>
               <div className="wallet-chart-region" data-pending={!data}>
                 <Chart
@@ -523,9 +501,6 @@ export function ProductWallet({ address }: { address: string }) {
             ×
           </button>
         </div>
-        <p className="panel-footnote">
-          1200 × 630 · same saved wallet metrics and selected window.
-        </p>
         {card && !cardError ? ( // eslint-disable-next-line @next/next/no-img-element
           <img
             src={cardUrl}
@@ -534,7 +509,7 @@ export function ProductWallet({ address }: { address: string }) {
               width: "100%",
               maxWidth: 800,
               display: "block",
-              margin: "0 auto",
+              margin: "20px auto 0",
             }}
             onError={() => setCardError(true)}
           />

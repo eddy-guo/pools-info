@@ -61,9 +61,7 @@ export function createSearchProvider(
           },
         );
         if (!response.ok) throw Error("Saved search unavailable");
-        const remote = (await response.json()) as SearchResponse & {
-          delivery?: { source: string; notice: string | null };
-        };
+        const remote = (await response.json()) as SearchResponse;
         if (
           !Array.isArray(remote.entries) ||
           remote.entries.length > 32 ||
@@ -112,21 +110,15 @@ export function createSearchProvider(
                 ...e,
                 title: e.group === "Wallets" ? base.resolvedEns!.name : e.title,
                 href: e.group === "Wallets" ? walletHref(e.address) : e.href,
-                context: e.context.startsWith("Ethereum ENS address · ")
-                  ? e.context
-                  : `Ethereum ENS address · ${e.context}`,
               }))
             : entries,
           total: entries.length,
           coverage: remote.coverage,
-          indexNotice:
-            remote.delivery?.notice ?? "Saved index and preloaded matches",
         };
       } catch {
         return {
           ...base,
-          indexNotice:
-            "Saved search is unavailable. Preloaded matches remain available.",
+          indexNotice: "Some results are unavailable. Try again shortly.",
         };
       }
     },
@@ -165,7 +157,6 @@ export function createSearchProvider(
           ...e,
           title: e.group === "Wallets" ? data.name! : e.title,
           href: e.group === "Wallets" ? walletHref(e.address) : e.href,
-          context: `Ethereum ENS address · ${e.context}`,
         }));
       return {
         ...resolved,

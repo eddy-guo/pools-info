@@ -29,7 +29,7 @@ const cells: Cell[] = [
       mobile: ".mobile-pools [data-row='resolved']",
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/$/,
-    height: { desktop: 62, mobile: 192 },
+    height: { desktop: 62, mobile: 174 },
   },
   {
     name: "leaderboard trader",

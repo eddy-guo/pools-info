@@ -20,13 +20,29 @@ export function Eth({
   wei,
   signed = false,
   pending = false,
+  digits,
 }: {
   wei: string | null | undefined;
   signed?: boolean;
   pending?: boolean;
+  /**
+   * A slot that must hold the value on one line, such as a stat card, caps
+   * both the significant and the fraction digits; tables keep six significant.
+   */
+  digits?: number;
 }) {
   const known = wei !== null && wei !== undefined;
   const n = known ? Number(wei) / 1e18 : null;
+  const format = new Intl.NumberFormat(
+    "en-US",
+    digits === undefined
+      ? { maximumSignificantDigits: 6 }
+      : {
+          maximumSignificantDigits: digits,
+          maximumFractionDigits: digits,
+          roundingPriority: "lessPrecision",
+        },
+  );
   return (
     <span
       className={`number ${!known ? "muted unavailable" : signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
@@ -43,10 +59,7 @@ export function Eth({
       ) : (
         <>
           {signed && n > 0 ? "+" : ""}
-          {new Intl.NumberFormat("en-US", {
-            maximumSignificantDigits: 6,
-          }).format(n)}{" "}
-          ETH
+          {format.format(n)} ETH
         </>
       )}
     </span>
