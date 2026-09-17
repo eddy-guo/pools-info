@@ -2,10 +2,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Wallet } from "lucide-react";
+import { formatMoney } from "@pools/core";
 import { Search } from "./search";
+import { UnitToggle } from "./unit-toggle";
+import { useEthPrice } from "./eth-price-provider";
+
+const oneEthWei = (10n ** 18n).toString();
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const usdPerEth = useEthPrice();
   return (
     <div className="site-shell">
       <a className="skip-link" href="#main">
@@ -78,12 +84,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </nav>
           <div className="header-actions">
             <Search />
-            <span
-              className="currency-pill"
-              title="All market amounts are denominated in ETH"
-            >
-              ETH
-            </span>
+            <UnitToggle />
             {/* Holds the top-right slot where the wallet profile entry will live. */}
             <button
               type="button"
@@ -100,6 +101,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="network-subnav">
           <span className="network-context">v4 · Robinhood Chain</span>
+          <span
+            className="subnav-eth-price"
+            style={{ visibility: usdPerEth === null ? "hidden" : "visible" }}
+          >
+            {usdPerEth !== null &&
+              `ETH ${formatMoney(oneEthWei, "USD", usdPerEth)}`}
+          </span>
         </div>
       </header>
       <main id="main">{children}</main>

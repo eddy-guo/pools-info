@@ -1,4 +1,5 @@
 import { validateCreatorsResponse } from "./creators-response";
+import { validateEthPriceResponse } from "./eth-price-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
@@ -18,6 +19,7 @@ import {
   type AnalyticsModel,
   type CreatorRow,
   type CreatorsResponse,
+  type EthPriceResponse,
   type LiveWindow,
   type SearchGroup,
   type WalletHistoryKind,
@@ -319,6 +321,51 @@ export async function readWalletHistory(
     validateWalletHistoryResponse(body, wallet, kind);
   } catch {
     throw new WalletHistoryUnavailableError("upstream_unavailable", 30);
+  }
+  return body;
+}
+/** The read API's own 503 contract for the Coinbase-backed price, carried to
+ * the browser unchanged: no cached or fabricated rate stands in for it. */
+export class EthPriceUnavailableError extends Error {
+  constructor(readonly retryAfter: number) {
+    super("ETH/USD price is unavailable.");
+  }
+}
+export async function readEthPrice(
+  path: string[],
+  params: URLSearchParams,
+): Promise<EthPriceResponse> {
+  productRequest(path, params);
+  let origin: URL | null = null;
+  try {
+    origin = indexerOrigin();
+  } catch {
+    /* A misconfigured origin is as unusable as an absent one. */
+  }
+  if (!origin) throw new EthPriceUnavailableError(60);
+  let response: Response;
+  try {
+    response = await fetch(new URL("/v1/prices/eth-usd", origin), {
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+      redirect: "error",
+    });
+  } catch {
+    throw new EthPriceUnavailableError(30);
+  }
+  if (!response.ok) {
+    const seconds = Number(response.headers.get("retry-after"));
+    throw new EthPriceUnavailableError(
+      Number.isSafeInteger(seconds) && seconds > 0
+        ? Math.min(seconds, 86400)
+        : 30,
+    );
+  }
+  const body = await response.json().catch(() => null);
+  try {
+    validateEthPriceResponse(body);
+  } catch {
+    throw new EthPriceUnavailableError(30);
   }
   return body;
 }
