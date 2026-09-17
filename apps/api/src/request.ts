@@ -33,6 +33,7 @@ export type Route =
   | "pools"
   | "pool"
   | "pool-image"
+  | "eth-price"
   | "trades"
   | "trade-share"
   | "wallet"
@@ -107,6 +108,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
   else if (url.pathname === "/v1/creators") route = "creators";
   else if (url.pathname === "/v1/search") route = "search";
+  else if (url.pathname === "/v1/prices/eth-usd") route = "eth-price";
   else if (sale) {
     route = "trade-share";
     poolId = sale[1].toLowerCase();

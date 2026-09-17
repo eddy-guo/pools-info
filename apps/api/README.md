@@ -448,3 +448,32 @@ whenever the explorer or the budget cannot answer, otherwise the route returns
 `key_rejected` (401, 402, or 403 from the explorer). Ordinary request limits
 and coalescing apply, the key never appears in any response or log line, and
 the route makes no chain RPC call.
+
+## ETH/USD spot price
+
+`GET /v1/prices/eth-usd` serves one number for the frontend's unit toggle and
+status strip: Coinbase's public, keyless spot price
+(`https://api.coinbase.com/v2/prices/ETH-USD/spot`, `data.amount` parsed as a
+decimal string). No API key, no chain call, no accounting join; this is market
+context, not evidence. Any query string is rejected with 400
+`invalid_parameter`.
+
+The response is the shared `EthPriceResponse` type in `@pools/core`:
+`usdPerEth` (number), `asOf` (ISO 8601 UTC of the Coinbase fetch, not of the
+request), and `source:"coinbase"`. `200` responses carry
+`Cache-Control: public, max-age=60, stale-while-revalidate=540`, so browsers
+and the web proxy share the same 60 s fresh / 10-minute stale window as the
+server's own cache below.
+
+The service (`apps/api/src/eth-price.ts`) holds one in-process cache entry.
+A request under 60 s old is served from cache with no network call. Past
+60 s and under 10 minutes it still serves that cached value immediately and,
+at most once per 60 s, kicks off a single background refresh (concurrent
+stale reads share the one in-flight fetch rather than starting their own).
+Only when nothing has ever been cached, or the cached value has passed 10
+minutes, does a request wait on the network itself, bounded by a 5 s
+deadline, and only then can it fail: `503 {error:"price_unavailable"}` with
+`Retry-After: 30`, itself rate-limited so a sustained outage draws at most one
+upstream attempt per minute. A malformed, non-finite, zero, or negative amount
+is treated the same as an upstream failure. Ordinary request limits apply;
+there is no separate budget for this route.
