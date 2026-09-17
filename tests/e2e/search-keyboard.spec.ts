@@ -20,7 +20,7 @@ test("search stays idle while closed and ArrowDown shows an accent focus ring", 
   await page.keyboard.press("ArrowDown");
   await expect(first).toBeFocused();
   await expect(first).toHaveCSS("outline-style", "solid");
-  await expect(first).toHaveCSS("outline-color", "rgb(252, 114, 255)");
+  await expect(first).toHaveCSS("outline-color", "rgb(187, 244, 81)");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(busy).toHaveCount(0);

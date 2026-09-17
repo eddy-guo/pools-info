@@ -1,5 +1,9 @@
 # Design Delta — design system vs. live UI
 
+## Accent moved to lime, 17 September 2026
+
+The captain approved moving the accent from pink to lime ("convert now if you want, nbd"). No lime export arrived and neither design file names one: the export's accent swatches are teal `#4DE1C1`, green `#3BF07A` (the card's own "Green" preset), pink `#FC72FF` and amber `#FFB84D`. The accent is Tailwind v4's `lime-300` (`#bbf451`), with `lime-950` (`#192e03`) as `accentDeep`, set once in `packages/core/src/visual-theme.ts`; the share card's default preset is now `lime` and reads the same token. The pink notes below are the history of the first theme pass.
+
 ## Verified source and isolated first step, 15 September 2026
 
 The user approved the existing export for now: "its fine just use the pink one for now, we'll update it later". Lime remains a future design update.

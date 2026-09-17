@@ -6,14 +6,14 @@ import { visualTheme, windows, type LiveWindow } from "@pools/core";
  * request: every toggle becomes a query parameter, never a client-side render.
  */
 export const cardPresets = {
-  pink: { label: "Pink", color: visualTheme.accent },
+  lime: { label: "Lime", color: visualTheme.accent },
   mint: { label: "Mint", color: "#4de1c1" },
   green: { label: "Green", color: "#3bf07a" },
   amber: { label: "Amber", color: "#ffb84d" },
   mono: { label: "Mono", color: visualTheme.text },
 } as const;
 export type CardPreset = keyof typeof cardPresets;
-export const defaultCardPreset: CardPreset = "pink";
+export const defaultCardPreset: CardPreset = "lime";
 
 /**
  * `liquid` is the card shipped first (PR 56) and stays the default so every
