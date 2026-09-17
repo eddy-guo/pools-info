@@ -69,10 +69,22 @@ body {
   color: var(--text);
   font-family: var(--font-geist), "Helvetica Neue", Helvetica, sans-serif;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
-  line-height: 1.5;
+  line-height: 1.25;
   -webkit-font-smoothing: antialiased;
+}
+/* The export's weight scale: 400 by default, 600 for what carries a row (the
+   signed change, PnL, the H1, an active segment, the primary button), 700
+   only for monogram initials, never 900. */
+strong,
+b {
+  font-weight: 600;
+}
+/* Prose keeps the reading line height; UI text sits on the body's 1.25. */
+p,
+li {
+  line-height: 1.5;
 }
 button,
 input,
@@ -838,28 +850,31 @@ main {
   color: var(--muted);
   margin-top: 2px;
 }
+/* The export's identity tile where no image exists: a two-character monogram
+   in a hue drawn from the address, 700 by design, never the accent. */
 .avatar {
   width: 35px;
   height: 35px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--token) 10%, #18161c);
-  color: var(--token);
-  padding: 8px;
+  background: var(--avatar-bg);
+  color: var(--avatar-fg);
   border-radius: 8px;
   flex-shrink: 0;
-  border: 1px solid color-mix(in srgb, var(--token) 20%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
 }
-.avatar svg {
-  width: 100%;
-  height: 100%;
+.avatar::before {
+  content: attr(data-initials);
 }
 .avatar.small {
   width: 26px;
   height: 26px;
-  padding: 6px;
   border-radius: 6px;
+  font-size: 11px;
 }
 .rank-medal {
   margin-left: auto;
@@ -2402,7 +2417,7 @@ main {
     font-size: 12px;
   }
   .chain-pool-row small {
-    font-size: 10px;
+    font-size: 11.5px;
   }
   .chain-coverage {
     padding: 16px;
@@ -2638,7 +2653,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.launch-rail a span {
+.launch-rail a span:not(.avatar) {
   font-size: 11px;
   color: var(--muted);
 }
@@ -2688,7 +2703,10 @@ main {
   color: var(--muted);
   flex-shrink: 0;
 }
+/* The value takes the row's free space so its box holds still while a
+   skeleton resolves into text of another width. */
 .live-facts dd {
+  flex: 1 1 0;
   margin: 0;
   text-align: right;
   min-width: 0;
@@ -2819,7 +2837,7 @@ main {
   }
   .candle-axis {
     width: 82px;
-    font-size: 10px;
+    font-size: 10.5px;
     padding-bottom: 30px;
   }
   .live-lookup {
@@ -3143,7 +3161,7 @@ main {
 }
 .chart-credit {
   padding: 0 18px 14px;
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--faint);
 }
 .chart-credit a {
@@ -3181,8 +3199,8 @@ main {
 .stream-event > div + div {
   margin-top: 7px;
   justify-content: space-between;
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 11.5px;
+  color: var(--color-text-3);
 }
 .stream-event strong {
   overflow-wrap: anywhere;
@@ -3372,7 +3390,7 @@ main {
   font-size: 12.5px;
 }
 .eyebrow {
-  font-size: 10px;
+  font-size: 11.5px;
   letter-spacing: 0.09em;
 }
 .page-heading .eyebrow {
@@ -3386,11 +3404,11 @@ main {
   gap: 8px;
 }
 .button {
-  min-height: var(--ctl-min);
+  min-height: max(38px, var(--ctl-min));
   border-radius: 10px;
-  padding: 8px 14px;
+  padding: 0 14px;
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: 13px;
   gap: 7px;
   background: var(--ac);
   color: #06120d;
@@ -3403,6 +3421,7 @@ main {
   color: var(--text);
   background: #101014;
   border: 1px solid var(--color-line-strong);
+  font-weight: 500;
 }
 .button.secondary:hover {
   border-color: #33333d;
@@ -3426,14 +3445,19 @@ main {
   font-size: 12px;
 }
 .price small {
-  color: var(--muted);
-  font-size: 10px;
+  color: var(--color-text-3);
+  font-size: 11px;
 }
 .positive {
   color: var(--green);
 }
 .negative {
   color: var(--red);
+}
+.change,
+.positive,
+.negative {
+  font-weight: 600;
 }
 .muted {
   color: var(--muted);
@@ -3457,7 +3481,8 @@ main {
 }
 .stat > span {
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 400;
+  color: var(--color-muted);
 }
 .stat > strong {
   display: block;
@@ -3473,13 +3498,15 @@ main {
 }
 .stat > small {
   display: block;
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.45;
   color: var(--muted);
 }
+/* An unknown datum is an empty cell, as the export leaves one; a stat card's
+   value slot alone carries a quiet mark so the label does not float. */
 .unavailable {
   font-size: inherit;
-  color: #71717c;
+  color: var(--color-faint);
   text-decoration: none;
   font-weight: 400;
 }
@@ -3563,7 +3590,7 @@ main {
 .launch-card-identity small {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .launch-card-identity time {
@@ -3582,7 +3609,7 @@ main {
   align-items: baseline;
   gap: 8px;
 }
-.launch-rail .launch-card span {
+.launch-rail .launch-card span:not(.avatar) {
   font-size: 11px;
 }
 /* Text starts at its track's left edge in every variant, so replacing a
@@ -3597,7 +3624,6 @@ main {
 }
 .launch-card-values .change {
   font-size: 11px;
-  font-weight: 500;
 }
 /* A card with no observed price carries its sender. */
 .launch-card-sender {
@@ -3709,27 +3735,32 @@ main {
   padding: 2px;
   gap: 2px;
 }
+/* One segmented control: a 32px frame of 2px padding around 26px buttons. */
 .segmented button {
-  min-height: var(--ctl-min);
+  min-height: 26px;
   padding: 5px 9px;
   border-radius: 7px;
-  font-weight: 500;
-  font-size: 11px;
+  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-faint);
 }
 .segmented button.selected,
 .segmented button[aria-pressed="true"] {
-  background: #25252c;
+  background: var(--color-surface-6);
   color: var(--text);
 }
 .data-table {
   min-width: 880px;
   font-size: 12px;
 }
+/* The export's head row is 34px: 11.5px caps at 400 inside the 9px padding. */
 .data-table th {
   padding: 9px 13px;
   background: var(--color-panel-inset);
   border-color: var(--color-surface-4);
-  font-size: 10px;
+  font-size: 11.5px;
+  line-height: 15.5px;
   letter-spacing: 0.04em;
   font-weight: 400;
   color: var(--color-text-3);
@@ -3745,7 +3776,7 @@ main {
   background: var(--color-panel-hover);
 }
 .data-table td .mono {
-  font-size: 11px;
+  font-size: 11.5px;
 }
 .data-table th button {
   display: inline-flex;
@@ -3801,7 +3832,7 @@ main {
 }
 .cell-sub {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-3);
 }
 .creator-link {
@@ -3821,7 +3852,7 @@ main {
   height: 26px;
 }
 .watch {
-  color: #666670;
+  color: var(--color-faint);
 }
 .watch.active {
   color: var(--ac);
@@ -3953,15 +3984,16 @@ main {
 .activity-item,
 .stream-event {
   padding: 11px 14px;
-  font-size: 11px;
+  font-size: 11.5px;
   border-color: #131317;
 }
-.activity-item strong {
-  font-size: 11px;
-  font-weight: 500;
+.activity-item strong,
+.stream-event strong {
+  font-size: 12.5px;
+  font-weight: 400;
 }
 .activity-item small {
-  font-size: 10px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 .scope-note {
@@ -4020,12 +4052,12 @@ main {
 .rail-leaders small {
   display: block;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11.5px;
   margin-top: 3px;
 }
 .rail-rank {
-  color: #777781;
-  font-size: 11px;
+  color: var(--color-text-3);
+  font-size: 11.5px;
 }
 .subtle-badge,
 .badge {
@@ -4218,7 +4250,7 @@ main {
   background: var(--red);
 }
 .record-cell small {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
 }
 .podium-trades {
@@ -4226,7 +4258,7 @@ main {
   bottom: 16px;
   right: 18px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
 }
 .live-filters {
   align-items: center;
@@ -4248,7 +4280,7 @@ main {
   min-height: var(--ctl-min);
   border: 1px solid var(--color-line-strong);
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-2);
 }
 .live-filters label:has(input:checked) {
@@ -4261,10 +4293,10 @@ main {
   height: 12px;
 }
 .live-filters .disabled-filter {
-  color: #71717c;
+  color: var(--color-faint);
 }
 .disabled-filter small {
-  font-size: 9px;
+  font-size: 11px;
 }
 .live-filters .minimum-filter {
   margin-left: auto;
@@ -4341,11 +4373,15 @@ main {
 .address-chip-link:hover {
   color: var(--text);
 }
+/* Too small for letters: the export's inline tile, tinted with a hue border. */
 .address-chip .avatar {
   width: 16px;
   height: 16px;
-  padding: 2px;
   border-radius: 4px;
+  border: 1px solid var(--avatar-fg);
+}
+.address-chip .avatar::before {
+  content: none;
 }
 .address-chip-actions {
   position: relative;
@@ -4537,7 +4573,7 @@ main {
   .network-subnav {
     padding: 5px 14px;
     min-height: 44px;
-    font-size: 10px;
+    font-size: 11px;
   }
   .page {
     padding: 22px 14px 40px;
@@ -4573,7 +4609,7 @@ main {
     font-size: 21px;
   }
   .stat > small {
-    font-size: 10px;
+    font-size: 11.5px;
   }
   .launch-rail .launch-card {
     flex: 0 0 218px;
@@ -4618,7 +4654,7 @@ main {
   .segmented button {
     min-height: 40px;
     padding: 6px 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .desktop-pools,
   .desktop-traders {
@@ -4655,7 +4691,7 @@ main {
   }
   .mobile-pool-stats > span {
     display: block;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--muted);
   }
   .mobile-pool-stats strong {
@@ -4694,16 +4730,16 @@ main {
     flex-direction: column;
     justify-content: center;
     gap: 2px;
-    font-size: 10px;
+    font-size: 11.5px;
     color: var(--muted);
   }
   .mobile-pool-footer .mono {
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--color-text-2);
   }
   .corpus-footer {
     padding: 11px 14px;
-    font-size: 10px;
+    font-size: 11px;
   }
   .corpus-footer a {
     min-height: 44px;
@@ -4742,7 +4778,7 @@ main {
   }
   .live-filters label {
     min-height: 44px;
-    font-size: 10px;
+    font-size: 12px;
   }
   .live-filters .filter-caption {
     width: 100%;
@@ -4756,7 +4792,7 @@ main {
   }
   .ranking-scope {
     align-items: flex-start;
-    font-size: 10px;
+    font-size: 11px;
     padding: 11px 12px;
   }
   .mobile-trader-heading > svg {
@@ -4792,7 +4828,7 @@ main {
   .mobile-trader-key > span,
   .mobile-trader-stats > span {
     display: block;
-    font-size: 10px;
+    font-size: 12px;
     color: var(--muted);
   }
   .mobile-trader-key strong,
@@ -4980,6 +5016,7 @@ main {
 .leaderboard-panel .data-table td:nth-child(n + 6) .positive,
 .leaderboard-panel .data-table td:nth-child(n + 6) .negative {
   color: inherit;
+  font-weight: inherit;
 }
 /* A view that resolves to no rows keeps its reserved table geometry, so nothing
    below the panel moves; the empty state overlays the top of that area, under
@@ -5006,11 +5043,6 @@ main {
 }
 .explore-page .pool-table {
   table-layout: fixed;
-}
-/* The export's header row is 34px: 11.5px caps inside the 9px th padding. */
-.explore-page .pool-table th {
-  font-size: 11.5px;
-  line-height: 15.5px;
 }
 .explore-page .pool-table th button {
   min-height: 0;
@@ -5142,7 +5174,7 @@ main {
   }
 }
 .nullable-pool-page .page-heading {
-  height: 134px;
+  height: 107px;
 }
 .nullable-pool-page .page-heading > :first-child {
   flex: 1;
@@ -5182,7 +5214,7 @@ main {
 }
 .pool-launch-meta {
   display: block !important;
-  height: 36px;
+  height: 30px;
   overflow: auto;
 }
 /* The region holds a chart's height while one can still arrive. A page opened
@@ -5202,7 +5234,7 @@ main {
   padding: 0 24px;
 }
 .nullable-pool-page .live-six-stats .stat {
-  height: 106px;
+  height: 103px;
 }
 .nullable-pool-page .live-six-stats .stat > strong {
   height: 47px;
@@ -5248,8 +5280,15 @@ main {
   height: calc(5 * 62px);
   overflow: auto;
 }
+/* Rows, not links: the trader in the text colour, the PnL alone coloured. */
 .explore-leader-rows > .leader-link {
   height: 62px;
+  color: var(--text);
+  font-size: 13px;
+}
+.explore-leader-rows > .leader-link:hover {
+  color: var(--text);
+  background: var(--panel-hover);
 }
 .wallet-chart-region {
   height: 380px;
@@ -5430,9 +5469,11 @@ a.wallet-top-pool:hover {
   display: grid;
   place-content: center;
 }
+/* The row holds the height its 38px button gives it, so the status text and
+   the panel's edge stay put when the last batch takes the button away. */
 .creators-page .creators-progress {
   position: relative;
-  min-height: 62px;
+  min-height: 69px;
   gap: 12px;
 }
 .creators-page .creators-progress-bar {
@@ -5449,10 +5490,6 @@ a.wallet-top-pool:hover {
   }
 }
 
-.panel {
-  border-color: var(--color-line-strong);
-}
-.stat > span,
 .cell-sub,
 .panel-footnote {
   color: var(--color-text-3);
@@ -5534,26 +5571,27 @@ a.wallet-top-pool:hover {
   .explore-page .table-region > .empty-state {
     inset: 0 0 auto;
   }
-  /* Identity row, then the two stat rows: 15 + 44 + 14 + 86 + 15. */
+  /* Identity row, then the two stat rows of 12px labels and values on the
+     body's 1.25 line: 15 + 44 + 14 + 80 + 15. */
   .explore-page .mobile-pools {
-    min-height: calc(25 * 174px);
+    min-height: calc(25 * 168px);
   }
   .explore-page .mobile-pool {
-    height: 174px;
+    height: 168px;
     overflow: auto;
   }
   /* The stacked heading: a two-row title (name and symbol, then the launch
      mode badge), the short address at the 44px control height and the
      two-line launch meta, then the two-column action grid. */
   .nullable-pool-page .page-heading {
-    height: 265px;
+    height: 259px;
   }
   /* The price and its change box stack on a phone. */
   .nullable-pool-page .live-price-heading {
-    height: 97px;
+    height: 87px;
   }
   .nullable-pool-page .live-six-stats .stat {
-    height: 104px;
+    height: 101px;
   }
   .pool-chart-region {
     height: 720px;

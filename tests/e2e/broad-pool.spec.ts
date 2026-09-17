@@ -255,16 +255,14 @@ test("discovered-only pool shows no invented zero totals", async ({ page }) => {
   );
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ has: page.getByText("Observed trades", { exact: true }) }),
-  ).toContainText("N/A");
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ has: page.getByText("Observed 24h volume", { exact: true }) }),
-  ).toContainText("N/A");
+  for (const label of ["Observed trades", "Observed 24h volume"])
+    await expect(
+      page
+        .locator(".stat")
+        .filter({ has: page.getByText(label, { exact: true }) })
+        .locator("strong .unavailable"),
+      `${label} carries the quiet mark, never an invented zero`,
+    ).toHaveText("\u2013");
 });
 test("a pool whose saved launch arrives as decimal strings still renders its identity", async ({
   page,

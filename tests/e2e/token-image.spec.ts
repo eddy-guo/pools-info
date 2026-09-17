@@ -75,7 +75,11 @@ test("token images load lazily through the local endpoint and retain generated f
   await page.reload();
   await expect(icons.first()).toHaveAttribute("data-image-state", "failed");
   await expect(icons.first().locator("img")).toHaveCount(0);
-  await expect(icons.first().locator(".avatar svg")).toBeVisible();
+  await expect(icons.first().locator(".avatar")).toBeVisible();
+  await expect(icons.first().locator(".avatar")).toHaveAttribute(
+    "data-initials",
+    /^[0-9A-F]{2}$/,
+  );
   expect(externalImages).toEqual([]);
 });
 
@@ -136,7 +140,7 @@ test("token images recover from temporary capacity errors with bounded retries",
   const icons = page.locator("[data-pool-image]").filter({ visible: true });
   const icon = icons.first();
   await expect(icon).toHaveAttribute("data-image-state", "failed");
-  await expect(icon.locator(".avatar svg")).toBeVisible();
+  await expect(icon.locator(".avatar")).toBeVisible();
   const id = await icon.getAttribute("data-pool-image");
   const imageUrl = `${baseURL}/api/token-image/${id}/`;
   await page.clock.fastForward(5000);
@@ -169,7 +173,7 @@ test("token images recover from temporary capacity errors with bounded retries",
   await expect(icon).toHaveAttribute("data-image-state", "failed");
   await page.clock.fastForward(60000);
   expect(attempts.get(imageUrl)).toBe(3);
-  await expect(icon.locator(".avatar svg")).toBeVisible();
+  await expect(icon.locator(".avatar")).toBeVisible();
   await expect(icon.locator("img")).toHaveCount(0);
 
   attempts.clear();

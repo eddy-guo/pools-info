@@ -37,6 +37,20 @@ export const visualTheme = {
   downVolume: `${colors.down}55`,
 } as const;
 
+/**
+ * The identity tint where no image exists: a hue drawn from the address, on
+ * the design's fixed saturation and lightness steps, so every wallet and token
+ * carries its own colour rather than the accent. Shared so the browser tile
+ * and any server-rendered card agree.
+ */
+export function identityTint(address: string) {
+  const hue = (parseInt(address.slice(2, 8), 16) || 0) % 360;
+  return {
+    background: `hsl(${hue} 42% 13%)`,
+    foreground: `hsl(${hue} 78% 72%)`,
+  };
+}
+
 /** Matches Tailwind's named color utilities while keeping the source JS-friendly. */
 export function renderVisualThemeCss() {
   const declarations = Object.entries(visualTheme).map(([name, color]) => {
