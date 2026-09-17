@@ -17,11 +17,15 @@ function surface(testInfo: { project: { name: string } }) {
         viewport: viewports.desktop,
         rows: ".explore-page .desktop-pools",
         maxTop: 1000,
+        /* The reserved first page: 25 rows at 62px under the 34px header. */
+        reservedHeight: 25 * 62 + 34,
       } as const)
     : ({
         viewport: viewports.mobile,
         rows: ".explore-page .mobile-pools",
         maxTop: 1500,
+        /* The reserved first page: 25 cards at 168px. */
+        reservedHeight: 25 * 168,
       } as const);
 }
 
@@ -51,13 +55,9 @@ const bufferedShiftSum = (page: Page) =>
 test("the screener's empty state reads inside the panel, under the toolbar", async ({
   page,
 }, testInfo) => {
-  const { viewport, rows, maxTop } = surface(testInfo);
+  const { viewport, rows, maxTop, reservedHeight } = surface(testInfo);
   await page.setViewportSize(viewport);
   await trackShifts(page);
-
-  await page.goto("/");
-  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
-  const populated = await page.locator(rows).boundingBox();
 
   await page.goto("/?q=zzqqxxvv");
   const empty = page.locator(".table-region .empty-state");
@@ -88,8 +88,8 @@ test("the screener's empty state reads inside the panel, under the toolbar", asy
   ).toBeLessThan(reserved.height / 2);
   expect(
     reserved.height,
-    "the reserved table area keeps its height rather than collapsing",
-  ).toBe(populated!.height);
+    "the reserved table area keeps its first page's height rather than collapsing",
+  ).toBe(reservedHeight);
   expect(
     await bufferedShiftSum(page),
     "every non-input layout shift since navigation",

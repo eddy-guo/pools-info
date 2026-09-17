@@ -1,6 +1,17 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type RefObject,
+} from "react";
+import {
+  observeWindowOffset,
+  useWindowVirtualizer,
+} from "@tanstack/react-virtual";
 import { RefreshCw, Search } from "lucide-react";
 import { TradeStream } from "./trade-stream";
 import {
@@ -13,6 +24,7 @@ import {
   type AnalyticsPoolRow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import { PAGE_SIZE, useExplorePages } from "@/lib/use-explore-pages";
 import { rememberPoolRow } from "@/lib/pool-row-memory";
 import {
   MAX_WATCHLIST_QUERY_POOLS,
@@ -30,7 +42,6 @@ import {
 } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { ProductPagination } from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -45,6 +56,176 @@ const LAUNCH_VIEW = "new";
  */
 const launchOnly = (pool: AnalyticsPoolRow) =>
   !pool.processed && !pool.marketCoverage;
+/** The rows the page reserves before any data: the screener's first page. */
+const RESERVED_ROWS = PAGE_SIZE;
+const ROW_HEIGHT = 62;
+const CARD_HEIGHT = 168;
+/** Rows rendered beyond each edge of the viewport. */
+const OVERSCAN = 10;
+/** Rows past the viewport whose page is read before they scroll into it. */
+const PREFETCH_ROWS = 10;
+/** The viewport the server assumes: tall enough to paint every reserved row. */
+const SERVER_VIEWPORT = 1000;
+const SCROLL_SNAPSHOT_KEY = "poolsinfo.explore.scroll.v1";
+/** The list the container query shows, and where its rows begin in the document. */
+function shownList(table: Element | null, cards: Element | null) {
+  for (const [node, rowHeight] of [
+    [table, ROW_HEIGHT],
+    [cards, CARD_HEIGHT],
+  ] as const) {
+    const rect = node?.getBoundingClientRect();
+    if (rect && rect.width > 0)
+      return { top: rect.top + window.scrollY, rowHeight };
+  }
+  return null;
+}
+/** Brings the panel's head back under the site header when it has scrolled away. */
+function headIntoView(panel: HTMLElement | null) {
+  const padding =
+    parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) ||
+    0;
+  if (panel && panel.getBoundingClientRect().top < padding)
+    panel.scrollIntoView({ block: "start" });
+}
+/** The rows in the viewport of a shown list, with the rows read ahead on either side. */
+function viewportSpan({ top, rowHeight }: { top: number; rowHeight: number }) {
+  const scrolled = window.scrollY - top;
+  return {
+    start: Math.floor(scrolled / rowHeight) - PREFETCH_ROWS,
+    end:
+      Math.floor((scrolled + window.innerHeight) / rowHeight) + PREFETCH_ROWS,
+  };
+}
+/**
+ * One layout's rows, windowed against the document scroll: only the rows near
+ * the viewport render, between two spacers that hold the list's full extent.
+ * The offset it follows is measured from the list's own top, so nothing above
+ * the list in the document enters the arithmetic, and a layout the container
+ * query hides never hears the scroll: it keeps the reserved first page it
+ * painted for the server. The server and the hydrating client both take the
+ * list as unscrolled, which paints every reserved row.
+ */
+function useRowWindow(
+  ref: RefObject<Element | null>,
+  count: number,
+  rowHeight: number,
+) {
+  const virtualizer = useWindowVirtualizer({
+    count,
+    estimateSize: () => rowHeight,
+    overscan: OVERSCAN,
+    initialRect: { width: 0, height: SERVER_VIEWPORT },
+    initialOffset: 0,
+    observeElementOffset: (instance, report) => {
+      const follow = (isScrolling: boolean) => {
+        const rect = ref.current?.getBoundingClientRect();
+        if (rect && rect.width > 0) report(-rect.top, isScrolling);
+      };
+      const unobserve = observeWindowOffset(instance, (_, isScrolling) =>
+        follow(isScrolling),
+      );
+      const resized = () => follow(false);
+      window.addEventListener("resize", resized);
+      return () => {
+        unobserve?.();
+        window.removeEventListener("resize", resized);
+      };
+    },
+    /* The page owns its scrolling: the virtualizer only reads the offset, so
+       its own scroll writes, such as the one it makes on mount, are inert. */
+    scrollToFn: () => {},
+  });
+  const items = virtualizer.getVirtualItems();
+  const first = items[0],
+    last = items[items.length - 1];
+  return {
+    rows: items.map((item) => item.index),
+    leading: first?.start ?? 0,
+    trailing: last ? virtualizer.getTotalSize() - last.end : 0,
+  };
+}
+/** Where the screener was left, in rows below the list's top, for this tab only. */
+type ScrollSnapshot = { query: string; total: number; rows: number };
+const subscribeSnapshot = (notify: () => void) => {
+  window.addEventListener("storage", notify);
+  return () => window.removeEventListener("storage", notify);
+};
+function readSnapshot() {
+  try {
+    return sessionStorage.getItem(SCROLL_SNAPSHOT_KEY);
+  } catch {
+    return null;
+  }
+}
+const noSnapshot = () => null;
+function parseSnapshot(saved: string | null): ScrollSnapshot | null {
+  try {
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+function writeSnapshot(snapshot: ScrollSnapshot) {
+  try {
+    sessionStorage.setItem(SCROLL_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch {
+    /* Storage may be unavailable in private browsers. */
+  }
+}
+/**
+ * Back within the session lands where the list was left. The position is
+ * written on leaving, in rows below the list's top so either layout can read
+ * it, and read back on mount; the saved total sizes the list before its rows
+ * arrive, so the position holds from the first paint and the page it lands on
+ * is the first one read. Nothing is written while the page is shown, so the
+ * snapshot never feeds back into the list it sized.
+ */
+function useScrollMemory(
+  query: string,
+  total: number | undefined,
+  table: RefObject<Element | null>,
+  cards: RefObject<Element | null>,
+) {
+  const saved = useSyncExternalStore(
+    subscribeSnapshot,
+    readSnapshot,
+    noSnapshot,
+  );
+  const snapshot = useMemo(() => parseSnapshot(saved), [saved]);
+  const restore = snapshot?.query === query ? snapshot : null;
+  const applied = useRef(false);
+  useLayoutEffect(() => {
+    if (!restore || applied.current) return;
+    const list = shownList(table.current, cards.current);
+    if (!list) return;
+    applied.current = true;
+    window.scrollTo({
+      top: list.top + restore.rows * list.rowHeight,
+      behavior: "instant",
+    });
+  }, [restore, table, cards]);
+  const reserved = total ?? restore?.total ?? 0;
+  const latest = useRef({ query, total: reserved });
+  useLayoutEffect(() => {
+    latest.current = { query, total: reserved };
+  });
+  useLayoutEffect(() => {
+    const save = () => {
+      const list = shownList(table.current, cards.current);
+      if (list)
+        writeSnapshot({
+          ...latest.current,
+          rows: (window.scrollY - list.top) / list.rowHeight,
+        });
+    };
+    window.addEventListener("pagehide", save);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      save();
+    };
+  }, [table, cards]);
+  return reserved;
+}
 function PoolCell({ pool }: { pool: AnalyticsPoolRow }) {
   /* The read API does not publish every pool's detail; the page this row opens
      reads back what the row already showed rather than dropping its identity. */
@@ -110,19 +291,30 @@ export function ProductExplore() {
   const leaders = useProduct<AnalyticsLeaderboardResponse>(
     "leaderboard?limit=5&window=24h&minTrades=10",
   );
-  const { params, set } = useQuery(),
+  const { params, set: setQuery } = useQuery(),
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
+  /* A new query reads from the top: the panel's head comes back under the
+     site header while the previous rows dim. */
+  const panelRef = useRef<HTMLElement>(null);
+  const set = (updates: Record<string, string | null>) => {
+    setQuery(updates);
+    headIntoView(panelRef.current);
+  };
   const view = (params.get("view") ??
       (params.has("watchlist")
         ? "watchlist"
         : "all")) as AnalyticsExploreOptions["view"],
-    offset = Math.max(0, Number(params.get("offset") ?? 0)),
     q = params.get("q") ?? "";
   const sort =
       params.get("sort") ?? (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = params.get("dir") ?? "desc";
-  const filter = useDebouncedInput(q, (next) => set({ q: next, offset: null }));
+  const filter = useDebouncedInput(q, (next) => set({ q: next }));
+  /* Pages no longer live in the URL; a link that still names one reads from the top. */
+  const legacyOffset = params.has("offset");
+  useEffect(() => {
+    if (legacyOffset) setQuery({ offset: null });
+  }, [legacyOffset, setQuery]);
   /* Both read paths pin the launches view to launch order, so no header
      claims it there. */
   const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
@@ -132,11 +324,10 @@ export function ProductExplore() {
       set({
         sort: key,
         dir: "desc",
-        offset: null,
         ...(view === LAUNCH_VIEW ? { view: "all" } : null),
       });
-    else if (!ascending) set({ sort: key, dir: "asc", offset: null });
-    else set({ sort: null, dir: null, offset: null });
+    else if (!ascending) set({ sort: key, dir: "asc" });
+    else set({ sort: null, dir: null });
   };
   /* Three states per column: descending, ascending, then back to the default. */
   const sortable = (label: string, key: ExploreSort) => (
@@ -161,8 +352,6 @@ export function ProductExplore() {
   const query = new URLSearchParams({
     window,
     view: view ?? "all",
-    offset: String(offset),
-    limit: "25",
     q,
     sort,
     direction,
@@ -171,10 +360,36 @@ export function ProductExplore() {
   const watched = shared?.ids ?? ids;
   if (view === "watchlist")
     query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
-  const { data, loading, stale, error, refresh } =
-    useProduct<AnalyticsExploreResponse>(`explore?${query}`);
-  const launchPage = !!data?.items.length && data.items.every(launchOnly);
-  const empty = !!data && !data.items.length && !loading;
+  const listQuery = query.toString();
+  const pages = useExplorePages(listQuery);
+  const { list: data, loading, stale, error, refresh } = pages;
+  const tableRef = useRef<HTMLTableSectionElement>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
+  const total = useScrollMemory(
+    listQuery,
+    data?.head.total,
+    tableRef,
+    cardsRef,
+  );
+  const count = Math.max(RESERVED_ROWS, total);
+  const table = useRowWindow(tableRef, count, ROW_HEIGHT);
+  const cards = useRowWindow(cardsRef, count, CARD_HEIGHT);
+  /* After every paint, the rows on screen decide which page reads next. */
+  useEffect(() => {
+    const list = shownList(tableRef.current, cardsRef.current);
+    pages.reach(list && viewportSpan(list));
+  });
+  const launchPage =
+    !!data?.head.items.length && data.head.items.every(launchOnly);
+  const empty = pages.settled && data?.head.total === 0;
+  const tableRows = table.rows.map((index) => ({
+    index,
+    pool: pages.row(index),
+  }));
+  const cardRows = cards.rows.map((index) => ({
+    index,
+    pool: pages.row(index),
+  }));
   return (
     <div className="page explore-page">
       <div className="page-heading">
@@ -188,9 +403,7 @@ export function ProductExplore() {
             <i />
             Just launched
           </span>
-          <button
-            onClick={() => set({ view: LAUNCH_VIEW, sort: null, offset: null })}
-          >
+          <button onClick={() => set({ view: LAUNCH_VIEW, sort: null })}>
             All launches →
           </button>
         </div>
@@ -282,7 +495,7 @@ export function ProductExplore() {
       </section>
       <div className="workspace-grid">
         <div>
-          <section className="panel">
+          <section className="panel" ref={panelRef}>
             <div className="table-toolbar explore-toolbar">
               <div className="table-tabs" aria-label="Pool views">
                 {(
@@ -299,12 +512,7 @@ export function ProductExplore() {
                     className={view === key ? "active" : ""}
                     aria-pressed={view === key}
                     onClick={() =>
-                      set({
-                        view: key,
-                        watchlist: null,
-                        offset: null,
-                        sort: null,
-                      })
+                      set({ view: key, watchlist: null, sort: null })
                     }
                   >
                     {label}
@@ -339,7 +547,7 @@ export function ProductExplore() {
                   value={window}
                   onChange={(value) => {
                     setWindow(value);
-                    set({ offset: null });
+                    headIntoView(panelRef.current);
                   }}
                   options={["1h", "24h", "7d", "30d", "All"]}
                 />
@@ -351,10 +559,10 @@ export function ProductExplore() {
                 shared={shared}
                 query={params.toString()}
                 save={add}
-                openPersonal={() => set({ watchlist: null, offset: null })}
+                openPersonal={() => set({ watchlist: null })}
               />
             )}
-            {loading && data && (
+            {stale && (
               <span className="sr-only" role="status">
                 Updating saved pools
               </span>
@@ -409,13 +617,16 @@ export function ProductExplore() {
                       )}
                     </tr>
                   </thead>
-                  <tbody>
-                    {Array.from(
-                      { length: Math.max(25, data?.items.length ?? 0) },
-                      (_, index) => data?.items[index],
-                    ).map((p, index) => (
+                  <tbody ref={tableRef}>
+                    {table.leading > 0 && (
+                      <tr className="spacer" aria-hidden="true">
+                        <td colSpan={10} style={{ height: table.leading }} />
+                      </tr>
+                    )}
+                    {tableRows.map(({ index, pool: p }) => (
                       <tr
                         key={index}
+                        data-index={index}
                         aria-hidden={!p}
                         data-row={p ? "resolved" : "reserved"}
                       >
@@ -537,21 +748,32 @@ export function ProductExplore() {
                         )}
                       </tr>
                     ))}
+                    {table.trailing > 0 && (
+                      <tr className="spacer" aria-hidden="true">
+                        <td colSpan={10} style={{ height: table.trailing }} />
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
               <div
                 className="mobile-pools"
+                ref={cardsRef}
                 aria-busy={stale}
                 data-stale-rows={stale}
               >
-                {Array.from(
-                  { length: Math.max(25, data?.items.length ?? 0) },
-                  (_, index) => data?.items[index],
-                ).map((p, index) => (
+                {cards.leading > 0 && (
+                  <div
+                    className="spacer"
+                    aria-hidden="true"
+                    style={{ height: cards.leading }}
+                  />
+                )}
+                {cardRows.map(({ index, pool: p }) => (
                   <article
                     className="mobile-pool"
                     key={index}
+                    data-index={index}
                     data-row={p ? "resolved" : "reserved"}
                   >
                     {p ? (
@@ -655,6 +877,13 @@ export function ProductExplore() {
                     ) : null}
                   </article>
                 ))}
+                {cards.trailing > 0 && (
+                  <div
+                    className="spacer"
+                    aria-hidden="true"
+                    style={{ height: cards.trailing }}
+                  />
+                )}
               </div>
               {empty && (
                 <EmptyState
@@ -679,13 +908,6 @@ export function ProductExplore() {
                 />
               )}
             </div>
-            <ProductPagination
-              offset={offset}
-              total={data?.total ?? 0}
-              nextOffset={data?.nextOffset ?? null}
-              onPage={(n) => set({ offset: String(n) })}
-              loading={loading}
-            />
           </section>
         </div>
         <aside className="market-sidebar">

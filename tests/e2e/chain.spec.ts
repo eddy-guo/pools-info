@@ -1001,7 +1001,7 @@ test("a stale market snapshot never presents old launches as just minted", async
   await expect(first).not.toHaveText("<1m");
 });
 
-test("saved global catalog shows unprocessed pools and paginates the global sort", async ({
+test("saved global catalog shows unprocessed pools and scrolls the global sort", async ({
   page,
   request,
 }) => {
@@ -1029,14 +1029,35 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
     }),
   );
   await page.goto("/?sort=launch&window=All");
-  await expect(page.locator(".pagination")).toContainText(
-    `1-25 of ${all.total}`,
+  const shown = page.locator(".explore-page [data-row='resolved']").filter({
+    visible: true,
+  });
+  await expect(shown.first()).toBeVisible();
+  /* The second page is read once the rows near it scroll into view; the
+     list's rows are windowed, so it is measured by its index, not counted. */
+  const secondPage = page.waitForRequest(
+    (r) =>
+      r.url().includes("/api/product/explore") &&
+      new URL(r.url()).searchParams.get("offset") === "25",
   );
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page).toHaveURL(/offset=25/);
-  await expect(page.locator(".pagination")).toContainText(
-    `26-50 of ${all.total}`,
-  );
+  await page.evaluate(() => {
+    /* The layout the viewport shows is the one whose rows have a height. */
+    const row = [
+      ...document.querySelectorAll(
+        ".explore-page :is(.desktop-pools tbody, .mobile-pools) > [data-row]",
+      ),
+    ].find((node) => node.getBoundingClientRect().height)!;
+    const list = row.parentElement!;
+    window.scrollTo({
+      top:
+        list.getBoundingClientRect().top +
+        window.scrollY +
+        30 * row.getBoundingClientRect().height,
+      behavior: "instant",
+    });
+  });
+  await secondPage;
+  await expect(page).not.toHaveURL(/offset=/);
   const displayed = page
     .locator(".desktop-pools, .mobile-pools")
     .getByText(all.items[25].name, { exact: true })
@@ -1046,7 +1067,7 @@ test("saved global catalog shows unprocessed pools and paginates the global sort
   await page
     .getByRole("textbox", { name: "Filter pools" })
     .fill(unprocessed.token);
-  await expect(page.locator(".pagination")).toContainText("1-1 of 1");
+  await expect(shown).toHaveCount(1);
   await page
     .locator(".desktop-pools, .mobile-pools")
     .getByRole("link", { name: new RegExp(unprocessed.symbol) })
