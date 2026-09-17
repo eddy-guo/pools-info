@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  formatMoney,
   shortAddress,
   type ChainSnapshot,
   type ChainMarket,
@@ -10,8 +11,9 @@ import {
   windows,
   poolHref,
 } from "@pools/core";
+import { useEthPrice } from "./eth-price-provider";
 import { useLive } from "./live-provider";
-import { useQuery } from "./state";
+import { useQuery, useUnit } from "./state";
 import { QuietUnavailable, Unavailable, useUnavailable } from "./ui";
 export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
@@ -35,8 +37,19 @@ export function Eth({
 }) {
   const known = wei !== null && wei !== undefined;
   const unavailable = useUnavailable("Not collected yet", pending);
+  const { unit } = useUnit();
+  const usdPerEth = useEthPrice();
   if (!known || pending)
     return <span className="number unavailable" {...unavailable} />;
+  if (unit === "USD" && usdPerEth !== null)
+    return (
+      <span
+        className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
+        title={`${wei} wei`}
+      >
+        {formatMoney(wei, "USD", usdPerEth, signed)}
+      </span>
+    );
   const n = Number(wei) / 1e18;
   const format = new Intl.NumberFormat(
     "en-US",

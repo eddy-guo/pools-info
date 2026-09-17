@@ -13,11 +13,13 @@ import {
 import {
   compact,
   displayEth,
+  formatMoney,
   identityTint,
   shortAddress,
   type PricePoint,
 } from "@pools/core";
-import { useWatchlist } from "./state";
+import { useEthPrice } from "./eth-price-provider";
+import { useUnit, useWatchlist } from "./state";
 
 export function TokenIcon({
   pool,
@@ -229,15 +231,30 @@ export function Money({
   pending?: boolean;
 }) {
   const unavailable = useUnavailable("Not collected yet", pending);
+  const { unit } = useUnit();
+  const usdPerEth = useEthPrice();
   if (wei == null)
     return (
       <span className={`number unavailable ${className}`} {...unavailable} />
     );
+  const colorClass = signed
+    ? BigInt(wei) > 0n
+      ? "positive"
+      : BigInt(wei) < 0n
+        ? "negative"
+        : "muted"
+    : "";
+  if (unit === "USD" && usdPerEth !== null)
+    return (
+      <span
+        className={`number ${colorClass} ${className}`}
+        title={`${wei} wei`}
+      >
+        {formatMoney(wei, "USD", usdPerEth, signed)}
+      </span>
+    );
   return (
-    <span
-      className={`number ${signed ? (BigInt(wei) > 0n ? "positive" : BigInt(wei) < 0n ? "negative" : "muted") : ""} ${className}`}
-      title={`${wei} wei`}
-    >
+    <span className={`number ${colorClass} ${className}`} title={`${wei} wei`}>
       {signed && BigInt(wei) > 0n ? "+" : ""}
       {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
         displayEth(wei),
@@ -254,8 +271,30 @@ export function Price({
   pending?: boolean;
 }) {
   const unavailable = useUnavailable("No observed swap price", pending);
+  const { unit } = useUnit();
+  const usdPerEth = useEthPrice();
   if (wei == null)
     return <span className="number price unavailable" {...unavailable} />;
+  if (unit === "USD" && usdPerEth !== null) {
+    const usd = displayEth(wei) * usdPerEth;
+    // Most catalog prices are sub-cent; the same leading-zero notation the
+    // ETH form uses below keeps them legible instead of an all-zero column.
+    if (usd > 0 && usd < 0.0001) {
+      const frac = usd.toFixed(18).slice(2);
+      const zeros = frac.match(/^0+/)?.[0].length ?? 0;
+      return (
+        <span className="number price" title={`$${usd.toPrecision(4)}`}>
+          $0.0<sub>{zeros}</sub>
+          {frac.slice(zeros, zeros + 4)}
+        </span>
+      );
+    }
+    return (
+      <span className="number price" title={`${wei} wei`}>
+        {formatMoney(wei, "USD", usdPerEth)}
+      </span>
+    );
+  }
   const currency = "ETH";
   const value = displayEth(wei);
   const prefix = "";
@@ -415,8 +454,9 @@ function geometry(
   height: number,
   padding = 0,
   stepped = false,
+  usdPerEth?: number,
 ) {
-  const values = points.map((p) => displayEth(p.wei));
+  const values = points.map((p) => displayEth(p.wei) * (usdPerEth ?? 1));
   const min = Math.min(...values),
     max = Math.max(...values);
   const span = max - min || Math.abs(max) * 0.1 || 1;
@@ -489,6 +529,9 @@ export function Chart({
   pending?: boolean;
 }) {
   const gradient = useId().replace(/:/g, "");
+  const { unit } = useUnit();
+  const usdPerEth = useEthPrice();
+  const showUsd = unit === "USD" && usdPerEth !== null;
   const last = BigInt(points.at(-1)?.wei ?? "0");
   const chartColor = profit
     ? last > 0n
@@ -498,7 +541,9 @@ export function Chart({
         : "var(--muted)"
     : "var(--accent)";
   const [hover, setHover] = useState<number | null>(null);
-  const g = geometry(points, 820, 230, 8, profit);
+  const g = geometry(points, 820, 230, 8, profit, showUsd ? usdPerEth : undefined);
+  const axisLabel = (v: number) =>
+    showUsd ? `${v < 0 ? "-" : ""}$${compact(Math.abs(v))}` : compact(v);
   const index =
     hover === null ? points.length - 1 : Math.min(hover, points.length - 1);
   const point = points[Math.max(0, index)];
@@ -628,7 +673,7 @@ export function Chart({
         <div className="chart-axis">
           {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
             <span key={i} data-pending={pending}>
-              {points.length ? compact(v) : pending ? "Pending" : "N/A"}
+              {points.length ? axisLabel(v) : pending ? "Pending" : "N/A"}
             </span>
           ))}
         </div>

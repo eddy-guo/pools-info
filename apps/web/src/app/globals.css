@@ -3077,17 +3077,6 @@ main {
   background: transparent;
   color: var(--color-text-3);
 }
-.currency-pill {
-  display: grid;
-  place-items: center;
-  padding: 0 11px;
-  height: 32px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 9px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-2);
-}
 .connect-button {
   display: inline-flex;
   align-items: center;
@@ -3133,6 +3122,13 @@ main {
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--green);
+}
+/* Reserves the ETH/USD rate's width from first paint (hidden until the read
+   resolves) so the strip never reflows once it fills in. */
+.subnav-eth-price {
+  display: inline-block;
+  min-width: 13ch;
+  font-variant-numeric: tabular-nums;
 }
 .page {
   max-width: 1560px;
@@ -4338,11 +4334,6 @@ main {
   .connect-label,
   .connect-soon {
     display: none;
-  }
-  .currency-pill {
-    height: 44px;
-    font-size: 11px;
-    padding: 0 10px;
   }
   .network-subnav {
     padding: 5px 14px;
@@ -5586,11 +5577,11 @@ a.wallet-top-pool:hover {
     height: 282px;
   }
 }
-.header-actions .currency-pill {
+.header-actions .unit-toggle {
   margin-left: auto;
 }
 @container site (max-width: 767px) {
-  .header-actions .currency-pill {
+  .header-actions .unit-toggle {
     margin-left: 0;
   }
 }

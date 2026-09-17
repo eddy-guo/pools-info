@@ -14,6 +14,7 @@ const geistMono = localFont({
 });
 import { Shell } from "@/components/shell";
 import "./globals.css";
+import { EthPriceProvider } from "@/components/eth-price-provider";
 import { LiveProvider } from "@/components/live-provider";
 import initial from "../../../../data/snapshots/chain.json";
 import type { ChainSnapshot } from "@pools/core";
@@ -44,7 +45,9 @@ export default function RootLayout({
     >
       <body>
         <LiveProvider initial={initial as ChainSnapshot}>
-          <Shell>{children}</Shell>
+          <EthPriceProvider>
+            <Shell>{children}</Shell>
+          </EthPriceProvider>
         </LiveProvider>
       </body>
     </html>
