@@ -5893,10 +5893,13 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .mobile-traders {
     display: block;
   }
-  /* AuditLeaderboard (the per-pool traders panel, traders.tsx) shares this
-     same .leaderboard-panel/.mobile-trader markup with its own 224px card;
-     the ranked leaderboard's 97px redesign below is scoped to .traders-page
-     so it never shrinks the per-pool card it doesn't own. */
+  /* AuditLeaderboard (the per-pool traders panel, traders.tsx's PoolTraders,
+     reached at /traders/?pool=... - it shares the .traders-page wrapper with
+     the ranked leaderboard below, so that class alone can't tell them apart)
+     shares this same .leaderboard-panel/.mobile-trader markup with its own
+     224px card; the ranked leaderboard's 97px redesign below is scoped to
+     .ranked-traders, a marker only ProductTraders's own root carries, so it
+     never shrinks the per-pool card it doesn't own. */
   .leaderboard-results .mobile-traders:not(.following-traders) {
     min-height: calc(25 * 224px);
   }
@@ -5908,10 +5911,10 @@ a.wallet-top-pool:hover {
   .leaderboard-results .mobile-trader-heading {
     justify-content: flex-start;
   }
-  .traders-page .leaderboard-panel .mobile-traders:not(.following-traders) {
+  .ranked-traders .leaderboard-panel .mobile-traders:not(.following-traders) {
     min-height: calc(22 * 101px);
   }
-  .traders-page .leaderboard-panel .mobile-trader {
+  .ranked-traders .leaderboard-panel .mobile-trader {
     height: 101px;
     overflow: auto;
   }
@@ -5947,7 +5950,7 @@ a.wallet-top-pool:hover {
   .mobile-trader > .record-cell {
     margin-top: 14px;
   }
-  /* The 97px phone trader row (traders-page only): rank, identity and a copy
+  /* The 97px phone trader row (the ranked leaderboard only): rank, identity and a copy
      control on one line with PnL over ROI at the right, then the win/loss
      bar with volume and hold on a second line. The heading's own
      space-between only ever sees two groups - identity, then actions - so

@@ -581,7 +581,7 @@ export function ProductTraders() {
   }, [state.items.length, state.loading]);
 
   return (
-    <div className="page traders-page">
+    <div className="page traders-page ranked-traders">
       <div className="page-heading">
         <h1>
           Trader leaderboard<span className="title-dot">.</span>
