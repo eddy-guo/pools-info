@@ -5127,6 +5127,11 @@ main {
   height: 32px;
   overflow: auto;
 }
+/* The slot carries the token address in both forms; the phone shows the short
+   one with the same copy and explorer controls. */
+.pool-address-short {
+  display: none;
+}
 .pool-launch-meta {
   display: block !important;
   height: 36px;
@@ -5501,8 +5506,11 @@ a.wallet-top-pool:hover {
     height: 192px;
     overflow: auto;
   }
+  /* The stacked heading: a two-row title (name and symbol, then the launch
+     mode and evidence badges), the short address at the 44px control height
+     and the two-line launch meta, then the two-column action grid. */
   .nullable-pool-page .page-heading {
-    height: 236px;
+    height: 265px;
   }
   .pool-coverage-note {
     height: 168px;
@@ -5510,8 +5518,38 @@ a.wallet-top-pool:hover {
   .pool-chart-region {
     height: 720px;
   }
+  .nullable-pool-page .pool-identity-title {
+    flex-wrap: wrap !important;
+    align-content: flex-start;
+    row-gap: 0;
+    height: 58px;
+  }
+  /* A full-width break after the symbol puts both badges on the second row;
+     its height is the row gap. */
+  .nullable-pool-page .pool-identity-title::before {
+    content: "";
+    flex-basis: 100%;
+    height: 7px;
+  }
+  .nullable-pool-page .pool-identity-title > h1,
+  .nullable-pool-page .pool-identity-title > span:first-of-type {
+    order: -1;
+  }
+  .nullable-pool-page .pool-identity-title > h1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .pool-identity-title > .evidence-badge {
     width: 104px;
+  }
+  .pool-address-slot {
+    height: 44px;
+  }
+  .pool-address-full {
+    display: none;
+  }
+  .pool-address-short {
+    display: inline;
   }
 }
 .header-actions .currency-pill {

@@ -331,8 +331,11 @@
   font-size: 10px;
 }
 @container (max-width:767px) {
+  /* The stacked heading is one column: wrapping would open a second column
+     beside it, sized by the widest child instead of by the phone. */
   .page :global(.page-heading) {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
   }
   .page :global(h1) {
