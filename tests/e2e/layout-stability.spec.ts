@@ -358,10 +358,15 @@ for (const entry of routes) {
           after,
           "sentinel retains its complete first-paint geometry",
         ).toEqual(before);
+      /* A runner under load can report a sub-pixel shift (observed:
+         0.0001277 on this same case, on heads that never touched this page)
+         without a real reflow; 0.001 is a sub-pixel of movement at 390px, so
+         a score under it reads as measurement noise, not a shift. Anything
+         at or above 0.001 still fails. */
       expect(
         measurement.cls,
-        "every non-input layout shift since navigation",
-      ).toBe(0);
+        "every non-input layout shift since navigation, past 0.001 of sub-pixel measurement noise",
+      ).toBeLessThan(0.001);
     } finally {
       releaseScripts();
       release();
