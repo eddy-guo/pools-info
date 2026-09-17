@@ -3,7 +3,6 @@ import { test, expect } from "@playwright/test";
 /* Copy the captain removed from the screener; it lives in the API only. */
 const removedCopy = [
   "Explore every discovered Pools launch",
-  "Trader leaderboard",
   "with saved analytics",
   "Latest captured data",
   "Coverage and methodology",

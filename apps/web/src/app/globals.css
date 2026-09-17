@@ -3113,7 +3113,7 @@ main {
   min-height: 34px;
   border-top: 1px solid #131317;
   color: var(--color-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 .network-indicator {
   display: inline-block;
@@ -3122,6 +3122,58 @@ main {
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--green);
+}
+.subnav-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.subnav-live > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-faint);
+  flex-shrink: 0;
+}
+.subnav-live-label {
+  display: grid;
+}
+/* A hidden pseudo-element ghost of the wider of "Live"/"Paused" sizes this
+   grid cell from first paint, so a poll resolving later never shifts what
+   sits after it in the strip. Generated content never enters textContent,
+   so it never leaks into the dot's accessible name or a toHaveText assert. */
+.subnav-live-label::before {
+  content: "Paused";
+  visibility: hidden;
+  grid-area: 1 / 1;
+}
+.subnav-live-value {
+  grid-area: 1 / 1;
+}
+.subnav-live[data-state="streaming"] > i {
+  background: var(--color-up);
+  animation: subnav-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes subnav-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .subnav-live[data-state="streaming"] > i {
+    animation: none;
+  }
+}
+.subnav-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--color-line-strong);
 }
 /* Reserves the ETH/USD rate's width from first paint (hidden until the read
    resolves) so the strip never reflows once it fills in. */
@@ -3157,6 +3209,24 @@ main {
 }
 .page-heading .eyebrow {
   margin-bottom: 10px;
+}
+/* The screener's H1-row call to action: same accent fill as .button, held to
+   the H1's own 36px so it never grows the reserved heading row. */
+.leaderboard-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--ac);
+  color: #06120d;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.leaderboard-cta:hover {
+  filter: brightness(1.08);
 }
 /* Leaderboard ranking controls sit beside the title, as in the design. */
 .traders-controls {
@@ -4381,6 +4451,9 @@ main {
   }
   .page-heading .button {
     min-height: 44px;
+  }
+  .leaderboard-cta {
+    height: 44px;
   }
   .traders-controls {
     flex-basis: 100%;
