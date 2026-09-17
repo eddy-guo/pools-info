@@ -5,15 +5,22 @@ import {
   shortAddress,
   type AnalyticsLeaderboardResponse,
   type AnalyticsWalletSummary,
+  type LiveWindow,
 } from "@pools/core";
 import { fetchProduct } from "@/lib/use-product";
+import { useFollowedLeaderboard } from "@/lib/use-followed-leaderboard";
 import { useQuery } from "./state";
+import { useFollowing, FollowRowButton } from "./following";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { AddressChip, Avatar, Change } from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 
 /** The leaderboard never requests past its top 100, whatever the API allows. */
 const CAP = 100;
+/** Followed wallets are already capped by the local follow store itself. */
+const FOLLOWED_CAP = 200;
+
+type Metric = "realized" | "net";
 
 type LeaderboardState = {
   key: string;
@@ -93,10 +100,230 @@ function useLeaderboard(
   return state;
 }
 
+/** Shared row markup for the ranked list and the Following tab: `pending`
+    means the slot is reserved but not yet resolved, `w` undefined with
+    `pending` false means the slot is known to hold nothing. */
+function DesktopTraderRow({
+  w,
+  index,
+  pending,
+  metric,
+  window,
+}: {
+  w: AnalyticsWalletSummary | undefined;
+  index: number;
+  pending: boolean;
+  metric: Metric;
+  window: LiveWindow;
+}) {
+  return (
+    <tr
+      data-row-index={index}
+      aria-hidden={!w}
+      data-row={w ? "resolved" : "reserved"}
+    >
+      <td data-pending={pending}>
+        {w ? <>#{w.rank}</> : pending ? "Pending" : " "}
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <AddressChip
+            address={w.address}
+            href={`/wallet/${w.address}/?window=${window}`}
+          />
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        <Eth
+          pending={pending}
+          wei={metric === "realized" ? w?.realizedWei : w?.netWei}
+          signed
+        />
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <>{w.roi === null ? <Unavailable /> : <Change value={w.roi} />}</>
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <>
+            {w.wins} / {w.losses}
+          </>
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <>{w.rankingTradeCount ?? w.supportedTradeCount}</>
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        <Eth pending={pending} wei={w?.volumeWei} />
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <>{w.realizedPositionCount ?? w.supportedPositionCount}</>
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        <Eth pending={pending} wei={w?.bestWei} signed />
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <>{w.last ? utc(w.last) : <Unavailable />}</>
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+      <td data-pending={pending}>
+        {w ? (
+          <FollowRowButton address={w.address} />
+        ) : pending ? (
+          "Pending"
+        ) : (
+          " "
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function MobileTraderCard({
+  w,
+  index,
+  pending,
+  metric,
+  window,
+}: {
+  w: AnalyticsWalletSummary | undefined;
+  index: number;
+  pending: boolean;
+  metric: Metric;
+  window: LiveWindow;
+}) {
+  return (
+    <div className="mobile-trader" data-row-index={index}>
+      {w ? (
+        <>
+          <div className="mobile-trader-heading">
+            <div className="mobile-trader-identity">
+              <span className="rank-number">#{w.rank}</span>
+              <AddressChip
+                address={w.address}
+                href={`/wallet/${w.address}/?window=${window}`}
+              />
+            </div>
+            <FollowRowButton address={w.address} />
+          </div>
+          <div className="mobile-trader-value">
+            <Eth
+              wei={metric === "realized" ? w.realizedWei : w.netWei}
+              signed
+            />
+            <span>{metric === "realized" ? "realized" : "net flow"}</span>
+          </div>
+          <div className="mobile-trader-key">
+            <span>
+              ROI
+              <strong>
+                {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
+              </strong>
+            </span>
+            <span>
+              W / L
+              <strong className="number">
+                {w.wins} / {w.losses}
+              </strong>
+            </span>
+          </div>
+          <div className="mobile-trader-stats">
+            <span>
+              Trades
+              <strong className="number">
+                {w.rankingTradeCount ?? w.supportedTradeCount}
+              </strong>
+            </span>
+            <span>
+              Volume
+              <strong>
+                <Eth wei={w.volumeWei} />
+              </strong>
+            </span>
+            <span>
+              Best sale
+              <strong>
+                <Eth wei={w.bestWei} signed />
+              </strong>
+            </span>
+          </div>
+        </>
+      ) : pending ? (
+        <>
+          <div className="mobile-trader-heading">
+            <div className="mobile-trader-identity">
+              <span className="rank-number" data-pending="true">
+                Rank
+              </span>
+              <span className="trader-identity" data-pending="true">
+                Wallet pending
+              </span>
+            </div>
+          </div>
+          <div className="mobile-trader-value">
+            <span className="number" data-pending="true">
+              PnL pending
+            </span>
+          </div>
+          <div className="mobile-trader-key">
+            {["ROI", "W / L"].map((label) => (
+              <span key={label}>
+                {label}
+                <strong data-pending="true">Pending</strong>
+              </span>
+            ))}
+          </div>
+          <div className="mobile-trader-stats">
+            {["Trades", "Volume", "Best sale"].map((label) => (
+              <span key={label}>
+                {label}
+                <strong data-pending="true">Pending</strong>
+              </span>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
-  const metric = params.get("metric") ?? "realized";
+  const metric = (params.get("metric") ?? "realized") as Metric;
+  const view =
+    params.get("view") === "following" ? "following" : "leaderboard";
   const rawShown = Number(params.get("limit"));
   const shown =
     Number.isInteger(rawShown) && rawShown > 0 && rawShown <= CAP
@@ -110,6 +337,23 @@ export function ProductTraders() {
   const total = settled ? state.total : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
 
+  const { addresses: followed } = useFollowing();
+  const following = useFollowedLeaderboard(
+    followed,
+    window,
+    view === "following",
+  );
+  const followedTotal = followed.length;
+  const rawFollowedShown = Number(params.get("flimit"));
+  const followedShown =
+    Number.isInteger(rawFollowedShown) &&
+    rawFollowedShown > 0 &&
+    rawFollowedShown <= FOLLOWED_CAP
+      ? rawFollowedShown
+      : SHOW_MORE_STEP;
+  const followedReserved = Math.min(followedShown, followedTotal);
+  const followedPending = !following.settled;
+
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const handleMore = useCallback(() => {
@@ -117,6 +361,13 @@ export function ProductTraders() {
     const ceiling = total === null ? CAP : Math.min(CAP, total);
     set({ limit: String(Math.min(shown + SHOW_MORE_STEP, ceiling)) });
   }, [shown, set, total]);
+  const handleFollowedMore = useCallback(() => {
+    set({
+      flimit: String(
+        Math.min(followedShown + SHOW_MORE_STEP, followedTotal),
+      ),
+    });
+  }, [followedShown, followedTotal, set]);
   useEffect(() => {
     const index = focusFromRef.current;
     if (index === null || state.loading) return;
@@ -143,6 +394,24 @@ export function ProductTraders() {
           Trader leaderboard<span className="title-dot">.</span>
         </h1>
         <div className="traders-controls">
+          <div className="segmented" aria-label="Trader view">
+            {(
+              [
+                ["leaderboard", "Leaderboard"],
+                ["following", "Following"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                aria-pressed={view === key}
+                onClick={() =>
+                  set({ view: key === "leaderboard" ? null : key })
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="segmented" aria-label="Ranking metric">
             {[
               ["realized", "Realized PnL"],
@@ -167,300 +436,204 @@ export function ProductTraders() {
         </div>
       </div>
       <section className="panel leaderboard-panel" ref={panelRef}>
-        {state.loading && items.length > 0 && (
-          <span className="sr-only" role="status">
-            Updating saved rankings
-          </span>
-        )}
-        {state.error && (
-          <p role="alert" className="panel-footnote">
-            {state.error}
-          </p>
-        )}
-        <>
-          <div className="live-podium">
-            {Array.from({ length: 3 }, (_, index) => items[index]).map(
-              (w, index) => (
-                <Link
-                  href={
-                    w ? `/wallet/${w.address}/?window=${window}` : "/traders/"
-                  }
-                  key={index}
-                  prefetch={!!w}
-                  aria-disabled={!w}
-                  tabIndex={w ? undefined : -1}
-                  onClick={(event) => {
-                    if (!w) event.preventDefault();
-                  }}
-                >
-                  <small data-pending={!w && !knownAbsent(index)}>
-                    {w ? `#${w.rank}` : "Rank"}
-                  </small>
-                  {w ? (
-                    <Avatar address={w.address} />
-                  ) : (
-                    <span
-                      className="avatar"
-                      data-pending={!w && !knownAbsent(index)}
+        {view === "leaderboard" ? (
+          <>
+            {state.loading && items.length > 0 && (
+              <span className="sr-only" role="status">
+                Updating saved rankings
+              </span>
+            )}
+            {state.error && (
+              <p role="alert" className="panel-footnote">
+                {state.error}
+              </p>
+            )}
+            <>
+              <div className="live-podium">
+                {Array.from({ length: 3 }, (_, index) => items[index]).map(
+                  (w, index) => (
+                    <Link
+                      href={
+                        w
+                          ? `/wallet/${w.address}/?window=${window}`
+                          : "/traders/"
+                      }
+                      key={index}
+                      prefetch={!!w}
+                      aria-disabled={!w}
+                      tabIndex={w ? undefined : -1}
+                      onClick={(event) => {
+                        if (!w) event.preventDefault();
+                      }}
                     >
-                      Wallet
-                    </span>
-                  )}
-                  <strong data-pending={!w && !knownAbsent(index)}>
-                    {w ? shortAddress(w.address) : "Wallet pending"}
-                  </strong>
-                  <Eth
-                    wei={metric === "realized" ? w?.realizedWei : w?.netWei}
-                    signed
-                    pending={!w && !knownAbsent(index)}
-                  />
-                </Link>
-              ),
-            )}
-          </div>
-          <div className="table-scroll desktop-traders">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Trader</th>
-                  <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
-                  <th>ROI</th>
-                  <th>W / L</th>
-                  <th>Trades</th>
-                  <th>Volume</th>
-                  <th>Positions</th>
-                  <th>Best sale</th>
-                  <th>Last (UTC)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: shown }, (_, index) => items[index]).map(
-                  (w, index) => {
-                    const absent = knownAbsent(index);
-                    const pending = !w && !absent;
-                    return (
-                      <tr
-                        key={index}
-                        data-row-index={index}
-                        aria-hidden={!w}
-                        data-row={w ? "resolved" : "reserved"}
-                      >
-                        <td data-pending={pending}>
-                          {w ? <>#{w.rank}</> : pending ? "Pending" : "\u00a0"}
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <AddressChip
-                              address={w.address}
-                              href={`/wallet/${w.address}/?window=${window}`}
-                            />
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                        <td data-pending={pending}>
-                          <Eth
-                            pending={pending}
-                            wei={
-                              metric === "realized" ? w?.realizedWei : w?.netWei
-                            }
-                            signed
-                          />
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <>
-                              {w.roi === null ? (
-                                <Unavailable />
-                              ) : (
-                                <Change value={w.roi} />
-                              )}
-                            </>
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <>
-                              {w.wins} / {w.losses}
-                            </>
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <>{w.rankingTradeCount ?? w.supportedTradeCount}</>
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                        <td data-pending={pending}>
-                          <Eth pending={pending} wei={w?.volumeWei} />
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <>
-                              {w.realizedPositionCount ??
-                                w.supportedPositionCount}
-                            </>
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                        <td data-pending={pending}>
-                          <Eth pending={pending} wei={w?.bestWei} signed />
-                        </td>
-                        <td data-pending={pending}>
-                          {w ? (
-                            <>{w.last ? utc(w.last) : <Unavailable />}</>
-                          ) : pending ? (
-                            "Pending"
-                          ) : (
-                            "\u00a0"
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  },
+                      <small data-pending={!w && !knownAbsent(index)}>
+                        {w ? `#${w.rank}` : "Rank"}
+                      </small>
+                      {w ? (
+                        <Avatar address={w.address} />
+                      ) : (
+                        <span
+                          className="avatar"
+                          data-pending={!w && !knownAbsent(index)}
+                        >
+                          Wallet
+                        </span>
+                      )}
+                      <strong data-pending={!w && !knownAbsent(index)}>
+                        {w ? shortAddress(w.address) : "Wallet pending"}
+                      </strong>
+                      <Eth
+                        wei={metric === "realized" ? w?.realizedWei : w?.netWei}
+                        signed
+                        pending={!w && !knownAbsent(index)}
+                      />
+                    </Link>
+                  ),
                 )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mobile-traders">
-            {Array.from({ length: shown }, (_, index) => items[index]).map(
-              (w, index) => {
-                const absent = knownAbsent(index);
-                const pending = !w && !absent;
-                return (
-                  <div
-                    className="mobile-trader"
-                    key={index}
-                    data-row-index={index}
-                  >
-                    {w ? (
-                      <>
-                        <div className="mobile-trader-heading">
-                          <span className="rank-number">#{w.rank}</span>
-                          <AddressChip
-                            address={w.address}
-                            href={`/wallet/${w.address}/?window=${window}`}
-                          />
-                        </div>
-                        <div className="mobile-trader-value">
-                          <Eth
-                            wei={
-                              metric === "realized" ? w.realizedWei : w.netWei
-                            }
-                            signed
-                          />
-                          <span>
-                            {metric === "realized" ? "realized" : "net flow"}
-                          </span>
-                        </div>
-                        <div className="mobile-trader-key">
-                          <span>
-                            ROI
-                            <strong>
-                              {w.roi === null ? (
-                                <Unavailable />
-                              ) : (
-                                <Change value={w.roi} />
-                              )}
-                            </strong>
-                          </span>
-                          <span>
-                            W / L
-                            <strong className="number">
-                              {w.wins} / {w.losses}
-                            </strong>
-                          </span>
-                        </div>
-                        <div className="mobile-trader-stats">
-                          <span>
-                            Trades
-                            <strong className="number">
-                              {w.rankingTradeCount ?? w.supportedTradeCount}
-                            </strong>
-                          </span>
-                          <span>
-                            Volume
-                            <strong>
-                              <Eth wei={w.volumeWei} />
-                            </strong>
-                          </span>
-                          <span>
-                            Best sale
-                            <strong>
-                              <Eth wei={w.bestWei} signed />
-                            </strong>
-                          </span>
-                        </div>
-                      </>
-                    ) : pending ? (
-                      <>
-                        <div className="mobile-trader-heading">
-                          <span className="rank-number" data-pending="true">
-                            Rank
-                          </span>
-                          <span className="trader-identity" data-pending="true">
-                            Wallet pending
-                          </span>
-                        </div>
-                        <div className="mobile-trader-value">
-                          <span className="number" data-pending="true">
-                            PnL pending
-                          </span>
-                        </div>
-                        <div className="mobile-trader-key">
-                          {["ROI", "W / L"].map((label) => (
-                            <span key={label}>
-                              {label}
-                              <strong data-pending="true">Pending</strong>
-                            </span>
-                          ))}
-                        </div>
-                        <div className="mobile-trader-stats">
-                          {["Trades", "Volume", "Best sale"].map((label) => (
-                            <span key={label}>
-                              {label}
-                              <strong data-pending="true">Pending</strong>
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    ) : null}
-                  </div>
-                );
-              },
+              </div>
+              <div className="table-scroll desktop-traders">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Rank</th>
+                      <th>Trader</th>
+                      <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
+                      <th>ROI</th>
+                      <th>W / L</th>
+                      <th>Trades</th>
+                      <th>Volume</th>
+                      <th>Positions</th>
+                      <th>Best sale</th>
+                      <th>Last (UTC)</th>
+                      <th aria-label="Follow" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: shown }, (_, index) => items[index]).map(
+                      (w, index) => (
+                        <DesktopTraderRow
+                          key={index}
+                          index={index}
+                          w={w}
+                          pending={!w && !knownAbsent(index)}
+                          metric={metric}
+                          window={window}
+                        />
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mobile-traders">
+                {Array.from({ length: shown }, (_, index) => items[index]).map(
+                  (w, index) => (
+                    <MobileTraderCard
+                      key={index}
+                      index={index}
+                      w={w}
+                      pending={!w && !knownAbsent(index)}
+                      metric={metric}
+                      window={window}
+                    />
+                  ),
+                )}
+              </div>
+            </>
+            {settled && total === 0 && (
+              <div className="empty-state">
+                <h3>No qualifying traders in this window</h3>
+                <p>Try a wider window.</p>
+              </div>
             )}
-          </div>
-        </>
-        {settled && total === 0 && (
-          <div className="empty-state">
-            <h3>No qualifying traders in this window</h3>
-            <p>Try a wider window.</p>
-          </div>
+            <ShowMore
+              shown={shown}
+              total={total}
+              cap={CAP}
+              loading={state.loading}
+              onMore={handleMore}
+            />
+          </>
+        ) : (
+          <>
+            {following.error && (
+              <p role="alert" className="panel-footnote">
+                {following.error}
+              </p>
+            )}
+            {followedTotal > 0 && (
+              <>
+                <div className="table-scroll desktop-traders following-traders">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Rank</th>
+                        <th>Trader</th>
+                        <th>
+                          {metric === "realized" ? "Realized PnL" : "Net ETH"}
+                        </th>
+                        <th>ROI</th>
+                        <th>W / L</th>
+                        <th>Trades</th>
+                        <th>Volume</th>
+                        <th>Positions</th>
+                        <th>Best sale</th>
+                        <th>Last (UTC)</th>
+                        <th aria-label="Follow" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from(
+                        { length: followedReserved },
+                        (_, index) =>
+                          followedPending ? undefined : following.items[index],
+                      ).map((w, index) => (
+                        <DesktopTraderRow
+                          key={index}
+                          index={index}
+                          w={w}
+                          pending={followedPending}
+                          metric={metric}
+                          window={window}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-traders following-traders">
+                  {Array.from(
+                    { length: followedReserved },
+                    (_, index) =>
+                      followedPending ? undefined : following.items[index],
+                  ).map((w, index) => (
+                    <MobileTraderCard
+                      key={index}
+                      index={index}
+                      w={w}
+                      pending={followedPending}
+                      metric={metric}
+                      window={window}
+                    />
+                  ))}
+                </div>
+                <ShowMore
+                  shown={followedReserved}
+                  total={followedTotal}
+                  loading={followedPending}
+                  onMore={handleFollowedMore}
+                />
+              </>
+            )}
+            {!followedTotal && (
+              <div className="empty-state">
+                <h3>You are not following anyone yet</h3>
+                <p>
+                  Follow a wallet from this leaderboard or a wallet profile to
+                  see it here.
+                </p>
+              </div>
+            )}
+          </>
         )}
-        <ShowMore
-          shown={shown}
-          total={total}
-          cap={CAP}
-          loading={state.loading}
-          onMore={handleMore}
-        />
       </section>
     </div>
   );
