@@ -81,6 +81,44 @@ export interface AnalyticsExploreResponse {
   window: LiveWindow;
   message?: string;
 }
+export interface CreatorsOptions {
+  window?: LiveWindow;
+  sort?: "launches" | "volume" | "median";
+  direction?: "asc" | "desc";
+  offset?: number;
+  limit?: number;
+}
+/** One launch transaction sender. `launches` counts every discovered launch;
+ * the other figures come from measured launches only, those whose selected
+ * market source proves a window volume (explore's `sort=volume` population). */
+export interface CreatorRow {
+  address: string;
+  launches: number;
+  measured: number;
+  traded: number;
+  volumeWei: string | null;
+  medianVolumeWei: string | null;
+  bestLaunch: (CatalogPool & { volumeWei: string }) | null;
+}
+export interface CreatorsResponse {
+  coverage: AnalyticsCoverage;
+  broadMarketCutoff: (MarketBoundary & { rebuildPending: boolean }) | null;
+  window: LiveWindow;
+  sort: "launches" | "volume" | "median";
+  direction: "asc" | "desc";
+  attribution: "launch_transaction_initiator";
+  measuredFigures: readonly [
+    "measured",
+    "traded",
+    "volumeWei",
+    "medianVolumeWei",
+    "bestLaunch",
+  ];
+  note: string;
+  items: CreatorRow[];
+  total: number;
+  nextOffset: number | null;
+}
 export interface AnalyticsWalletPosition {
   accountingTier?: "tier2" | "tier3";
   attribution?: "transaction_initiator_only" | "transfer_verified";

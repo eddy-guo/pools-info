@@ -14,8 +14,7 @@ import {
   broadExploreCut,
   broadWindowStart,
   broadExploreCtes,
-  broadFlowCte,
-  broadCoverageSql,
+  rankedFlowCtes,
 } from "./broad-explore";
 import { searchPattern } from "./request";
 export async function readProjectedExplore(
@@ -137,17 +136,9 @@ export async function readProjectedExplore(
   } else {
     // The served trades and volume: broad flow where the canonical broad
     // cutoff covers the launch and no deep publication is newer, else deep.
-    const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
-    const rankedCtes = `${catalogCte}, flow AS (
-    SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id
-  )${broadFlowCte("catalog")}, ranked AS (
-    SELECT p.pool_id,
-      CASE WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
-      CASE WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume
-    FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id
-    LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
-    LEFT JOIN flow f ON f.pool_id=p.pool_id ${where(catalogConditions(metricValues.length))}
-  )`;
+    const rankedCtes = rankedFlowCtes(
+      where(catalogConditions(metricValues.length)),
+    );
     const [ranked, rankValues, countAlone, countValues] =
       sort === "launch"
         ? [

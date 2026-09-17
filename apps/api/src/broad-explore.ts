@@ -1,5 +1,5 @@
 import type { LiveWindow, MarketBoundary } from "@pools/core";
-import type { ReadQuery } from "./catalog-read";
+import { catalogCte, type ReadQuery } from "./catalog-read";
 import { RequestError } from "./request";
 
 export interface BroadExploreCut extends MarketBoundary {
@@ -97,6 +97,27 @@ export function broadFlowCte(source: "catalog" | "page") {
           AND (s.first_timestamp<$3 OR s.last_timestamp>$6)${scope("k.")}
     ) inputs GROUP BY pool_id
 )`;
+}
+// Every launch's served trades and volume on the cheap flow columns: broad
+// flow where the canonical broad cutoff covers the launch and no deep
+// publication is newer, else deep flow, else null where no source proves the
+// metric. This is the whole-catalog rank for explore's trades and volume
+// sorts and the per-launch input of the creators aggregate, so both serve
+// one rule. `where` filters the catalog rows; $1-$6 bind as above. The CTE is
+// materialized so its CASE expressions, each carrying the coverage subplan,
+// evaluate once per launch however many aggregates read the columns.
+export function rankedFlowCtes(where = "") {
+  const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
+  return `${catalogCte}, flow AS (
+    SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id
+  )${broadFlowCte("catalog")}, ranked AS MATERIALIZED (
+    SELECT p.pool_id,p.launch_sender,
+      CASE WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
+      CASE WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume
+    FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id
+    LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
+    LEFT JOIN flow f ON f.pool_id=p.pool_id ${where}
+  )`;
 }
 // Full per-pool market state (dated units, latest and baseline price states)
 // for the `page` relation being served. Never run over the whole catalog: the

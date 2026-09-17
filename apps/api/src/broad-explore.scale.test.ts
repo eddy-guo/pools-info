@@ -10,6 +10,8 @@ import { availableParallelism } from "node:os";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { readProjectedExplore } from "./projected-explore";
+import { readCreators } from "./creators-read";
+import type { ReadQuery } from "./catalog-read";
 import {
   marketDatabase,
   marketUnits,
@@ -327,14 +329,16 @@ test(
     );
     // Full catalog size: all launches participate before LIMIT. No raw swap
     // scan is needed for quiet covered pools, and page sorting remains exact.
+    // Launch senders spread over 26,000 addresses, two launches each, so the
+    // creators aggregate groups production's sender count (about 25,700).
     const seedStarted = performance.now();
     await seedBatches(1, 52000, 1000, (lo, hi) =>
       db.query(
         `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch)
         SELECT 4663,'0x'||lpad(to_hex(i+50000),64,'0'),'0x'||lpad(to_hex(i+50000),40,'0'),
-        'Scale launch '||i,'S'||i,$1,'0x'||lpad(to_hex(i+90000),64,'0'),$2,100000,'discovery:v2',$3
-        FROM generate_series($4::integer,$5::integer)i`,
-        [first, address(99), first + 29999, lo, hi],
+        'Scale launch '||i,'S'||i,$1,'0x'||lpad(to_hex(i+90000),64,'0'),'0x'||lpad(to_hex(1000+mod(i,26000)),40,'0'),100000,'discovery:v2',$2
+        FROM generate_series($3::integer,$4::integer)i`,
+        [first, first + 29999, lo, hi],
       ),
     );
     // Fresh statistics for every relation the explore read touches, so the
@@ -347,37 +351,46 @@ test(
     // the metric statement's cost estimate sits far above
     // jit_optimize_above_cost, so a host with JIT available spends seconds
     // compiling it before a sub-second execution. Homebrew builds have no JIT.
-    const explain = async (jit: "on" | "off") => {
+    const explain = async (
+      jit: "on" | "off",
+      read: (query: ReadQuery) => Promise<unknown>,
+    ) => {
       let summary = "not captured";
       await db.query("BEGIN");
-      await readProjectedExplore(
-        async (sql, values) => {
-          if (sql.startsWith("SET LOCAL jit"))
-            return db.query(`SET LOCAL jit = ${jit}`);
-          if (!sql.includes("count(*) OVER ()")) return db.query(sql, values);
-          const plan = (
-            await db.query(
-              "EXPLAIN (ANALYZE, SETTINGS, SUMMARY) " + sql,
-              values,
-            )
-          ).rows.map((row) => String(row["QUERY PLAN"]));
-          const pick = (re: RegExp) =>
-            plan.map((line) => line.match(re)?.[1]).find(Boolean) ?? "n/a";
-          summary = `cost=${plan[0]?.match(/cost=[\d.]+\.\.([\d.]+)/)?.[1] ?? "n/a"} planning=${pick(/^Planning Time: ([\d.]+) ms/)}ms execution=${pick(/^Execution Time: ([\d.]+) ms/)}ms jitFunctions=${pick(/^\s*Functions: (\d+)/)} jitTotal=${pick(/Timing: .*Total ([\d.]+) ms/)}ms`;
-          return db.query(sql, values);
-        },
-        { sort: "trades", window: "All", limit: 25 },
-      );
+      await read(async (sql, values) => {
+        if (sql.startsWith("SET LOCAL jit"))
+          return db.query(`SET LOCAL jit = ${jit}`);
+        if (!sql.includes("count(*) OVER ()")) return db.query(sql, values);
+        const plan = (
+          await db.query("EXPLAIN (ANALYZE, SETTINGS, SUMMARY) " + sql, values)
+        ).rows.map((row) => String(row["QUERY PLAN"]));
+        const pick = (re: RegExp) =>
+          plan.map((line) => line.match(re)?.[1]).find(Boolean) ?? "n/a";
+        summary = `cost=${plan[0]?.match(/cost=[\d.]+\.\.([\d.]+)/)?.[1] ?? "n/a"} planning=${pick(/^Planning Time: ([\d.]+) ms/)}ms execution=${pick(/^Execution Time: ([\d.]+) ms/)}ms jitFunctions=${pick(/^\s*Functions: (\d+)/)} jitTotal=${pick(/Timing: .*Total ([\d.]+) ms/)}ms`;
+        return db.query(sql, values);
+      });
       await db.query("COMMIT");
       return summary;
     };
+    const explainExplore = (jit: "on" | "off") =>
+      explain(jit, (query) =>
+        readProjectedExplore(query, {
+          sort: "trades",
+          window: "All",
+          limit: 25,
+        }),
+      );
+    const explainCreators = (jit: "on" | "off") =>
+      explain(jit, (query) =>
+        readCreators(query, { sort: "launches", window: "All", limit: 25 }),
+      );
     const settings = (
       await db.query(
         "SELECT version() AS version,current_setting('jit') AS jit,current_setting('jit_above_cost') AS above,current_setting('jit_optimize_above_cost') AS optimize",
       )
     ).rows[0];
     process.stdout.write(
-      `postgres: ${settings.version}; jit=${settings.jit} jit_above_cost=${settings.above} jit_optimize_above_cost=${settings.optimize}; cpus=${availableParallelism()}\nmetric statement jit=on: ${await explain("on")}\nmetric statement jit=off: ${await explain("off")}\n`,
+      `postgres: ${settings.version}; jit=${settings.jit} jit_above_cost=${settings.above} jit_optimize_above_cost=${settings.optimize}; cpus=${availableParallelism()}\nmetric statement jit=on: ${await explainExplore("on")}\nmetric statement jit=off: ${await explainExplore("off")}\ncreators statement jit=on: ${await explainCreators("on")}\ncreators statement jit=off: ${await explainCreators("off")}\n`,
     );
     const timed = async (q: string) => {
       const started = performance.now();
@@ -433,6 +446,89 @@ test(
     assert.equal(new Set(scaleIds).size, 52031);
     process.stdout.write(
       `52k catalog serving: seedMs=${seedMs.toFixed(1)} metricReadMs=${metric.ms.toFixed(1)} catalogReadMs=${catalog.ms.toFixed(1)} walkMs=${walkMs.toFixed(1)} pageMaxMs=${Math.max(...pageMs).toFixed(1)} pageMeanMs=${(pageMs.reduce((a, b) => a + b, 0) / pageMs.length).toFixed(1)} rows=${scaleIds.length} pages=${pageIds.length} unique=${new Set(scaleIds).size}\n`,
+    );
+    // The creators aggregate groups the same 52k catalog by launch sender in
+    // one statement: 26,000 scale senders with two quiet covered launches
+    // each, plus the fixture sender with 31. Every sort and both ends of the
+    // list must fit the same budget, since the statement never pages before
+    // it aggregates.
+    const creators = async (q: string) => {
+      const started = performance.now();
+      const r = await fetch(base + "/v1/creators?" + q);
+      return {
+        status: r.status,
+        data: (await r.json()) as any,
+        ms: performance.now() - started,
+      };
+    };
+    const byLaunches = await creators("sort=launches&window=All&limit=25");
+    assert.equal(byLaunches.status, 200, JSON.stringify(byLaunches.data));
+    assert.equal(byLaunches.data.total, 26001);
+    assert.equal(byLaunches.data.nextOffset, 25);
+    const canonicalVolume = (BigInt(marketAmount) * 18000n).toString();
+    assert.deepEqual(
+      {
+        ...byLaunches.data.items[0],
+        bestLaunch: byLaunches.data.items[0].bestLaunch.id,
+      },
+      {
+        address: address(99),
+        launches: 31,
+        measured: 30,
+        traded: 1,
+        volumeWei: canonicalVolume,
+        medianVolumeWei: "0",
+        bestLaunch: word(1),
+      },
+    );
+    assert.equal(
+      byLaunches.data.items[0].bestLaunch.volumeWei,
+      canonicalVolume,
+    );
+    assert.equal(byLaunches.data.items[0].bestLaunch.name, "Canonical market");
+    assert.deepEqual(
+      {
+        ...byLaunches.data.items[1],
+        bestLaunch: byLaunches.data.items[1].bestLaunch.id,
+      },
+      {
+        address: "0x" + (1000).toString(16).padStart(40, "0"),
+        launches: 2,
+        measured: 2,
+        traded: 0,
+        volumeWei: "0",
+        medianVolumeWei: "0",
+        bestLaunch: "0x" + (76000).toString(16).padStart(64, "0"),
+      },
+    );
+    const lastLaunches = await creators(
+      "sort=launches&window=All&limit=25&offset=26000",
+    );
+    assert.equal(lastLaunches.status, 200, JSON.stringify(lastLaunches.data));
+    assert.equal(lastLaunches.data.total, 26001);
+    assert.equal(lastLaunches.data.items.length, 1);
+    assert.equal(lastLaunches.data.nextOffset, null);
+    const byVolume = await creators("sort=volume&window=All&limit=25");
+    assert.equal(byVolume.status, 200, JSON.stringify(byVolume.data));
+    assert.equal(byVolume.data.total, 26001);
+    assert.equal(byVolume.data.items[0].address, address(99));
+    const byMedian = await creators(
+      "sort=median&direction=asc&window=7d&limit=25&offset=25975",
+    );
+    assert.equal(byMedian.status, 200, JSON.stringify(byMedian.data));
+    assert.equal(byMedian.data.total, 26001);
+    assert.equal(byMedian.data.items.length, 25);
+    assert.equal(byMedian.data.nextOffset, 26000);
+    const creatorReads = { byLaunches, lastLaunches, byVolume, byMedian };
+    for (const [name, read] of Object.entries(creatorReads))
+      assert(
+        read.ms < catalogReadBudgetMs,
+        `52k creators ${name} read exceeded ${catalogReadBudgetMs}ms: ${read.ms.toFixed(1)}ms`,
+      );
+    process.stdout.write(
+      `52k creators serving: ${Object.entries(creatorReads)
+        .map(([name, read]) => `${name}Ms=${read.ms.toFixed(1)}`)
+        .join(" ")} creators=${byLaunches.data.total}\n`,
     );
   },
 );

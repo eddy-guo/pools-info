@@ -167,6 +167,7 @@ jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
 | `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
+| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, and `bestLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination.                                                                                                                         |
 | `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                 |
 | `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |
 | `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                 |
@@ -216,6 +217,65 @@ per group with full matching counts; catalog pages never load the full catalog
 into application memory. Global sorting always precedes pagination. In-process
 response caching can add up to five seconds before a correction is visible.
 
+## Creators aggregate
+
+`GET /v1/creators` groups the whole discovered catalog by the launch
+transaction's sender (`attribution:"launch_transaction_initiator"`, never a
+verified creator identity or beneficiary) and pages the groups in Postgres, so
+the creators page no longer reassembles them from thousands of explore rows.
+It shares explore's coverage checks and 503 codes (`catalog_identity_conflict`,
+`analytics_projection_pending`, `market_identity_conflict`,
+`market_evidence_invalid`) and its five-second in-process cache.
+
+Parameters: `window` (`1h`, `6h`, `24h`, `7d`, `30d`, `All`; default `All`),
+`sort` (`launches` default, `volume`, `median`), `direction` (`desc` default,
+`asc`), `limit` (1-100, default 25) and `offset` (0-999999). Anything else is
+400 `invalid_parameter`; bad values answer `invalid_window`, `invalid_sort`,
+`invalid_direction`, `invalid_limit` or `invalid_offset`.
+
+Each row is `address` (lowercase), `launches`, `measured`, `traded`,
+`volumeWei`, `medianVolumeWei` and `bestLaunch`. A launch is measured under the
+rule that gives an explore row its `stats.volumeWei`: canonical broad rollups
+when the broad cutoff covers the launch and no deep publication is newer, else
+the deep publication; a covered launch with no trades in the window is measured
+at volume 0; a launch with neither source, or whose broad summaries carry
+unsupported swap signs, is unmeasured. So `measured` is the creator's share of
+`/v1/explore?sort=volume` and `launches` its share of `sort=launch`, in any
+window. `launches` counts every discovered launch by the sender; `measured`,
+`traded` (measured launches with at least one observed trade in the window),
+`volumeWei` (sum), `medianVolumeWei` and `bestLaunch` come from measured
+launches only, and an unmeasured launch counts in `launches` and nowhere else.
+The response repeats this rule as `note` and lists those five fields as
+`measuredFigures`. `volumeWei` and `medianVolumeWei` are exact integer wei
+strings, null when `measured` is 0; the median of an even count is the floor of
+the two middle values' mean, computed as SQL numeric, never a float percentile.
+`bestLaunch` is the measured launch with the highest window volume (lowest pool
+id on ties) as a `CatalogPool` plus its `volumeWei`, or null.
+
+`sort=launches` lists every creator (launch-first, like explore's launch order)
+and breaks ties on `volumeWei DESC NULLS LAST`; `volume` and `median` list only
+creators with a measured launch, excluded before `total` and paging, as explore
+excludes null metrics under a metric sort. `direction` applies to the primary
+key and every order ends on `address ASC`. The response carries `coverage`,
+`broadMarketCutoff`, `window`, `sort`, `direction`, `items`, `total` and
+`nextOffset` exactly as explore does: deep figures are dated to
+`coverage.asOf`, broad figures to `broadMarketCutoff.asOf`, and a window moves
+volumes without changing which launches are measured.
+
+The statement is one pass: explore's whole-catalog rank (`rankedFlowCtes` in
+`broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`)
+grouped by sender with ordered-array aggregates for the median and the best
+launch, then sorted and paged with `count(*) OVER ()`; the page's best launches
+are then looked up by primary key. Like explore it runs with `jit = off`,
+because the planner prices the rank's per-launch coverage subplan far above
+`jit_optimize_above_cost` while the statement executes in well under a second.
+On the production-shaped copy (62,393 launches, 25,718 senders, 1,364 deep
+publications, 1,853 broad summaries; Postgres 18) every sort, first and last
+page, executed in 81-111 ms with a 0.7 ms identity lookup, and the whole read
+answered in 93-150 ms; the 52k-launch serial scale phase
+(`broad-explore.scale.test.ts`) bounds each variant at 2,000 ms and prints a
+`52k creators serving` line.
+
 ## Token icon store
 
 `GET` or `HEAD /v1/pools/:poolId/image` serves the catalog's creator image for
@@ -253,14 +313,14 @@ Responses:
 
 Variables, all optional:
 
-| Variable                       | Default | Meaning                                                                                                                   |
-| ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_IMAGE_DEADLINE_MS`      | `10000` | Upstream budget per attempt (DNS, download, decode, encode) once a fetch slot is held. 500-10000.                         |
-| `TOKEN_IMAGE_CONCURRENCY`      | `8`     | Concurrent upstream fetches per process; four times as many may wait in line. 1-32.                                       |
-| `TOKEN_IMAGE_RETRY_SECONDS`    | `300`   | First negative lifetime after a transient failure. 5-86400.                                                               |
-| `TOKEN_IMAGE_REJECTED_SECONDS` | `86400` | Negative lifetime for policy rejections and the ceiling of the transient backoff. 60-2592000.                             |
-| `TOKEN_IMAGE_REQUEST_CAP_MS`   | `12000` | Ceiling on one request's total time (queueing for a slot plus the fetch), regardless of the deadline above. 500-30000.    |
-| `TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS` | `3600` | Backoff ceiling for a bare deadline expiry, shorter than `TOKEN_IMAGE_REJECTED_SECONDS`. 60-86400.                |
+| Variable                               | Default | Meaning                                                                                                                |
+| -------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_IMAGE_DEADLINE_MS`              | `10000` | Upstream budget per attempt (DNS, download, decode, encode) once a fetch slot is held. 500-10000.                      |
+| `TOKEN_IMAGE_CONCURRENCY`              | `8`     | Concurrent upstream fetches per process; four times as many may wait in line. 1-32.                                    |
+| `TOKEN_IMAGE_RETRY_SECONDS`            | `300`   | First negative lifetime after a transient failure. 5-86400.                                                            |
+| `TOKEN_IMAGE_REJECTED_SECONDS`         | `86400` | Negative lifetime for policy rejections and the ceiling of the transient backoff. 60-2592000.                          |
+| `TOKEN_IMAGE_REQUEST_CAP_MS`           | `12000` | Ceiling on one request's total time (queueing for a slot plus the fetch), regardless of the deadline above. 500-30000. |
+| `TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS` | `3600`  | Backoff ceiling for a bare deadline expiry, shorter than `TOKEN_IMAGE_REJECTED_SECONDS`. 60-86400.                     |
 
 The store is a `bytea` column rather than a volume or object store: it needs no
 deployment change, survives rolling deploys, and the whole catalog is about

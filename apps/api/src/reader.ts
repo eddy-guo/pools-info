@@ -5,6 +5,7 @@ import {
   accountingCoverage,
 } from "./accounting-read";
 import { readProjectedExplore } from "./projected-explore";
+import { readCreators } from "./creators-read";
 import { readSearch } from "./search-read";
 import { assertCatalogIdentity, catalogCte } from "./catalog-read";
 import { readLiveTrades } from "./live-read";
@@ -171,6 +172,8 @@ export async function readData(
     return readProjectedExplore(query, request.explore);
   if (request.route === "leaderboard")
     return readLeaderboard(query, request.leaderboard);
+  if (request.route === "creators")
+    return readCreators(query, request.creators);
   if (request.route === "profile")
     return readWallet(query, request.wallet!, request.window);
   if (request.route === "search")
