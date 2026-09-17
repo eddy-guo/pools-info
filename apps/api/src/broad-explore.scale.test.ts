@@ -450,8 +450,10 @@ test(
     // The creators aggregate groups the same 52k catalog by launch sender in
     // one statement: 26,000 scale senders with two quiet covered launches
     // each, plus the fixture sender with 31. Every sort and both ends of the
-    // list must fit the same budget, since the statement never pages before
-    // it aggregates.
+    // served top-100 leaderboard must fit the same budget, since the
+    // statement never pages before it aggregates: a request for the last
+    // legal page still pays the whole-catalog grouping cost the first page
+    // does, even though the real population (26,001) is far past the cap.
     const creators = async (q: string) => {
       const started = performance.now();
       const r = await fetch(base + "/v1/creators?" + q);
@@ -463,7 +465,7 @@ test(
     };
     const byLaunches = await creators("sort=launches&window=All&limit=25");
     assert.equal(byLaunches.status, 200, JSON.stringify(byLaunches.data));
-    assert.equal(byLaunches.data.total, 26001);
+    assert.equal(byLaunches.data.total, 100);
     assert.equal(byLaunches.data.nextOffset, 25);
     const canonicalVolume = (BigInt(marketAmount) * 18000n).toString();
     assert.deepEqual(
@@ -505,23 +507,29 @@ test(
       },
     );
     const lastLaunches = await creators(
-      "sort=launches&window=All&limit=25&offset=26000",
+      "sort=launches&window=All&limit=25&offset=75",
     );
     assert.equal(lastLaunches.status, 200, JSON.stringify(lastLaunches.data));
-    assert.equal(lastLaunches.data.total, 26001);
-    assert.equal(lastLaunches.data.items.length, 1);
+    assert.equal(lastLaunches.data.total, 100);
+    assert.equal(lastLaunches.data.items.length, 25);
     assert.equal(lastLaunches.data.nextOffset, null);
+    // A page reaching past the cap is refused outright, even against a
+    // population this large.
+    const overCap = await creators(
+      "sort=launches&window=All&limit=25&offset=100",
+    );
+    assert.equal(overCap.status, 400, JSON.stringify(overCap.data));
     const byVolume = await creators("sort=volume&window=All&limit=25");
     assert.equal(byVolume.status, 200, JSON.stringify(byVolume.data));
-    assert.equal(byVolume.data.total, 26001);
+    assert.equal(byVolume.data.total, 100);
     assert.equal(byVolume.data.items[0].address, address(99));
     const byMedian = await creators(
-      "sort=median&direction=asc&window=7d&limit=25&offset=25975",
+      "sort=median&direction=asc&window=7d&limit=25&offset=75",
     );
     assert.equal(byMedian.status, 200, JSON.stringify(byMedian.data));
-    assert.equal(byMedian.data.total, 26001);
+    assert.equal(byMedian.data.total, 100);
     assert.equal(byMedian.data.items.length, 25);
-    assert.equal(byMedian.data.nextOffset, 26000);
+    assert.equal(byMedian.data.nextOffset, null);
     const creatorReads = { byLaunches, lastLaunches, byVolume, byMedian };
     for (const [name, read] of Object.entries(creatorReads))
       assert(

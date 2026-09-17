@@ -5,7 +5,7 @@ import pg from "pg";
 import type { CreatorsResponse } from "@pools/core";
 import { applyTestMigrations } from "./test-migrations";
 import { createReader } from "./reader";
-import { parseRequest } from "./request";
+import { parseRequest, RequestError } from "./request";
 
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
@@ -264,11 +264,21 @@ test(
         }
         assert.deepEqual(collected, senders(full), query);
       }
-      // A page past the end keeps the population's total.
-      const beyond = await read("sort=volume&offset=999999");
+      // A page past the end, but still inside the top-100 bound, keeps the
+      // population's total.
+      const beyond = await read("sort=volume&offset=90&limit=10");
       assert.equal(beyond.total, 4);
       assert.deepEqual(beyond.items, []);
       assert.equal(beyond.nextOffset, null);
+      // Creators is a top-100 leaderboard: an offset past that bound is
+      // refused outright rather than answered with an empty page.
+      assert.throws(
+        () => read("sort=volume&offset=100"),
+        (error: unknown) =>
+          error instanceof RequestError &&
+          error.status === 400 &&
+          error.code === "invalid_offset",
+      );
       // A window moves volumes, never which launches are measured: sender
       // 101's launch 2 traded before the 24h window, so it stays measured at
       // volume 0 and drops out of traded.
@@ -294,6 +304,111 @@ test(
       assert.equal(hour.items[0].address, address(104));
       assert.equal(hour.items[0].traded, 0);
       assert.equal(hour.items[0].boughtOwnLaunch, true);
+    } finally {
+      await reader.close();
+      await db.query(`DROP SCHEMA ${schema} CASCADE`);
+      await db.end();
+    }
+  },
+);
+
+test(
+  "Postgres creators cap the served leaderboard at the top 100 per window and sort",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const schema = "api_test_creators_cap_" + randomBytes(8).toString("hex");
+    const db = new pg.Client({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    await db.connect();
+    const reader = createReader(process.env.TEST_DATABASE_URL, schema);
+    const read = (parameters = "") =>
+      reader.read(
+        parseRequest("/v1/creators" + (parameters ? "?" + parameters : "")),
+      ) as Promise<CreatorsResponse>;
+    // A distinct sender per measured launch, above 100, so every sort's
+    // ranked population exceeds the leaderboard's cap.
+    const POPULATION = 120;
+    try {
+      await db.query(`CREATE SCHEMA ${schema}`);
+      await db.query(`SET search_path TO ${schema}`);
+      await applyTestMigrations(db);
+      await db.query(
+        "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash) VALUES(4663,'discovery:v1','discovery',100,10000,$1)",
+        [word(10000)],
+      );
+      await db.query(
+        "INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence) VALUES(4663,'discovery:v1',100,10000,$1,'fixture','{}')",
+        [word(10000)],
+      );
+      for (let i = 1; i <= POPULATION; i++) {
+        const sender = address(1000 + i);
+        await db.query(
+          "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch) VALUES(4663,$1,$2,$3,$4,$5,$6,$7,1000,'discovery:v1',10000)",
+          [
+            word(i),
+            address(i),
+            `Launch ${i}`,
+            `L${i}`,
+            100 + i,
+            word(100 + i),
+            sender,
+          ],
+        );
+        const market = {
+          id: word(i),
+          token: address(i),
+          name: `Launch ${i}`,
+          symbol: `L${i}`,
+          decimals: 0,
+          supply: "1000",
+          launchBlock: 100 + i,
+          launchedAt: 1000,
+          launchTx: word(100 + i),
+          launchSender: sender,
+          priceWei: "100",
+          volumeWei: "0",
+        };
+        const snapshot = {
+          schemaVersion: 1,
+          chainId: 4663,
+          toBlock: 10000,
+          blockHash: word(10000),
+          toTimestamp: 200000,
+          markets: [market],
+        };
+        const generatedAt = "2026-09-15T00:00:00Z";
+        await db.query(
+          "INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,generated_at,snapshot,liquidity_wei,source_kind) VALUES(4663,$1,10000,$2,200000,$3,$4,NULL,'rpc_capture')",
+          [word(i), word(10000), generatedAt, snapshot],
+        );
+        // A row here is what makes the launch measured (volume 0, no
+        // trades), so every sender qualifies for the metric sorts too.
+        await db.query(
+          "INSERT INTO analytics_accounting_pools(chain_id,pool_id,projection_version,through_block,through_hash,from_block,from_timestamp,asof_timestamp,generated_at,source_kind,market,liquidity_wei) VALUES(4663,$1,1,10000,$2,100,1000,200000,$3,'rpc_capture',$4,NULL)",
+          [word(i), word(10000), generatedAt, market],
+        );
+      }
+      for (const sort of ["launches", "volume", "median"] as const) {
+        for (const offset of [0, 25, 50, 75]) {
+          const page = await read(`sort=${sort}&offset=${offset}&limit=25`);
+          assert.equal(page.total, 100, `${sort} offset=${offset}`);
+          assert.equal(page.items.length, 25, `${sort} offset=${offset}`);
+        }
+        // The last page (offset+limit=100) never points past the cap, even
+        // though the real population is 120.
+        const last = await read(`sort=${sort}&offset=75&limit=25`);
+        assert.equal(last.nextOffset, null, sort);
+        // A page reaching past rank 100 is refused, not served empty.
+        assert.throws(
+          () => read(`sort=${sort}&offset=100`),
+          (error: unknown) =>
+            error instanceof RequestError &&
+            error.status === 400 &&
+            error.code === "invalid_offset",
+          sort,
+        );
+      }
     } finally {
       await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);

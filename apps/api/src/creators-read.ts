@@ -87,17 +87,22 @@ export async function readCreators(
       [...values, limit, offset],
     )
   ).rows;
-  // An empty page past the end still reports the population's total.
-  const total = rows.length
-    ? Number(rows[0].total)
-    : Number(
-        (
-          await query(
-            `${ranked} SELECT count(*)::text AS count FROM (SELECT launch_sender FROM ranked GROUP BY launch_sender ${sort === "launches" ? "" : "HAVING count(volume)>0"}) creators`,
-            values,
-          )
-        ).rows[0].count,
-      );
+  // An empty page past the end still reports the population's total. This is
+  // a top-100-per-window-and-sort leaderboard: no rank beyond 100 is served,
+  // so the reported total (and, through it, nextOffset) never exceeds 100.
+  const total = Math.min(
+    100,
+    rows.length
+      ? Number(rows[0].total)
+      : Number(
+          (
+            await query(
+              `${ranked} SELECT count(*)::text AS count FROM (SELECT launch_sender FROM ranked GROUP BY launch_sender ${sort === "launches" ? "" : "HAVING count(volume)>0"}) creators`,
+              values,
+            )
+          ).rows[0].count,
+        ),
+  );
   // The page's best launches carry their catalog identity; a single
   // reference inlines the catalog CTE into two primary-key lookups.
   const bestIds = rows.map((r) => r.best_pool).filter(Boolean);

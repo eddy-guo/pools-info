@@ -167,7 +167,7 @@ jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
 | `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
-| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination.                                                                                                       |
+| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row, a top-100-per-window-and-sort leaderboard over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination; no rank beyond 100 is served.                                |
 | `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                 |
 | `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |
 | `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                 |
@@ -229,9 +229,13 @@ It shares explore's coverage checks and 503 codes (`catalog_identity_conflict`,
 
 Parameters: `window` (`1h`, `6h`, `24h`, `7d`, `30d`, `All`; default `All`),
 `sort` (`launches` default, `volume`, `median`), `direction` (`desc` default,
-`asc`), `limit` (1-100, default 25) and `offset` (0-999999). Anything else is
-400 `invalid_parameter`; bad values answer `invalid_window`, `invalid_sort`,
-`invalid_direction`, `invalid_limit` or `invalid_offset`.
+`asc`), `limit` (1-100, default 25) and `offset`. This is a top-100-per-window-
+and-sort leaderboard: no rank beyond 100 is ever served, so `offset` is only
+valid up to `100 - limit` (0, 25, 50 and 75 all work at the default `limit=25`;
+100 does not) and a request past that bound is refused rather than answered
+with an empty page. Anything else is 400 `invalid_parameter`; bad values
+answer `invalid_window`, `invalid_sort`, `invalid_direction`, `invalid_limit`
+or `invalid_offset`.
 
 Each row is `address` (lowercase), `launches`, `measured`, `traded`,
 `volumeWei`, `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. A launch is measured under the
@@ -269,7 +273,10 @@ key and every order ends on `address ASC`. The response carries `coverage`,
 `broadMarketCutoff`, `window`, `sort`, `direction`, `items`, `total` and
 `nextOffset` exactly as explore does: deep figures are dated to
 `coverage.asOf`, broad figures to `broadMarketCutoff.asOf`, and a window moves
-volumes without changing which launches are measured.
+volumes without changing which launches are measured. `total` is the sort's
+ranked population capped at 100 (rows beyond rank 100 never appear, in any
+window or sort), and `nextOffset` is null once `offset + limit` reaches 100
+even when the real population is larger.
 
 The statement is one pass: explore's whole-catalog rank (`rankedFlowCtes` in
 `broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`,

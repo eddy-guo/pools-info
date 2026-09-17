@@ -58,6 +58,12 @@ test("creators requests validate their own vocabulary", () => {
       .creators.sort,
     "median",
   );
+  // Creators is a top-100-per-window-and-sort leaderboard: any offset and
+  // limit combination up to the cap is fine, one row past it is not.
+  assert.equal(
+    parseRequest("/v1/creators?offset=75&limit=25").creators.offset,
+    75,
+  );
   for (const [url, code] of [
     ["/v1/creators?sort=launch", "invalid_sort"],
     ["/v1/creators?sort=trades", "invalid_sort"],
@@ -66,6 +72,8 @@ test("creators requests validate their own vocabulary", () => {
     ["/v1/creators?limit=0", "invalid_limit"],
     ["/v1/creators?limit=101", "invalid_limit"],
     ["/v1/creators?offset=-1", "invalid_offset"],
+    ["/v1/creators?offset=100", "invalid_offset"],
+    ["/v1/creators?offset=76&limit=25", "invalid_offset"],
     ["/v1/creators?q=x", "invalid_parameter"],
     ["/v1/creators?sort=volume&sort=volume", "invalid_parameter"],
   ])
