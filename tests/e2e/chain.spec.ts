@@ -1024,7 +1024,7 @@ test("a stale market snapshot never presents old launches as just minted", async
   await expect(first).not.toHaveText("<1m");
 });
 
-test("saved global catalog shows unprocessed pools and scrolls the global sort", async ({
+test("saved global catalog shows unprocessed pools and pages the global sort", async ({
   page,
   request,
 }) => {
@@ -1056,31 +1056,14 @@ test("saved global catalog shows unprocessed pools and scrolls the global sort",
     visible: true,
   });
   await expect(shown.first()).toBeVisible();
-  /* The second page is read once the rows near it scroll into view; the
-     list's rows are windowed, so it is measured by its index, not counted. */
-  const secondPage = page.waitForRequest(
-    (r) =>
-      r.url().includes("/api/product/explore") &&
-      new URL(r.url()).searchParams.get("offset") === "25",
+  await expect(page.locator(".pagination")).toContainText(
+    `Showing 25 of ${all.total}`,
   );
-  await page.evaluate(() => {
-    /* The layout the viewport shows is the one whose rows have a height. */
-    const row = [
-      ...document.querySelectorAll(
-        ".explore-page :is(.desktop-pools tbody, .mobile-pools) > [data-row]",
-      ),
-    ].find((node) => node.getBoundingClientRect().height)!;
-    const list = row.parentElement!;
-    window.scrollTo({
-      top:
-        list.getBoundingClientRect().top +
-        window.scrollY +
-        30 * row.getBoundingClientRect().height,
-      behavior: "instant",
-    });
-  });
-  await secondPage;
-  await expect(page).not.toHaveURL(/offset=/);
+  await page.getByRole("button", { name: "Show 25 more", exact: true }).click();
+  await expect(page).toHaveURL(/limit=50/);
+  await expect(page.locator(".pagination")).toContainText(
+    `Showing 50 of ${all.total}`,
+  );
   const displayed = page
     .locator(".desktop-pools, .mobile-pools")
     .getByText(all.items[25].name, { exact: true })

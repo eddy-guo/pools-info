@@ -736,6 +736,12 @@ main {
   display: inline-block;
   min-width: 15ch;
 }
+/* The Show more foot holds its button's row from first paint: the button
+   goes once every row is on show, which a short list's first response
+   decides, and whatever stacks under the list must not move when it does. */
+.pagination:has(> .pagination-count) {
+  min-height: calc(31px + max(38px, var(--ctl-min)));
+}
 .market-sidebar {
   display: flex;
   flex-direction: column;
@@ -4419,6 +4425,10 @@ main {
     flex-basis: 100%;
     min-width: 0;
   }
+  /* The count takes its own 15px line above the button here. */
+  .pagination:has(> .pagination-count) {
+    min-height: calc(31px + 15px + 10px + max(38px, var(--ctl-min)));
+  }
   .segmented button {
     min-height: 40px;
     padding: 6px 8px;
@@ -4821,25 +4831,6 @@ main {
 .explore-page .pool-table tbody tr,
 .explore-page .pool-table tbody td {
   height: 62px;
-}
-/* The rows are windowed against the document scroll: two spacer rows hold the
-   height of every row that is not rendered, so the list keeps its full extent
-   and the scrollbar its meaning. The list's geometry is exact, so the browser
-   must not anchor the viewport to a row or spacer that the next window moves. */
-.explore-page .pool-table tbody,
-.explore-page .mobile-pools {
-  overflow-anchor: none;
-}
-.explore-page .pool-table tr.spacer,
-.explore-page .pool-table tr.spacer td {
-  height: auto;
-  padding: 0;
-  border: 0;
-}
-/* A spacer paints nothing, so its own move as rows fill in beside it is
-   not a shift of anything the reader can see. */
-.explore-page .spacer {
-  visibility: hidden;
 }
 /* Nine columns share the panel on the export's grid, each measured against
    its widest real value plus the cell padding: a six-significant-digit
