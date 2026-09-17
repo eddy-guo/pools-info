@@ -33,6 +33,11 @@ const removedCopy = [
   "Observed volume",
   "Avg closed hold",
   "Best realized sale",
+  "copy signals",
+  "COPY SIGNALS",
+  "Wallet signals",
+  "median lag",
+  "Backtested",
 ];
 /** The export's stat labels: a name for each value, never a method note. */
 const statLabels = [
@@ -109,12 +114,12 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
 
   const actions = page.locator(".page-heading .button");
   await expect(actions).toHaveText([
-    "View copy signals",
-    "Follow wallet",
     "Explorer ↗",
     "Share PnL card",
+    "Follow wallet",
+    "Copy trade",
   ]);
-  await expect(actions.first()).not.toHaveClass(/secondary/);
+  await expect(actions.last()).not.toHaveClass(/secondary/);
   await expect(
     page.locator(".page-heading .button:not(.secondary)"),
   ).toHaveCount(1);
@@ -187,4 +192,70 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   await expect(page.locator(".market-sidebar h2").first()).toHaveText(
     "Most traded pools",
   );
+});
+
+test("copy trade opens the designed card as a read-only preview", async ({
+  page,
+}, testInfo) => {
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  const grid = page.locator(".page .workspace-grid");
+  const before = await grid.boundingBox();
+  const preview = page.getByRole("dialog", { name: "Copy trading" });
+  await expect(preview).toBeHidden();
+  await page.getByRole("button", { name: "Copy trade", exact: true }).click();
+  await expect(preview).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Wallet signals" }),
+  ).toHaveCount(0);
+  // The card carries the export's controls, none of which can be used.
+  const toggle = preview.getByRole("switch", { name: "Copy trading" });
+  await expect(toggle).toBeDisabled();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  const sizes = preview
+    .getByRole("group", { name: "Per trade" })
+    .getByRole("button");
+  await expect(sizes).toHaveText(["0.05", "0.10", "0.25", "1.00"]);
+  for (const size of await sizes.all()) await expect(size).toBeDisabled();
+  await expect(sizes.nth(1)).toHaveAttribute("aria-pressed", "true");
+  const rules = preview.getByRole("checkbox");
+  await expect(rules).toHaveCount(3);
+  for (const rule of await rules.all()) await expect(rule).toBeDisabled();
+  await expect(rules.nth(0)).toBeChecked();
+  await expect(rules.nth(2)).not.toBeChecked();
+  await expect(preview.getByText("Their last 30d, at your size")).toBeVisible();
+  await expect(
+    preview.locator("strong"),
+    "no backtest figure is invented",
+  ).toHaveText("");
+  await expect(preview.getByRole("status")).toHaveText(
+    "Copy trading is not available yet.",
+  );
+  const text = await preview.innerText();
+  for (const copy of [...removedCopy, "pools.trade", "N/A"])
+    expect(text, copy).not.toContain(copy);
+  const box = (await preview.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(
+    Math.abs(box.x + box.width / 2 - viewport.width / 2),
+    "the card is centred",
+  ).toBeLessThanOrEqual(1);
+  expect(box.width).toBeLessThanOrEqual(416);
+  await preview.screenshot({
+    path: testInfo.outputPath("copy-trade-preview.png"),
+  });
+  // The dialog sits in the top layer, so the page behind it never moves.
+  expect(await grid.boundingBox()).toEqual(before);
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeHidden();
+  expect(await grid.boundingBox()).toEqual(before);
+  await page.getByRole("button", { name: "Copy trade", exact: true }).click();
+  await expect(preview).toBeVisible();
+  await preview
+    .getByRole("button", { name: "Close copy trading preview" })
+    .click();
+  await expect(preview).toBeHidden();
+  expect(
+    await page.evaluate(() => localStorage.getItem("poolsinfo.following.v1")),
+    "opening the preview follows nothing",
+  ).toBeNull();
 });
