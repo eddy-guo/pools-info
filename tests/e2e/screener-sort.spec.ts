@@ -7,13 +7,14 @@ const sortable = [
   { label: "24h", key: "change", column: 4 },
   { label: "Volume", key: "volume", column: 5 },
 ];
-const plain = ["Token", "Price", "Launch sender", "Trend"];
+const plain = ["Token", "Price", "Launch sender"];
 /* With no sort in the URL the screener reads by volume, highest first. */
 const defaultColumn = 5;
 /* The export's grid at the 1030px the panel gives a 1440px viewport: watch,
-   token, price, 24h, volume, launch sender, trend. Liquidity and holders are
-   not served, so their columns are gone and the token column takes the room. */
-const columns = [44, 438, 116, 98, 112, 122, 100];
+   token, price, 24h, volume, launch sender. Liquidity, holders and a per-row
+   price trend are not served, so their columns are gone and the token column
+   takes the room. */
+const columns = [44, 538, 116, 98, 112, 122];
 /* Price through volume read from the right, as do their heads. */
 const rightAligned = [3, 4, 5];
 

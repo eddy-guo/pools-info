@@ -27,16 +27,9 @@ import {
 } from "@/lib/watchlist";
 import { useDebouncedInput, useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
-import {
-  AddressChip,
-  Change,
-  EmptyState,
-  Price,
-  Sparkline,
-  WatchButton,
-} from "./ui";
+import { AddressChip, Change, EmptyState, Price, WatchButton } from "./ui";
 import { PoolImage } from "./pool-image";
-import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
+import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
@@ -513,14 +506,13 @@ export function ProductExplore() {
                     <col className="col-change" />
                     <col className="col-volume" />
                     <col className="col-sender" />
-                    <col className="col-trend" />
                   </colgroup>
                   <thead>
                     <tr>
                       <th aria-label="Watchlist" />
                       <th>Token</th>
                       {launchPage ? (
-                        <th colSpan={5}>Launch</th>
+                        <th colSpan={4}>Launch</th>
                       ) : (
                         <>
                           <th>Price</th>
@@ -529,7 +521,6 @@ export function ProductExplore() {
                           {sortable(window, "change")}
                           {sortable("Volume", "volume")}
                           <th>Launch sender</th>
-                          <th>Trend</th>
                         </>
                       )}
                     </tr>
@@ -570,7 +561,7 @@ export function ProductExplore() {
                             )}
                           </td>
                           {p && launchOnly(p) ? (
-                            <td className="launch-cell" colSpan={5}>
+                            <td className="launch-cell" colSpan={4}>
                               <LaunchLine pool={p} now={now} />
                             </td>
                           ) : (
@@ -612,26 +603,6 @@ export function ProductExplore() {
                                     href={`/wallet/${p.launchSender.toLowerCase()}/`}
                                     stacked
                                   />
-                                ) : skeleton ? (
-                                  "Pending"
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={skeleton}>
-                                {p ? (
-                                  <>
-                                    {p.marketCoverage?.source ===
-                                      "deep_publication" &&
-                                    p.market?.series.length ? (
-                                      <Sparkline
-                                        points={p.market.series}
-                                        positive={(p.stats.change ?? 0) >= 0}
-                                      />
-                                    ) : (
-                                      <Unavailable />
-                                    )}
-                                  </>
                                 ) : skeleton ? (
                                   "Pending"
                                 ) : (
@@ -713,18 +684,6 @@ export function ProductExplore() {
                                     {" · "}
                                     {integers.format(p.stats.trades)} trades
                                   </>
-                                )}
-                              </span>
-                              <span className="mobile-pool-spark">
-                                {p.marketCoverage?.source ===
-                                  "deep_publication" &&
-                                p.market?.series.length ? (
-                                  <Sparkline
-                                    points={p.market.series}
-                                    positive={(p.stats.change ?? 0) >= 0}
-                                  />
-                                ) : (
-                                  <Unavailable reason="No observed price series" />
                                 )}
                               </span>
                             </div>

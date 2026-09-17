@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 /* A token's subtitle stays inside its own cell. On the desktop the export's
    `SYMBOL · age · N trades` line has at least a 250px column at both widths
-   (the table holds its 842px and scrolls below it), so page one reads whole,
+   (the table holds its 742px and drops a column below it), so page one reads whole,
    with no ellipsis; the mobile card keeps its symbol and launch date and is
    checked against its price slot too. */
 

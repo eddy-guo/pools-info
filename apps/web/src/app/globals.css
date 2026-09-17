@@ -683,9 +683,6 @@ main {
   height: 28px;
   display: block;
 }
-.trend-cell {
-  width: 92px;
-}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -1570,9 +1567,6 @@ main {
     flex-wrap: wrap;
     gap: 3px 10px;
   }
-  .trend-cell {
-    display: none;
-  }
   .table-tabs {
     gap: 15px;
   }
@@ -1620,9 +1614,6 @@ main {
   }
   .detail-grid > .market-sidebar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .trend-cell {
-    display: table-cell;
   }
   .heading-note {
     display: none;
@@ -4691,10 +4682,9 @@ main {
     text-align: right;
     font-size: 12.5px;
   }
-  /* One line of Vol and its trade count, with the sparkline slot past it,
-     empty when the read sends no series (never a placeholder mark). Liquidity
-     and holders are out of the product; this row reserves no space for
-     either. */
+  /* One line of Vol and its trade count. Liquidity, holders and a price
+     trend are out of the product; this row reserves no space for any of
+     them. */
   .mobile-pool-stats {
     display: flex;
     align-items: center;
@@ -4716,16 +4706,6 @@ main {
     font-size: 12px;
     color: var(--muted);
     margin-top: 0;
-  }
-  .mobile-pool-spark {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    min-height: 24px;
-  }
-  .mobile-pool-spark .sparkline {
-    width: 60px;
-    height: 24px;
   }
   /* A launch-only row keeps the identity line with age and sender, in the
      secondary tone; the sender is the same shared small chip the
@@ -5089,19 +5069,19 @@ main {
 .explore-page .pool-table tbody td {
   height: 62px;
 }
-/* Seven columns share the panel on the export's grid, each measured against
+/* Six columns share the panel on the export's grid, each measured against
    its widest real value plus the cell padding: a six-significant-digit
    volume, a four-digit signed change, a mono price with its subscript, the
-   sender chip. The token column takes the remainder, 438px at the 1030px the
-   panel gives a 1440px viewport; the table holds 842px, where that column is
+   sender chip. The token column takes the remainder, 538px at the 1030px the
+   panel gives a 1440px viewport; the table holds 742px, where that column is
    250px and still holds page one's longest `SYMBOL · age · N trades`
-   subtitle with room to spare, and scrolls rather than clip below that. The
-   11.5px head sizes the launch sender column: it holds its label without
-   reaching into the next column, with half a pixel per glyph to spare for a
-   renderer that rounds glyph advances to whole pixels: Linux Chromium, where
-   CI runs the browser suite, sets "Launch sender" 2px wider than macOS. */
+   subtitle with room to spare. The 11.5px head sizes the launch sender
+   column: it holds its label without reaching into the next column, with
+   half a pixel per glyph to spare for a renderer that rounds glyph advances
+   to whole pixels: Linux Chromium, where CI runs the browser suite, sets
+   "Launch sender" 2px wider than macOS. */
 .explore-page .pool-table {
-  min-width: 842px;
+  min-width: 742px;
 }
 .explore-page .pool-table th,
 .explore-page .pool-table td {
@@ -5123,28 +5103,13 @@ main {
 .explore-page .col-sender {
   width: 122px;
 }
-.explore-page .col-trend {
-  width: 100px;
-}
 /* The table fits the list's own width rather than scrolling sideways: under
-   its 842px it drops Trend, and under 742px Launch sender as well. The token
-   and every figure stay; a phone shows the rows. The dropped columns keep
-   their place at no width, so a launch row's five-column span still reaches
-   the table's edge, and only the last cells of a row are hidden, so no cell
-   shifts into another's column. */
+   its 742px it drops Launch sender. The token and every figure stay; a phone
+   shows the rows. The dropped column keeps its place at no width, so a launch
+   row's four-column span still reaches the table's edge, and only the last
+   cell of a row is hidden, so no cell shifts into another's column. */
 .explore-page .table-region {
   container: pool-list / inline-size;
-}
-@container pool-list (width < 842px) {
-  .explore-page .pool-table {
-    min-width: 742px;
-  }
-  .explore-page .col-trend {
-    width: 0;
-  }
-  .explore-page .pool-table :is(th, td):nth-child(7) {
-    display: none;
-  }
 }
 @container pool-list (width < 742px) {
   .explore-page .pool-table {
@@ -5166,8 +5131,7 @@ main {
 .explore-page .pool-table th:nth-child(n + 3):nth-child(-n + 5):not([colspan]),
 .explore-page
   .pool-table
-  td:nth-child(n + 3):nth-child(-n + 5):not(.launch-cell),
-.explore-page .pool-table th:nth-child(7) {
+  td:nth-child(n + 3):nth-child(-n + 5):not(.launch-cell) {
   text-align: right;
 }
 .explore-page .pool-table td > .number,
@@ -5177,7 +5141,7 @@ main {
   min-width: 0;
 }
 /* A pool with no market evidence reads as one quiet launch line rather than
-   five unavailable cells; it spans the metric columns the row cannot fill. */
+   four unavailable cells; it spans the metric columns the row cannot fill. */
 .explore-page .launch-cell {
   font-size: 13px;
   line-height: 18px;
@@ -6327,8 +6291,8 @@ a.wallet-top-pool:hover {
     inset: 0 0 auto;
   }
   /* Identity + price row held to the 44px token-cell target, then the one
-     Vol and trade count line matching the sparkline's 24px: 13 + 44 + 10 + 24
-     + 13, following the export's 104px row (gap-mobile-rows-390.png). */
+     Vol and trade count line at 24px: 13 + 44 + 10 + 24 + 13, following the
+     export's 104px row (gap-mobile-rows-390.png). */
   .explore-page .mobile-pool {
     height: 104px;
     overflow: auto;
