@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import {
   HyperSyncBudgetExceeded,
   HyperSyncClient,
@@ -12,6 +13,7 @@ import {
   planLedgerRange,
   type HyperSyncRetryEvent,
   type LedgerRangeCollection,
+  type LedgerSwapSelection,
   type MulticallConfig,
 } from "@pools/chain";
 import {
@@ -22,6 +24,7 @@ import {
   getStream,
   ledgerBatchCreatedRows,
   ledgerCheckpoints,
+  ledgerContentHash,
   ledgerLaunchStreamIdentity,
   ledgerRegistry,
   ledgerStream,
@@ -271,14 +274,18 @@ export interface LedgerRangeProgress {
   transfers: number;
   attributed: number;
   unattributed: number;
+  /** Swaps outside the registry: the manager-wide selection's, dropped
+   * before the batch, and any the writer found unregistered at commit. */
   unregisteredSwaps: number;
   positionsChanged: number;
   newPositions: number;
   newWallets: number;
   registryPools: number;
+  swapSelection: LedgerSwapSelection;
   pages: number;
   requests: number;
   bytes: number;
+  sentBytes: number;
   elapsedMs: number;
   archiveHeight: number;
   /** The writer found the range already committed with the same content. */
@@ -294,6 +301,8 @@ export interface LedgerRangeOptions {
   maxPages: number;
   height: number;
   rpc: () => Rpc;
+  /** Unset picks by the range's length; both select the same rows. */
+  swapSelection?: LedgerSwapSelection;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
 }
@@ -359,6 +368,7 @@ export async function runLedgerRange(
     height: options.height,
     registry,
     maxPages: options.maxPages,
+    swapSelection: options.swapSelection,
     multicall: options.multicall ?? multicallConfig(),
   });
   options.signal?.throwIfAborted();
@@ -401,14 +411,16 @@ export async function runLedgerRange(
     transfers: collection.transfers.length,
     attributed: applied.attributed,
     unattributed: applied.unattributed,
-    unregisteredSwaps: applied.unregisteredSwaps,
+    unregisteredSwaps: collection.unregisteredSwaps + applied.unregisteredSwaps,
     positionsChanged: applied.positions,
     newPositions: created.positions,
     newWallets: created.wallets,
     registryPools: collection.registryPools,
+    swapSelection: collection.swapSelection,
     pages: pageCount(collection),
     requests: collection.requests,
     bytes: collection.bytes,
+    sentBytes: collection.sentBytes,
     elapsedMs: Math.round(performance.now() - started),
     archiveHeight: collection.archiveHeight,
     replayed: !applied.changed,
@@ -564,9 +576,11 @@ export class LedgerPassProgress {
       newPositions: p.newPositions,
       newWallets: p.newWallets,
       registryPools: p.registryPools,
+      swapSelection: p.swapSelection,
       pages: p.pages,
       requests: p.requests,
       bytes: p.bytes,
+      sentBytes: p.sentBytes,
       elapsedMs: p.elapsedMs,
       replayed: p.replayed,
       archiveHeight: p.archiveHeight,
@@ -605,6 +619,7 @@ export interface LedgerPassOptions {
   catchUpMargin?: number;
   maxPages: number;
   rpc: () => Rpc;
+  swapSelection?: LedgerSwapSelection;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
   log?: Log;
@@ -789,6 +804,7 @@ export async function runLedgerPass(
         maxPages: options.maxPages,
         height,
         rpc: options.rpc,
+        swapSelection: options.swapSelection,
         multicall: options.multicall,
         signal: options.signal,
       });
@@ -908,6 +924,99 @@ export async function calibrateLedgerRange(
     requests: c.requests,
     bytes: c.bytes,
     archiveHeight: c.archiveHeight,
+  };
+}
+/** One selection's side of a comparison. */
+export interface LedgerSelectionRun {
+  swapSelection: LedgerSwapSelection;
+  toBlock: number;
+  contentHash: string;
+  launches: number;
+  swaps: number;
+  unsupportedSwaps: number;
+  unregisteredSwaps: number;
+  transfers: number;
+  swapQueries: number;
+  swapPages: number;
+  swapLogs: number;
+  pages: number;
+  requests: number;
+  bytes: number;
+  sentBytes: number;
+}
+export interface LedgerSelectionComparison {
+  fromBlock: number;
+  toBlock: number;
+  registryPools: number;
+  identical: true;
+  pools: LedgerSelectionRun;
+  manager: LedgerSelectionRun;
+}
+/** Collect one range with the swap lane's pool-id lists and again with the
+ * manager-wide selection, and require what the fold would receive to be the
+ * same: the range, its boundary hashes, every launch, swap and transfer row
+ * and so the content hash, and each launch's catalogue fields (the supply's
+ * read block excepted, the provider's head at each read). Writes nothing; a
+ * difference throws `ledger_swap_selections_disagree`. */
+export async function compareLedgerSwapSelections(
+  db: Client,
+  client: HyperSyncClient,
+  rpc: () => Rpc,
+  range: { fromBlock: number; toBlock: number },
+  maxPages: number = ledgerPassPolicy.maxPages,
+): Promise<LedgerSelectionComparison> {
+  const height = await client.height();
+  const registry = await ledgerRegistry(db, range.fromBlock - 1);
+  const collect = (swapSelection: LedgerSwapSelection) =>
+    collectLedgerRange(client, rpc(), {
+      ...range,
+      parentHash: null,
+      height,
+      registry,
+      maxPages,
+      swapSelection,
+    });
+  const pools = await collect("pool_ids");
+  const manager = await collect("manager");
+  const consumed = (c: LedgerRangeCollection) => ({
+    fromBlock: c.fromBlock,
+    toBlock: c.toBlock,
+    parentHash: c.parentHash,
+    blockHash: c.blockHash,
+    toTimestamp: c.toTimestamp,
+    registryPools: c.registryPools,
+    unsupportedSwaps: c.unsupportedSwaps,
+    launches: c.launch.pools.map(({ supplyBlock: _read, ...pool }) => pool),
+    swaps: c.swaps,
+    transfers: c.transfers,
+    contentHash: ledgerContentHash(ledgerBatchOf(c)),
+  });
+  if (!isDeepStrictEqual(consumed(pools), consumed(manager)))
+    throw Error("ledger_swap_selections_disagree");
+  const run = (c: LedgerRangeCollection): LedgerSelectionRun => ({
+    swapSelection: c.swapSelection,
+    toBlock: c.toBlock,
+    contentHash: ledgerContentHash(ledgerBatchOf(c)),
+    launches: c.launch.pools.length,
+    swaps: c.swaps.length,
+    unsupportedSwaps: c.unsupportedSwaps,
+    unregisteredSwaps: c.unregisteredSwaps,
+    transfers: c.transfers.length,
+    swapQueries: c.pages.swaps.length,
+    swapPages: c.pages.swaps.reduce((n, p) => n + p.length, 0),
+    swapLogs: c.pages.swaps.flat().reduce((n, p) => n + p.logs, 0),
+    pages: pageCount(c),
+    requests: c.requests,
+    bytes: c.bytes,
+    sentBytes: c.sentBytes,
+  });
+  return {
+    fromBlock: pools.fromBlock,
+    toBlock: pools.toBlock,
+    registryPools: pools.registryPools,
+    identical: true,
+    pools: run(pools),
+    manager: run(manager),
   };
 }
 export async function ledgerPassStatus(db: Client) {

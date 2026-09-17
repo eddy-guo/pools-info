@@ -203,6 +203,8 @@ export interface LedgerTipCycle {
   windows: LedgerWindowsRefreshed | null;
   requests: number;
   bytes: number;
+  /** Request body bytes sent: the upload the host bills. */
+  sentBytes: number;
   elapsedMs: number;
 }
 export interface LedgerTipCycleOptions {
@@ -263,6 +265,7 @@ export async function runLedgerTipCycle(
     windows,
     requests: client.requests,
     bytes: client.bytes,
+    sentBytes: client.sentBytes,
     elapsedMs: Math.round(performance.now() - started),
   };
 }
@@ -337,6 +340,7 @@ export interface LedgerTipSummary {
   transfers: number;
   requests: number;
   bytes: number;
+  sentBytes: number;
   throttled: number;
   failures: number;
   elapsedMs: number;
@@ -372,6 +376,7 @@ export async function runLedgerTip(
     transfers: 0,
     requests: 0,
     bytes: 0,
+    sentBytes: 0,
     throttled: 0,
     failures: 0,
     elapsedMs: 0,
@@ -454,6 +459,7 @@ export async function runLedgerTip(
     } catch (error) {
       summary.requests += client.requests;
       summary.bytes += client.bytes;
+      summary.sentBytes += client.sentBytes;
       if (options.signal?.aborted) return finish("aborted");
       const stop =
         error instanceof HyperSyncRateLimitExhausted ||
@@ -493,6 +499,7 @@ export async function runLedgerTip(
     summary.cycles++;
     summary.requests += cycle.requests;
     summary.bytes += cycle.bytes;
+    summary.sentBytes += cycle.sentBytes;
     const r = cycle.range;
     if (r) {
       summary.ranges++;
@@ -531,6 +538,7 @@ export async function runLedgerTip(
         attributed: r.attributed,
         unattributed: r.unattributed,
         unregisteredSwaps: r.unregisteredSwaps,
+        swapSelection: r.swapSelection,
         positionsChanged: r.positionsChanged,
         newPositions: r.newPositions,
         newWallets: r.newWallets,
@@ -553,6 +561,7 @@ export async function runLedgerTip(
       },
       requests: cycle.requests,
       bytes: cycle.bytes,
+      sentBytes: cycle.sentBytes,
       elapsedMs: cycle.elapsedMs,
       rangeBlocks,
       nextRangeBlocks,

@@ -564,6 +564,8 @@ export function headerQuery(block: number): HyperSyncQuery {
 export class HyperSyncClient {
   requests = 0;
   bytes = 0;
+  /** Request body bytes sent, every attempt counted: the upload a host bills. */
+  sentBytes = 0;
   readonly url: string;
   private readonly token: string | null;
   private readonly fetchImpl: typeof globalThis.fetch;
@@ -684,6 +686,7 @@ export class HyperSyncClient {
     body?: HyperSyncQuery,
   ): Promise<{ json: unknown; bytes: number }> {
     if (body && this.token === null) throw new HyperSyncUnauthorized(401);
+    const payload = body ? JSON.stringify(body) : undefined;
     for (let attempt = 0; ; attempt++) {
       this.signal?.throwIfAborted();
       const scheduledAt = Math.max(Date.now(), this.pacer.nextRequestAt);
@@ -692,6 +695,7 @@ export class HyperSyncClient {
       if (this.requests >= this.maxRequests)
         throw new HyperSyncBudgetExceeded(this.requests);
       this.requests++;
+      if (payload) this.sentBytes += Buffer.byteLength(payload);
       const timeout = AbortSignal.timeout(this.requestTimeoutMs);
       let response: Response;
       try {
@@ -702,7 +706,7 @@ export class HyperSyncClient {
             ...(body ? { "content-type": "application/json" } : {}),
             ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
           },
-          body: body ? JSON.stringify(body) : undefined,
+          body: payload,
           signal: this.signal
             ? AbortSignal.any([this.signal, timeout])
             : timeout,

@@ -62,14 +62,15 @@ import {
  * (docs/AGGREGATE-LEDGER.md phase 2, design report section 7.1). One range
  * is three lanes over the same blocks: the strategies' TokenLaunched logs
  * with the factory metadata and the launchers' logs, the PoolManager swaps of
- * every registered pool (the registry as of the range end leads the filter),
- * and the ERC-20 transfers of every registered token. Every row is validated
- * and joined to a successful transaction and its block; the range ends on the
- * last whole page every lane completed; the launches keep their evidence in
- * the launch stream, the swaps and transfers keep only their content hash in
- * the ledger batch. Name, symbol and decimals are the one JSON-RPC read, over
- * the public RPC through Multicall3 at its head, because that RPC serves no
- * historical state. */
+ * every registered pool (the registry as of the range end selects them, sent
+ * as pool-id lists over a long range and applied locally to every manager
+ * swap over a short one), and the ERC-20 transfers of every registered token.
+ * Every row is validated and joined to a successful transaction and its
+ * block; the range ends on the last whole page every lane completed; the
+ * launches keep their evidence in the launch stream, the swaps and transfers
+ * keep only their content hash in the ledger batch. Name, symbol and
+ * decimals are the one JSON-RPC read, over the public RPC through Multicall3
+ * at its head, because that RPC serves no historical state. */
 export const ledgerLaunchStream = "launches:agg:v1" as const;
 export const ledgerPassPolicy = Object.freeze({
   /** The first launch (report section 2); nothing registered exists before. */
@@ -86,6 +87,18 @@ export const ledgerPassPolicy = Object.freeze({
    * shape, where fixed 20k and 31k chunks took four and three. */
   poolIdsPerQuery: 25000,
   tokensPerQuery: 40000,
+  /** A swap lane of at most this many blocks selects every PoolManager swap
+   * (the manager's address and the Swap topic, a 527-byte body) and keeps
+   * the registry's locally; a longer one sends the registry as pool-id lists
+   * (three bodies of 1.45 MB at 62,900 pools). Measured 17 Sep 2026: the tip
+   * loop's ranges are 760 to 822 blocks, and manager-wide swaps run 3.2 to
+   * 6.5 a block at about 1,170 bytes each, so 2,000 blocks, the tip loop's
+   * base range, is 12.1 MB in two pages at 16 Sep's busy rate and about 15 MB
+   * at the busiest (60% of maxBytes); every range measured took one or two
+   * pages against the lists' three queries. A longer range only happens while
+   * catching up, where the lists answer 64,000 blocks in one page each but a
+   * manager-wide query would be cut near 3,300 blocks. */
+  managerSwapBlocks: 2000,
   /** Whole pages consumed per lane query before the range is cut short. */
   maxPages: 16,
   maxLogs: 80000,
@@ -165,19 +178,49 @@ export function ledgerLaunchQuery(range: LedgerBlockRange): HyperSyncQuery {
     max_num_logs: hypersyncPolicy.maxLogsPerPage,
   });
 }
-/** What the batch row keeps of a value-list query: the range, the number of
- * values and a digest of the sorted list, never the list itself; the list is
- * the registry as of the range end, reconstructible from the catalog. */
-export interface LedgerQueryRecord {
-  from_block: number;
-  to_block: number;
-  selection: "pool_ids" | "tokens";
-  count: number;
-  sha256: string;
-}
+/** How the swap lane selects: every PoolManager swap, filtered locally, or
+ * the registry's pool ids sent as value lists. */
+export type LedgerSwapSelection = "manager" | "pool_ids";
+const digest = (values: readonly string[]) =>
+  "0x" + createHash("sha256").update(values.join("\n")).digest("hex");
+/** What the batch row keeps of a lane query. A value-list query keeps its
+ * range, the number of values and a digest of the sorted list, never the list
+ * itself; the list is the registry as of the range end, reconstructible from
+ * the catalog. A manager-wide swap query sent no list: it keeps its range, the
+ * same count and digest of the registry it filtered by locally, and the
+ * number of the batch range's manager swaps that registry left out. */
+export type LedgerQueryRecord =
+  | {
+      from_block: number;
+      to_block: number;
+      selection: "pool_ids" | "tokens";
+      count: number;
+      sha256: string;
+    }
+  | {
+      from_block: number;
+      to_block: number;
+      selection: "manager";
+      registry: { count: number; sha256: string };
+      unregistered: number;
+    };
+const isManagerSwapQuery = (query: HyperSyncQuery) => {
+  const selection = query.logs?.[0];
+  return (
+    query.logs?.length === 1 &&
+    selection!.topics?.length === 1 &&
+    isDeepStrictEqual(selection!.address, [contracts.manager]) &&
+    isDeepStrictEqual(selection!.topics[0], [swapTopic])
+  );
+};
 export function ledgerQueryRecord(query: HyperSyncQuery): LedgerQueryRecord {
   const selection = query.logs?.[0];
-  if (!selection || query.logs!.length !== 1 || query.to_block === undefined)
+  if (
+    !selection ||
+    query.logs!.length !== 1 ||
+    query.to_block === undefined ||
+    isManagerSwapQuery(query)
+  )
     throw Error("Invalid HyperSync ledger query");
   const values = selection.topics?.[1] ?? selection.address ?? [];
   const kind = selection.topics?.[1] ? "pool_ids" : "tokens";
@@ -186,7 +229,28 @@ export function ledgerQueryRecord(query: HyperSyncQuery): LedgerQueryRecord {
     to_block: query.to_block,
     selection: kind,
     count: values.length,
-    sha256: "0x" + createHash("sha256").update(values.join("\n")).digest("hex"),
+    sha256: digest(values),
+  };
+}
+/** The record of a manager-wide swap query: `poolIds` is the sorted registry
+ * it was filtered by, `unregistered` the swaps in the batch range it dropped. */
+export function ledgerManagerQueryRecord(
+  query: HyperSyncQuery,
+  poolIds: readonly string[],
+  unregistered: number,
+): LedgerQueryRecord {
+  if (
+    !isManagerSwapQuery(query) ||
+    query.to_block === undefined ||
+    !integer(unregistered)
+  )
+    throw Error("Invalid HyperSync ledger query");
+  return {
+    from_block: query.from_block,
+    to_block: query.to_block,
+    selection: "manager",
+    registry: { count: poolIds.length, sha256: digest(poolIds) },
+    unregistered,
   };
 }
 
@@ -643,6 +707,9 @@ export interface LedgerRangeInput {
   maxPages?: number;
   /** Launches per range; more end the range before the excess. */
   maxLaunches?: number;
+  /** The swap lane's selection; unset picks by the range's length
+   * (`ledgerPassPolicy.managerSwapBlocks`). Both select the same rows. */
+  swapSelection?: LedgerSwapSelection;
   multicall?: MulticallConfig;
 }
 export interface LedgerRangeCollection {
@@ -658,6 +725,10 @@ export interface LedgerRangeCollection {
   transfers: LedgerTransfer[];
   /** Manager swap logs whose amounts share a sign: not trades, skipped. */
   unsupportedSwaps: number;
+  /** How the swap lane selected, and the manager swaps in the range outside
+   * the registry that a manager-wide selection dropped (0 for pool ids). */
+  swapSelection: LedgerSwapSelection;
+  unregisteredSwaps: number;
   /** Pools in the swap filter as of toBlock. */
   registryPools: number;
   query: {
@@ -673,6 +744,8 @@ export interface LedgerRangeCollection {
   };
   requests: number;
   bytes: number;
+  /** Request body bytes sent for the range. */
+  sentBytes: number;
 }
 function checkedSwapLog(log: HyperSyncLogRow) {
   const topics = logTopics(log);
@@ -719,7 +792,10 @@ export async function collectLedgerRange(
     maxLaunches < 1 ||
     maxLaunches > ledgerPassPolicy.maxLaunches ||
     !integer(input.height) ||
-    (input.parentHash !== null && !hash(input.parentHash))
+    (input.parentHash !== null && !hash(input.parentHash)) ||
+    (input.swapSelection !== undefined &&
+      input.swapSelection !== "manager" &&
+      input.swapSelection !== "pool_ids")
   )
     throw Error("Invalid HyperSync ledger range");
   if (input.toBlock > input.height - hypersyncPolicy.safeDistance)
@@ -730,7 +806,8 @@ export async function collectLedgerRange(
     maxBytes: ledgerPassPolicy.maxBytes,
   };
   const requests0 = client.requests,
-    bytes0 = client.bytes;
+    bytes0 = client.bytes,
+    sentBytes0 = client.sentBytes;
   const { fromBlock } = input;
   const byPool = new Map<string, LedgerRegistryPool>();
   const byToken = new Map<string, LedgerRegistryPool>();
@@ -803,13 +880,27 @@ export async function collectLedgerRange(
     };
   });
   for (const p of launched) register(p);
-  // 2. Swaps, the registry as of the range end leading the filter.
+  // 2. Swaps, the registry as of the range end selecting them: sent as
+  // pool-id lists over a long range, applied locally to every manager swap
+  // over a short one, where the lists would be re-sent every few blocks.
   const swapLogs: HyperSyncLogRow[] = [];
   const swapRecords: LedgerQueryRecord[] = [];
   const swapPages: HyperSyncPageRecord[][] = [];
   const poolIds = [...byPool.keys()].sort();
-  const poolChunks = ledgerChunks(poolIds, ledgerPassPolicy.poolIdsPerQuery);
-  for (const chunk of poolChunks) {
+  const swapSelection: LedgerSwapSelection =
+    input.swapSelection ??
+    (toBlock - fromBlock < ledgerPassPolicy.managerSwapBlocks
+      ? "manager"
+      : "pool_ids");
+  // With nothing registered there is nothing to keep, in either selection.
+  const swapSelections: (readonly string[] | undefined)[] =
+    swapSelection === "pool_ids"
+      ? ledgerChunks(poolIds, ledgerPassPolicy.poolIdsPerQuery)
+      : poolIds.length
+        ? [undefined]
+        : [];
+  let managerQuery: HyperSyncQuery | null = null;
+  for (const chunk of swapSelections) {
     const query = swapLogQuery(
       { fromBlock, toBlock },
       chunk,
@@ -820,7 +911,8 @@ export async function collectLedgerRange(
     archiveHeight = Math.min(archiveHeight, collected.archiveHeight);
     merge(collected);
     swapLogs.push(...collected.logs);
-    swapRecords.push(ledgerQueryRecord(query));
+    if (chunk) swapRecords.push(ledgerQueryRecord(query));
+    else managerQuery = query;
     swapPages.push(collected.pages);
   }
   // 3. Transfers of every registered token.
@@ -885,16 +977,22 @@ export async function collectLedgerRange(
   const registryPools = [...byPool.values()].filter(
     (p) => p.launchBlock <= toBlock,
   ).length;
-  // 6. Swap rows.
+  // 6. Swap rows. A manager-wide selection returns every pool's swaps and the
+  // registry keeps its own; a pool-id selection returns only the listed pools.
   const swaps: LedgerSwap[] = [];
   const seen = new Set<string>();
-  let unsupportedSwaps = 0;
+  let unsupportedSwaps = 0,
+    unregisteredSwaps = 0;
   for (const log of swapLogs.filter(inRange).sort(logOrder)) {
     const topics = checkedSwapLog(log);
     const identity = `${log.transaction_hash.toLowerCase()}:${log.log_index}`;
     if (seen.has(identity)) throw Error("Duplicate HyperSync ledger evidence");
     seen.add(identity);
     const pool = byPool.get(topics[1].toLowerCase());
+    if (!pool && swapSelection === "manager") {
+      unregisteredSwaps++;
+      continue;
+    }
     if (!pool) throw Error("HyperSync swap outside the registry");
     if (log.block_number < pool.launchBlock)
       throw Error("Ledger swap precedes verified launch");
@@ -929,6 +1027,10 @@ export async function collectLedgerRange(
       tick: d.tick,
     });
   }
+  if (managerQuery)
+    swapRecords.push(
+      ledgerManagerQueryRecord(managerQuery, poolIds, unregisteredSwaps),
+    );
   // 7. Transfer rows.
   const transfers: LedgerTransfer[] = [];
   for (const log of transferLogs.filter(inRange).sort(logOrder)) {
@@ -1035,6 +1137,8 @@ export async function collectLedgerRange(
     swaps,
     transfers,
     unsupportedSwaps,
+    swapSelection,
+    unregisteredSwaps,
     registryPools,
     query: {
       launch: launchQuery,
@@ -1049,6 +1153,7 @@ export async function collectLedgerRange(
     },
     requests: client.requests - requests0,
     bytes: client.bytes - bytes0,
+    sentBytes: client.sentBytes - sentBytes0,
   };
 }
 /** The next range of a pass: from the cursor, at most `rangeBlocks`, never

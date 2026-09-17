@@ -23,10 +23,12 @@ import {
   collectLedgerRange,
   ledgerChunks,
   ledgerLaunchQuery,
+  ledgerManagerQueryRecord,
   ledgerPassPolicy,
   ledgerQueryRecord,
   planLedgerRange,
   verifyLedgerLaunchBatch,
+  type LedgerQueryRecord,
 } from "./hypersync-ledger";
 import {
   FakeHyperSync,
@@ -41,7 +43,7 @@ import {
   encodeAggregateReply,
 } from "./multicall";
 import { Rpc } from "./rpc";
-import { contracts, launchEvent, transferEvent } from "./events";
+import { contracts, launchEvent, swapEvent, transferEvent } from "./events";
 import { tokenMetadataFactory } from "./token-metadata";
 
 const fixture = (name: string) =>
@@ -52,6 +54,11 @@ const fixture = (name: string) =>
     ),
   );
 const apiToken = "x".repeat(16);
+/** A value-list record, where the test knows the query sent a list. */
+function listRecord(record: LedgerQueryRecord) {
+  if (record.selection === "manager") throw Error("expected a value list");
+  return record;
+}
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const start = ledgerPassPolicy.startBlock;
 /** The swap lane's queries as `collectLedgerRange` itself builds them: sort
@@ -65,7 +72,9 @@ const testSwapQueries = (
   ledgerChunks(
     [...new Set(poolIds.map((id) => id.toLowerCase()))].sort(),
     ledgerPassPolicy.poolIdsPerQuery,
-  ).map((chunk) => swapLogQuery(range, chunk, ledgerPassPolicy.poolIdsPerQuery));
+  ).map((chunk) =>
+    swapLogQuery(range, chunk, ledgerPassPolicy.poolIdsPerQuery),
+  );
 const testTransferQueries = (
   range: { fromBlock: number; toBlock: number },
   tokens: readonly string[],
@@ -200,7 +209,7 @@ test("the lanes split the registry evenly over the fewest queries, every body un
     [ids[2], ids[5]].sort(),
   );
   // The batch row keeps the count and a digest of the list, never the list.
-  const record = ledgerQueryRecord(swaps[0]);
+  const record = listRecord(ledgerQueryRecord(swaps[0]));
   assert.deepEqual(
     { ...record, sha256: record.sha256.length },
     {
@@ -212,7 +221,7 @@ test("the lanes split the registry evenly over the fewest queries, every body un
     },
   );
   assert.equal(ledgerQueryRecord(transfers[1]).selection, "tokens");
-  assert.equal(ledgerQueryRecord(transfers[1]).count, 31429);
+  assert.equal(listRecord(ledgerQueryRecord(transfers[1])).count, 31429);
   assert.ok(JSON.stringify(record).length < 300);
   assert.throws(
     () => testSwapQueries(range, ["0x12"]),
@@ -416,6 +425,7 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
     parentHash: null,
     height: 64149078,
     registry,
+    swapSelection: "pool_ids",
   });
   assert.equal(c.fromBlock, from);
   assert.equal(c.toBlock, to);
@@ -471,11 +481,48 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
   assert.equal(first.side, "buy");
   assert.equal(first.txTo, first.txTo?.toLowerCase());
   assert.equal(c.query.swaps.length, 1);
-  assert.equal(c.query.swaps[0].count, 4);
-  assert.equal(c.query.transfers[0].count, 4);
+  assert.deepEqual(
+    [c.query.swaps[0].selection, c.query.transfers[0].selection],
+    ["pool_ids", "tokens"],
+  );
+  assert.equal(listRecord(c.query.swaps[0]).count, 4);
+  assert.equal(listRecord(c.query.transfers[0]).count, 4);
   assert.equal(c.pages.headers.length, 2);
   assert.match(c.parentHash, /^0x[0-9a-f]{64}$/);
   assert.match(c.blockHash, /^0x[0-9a-f]{64}$/);
+  // The same range selecting every manager swap, the recorded unfiltered
+  // answer, keeps the same five rows and drops the other 68 locally.
+  const managerRequests: HyperSyncQuery[] = [];
+  const m = await collectLedgerRange(
+    new HyperSyncClient({
+      token: apiToken,
+      minIntervalMs: 0,
+      fetch: recordedFetch(
+        {
+          transfers: fixture("transfers-token-filter.response"),
+          all: fixture("swaps-unfiltered.response"),
+        },
+        64149078,
+        managerRequests,
+      ),
+    }),
+    silentRpc(),
+    {
+      fromBlock: from,
+      toBlock: to,
+      parentHash: null,
+      height: 64149078,
+      registry,
+    },
+  );
+  assert.equal(m.swapSelection, "manager");
+  assert.deepEqual(m.swaps, c.swaps);
+  assert.deepEqual(m.transfers, c.transfers);
+  assert.equal(m.unregisteredSwaps, 73 - 5);
+  assert.equal(c.unregisteredSwaps, 0);
+  assert.deepEqual(managerRequests[1], fixture("swaps-unfiltered.request"));
+  assert.equal(m.requests, 5);
+  assert.ok(m.sentBytes > 0 && m.sentBytes < c.sentBytes);
 });
 
 test("the recorded tip page yields one verified launch with name, symbol and decimals through one Multicall3 aggregate", async () => {
@@ -511,7 +558,13 @@ test("the recorded tip page yields one verified launch with name, symbol and dec
   assert.equal(pool.launchBlock, 64413754);
   assert.equal(pool.token, token);
   assert.deepEqual(
-    [pool.name, pool.symbol, pool.decimals, pool.totalSupplyRaw, pool.supplyBlock],
+    [
+      pool.name,
+      pool.symbol,
+      pool.decimals,
+      pool.totalSupplyRaw,
+      pool.supplyBlock,
+    ],
     ["Tip Token", "TIP", 18, (10n ** 27n).toString(), 64798181],
   );
   assert.equal(c.launch.evidence.schemaVersion, 2);
@@ -792,6 +845,160 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
       registry: [],
     }),
     /HyperSync range exceeds the confirmed cutoff/,
+  );
+});
+
+test("both swap selections give the same rows: the manager-wide one sends no pool id and drops unregistered pools' swaps locally", async () => {
+  const height = start + 3000 + 128;
+  const { fake, poolA, poolB } = fakeChain(height);
+  const other = word(0xdead);
+  // Swaps of a pool outside the registry: one in the same transaction as a
+  // registered swap (a route through both), one alone, one on the range's
+  // last block and one past it.
+  fake.logs.push(
+    fakeSwap({
+      block: start + 5,
+      logIndex: 7,
+      poolId: other,
+      from: W,
+      transactionHash: word(0xc1),
+    }),
+    fakeSwap({ block: start + 50, logIndex: 0, poolId: other, from: V }),
+    fakeSwap({ block: start + 199, logIndex: 0, poolId: other, from: V }),
+    fakeSwap({ block: start + 250, logIndex: 0, poolId: other, from: V }),
+  );
+  const tokens = {
+    [TA]: ["Alpha", "A", 18],
+    [TB]: ["Beta", "B", 6],
+  } as Record<string, [string, string, number]>;
+  const collect = async (
+    swapSelection?: "manager" | "pool_ids",
+    range: { fromBlock: number; toBlock: number } = {
+      fromBlock: start,
+      toBlock: start + 199,
+    },
+  ) => {
+    const before = fake.requests.length;
+    const c = await collectLedgerRange(
+      fakeClient(fake),
+      metadataRpc(tokens).rpc,
+      {
+        ...range,
+        parentHash: null,
+        height,
+        registry:
+          range.fromBlock > start
+            ? [
+                { poolId: poolA, token: TA, launchBlock: start },
+                { poolId: poolB, token: TB, launchBlock: start + 150 },
+              ]
+            : [],
+        swapSelection,
+      },
+    );
+    return { c, requests: fake.requests.slice(before) };
+  };
+  const manager = await collect();
+  const lists = await collect("pool_ids");
+  assert.equal(manager.c.swapSelection, "manager");
+  const rows = ({ c }: typeof manager) => ({
+    toBlock: c.toBlock,
+    blockHash: c.blockHash,
+    launches: c.launch.pools,
+    swaps: c.swaps,
+    unsupportedSwaps: c.unsupportedSwaps,
+    transfers: c.transfers,
+    registryPools: c.registryPools,
+  });
+  assert.deepEqual(rows(manager), rows(lists));
+  assert.equal(manager.c.swaps.length, 3);
+  assert.deepEqual(
+    [manager.c.unregisteredSwaps, lists.c.unregisteredSwaps],
+    [3, 0],
+  );
+  // The range's own launches still lead: pool B's swap follows its launch.
+  assert.ok(manager.c.swaps.some((s) => s.poolId === poolB));
+  const swapBodies = ({ requests }: typeof manager) =>
+    requests
+      .map((r) => r.body)
+      .filter((b) => b?.logs?.[0].address?.[0] === contracts.manager);
+  const [managerBody] = swapBodies(manager);
+  assert.equal(swapBodies(manager).length, 1);
+  assert.deepEqual(managerBody!.logs, [
+    { address: [contracts.manager], topics: [[toEventSelector(swapEvent)]] },
+  ]);
+  assert.ok(!JSON.stringify(managerBody).includes(poolA.slice(2)));
+  assert.deepEqual(
+    swapBodies(lists)[0]!.logs![0].topics![1],
+    [poolA, poolB].sort(),
+  );
+  assert.equal(manager.c.requests, lists.c.requests);
+  const [record] = manager.c.query.swaps;
+  assert.deepEqual(record, {
+    from_block: start,
+    to_block: start + 200,
+    selection: "manager",
+    registry: {
+      count: 2,
+      sha256: listRecord(ledgerQueryRecord(swapBodies(lists)[0]!)).sha256,
+    },
+    unregistered: 3,
+  });
+  assert.equal(lists.c.query.swaps[0].selection, "pool_ids");
+  assert.throws(
+    () => ledgerQueryRecord(managerBody!),
+    /Invalid HyperSync ledger query/,
+  );
+  assert.throws(
+    () => ledgerManagerQueryRecord(swapBodies(lists)[0]!, [poolA], 0),
+    /Invalid HyperSync ledger query/,
+  );
+  // The length picks the selection: managerSwapBlocks blocks select every
+  // manager swap, one block more sends the lists.
+  const edge = ledgerPassPolicy.managerSwapBlocks;
+  const short = await collect(undefined, {
+    fromBlock: start + 200,
+    toBlock: start + 199 + edge,
+  });
+  const long = await collect(undefined, {
+    fromBlock: start + 200,
+    toBlock: start + 200 + edge,
+  });
+  assert.deepEqual(
+    [short.c.swapSelection, long.c.swapSelection],
+    ["manager", "pool_ids"],
+  );
+  // The swap past the first range is a later range's to drop.
+  assert.equal(short.c.unregisteredSwaps, 1);
+  await assert.rejects(
+    collect("manager-wide" as "manager"),
+    /Invalid HyperSync ledger range/,
+  );
+  // A pool-id answer naming a pool outside the lists is still refused.
+  const loose: FakeHyperSync = new FakeHyperSync({
+    height,
+    logs: fake.logs,
+    intercept: (request) => {
+      const selection = request.body?.logs?.[0];
+      if (!selection?.topics?.[1]) return undefined;
+      return Response.json(
+        loose.respond({
+          ...request.body!,
+          logs: [{ ...selection, topics: [selection.topics[0]] }],
+        }),
+      );
+    },
+  });
+  await assert.rejects(
+    collectLedgerRange(fakeClient(loose), metadataRpc(tokens).rpc, {
+      fromBlock: start,
+      toBlock: start + 199,
+      parentHash: null,
+      height,
+      registry: [],
+      swapSelection: "pool_ids",
+    }),
+    /HyperSync swap outside the registry/,
   );
 });
 
