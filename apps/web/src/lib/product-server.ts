@@ -1,3 +1,4 @@
+import { validateCreatorsResponse } from "./creators-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
@@ -14,6 +15,9 @@ import {
   type ChainSnapshot,
   type AnalyticsExploreOptions,
   type AnalyticsLeaderboardOptions,
+  type AnalyticsModel,
+  type CreatorRow,
+  type CreatorsResponse,
   type LiveWindow,
   type SearchGroup,
   type WalletHistoryKind,
@@ -54,6 +58,118 @@ function preloadModel() {
   ] as CatalogPool[];
   return buildAnalyticsModel(pools, publications);
 }
+/**
+ * The preloaded catalog has no per-creator SQL rank, so this mirrors the read
+ * API's own grouping rule (see apps/api/README.md "Creators aggregate") over
+ * every catalog pool's explore stats. `boughtOwnLaunch` needs sender-routed
+ * swap evidence the preload does not carry, so it stays null here.
+ */
+function creatorsPreload(
+  model: AnalyticsModel,
+  window: LiveWindow,
+  params: URLSearchParams,
+): CreatorsResponse {
+  const sort = (params.get("sort") ?? "launches") as CreatorsResponse["sort"];
+  const limit = Number(params.get("limit") ?? 25);
+  const offset = Number(params.get("offset") ?? 0);
+  const all = exploreAnalytics(model, {
+    window,
+    sort: "launch",
+    limit: Math.max(model.catalog.length, 1),
+    offset: 0,
+  });
+  const bySender = new Map<string, (typeof all.items)[number][]>();
+  for (const pool of all.items) {
+    const sender = pool.launchSender.toLowerCase();
+    const list = bySender.get(sender);
+    if (list) list.push(pool);
+    else bySender.set(sender, [pool]);
+  }
+  const rows: CreatorRow[] = [...bySender].map(([address, pools]) => {
+    const measured = pools.filter((p) => p.stats.volumeWei !== null);
+    const volumes = measured
+      .map((p) => BigInt(p.stats.volumeWei!))
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const mid = Math.floor(volumes.length / 2);
+    const best = [...measured].sort((a, b) =>
+      BigInt(b.stats.volumeWei!) > BigInt(a.stats.volumeWei!) ? 1 : -1,
+    )[0];
+    return {
+      address,
+      launches: pools.length,
+      measured: measured.length,
+      traded: measured.filter((p) => (p.stats.trades ?? 0) > 0).length,
+      volumeWei: volumes.length
+        ? volumes.reduce((a, b) => a + b, 0n).toString()
+        : null,
+      medianVolumeWei: volumes.length
+        ? (volumes.length % 2
+            ? volumes[mid]
+            : (volumes[mid - 1] + volumes[mid]) / 2n
+          ).toString()
+        : null,
+      bestLaunch: best
+        ? {
+            id: best.id,
+            token: best.token,
+            name: best.name,
+            symbol: best.symbol,
+            launchTx: best.launchTx,
+            launchSender: best.launchSender,
+            launchBlock: best.launchBlock,
+            launchedAt: best.launchedAt,
+            imageUrl: best.imageUrl,
+            description: best.description,
+            externalUrl: best.externalUrl,
+            volumeWei: best.stats.volumeWei!,
+          }
+        : null,
+      boughtOwnLaunch: null,
+    };
+  });
+  const scoped =
+    sort === "launches" ? rows : rows.filter((r) => r.measured > 0);
+  const metricKey = sort === "median" ? "medianVolumeWei" : "volumeWei";
+  scoped.sort((a, b) => {
+    if (sort === "launches") {
+      if (a.launches !== b.launches) return b.launches - a.launches;
+      const av = a.volumeWei,
+        bv = b.volumeWei;
+      if (av !== bv)
+        return av === null
+          ? 1
+          : bv === null
+            ? -1
+            : BigInt(bv) > BigInt(av)
+              ? 1
+              : -1;
+      return a.address.localeCompare(b.address);
+    }
+    const av = BigInt(a[metricKey]!),
+      bv = BigInt(b[metricKey]!);
+    return av === bv ? a.address.localeCompare(b.address) : bv > av ? 1 : -1;
+  });
+  return {
+    coverage: all.coverage,
+    broadMarketCutoff: all.broadMarketCutoff ?? null,
+    window,
+    sort,
+    direction: "desc",
+    attribution: "launch_transaction_initiator",
+    measuredFigures: [
+      "measured",
+      "traded",
+      "volumeWei",
+      "medianVolumeWei",
+      "bestLaunch",
+      "boughtOwnLaunch",
+    ],
+    note: "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei, bestLaunch and boughtOwnLaunch come from measured launches only. An unmeasured launch counts in launches and nowhere else.",
+    items: scoped.slice(offset, offset + limit),
+    total: scoped.length,
+    nextOffset: offset + limit < scoped.length ? offset + limit : null,
+  };
+}
 let model: ReturnType<typeof preloadModel> | undefined;
 export function preloadedProduct(
   endpoint: string,
@@ -63,7 +179,7 @@ export function preloadedProduct(
   const window = (params.get("window") ??
     (endpoint === "leaderboard"
       ? "7d"
-      : endpoint.startsWith("wallets/")
+      : endpoint === "creators" || endpoint.startsWith("wallets/")
         ? "All"
         : "24h")) as LiveWindow;
   if (endpoint === "explore")
@@ -86,6 +202,7 @@ export function preloadedProduct(
       limit: Number(params.get("limit") ?? 25),
       offset: Number(params.get("offset") ?? 0),
     });
+  if (endpoint === "creators") return creatorsPreload(model, window, params);
   if (endpoint.startsWith("wallets/"))
     return walletAnalytics(model, endpoint.slice(8), window);
   if (endpoint === "search")
@@ -274,6 +391,8 @@ export async function readProduct<T>(
         throw Error("Invalid saved profile");
       if (checked.endpoint === "following")
         validateFollowingResponse(data, checked.params);
+      if (checked.endpoint === "creators")
+        validateCreatorsResponse(data, checked.params);
       if (checked.endpoint.startsWith("trades/"))
         validateTradeShareResponse(data, checked.endpoint, checked.params);
       return {

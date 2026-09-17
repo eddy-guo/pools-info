@@ -45,8 +45,8 @@ const cells: Cell[] = [
     name: "creators sender",
     url: { desktop: "/creators/", mobile: "/creators/" },
     rows: {
-      desktop: ".creators-scroll [data-row='resolved']",
-      mobile: ".creators-scroll [data-row='resolved']",
+      desktop: ".creators-panel [data-row='resolved']",
+      mobile: ".creators-panel [data-row='resolved']",
     },
     href: /^\/creators\/0x[0-9a-f]{40}\/$/,
     height: { desktop: 62, mobile: 62 },

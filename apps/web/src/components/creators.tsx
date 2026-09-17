@@ -1,31 +1,37 @@
 "use client";
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import type { AnalyticsExploreResponse, AnalyticsPoolRow } from "@pools/core";
-import type { Delivered } from "@/lib/use-product";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AnalyticsExploreResponse,
+  AnalyticsPoolRow,
+  CreatorsResponse,
+} from "@pools/core";
+import { useProduct, type Delivered } from "@/lib/use-product";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
-import { Eth, Unavailable, utc } from "./live-ui";
+import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
 import { AddressChip, AddressLabel } from "./ui";
 
 /** The explore API pages at most 100 rows; one batch streams 20 pages before pausing on Load more. */
 const PAGE_SIZE = 100;
 const BATCH = 20 * PAGE_SIZE;
-const ROW_HEIGHT = 62;
-const HEADER_HEIGHT = 34;
-/** Rows the reserved scroll surface shows before any data arrives. */
-const RESERVED_ROWS = 11;
-const OVERSCAN = 8;
-const SCROLL_SNAPSHOT_KEY = "poolsinfo.creators.scroll.v1";
-const SORTS = [
-  ["volume", "Volume"],
+
+/** Mapped onto the read API's own sort keys. */
+const CREATOR_SORTS = [
   ["launches", "Launches"],
+  ["volume", "Volume"],
+  ["median", "Median"],
 ] as const;
-type Sort = (typeof SORTS)[number][0];
+type CreatorSort = (typeof CREATOR_SORTS)[number][0];
+
+/** A top-100 leaderboard revealed 25 rows at a click, like the trader leaderboard's own list control. */
+const SHOW_STEP = 25;
+const SHOW_CAP = 100;
+const SHOW_STEPS = [25, 50, 75, 100] as const;
+type ShowCount = (typeof SHOW_STEPS)[number];
 
 type Catalog = {
   items: AnalyticsPoolRow[];
@@ -35,8 +41,8 @@ type Catalog = {
   error?: string;
 };
 
-/** Streams the saved catalog one page per effect run, pausing at the current batch budget. */
-function useCatalog(address?: string) {
+/** Streams a single creator's saved launches one page per effect run, pausing at the current batch budget. */
+function useCatalog(address: string) {
   const [state, setState] = useState<Catalog>({
     items: [],
     total: null,
@@ -50,7 +56,7 @@ function useCatalog(address?: string) {
     void (async () => {
       try {
         const response = await fetch(
-          `/api/product/explore/?window=24h&sort=launch&limit=${PAGE_SIZE}&offset=${offset}${address ? `&q=${encodeURIComponent(address)}` : ""}`,
+          `/api/product/explore/?window=24h&sort=launch&limit=${PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(address)}`,
           {
             signal: AbortSignal.any([
               controller.signal,
@@ -94,58 +100,6 @@ function useCatalog(address?: string) {
   };
 }
 
-function groupBySender(items: AnalyticsPoolRow[], sort: Sort) {
-  const bySender = new Map<string, AnalyticsPoolRow[]>();
-  for (const pool of items) {
-    const sender = pool.launchSender.toLowerCase();
-    const launches = bySender.get(sender);
-    if (launches) launches.push(pool);
-    else bySender.set(sender, [pool]);
-  }
-  const compare = (a: bigint | null, b: bigint | null) =>
-    a === b ? 0 : a === null ? 1 : b === null ? -1 : a > b ? -1 : 1;
-  return [...bySender]
-    .map(([sender, pools]) => {
-      const measured = pools.filter((p) => p.stats.volumeWei !== null);
-      const volumes = measured
-          .map((p) => BigInt(p.stats.volumeWei!))
-          .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
-        mid = Math.floor(volumes.length / 2);
-      const volume = volumes.length
-        ? volumes.reduce((a, b) => a + b, 0n)
-        : null;
-      const median = volumes.length
-        ? volumes.length % 2
-          ? volumes[mid]
-          : (volumes[mid - 1] + volumes[mid]) / 2n
-        : null;
-      const best = [...measured].sort((a, b) =>
-        BigInt(a.stats.volumeWei!) > BigInt(b.stats.volumeWei!) ? -1 : 1,
-      )[0];
-      const active = pools.filter((p) => (p.stats.trades ?? 0) > 0).length;
-      return { sender, pools, volume, median, best, active };
-    })
-    .sort(
-      (a, b) =>
-        (sort === "launches" ? b.pools.length - a.pools.length : 0) ||
-        compare(a.volume, b.volume) ||
-        a.sender.localeCompare(b.sender),
-    );
-}
-
-/** Launches with a swap in the window against all launches, drawn as the export's bar. */
-function SurvivalBar({ active, total }: { active: number; total: number }) {
-  const percent = Math.round((100 * active) / total);
-  return (
-    <span className="survival-cell">
-      <span className="survival-bar" aria-hidden="true">
-        <i style={{ width: `${percent}%` }} />
-      </span>
-      <small>{`${active} of ${total} · ${percent}%`}</small>
-    </span>
-  );
-}
-
 export function Creators({ address }: { address?: string }) {
   return address ? (
     <CreatorProfile key={address} address={address} />
@@ -156,101 +110,87 @@ export function Creators({ address }: { address?: string }) {
 
 function CreatorDirectory() {
   const { params, set } = useQuery();
-  const sort: Sort = params.get("sort") === "launches" ? "launches" : "volume";
-  const catalog = useCatalog();
-  const groups = useMemo(
-    () => groupBySender(catalog.items, sort),
-    [catalog.items, sort],
+  const { window, setWindow } = useWindow("All");
+  const rawSort = params.get("sort");
+  const sort: CreatorSort = CREATOR_SORTS.some(([key]) => key === rawSort)
+    ? (rawSort as CreatorSort)
+    : "launches";
+  const rawShown = Number(params.get("limit"));
+  const shown: ShowCount = SHOW_STEPS.includes(rawShown as ShowCount)
+    ? (rawShown as ShowCount)
+    : SHOW_STEP;
+  const query = new URLSearchParams({ window, sort, limit: String(shown) });
+  const { data, loading, stale, error } = useProduct<CreatorsResponse>(
+    `creators?${query}`,
   );
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // The virtualizer is a live instance by design; the React Compiler is not enabled here.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: groups.length || RESERVED_ROWS,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: OVERSCAN,
-    // Server output paints the reserved rows inside the surface before hydration.
-    initialRect: {
-      width: 0,
-      height: RESERVED_ROWS * ROW_HEIGHT + HEADER_HEIGHT,
-    },
-  });
-  // Restore the last scroll snapshot for this sort once the surface can hold it.
-  const restore = useRef<{ sort: Sort; offset: number } | null | undefined>(
-    undefined,
-  );
+  const rows = data?.items ?? [];
+  const total = Math.min(data?.total ?? 0, SHOW_CAP);
+  const canShowMore = shown < SHOW_CAP && data?.nextOffset !== null;
+
+  // Set by a "Show more" click to the first newly revealed row's index; a
+  // sort or window reset clears it so a stale click never steals focus later.
+  const focusRow = useRef<number | null>(null);
+  const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
   useEffect(() => {
-    if (restore.current === undefined)
-      try {
-        restore.current = JSON.parse(
-          sessionStorage.getItem(SCROLL_SNAPSHOT_KEY) ?? "null",
-        );
-      } catch {
-        restore.current = null;
-      }
-    const snapshot = restore.current,
-      surface = scrollRef.current;
-    if (!snapshot || !surface || !groups.length) return;
-    if (
-      snapshot.sort === sort &&
-      surface.scrollHeight - surface.clientHeight >= snapshot.offset
-    )
-      virtualizer.scrollToOffset(snapshot.offset);
-    else if (snapshot.sort === sort && catalog.streaming) return;
-    restore.current = null;
-  }, [groups.length, sort, catalog.streaming, virtualizer]);
-  useEffect(() => {
-    const save = () => {
-      try {
-        sessionStorage.setItem(
-          SCROLL_SNAPSHOT_KEY,
-          JSON.stringify({ sort, offset: virtualizer.scrollOffset ?? 0 }),
-        );
-      } catch {
-        /* Storage may be unavailable in private browsers. */
-      }
-    };
-    window.addEventListener("pagehide", save);
-    return () => {
-      window.removeEventListener("pagehide", save);
-      save();
-    };
-  }, [sort, virtualizer]);
-  const rows = virtualizer.getVirtualItems();
-  const first = rows[0],
-    last = rows[rows.length - 1];
-  const loaded = catalog.items.length,
-    total = catalog.total;
-  const pending = !loaded && catalog.streaming;
+    const index = focusRow.current;
+    if (index === null || loading) return;
+    focusRow.current = null;
+    rowRefs.current[index]?.focus();
+  }, [loading]);
+
+  function resort(updates: Record<string, string | null>) {
+    focusRow.current = null;
+    set({ ...updates, limit: null });
+  }
+  function showMore() {
+    focusRow.current = shown;
+    set({
+      limit: String(Math.min(shown + SHOW_STEP, SHOW_CAP)),
+    });
+  }
+
   return (
     <div className="page creators-page">
       <div className="page-heading">
-        <h1>
-          Creators<span className="title-dot">.</span>
-        </h1>
-        <div className="segmented" role="group" aria-label="Sort creators">
-          {SORTS.map(([key, label]) => (
-            <button
-              key={key}
-              aria-pressed={sort === key}
-              onClick={() => {
-                set({ sort: key === "volume" ? null : key });
-                virtualizer.scrollToOffset(0);
-              }}
-            >
-              {label}
-            </button>
-          ))}
+        <div>
+          <h1>
+            Creators<span className="title-dot">.</span>
+          </h1>
+          <p>Who launches pools, how often, and how their launches trade.</p>
+        </div>
+        <div className="traders-controls">
+          <div className="segmented" role="group" aria-label="Sort creators">
+            {CREATOR_SORTS.map(([key, label]) => (
+              <button
+                key={key}
+                aria-pressed={sort === key}
+                onClick={() =>
+                  resort({ sort: key === "launches" ? null : key })
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <WindowTabs
+            value={window}
+            onChange={(value) => {
+              setWindow(value);
+              resort({});
+            }}
+          />
         </div>
       </div>
       <section className="panel creators-panel">
+        {error && (
+          <p role="alert" className="panel-footnote">
+            {error}
+          </p>
+        )}
         <div
-          className="creators-scroll"
-          ref={scrollRef}
-          tabIndex={0}
-          aria-label="Creators"
-          aria-busy={pending}
+          className="table-scroll"
+          aria-busy={stale}
+          data-stale-rows={stale}
         >
           <table className="data-table">
             <thead>
@@ -259,127 +199,107 @@ function CreatorDirectory() {
                 <th>Creator</th>
                 <th>Launches</th>
                 <th>Still trading</th>
-                <th>24h volume</th>
+                <th>Volume</th>
                 <th>Median</th>
-                <th>Best launch</th>
+                <th>Best</th>
               </tr>
             </thead>
             <tbody>
-              {first && first.start > 0 && (
-                <tr className="spacer" aria-hidden>
-                  <td colSpan={7} style={{ height: first.start }} />
-                </tr>
-              )}
-              {rows.map((row) => {
-                const g = groups[row.index];
-                return (
+              {Array.from({ length: shown }, (_, index) => rows[index]).map(
+                (r, index) => (
                   <tr
-                    key={row.index}
-                    data-index={row.index}
-                    ref={virtualizer.measureElement}
-                    aria-hidden={!g}
-                    data-row={g ? "resolved" : "reserved"}
+                    key={index}
+                    ref={(node) => {
+                      rowRefs.current[index] = node;
+                    }}
+                    tabIndex={-1}
+                    aria-hidden={!r}
+                    data-row={r ? "resolved" : "reserved"}
                   >
-                    <td className="rank-number" data-pending={pending}>
-                      {g ? row.index + 1 : pending ? "Rank" : " "}
+                    <td className="rank-number" data-pending={!r && !data}>
+                      {r ? index + 1 : data ? " " : "Pending"}
                     </td>
-                    <td data-pending={pending}>
-                      {g ? (
+                    <td data-pending={!r && !data}>
+                      {r ? (
                         <AddressChip
-                          address={g.sender}
-                          href={`/creators/${g.sender}/`}
+                          address={r.address}
+                          href={`/creators/${r.address}/`}
+                          badge={
+                            r.boughtOwnLaunch === true ? (
+                              <span className="badge lavender">BOUGHT OWN</span>
+                            ) : undefined
+                          }
                         />
-                      ) : pending ? (
+                      ) : data ? (
+                        " "
+                      ) : (
                         "Creator pending"
-                      ) : (
-                        " "
                       )}
                     </td>
-                    <td data-pending={pending}>
-                      {g ? (
-                        // Keyed so a new count replaces its text node: rewriting
-                        // right-aligned text in place moves its start, which
-                        // Chrome scores as a layout shift.
-                        <Fragment key={g.pools.length}>
-                          {g.pools.length}
-                        </Fragment>
-                      ) : pending ? (
+                    <td data-pending={!r && !data}>
+                      {r ? r.launches : data ? " " : "Pending"}
+                    </td>
+                    <td data-pending={!r && !data}>
+                      {r ? (
+                        r.measured ? (
+                          `${r.traded}/${r.measured}`
+                        ) : (
+                          <Unavailable reason="No measured launch" />
+                        )
+                      ) : data ? (
+                        " "
+                      ) : (
                         "Pending"
-                      ) : (
-                        " "
                       )}
                     </td>
-                    <td data-pending={pending}>
-                      {g ? (
-                        <SurvivalBar active={g.active} total={g.pools.length} />
-                      ) : pending ? (
-                        "Pending"
-                      ) : (
-                        " "
-                      )}
+                    <td data-pending={!r && !data}>
+                      <Eth wei={r?.volumeWei} pending={!data} />
                     </td>
-                    <td>
-                      <Eth wei={g?.volume?.toString()} pending={pending} />
+                    <td data-pending={!r && !data}>
+                      <Eth wei={r?.medianVolumeWei} pending={!data} />
                     </td>
-                    <td>
-                      <Eth wei={g?.median?.toString()} pending={pending} />
-                    </td>
-                    <td data-pending={pending}>
-                      {g ? (
-                        g.best ? (
-                          <Link href={poolHref(g.best)}>{g.best.symbol}</Link>
+                    <td data-pending={!r && !data}>
+                      {r ? (
+                        r.bestLaunch ? (
+                          <Link href={poolHref(r.bestLaunch)}>
+                            {r.bestLaunch.symbol}
+                          </Link>
                         ) : (
                           <Unavailable />
                         )
-                      ) : pending ? (
-                        "Pending"
-                      ) : (
+                      ) : data ? (
                         " "
+                      ) : (
+                        "Pending"
                       )}
                     </td>
                   </tr>
-                );
-              })}
-              {/* Always present, so no data row is the tbody's last child: the
-                  base table drops that row's bottom border, which would centre a
-                  reserved row's text 0.25px lower than it lands once rows follow. */}
-              {last && (
-                <tr className="spacer" aria-hidden>
-                  <td
-                    colSpan={7}
-                    style={{ height: virtualizer.getTotalSize() - last.end }}
-                  />
-                </tr>
+                ),
               )}
             </tbody>
           </table>
-          {!groups.length && !catalog.streaming && !catalog.error && (
-            <div className="empty-state">
-              <h3>No creators in current coverage</h3>
-              <p>The saved catalog has no launches to group yet.</p>
-            </div>
-          )}
         </div>
-        <div className="pagination creators-progress">
-          {catalog.error && <span role="alert">{catalog.error}</span>}
-          {catalog.error ? (
-            <button className="button secondary" onClick={catalog.retry}>
-              Retry
+        {data && !rows.length && (
+          <div className="empty-state">
+            <h3>No creators in this window</h3>
+            <p>Switch the window or sort to find launches to group.</p>
+          </div>
+        )}
+        <div className="pagination">
+          <span className="pagination-count">
+            {data && total
+              ? `Showing ${rows.length} of ${total.toLocaleString()}`
+              : "0 results"}
+          </span>
+          {(!data || canShowMore) && (
+            <button
+              type="button"
+              className="button secondary"
+              disabled={!data || loading}
+              onClick={showMore}
+            >
+              Show {SHOW_STEP} more
             </button>
-          ) : (
-            catalog.nextOffset !== null &&
-            !catalog.streaming && (
-              <button className="button secondary" onClick={catalog.loadMore}>
-                Load more
-              </button>
-            )
-          )}
-          {catalog.streaming && total !== null && (
-            <span
-              className="creators-progress-bar"
-              style={{ width: `${(100 * loaded) / total}%` }}
-              aria-hidden
-            />
           )}
         </div>
       </section>
@@ -389,15 +309,11 @@ function CreatorDirectory() {
 
 function CreatorProfile({ address }: { address: string }) {
   const catalog = useCatalog(address);
-  const [group] = useMemo(
+  const pools = useMemo(
     () =>
-      groupBySender(
-        catalog.items.filter((p) => p.launchSender.toLowerCase() === address),
-        "volume",
-      ),
+      catalog.items.filter((p) => p.launchSender.toLowerCase() === address),
     [catalog.items, address],
   );
-  const pools = group?.pools ?? [];
   const pending = !pools.length && catalog.streaming;
   return (
     <div className={`page ${styles.page}`}>
@@ -420,7 +336,7 @@ function CreatorProfile({ address }: { address: string }) {
           <h2>
             Launches{" "}
             <span className="badge" data-pending={pending}>
-              {pending ? "Pending" : pools.length}
+              {pending ? "count pending" : `${pools.length} covered`}
             </span>
           </h2>
           <Link href={`/wallet/${address}/?window=All`}>
