@@ -106,11 +106,23 @@ test("the screener phone card matches the export's 104px row, with no coverage t
 
 // The mocked feed can still resolve to a window with no trades for a given
 // scope (or land on a transient poll error), in which case the rail renders
-// no `.stream-event` rows at all - there is nothing to measure a height on,
-// so assert the rail's own status instead of assuming a row exists.
+// no resolved rows at all - there is nothing to measure a height on, so
+// assert the rail's own status instead of assuming a row exists.
 async function expectRailRows(rail: ReturnType<Page["locator"]>) {
   await expect(rail).toBeVisible();
-  const rows = rail.locator(".stream-event");
+  // Until its first poll answers, the rail paints three aria-hidden skeleton
+  // rows that carry the same `.stream-event` class as the real ones, and when
+  // the answer lands React swaps those nodes for rows keyed by trade id.
+  // `rowHeights` resolves its nodes in one round trip and measures them in the
+  // next, so measuring across that swap reads nodes React has already
+  // detached, and a detached node's rect is all zeros rather than a real
+  // height. Settle the rail first - the way the screener card above waits for
+  // `[data-row='resolved']` - and measure only the rows a visitor is left
+  // looking at.
+  await expect(rail.locator('.stream-event[aria-hidden="true"]')).toHaveCount(
+    0,
+  );
+  const rows = rail.locator(".stream-event[data-event-id]");
   if ((await rows.count()) === 0) {
     await expect(rail.locator('[role="status"]')).toBeVisible();
     return;
