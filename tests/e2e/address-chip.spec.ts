@@ -154,8 +154,11 @@ for (const cell of cells) {
       `rows keep ${cell.height[project]}px`,
     ).toEqual([cell.height[project]]);
 
-    /* Copy writes the full address and confirms without moving the row. */
+    /* Copy writes the full address and confirms without moving the row. The
+       row is brought fully into view first, so the click itself scrolls
+       nothing and the viewport boxes compare like for like. */
     const first = rows.first();
+    await first.scrollIntoViewIfNeeded();
     const before = (await first.boundingBox())!;
     const copy = first.getByRole("button", { name: "Copy address" });
     await copy.click();

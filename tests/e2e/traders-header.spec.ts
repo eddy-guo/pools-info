@@ -213,3 +213,112 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
     "no request ever asks for a row past the 100th",
   ).toBeLessThanOrEqual(100);
 });
+
+// The export's "YOU · RANK N" row above the podium: a quiet prompt until this
+// browser marks a wallet as its own, then the wallet read's real rank. Both
+// states hold the same height, so the panel below never moves.
+const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
+
+async function settled(page: import("@playwright/test").Page) {
+  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0, {
+    timeout: 20000,
+  });
+  await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
+}
+
+test("without a wallet the leaderboard's you row is the quiet prompt", async ({
+  page,
+}) => {
+  await page.goto("/traders/?window=All");
+  await settled(page);
+  const row = page.locator(".my-rank");
+  await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("href", "/wallet/");
+  await expect(row.locator(".my-rank-chip")).toHaveText("YOU");
+  await expect(row.locator(".my-rank-summary")).toHaveText(
+    "Mark your wallet on its page to see your rank here",
+  );
+  await expect(row.locator(".my-rank-link")).toHaveText("Find your wallet →");
+  await expect(row, "no rank is invented").not.toContainText(/RANK|\d/);
+  await expect(row.locator(".my-rank-empty")).toHaveCount(1);
+  await expect(row.locator(".avatar")).toHaveCount(0);
+});
+
+test("with a wallet marked as mine the you row reads its real rank", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/traders/?window=All");
+  await settled(page);
+  const row = page.locator(".my-rank");
+  const panel = page.locator(".leaderboard-panel");
+  const prompt = (await row.boundingBox())!;
+  const panelTop = (await panel.boundingBox())!.y;
+  await page.evaluate((address) => {
+    localStorage.setItem("poolsinfo.my-wallet.v1", address);
+    window.dispatchEvent(new Event("poolsinfo-my-wallet-changed"));
+  }, topWallet);
+  await settled(page);
+  await expect(row).toHaveAttribute("href", `/wallet/${topWallet}/?window=All`);
+  await expect(row.locator(".my-rank-address")).toHaveText("0x4745…bce1");
+  await expect(row.locator(".my-rank-chip")).toHaveText("YOU · RANK 1");
+  await expect(row.locator(".my-rank-summary")).toHaveText(
+    "realized +0.0114711 ETH across 11 trades",
+  );
+  await expect(row.locator(".my-rank-summary .positive")).toHaveCSS(
+    "color",
+    "rgb(63, 214, 140)",
+  );
+  await expect(row.locator(".my-rank-link")).toHaveText("Your wallet →");
+  expect(
+    (await row.boundingBox())!.height,
+    "the ranked row holds the prompt's height",
+  ).toBe(prompt.height);
+  expect(
+    (await panel.boundingBox())!.y,
+    "the leaderboard keeps its position",
+  ).toBe(panelTop);
+  expect(prompt.height).toBe(testInfo.project.name === "mobile" ? 84 : 54);
+  await row.click();
+  await expect(page).toHaveURL(new RegExp(`/wallet/${topWallet}/`));
+  await expect(page.locator(".page-heading h1")).toHaveText("Portfolio");
+});
+
+// The server paints the prompt and hydration swaps in the stored wallet, then
+// its read resolves: neither step may move anything on screen.
+test("a stored wallet's you row resolves with no layout shift", async ({
+  page,
+}) => {
+  await page.addInitScript((address) => {
+    localStorage.setItem("poolsinfo.my-wallet.v1", address);
+    const state = { cls: 0 };
+    Object.assign(window, { layoutMeasurement: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  }, topWallet);
+  await page.goto("/traders/?window=7d");
+  await settled(page);
+  const row = page.locator(".my-rank");
+  await expect(row.locator(".my-rank-chip")).toHaveText("YOU · RANK 1");
+  await expect(row).toHaveAttribute("href", `/wallet/${topWallet}/?window=7d`);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { layoutMeasurement: { cls: number } })
+          .layoutMeasurement.cls,
+    ),
+    "every non-input layout shift since navigation",
+  ).toBe(0);
+});
