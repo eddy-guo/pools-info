@@ -63,3 +63,81 @@ test("following updates across browser tabs without a reload", async ({
   ).toHaveAttribute("aria-pressed", "false");
   await directoryPage.close();
 });
+
+test("the Following tab has no one to show until a trader is followed", async ({
+  page,
+}) => {
+  await page.goto("/traders/?view=following");
+  await expect(
+    page.getByRole("button", { name: "Following", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("heading", { name: "You are not following anyone yet" }),
+  ).toBeVisible();
+});
+
+test("following a trader from a leaderboard row surfaces it on the Following tab, and unfollowing there removes it", async ({
+  page,
+  request,
+}, testInfo) => {
+  const payload = await (
+    await request.get("/api/product/leaderboard/?window=7d")
+  ).json();
+  const address: string = payload.items[0].address;
+
+  await page.goto("/traders/");
+  const follow = page.getByRole("button", { name: `Follow ${address}` });
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+  await follow.hover();
+  await follow.click();
+  const unfollow = page.getByRole("button", {
+    name: `Unfollow ${address}`,
+  });
+  await expect(unfollow).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Following", exact: true }).click();
+  await expect(page).toHaveURL(/[?&]view=following(?:&|$)/);
+  const link = page
+    .locator(`a[href="/wallet/${address}/?window=7d"]`)
+    .filter({ visible: true });
+  await expect(link).toBeVisible();
+  await page
+    .locator(".leaderboard-panel")
+    .screenshot({ path: testInfo.outputPath("traders-following-tab.png") });
+
+  await page.getByRole("button", { name: `Unfollow ${address}` }).click();
+  await expect(link).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "You are not following anyone yet" }),
+  ).toBeVisible();
+});
+
+test("the Following tab survives reload and restores after Back", async ({
+  page,
+}) => {
+  await page.goto(`/wallet/${wallet}/`);
+  await page
+    .getByRole("button", { name: "Follow wallet", exact: true })
+    .click();
+  await page.goto("/traders/");
+  await page.getByRole("button", { name: "Following", exact: true }).click();
+  await expect(page).toHaveURL(/[?&]view=following(?:&|$)/);
+  const link = page
+    .locator(`a[href="/wallet/${wallet}/?window=7d"]`)
+    .filter({ visible: true });
+  await expect(link).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Following", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(link).toBeVisible();
+
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`/wallet/${wallet}/`));
+  await page.goBack();
+  await expect(page).toHaveURL(/[?&]view=following(?:&|$)/);
+  await expect(
+    page.getByRole("button", { name: "Following", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+});

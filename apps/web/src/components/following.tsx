@@ -46,7 +46,7 @@ function subscribe(notify: () => void) {
   };
 }
 const serverSnapshot = () => null;
-function useFollowing() {
+export function useFollowing() {
   const raw = useSyncExternalStore(subscribe, read, serverSnapshot);
   const addresses = useMemo(() => parse(raw), [raw]);
   const [error, setError] = useState("");
@@ -97,6 +97,31 @@ export function FollowButton({ address }: { address: string }) {
   );
 }
 
+/** The row-level toggle: an icon target beside a leaderboard row's identity,
+    the export's row hover reveals actions on desktop and it stays visible on
+    the phone's 44px target. Its pressed state is a filled, accent-coloured
+    icon so a followed row reads at a glance. */
+export function FollowRowButton({ address }: { address: string }) {
+  const { addresses, toggle, available } = useFollowing();
+  const followed = addresses.includes(address.toLowerCase());
+  return (
+    <button
+      type="button"
+      className={`icon-button follow-toggle ${followed ? "active" : ""}`}
+      aria-pressed={followed}
+      aria-label={followed ? `Unfollow ${address}` : `Follow ${address}`}
+      title="Saved only in this browser"
+      disabled={!available}
+      onClick={() => toggle(address)}
+    >
+      {followed ? (
+        <UserRoundCheck size={16} fill="currentColor" fillOpacity={0.18} />
+      ) : (
+        <UserRoundPlus size={16} />
+      )}
+    </button>
+  );
+}
 export function FollowedWallets() {
   const { addresses, toggle, error } = useFollowing();
   if (!addresses.length) return null;

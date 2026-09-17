@@ -4216,6 +4216,10 @@ main {
   .address-chip .icon-button {
     min-width: 28px;
   }
+  .mobile-trader-heading .follow-toggle {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 .mobile-traders,
 .mobile-pools {
@@ -4761,6 +4765,9 @@ main {
 .leaderboard-panel .data-table th:nth-child(10) {
   width: 186px;
 }
+.leaderboard-panel .data-table th:nth-child(11) {
+  width: 44px;
+}
 .leaderboard-panel .data-table th:nth-child(n + 3),
 .leaderboard-panel .data-table td:nth-child(n + 3) {
   text-align: right;
@@ -4794,6 +4801,35 @@ main {
 .leaderboard-panel .data-table td:nth-child(n + 6) .negative {
   color: inherit;
   font-weight: inherit;
+}
+.follow-toggle {
+  color: var(--color-faint);
+}
+.follow-toggle.active {
+  color: var(--ac);
+}
+/* Row actions reveal on hover, as the export's rows do; an already-followed
+   row keeps showing its filled state so the follow list stays legible without
+   hovering every row. */
+.desktop-traders .follow-toggle {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .desktop-traders .follow-toggle {
+    transition: opacity 120ms ease-out;
+  }
+}
+.desktop-traders tbody tr:hover .follow-toggle,
+.desktop-traders tbody tr:focus-within .follow-toggle,
+.desktop-traders .follow-toggle.active {
+  opacity: 1;
+}
+.mobile-trader-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 /* A view that resolves to no rows keeps its reserved table geometry, so nothing
    below the panel moves; the empty state overlays the top of that area, under
@@ -5309,7 +5345,10 @@ a.wallet-top-pool:hover {
   text-transform: uppercase;
   color: var(--color-faint);
 }
-.leaderboard-panel .desktop-traders {
+/* The Following tab reserves only the rows it actually has (fewer than 25 is
+   common), so it keeps the row height but not the leaderboard's full-page
+   reservation. */
+.leaderboard-panel .desktop-traders:not(.following-traders) {
   min-height: calc(25 * 62px + 44px);
 }
 .leaderboard-panel .data-table tbody tr,
@@ -5448,7 +5487,7 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .live-podium a > .number {
     grid-area: value;
   }
-  .leaderboard-panel .mobile-traders {
+  .leaderboard-panel .mobile-traders:not(.following-traders) {
     min-height: calc(25 * 224px);
   }
   .leaderboard-panel .mobile-trader {
