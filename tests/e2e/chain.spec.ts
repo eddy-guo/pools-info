@@ -1184,7 +1184,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
   await expect(
     page.getByRole("heading", { name: "Positions by pool" }),
   ).toBeVisible();
-  await page.getByRole("tab", { name: "Trades", exact: true }).click();
+  await page.getByRole("tab", { name: /^Trades\b/ }).click();
   await expect(
     page.getByRole("heading", { name: "Trade history" }),
   ).toBeVisible();
@@ -1504,7 +1504,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
     `${top.realizedWei} wei`,
   );
   await expect(stat).toContainText("+0.01147 ETH");
-  await page.getByRole("tab", { name: "Trades", exact: true }).click();
+  await page.getByRole("tab", { name: /^Trades\b/ }).click();
   await expect(
     page.locator("main tbody tr").filter({ visible: true }),
   ).toHaveCount(profile.trades.length);

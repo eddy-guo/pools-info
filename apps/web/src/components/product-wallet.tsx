@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   shortAddress,
   poolHref,
@@ -19,6 +19,8 @@ import {
 import { AddressLabel, Avatar, Change, Chart, EmptyState } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
+import { MyWalletButton, useMyWallet } from "./my-wallet";
+import { PoolImage } from "./pool-image";
 import { useQuery } from "./state";
 import { WalletTokenTransfers, WalletTransactions } from "./wallet-history";
 import { PnlCardModal } from "./pnl-card-modal";
@@ -32,13 +34,94 @@ const tabs = [
   { id: "transactions", label: "Transactions" },
   { id: "token-transfers", label: "Token transfers" },
 ];
+/**
+ * The export's tab counts, from the rows the read sent: a bounded list has
+ * no total, so its tab carries no count. The slot is reserved at three
+ * digits so a count arriving moves no tab beside it.
+ */
+function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
+  if (!data) return null;
+  if (id === "positions")
+    return data.positionsTruncated ? null : data.positions.length;
+  if (id === "trades") return data.tradesTruncated ? null : data.trades.length;
+  if (id === "launches")
+    return data.launchesTruncated ? null : data.launches.length;
+  return null;
+}
 const historyTabs = ["transactions", "token-transfers"];
+/** The export's four alert toggles, drawn off until alerts exist. */
+const alerts = (creator: boolean) => [
+  ["Every trade", "Buy or sell, within the block"],
+  creator
+    ? ["New launch", "When this wallet launches a pool"]
+    : ["First launch", "If this wallet ever launches a pool"],
+  ["Large exit", "Sells over 25% of a position"],
+  ["Leaderboard move", "Enters or leaves the top 100"],
+];
+/**
+ * The export's five behaviour bars from the figures the wallet read carries:
+ * a bar is a share of a real denominator, and a figure the read does not
+ * have leaves its bar and value empty rather than inventing one.
+ */
+function behaviour(data: AnalyticsWalletResponse | undefined) {
+  const w = data?.wallet;
+  const wins = w?.wins ?? 0,
+    losses = w?.losses ?? 0,
+    closed = wins + losses;
+  const known = (data?.positions ?? []).flatMap((p) =>
+    p.position ? [p.position] : [],
+  );
+  const held = known.filter((p) => BigInt(p.quantity) > 0n).length;
+  const total = w ? BigInt(w.volumeWei) : 0n;
+  const top = (data?.positions ?? []).reduce(
+    (best, p) => (BigInt(p.volumeWei) > best ? BigInt(p.volumeWei) : best),
+    0n,
+  );
+  const topShare = total > 0n ? Number((top * 10000n) / total) / 10000 : null;
+  const pct = (share: number | null) =>
+    share === null ? null : `${Math.round(share * 100)}%`;
+  return [
+    {
+      label: "Win rate",
+      value: pct(w?.winRate == null ? null : w.winRate / 100),
+      share: w?.winRate == null ? 0 : w.winRate / 100,
+      tone: "up",
+    },
+    {
+      label: "Wins",
+      value: w ? String(wins) : null,
+      share: closed ? wins / closed : 0,
+      tone: "up",
+    },
+    {
+      label: "Losses",
+      value: w ? String(losses) : null,
+      share: closed ? losses / closed : 0,
+      tone: "down",
+    },
+    {
+      label: "Still held",
+      value: known.length ? `${held} of ${known.length}` : null,
+      share: known.length ? held / known.length : 0,
+      tone: "accent",
+    },
+    {
+      label: "Volume in top pool",
+      value: pct(topShare),
+      share: topShare ?? 0,
+      tone: "muted",
+    },
+  ];
+}
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
   const { params, set } = useQuery();
   const { data, loading, stale, error } = useProduct<AnalyticsWalletResponse>(
     `wallets/${address.toLowerCase()}?window=${period}`,
   );
+  // The browser's own wallet reads as its portfolio; the server paints the
+  // public framing and hydration swaps whole nodes, never text in place.
+  const mine = useMyWallet().isMine(address);
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
     [opened, setOpened] = useState<string[]>([]),
     [copyTrade, setCopyTrade] = useState(false),
@@ -59,21 +142,25 @@ export function ProductWallet({ address }: { address: string }) {
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
         <Link href="/traders/">Traders</Link>
         <span>/</span>
-        <span>{shortAddress(address)}</span>
+        <span key={mine ? "portfolio" : "address"}>
+          {mine ? "Portfolio" : shortAddress(address)}
+        </span>
       </nav>
       <div className="page-heading">
         <div className={styles.identity}>
           <Avatar address={address} />
           <div>
             <div className={styles.title}>
-              <h1>{shortAddress(address)}</h1>
-              <span className={styles.mode} data-pending={!data}>
-                {w?.rank
-                  ? `RANK ${w.rank}`
-                  : data
-                    ? "UNRANKED"
-                    : "RANK PENDING"}
-              </span>
+              <Fragment key={mine ? "portfolio" : "address"}>
+                <h1>{mine ? "Portfolio" : shortAddress(address)}</h1>
+                <span className={styles.mode} data-pending={!data}>
+                  {w?.rank
+                    ? `RANK ${w.rank}`
+                    : data
+                      ? "UNRANKED"
+                      : "RANK PENDING"}
+                </span>
+              </Fragment>
             </div>
             <AddressLabel address={address} full />
           </div>
@@ -91,6 +178,7 @@ export function ProductWallet({ address }: { address: string }) {
             Share PnL card
           </button>
           <FollowButton address={address} />
+          <MyWalletButton address={address} />
           <button
             className="button"
             aria-haspopup="dialog"
@@ -163,16 +251,28 @@ export function ProductWallet({ address }: { address: string }) {
                 role="tablist"
                 aria-label="Wallet activity"
               >
-                {tabs.map((t) => (
-                  <button
-                    role="tab"
-                    aria-selected={tab === t.id}
-                    key={t.id}
-                    onClick={() => set({ tab: t.id })}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+                {tabs.map((t) => {
+                  const count = tabCount(data, t.id);
+                  return (
+                    <button
+                      role="tab"
+                      aria-selected={tab === t.id}
+                      key={t.id}
+                      onClick={() => set({ tab: t.id })}
+                    >
+                      {t.label}
+                      {!historyTabs.includes(t.id) && (
+                        <span className="tab-count">
+                          {/* Keyed so a count replaces its node rather than
+                              rewriting text in place. */}
+                          {count !== null && (
+                            <Fragment key={count}>{count}</Fragment>
+                          )}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               {tab === "positions" && (
                 <>
@@ -417,6 +517,61 @@ export function ProductWallet({ address }: { address: string }) {
           <aside className="market-sidebar">
             <section className="panel">
               <div className="panel-heading">
+                <h2>Alerts</h2>
+              </div>
+              <div className="wallet-alerts">
+                {alerts(!!data?.launches.length).map(([label, note]) => (
+                  <button
+                    type="button"
+                    className={styles.alert}
+                    key={label}
+                    aria-pressed={false}
+                    disabled
+                  >
+                    <span>
+                      {label}
+                      <small>{note}</small>
+                    </span>
+                    <span className={styles.switch} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+              <p className="panel-footnote">Alerts are not available yet.</p>
+            </section>
+            <section className="panel">
+              <div className="panel-heading">
+                <h2>Behaviour</h2>
+              </div>
+              <div className="wallet-behaviour" aria-busy={!data || stale}>
+                {behaviour(data).map((b) => (
+                  <div className="wallet-behaviour-row" key={b.label}>
+                    <span>{b.label}</span>
+                    <span className="number" data-pending={!data}>
+                      {/* Keyed so a value replaces its node: rewriting
+                          right-aligned text in place moves its start. */}
+                      {!data ? (
+                        "Pending"
+                      ) : b.value === null ? null : (
+                        <Fragment key={b.value}>{b.value}</Fragment>
+                      )}
+                    </span>
+                    <span
+                      className="wallet-behaviour-bar"
+                      data-tone={b.tone}
+                      aria-hidden="true"
+                    >
+                      <i
+                        style={{
+                          width: `${Math.round(Math.min(1, Math.max(0, b.share)) * 100)}%`,
+                        }}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panel-heading">
                 <h2>Most traded pools</h2>
               </div>
               <div
@@ -431,6 +586,7 @@ export function ProductWallet({ address }: { address: string }) {
                       key={index}
                       aria-hidden="true"
                     >
+                      <span className="avatar small" data-pending="true" />
                       <span data-pending="true">Pool pending</span>
                       <span className="number" data-pending="true">
                         Pending
@@ -443,6 +599,12 @@ export function ProductWallet({ address }: { address: string }) {
                     key={p.poolId}
                     href={poolHref({ id: p.poolId, launchTx: p.launchTx })}
                   >
+                    <PoolImage
+                      poolId={p.poolId}
+                      token={p.token}
+                      hasImage={false}
+                      size="small"
+                    />
                     <span>
                       <strong>{p.symbol}</strong>
                       <small>
@@ -459,9 +621,7 @@ export function ProductWallet({ address }: { address: string }) {
                 )}
               </div>
             </section>
-            <ComingSoonRow
-              items={["Copy trading", "Alerts", "Profile editing"]}
-            />
+            <ComingSoonRow items={["Copy trading", "Profile editing"]} />
           </aside>
         </div>
       </>
