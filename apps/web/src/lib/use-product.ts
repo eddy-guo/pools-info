@@ -2,9 +2,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 export type ProductDelivery = {
+  /** "preloaded" only ever reaches a fixture deployment; see product-server.ts. */
   source: "indexer" | "preloaded";
-  notice: string | null;
 };
+/**
+ * What every surface says when its read could not be served. There is no
+ * second sentence: no as-of line, no cached figure, no explanation of the
+ * pipeline behind it.
+ */
+export const DATA_UNAVAILABLE = "Live data is unavailable.";
+/** The read was answered, and the answer is that this item is not covered. */
+export const OUTSIDE_COVERAGE = "This item is outside available coverage.";
 export type Delivered<T> = T & { delivery: ProductDelivery };
 /** The endpoint identity: the same list or entity under different query parameters. */
 const resource = (path: string) => path.split("?")[0];
@@ -17,7 +25,10 @@ export async function fetchProduct<T>(path: string, signal: AbortSignal) {
     signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
     cache: "no-store",
   });
-  if (!response.ok) throw Error("Saved data is temporarily unavailable.");
+  /* A 503 is the proxy reporting that it has nothing live to serve; anything
+     else it answers with is a real answer about this item. */
+  if (!response.ok)
+    throw Error(response.status === 503 ? DATA_UNAVAILABLE : OUTSIDE_COVERAGE);
   const data = (await response.json()) as Delivered<T>;
   if (path.startsWith("pools/")) {
     const url = new URL(path, "http://localhost");
@@ -61,10 +72,7 @@ export function useProduct<T>(path: string) {
             path,
             data: prior.path === path ? prior.data : undefined,
             pending: false,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Saved data is unavailable.",
+            error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
           }));
       }
     });

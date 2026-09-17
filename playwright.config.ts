@@ -55,6 +55,14 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
-    env: { CHAIN_REFRESH_DISABLED: "1", PORT: String(port) },
+    /* This suite is the fixture deployment: no Postgres, no read API, and the
+       committed dataset under data/ named as the source. A deployment that
+       does not name it that way has no dataset to fall back on, which is the
+       point (see apps/web/src/lib/product-server.ts). */
+    env: {
+      CHAIN_REFRESH_DISABLED: "1",
+      PRODUCT_FIXTURES: "1",
+      PORT: String(port),
+    },
   },
 });

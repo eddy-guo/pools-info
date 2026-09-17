@@ -242,6 +242,13 @@ export function TradeStream({ poolId }: { poolId?: string }) {
               </div>
             </div>
           ))}
+        {/* The rail was polled and answered nothing: it says so, in its own
+            reserved height, rather than sitting empty under a "delayed" head. */}
+        {!data && current?.error && (
+          /* The head's own status already speaks for this rail, so the line
+             stays plain text rather than a second announcement. */
+          <p className={styles.note}>Live trades unavailable</p>
+        )}
         {data && offline && <p className={styles.note}>Feed not running</p>}
         {data && !offline && !data.events.length && (
           <p className={styles.note}>No recent trades</p>

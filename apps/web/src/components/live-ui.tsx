@@ -127,13 +127,20 @@ export function useWindow(fallback: LiveWindow = "All") {
     raw && Object.hasOwn(windows, raw) ? (raw as LiveWindow) : fallback;
   return { window, setWindow: (w: LiveWindow) => set({ window: w }) };
 }
+/**
+ * A pool's accounted market, as the server answers for it and nowhere else.
+ *
+ * The committed snapshot shipped in this bundle is a build-time fixture: it
+ * names the pools the suites exercise, but its prices and volumes are as old
+ * as the file, so this hook never returns them as the pool's market. A read
+ * that fails leaves the caller with no market, which is what it shows.
+ */
 export function useMarket(id?: string, launch?: string | null) {
   const { snapshot } = useLive();
   const [attempt, setAttempt] = useState({ id, count: 0 });
   const [extra, setExtra] = useState<ChainSnapshot | null>(null);
   const [request, setRequest] = useState({ id, pending: false, error: "" });
-  const known = snapshot.markets.find((m) => m.id === id);
-  const hasKnown = !!known;
+  const hasKnown = snapshot.markets.some((m) => m.id === id);
   const refreshCount = attempt.id === id ? attempt.count : 0;
   useEffect(() => {
     if (!id || !launch) return;
@@ -176,18 +183,17 @@ export function useMarket(id?: string, launch?: string | null) {
     return () => controller.abort();
   }, [hasKnown, id, launch, refreshCount]);
   const fetched = extra?.markets.find((m) => m.id === id);
-  const newer = fetched && (!known || extra!.toBlock >= snapshot.toBlock);
   const error = request.id === id ? request.error : "";
   const refreshing = request.id === id && request.pending;
   return {
-    market: newer ? fetched : known,
-    snapshot: newer ? extra! : snapshot,
+    market: fetched,
+    snapshot: fetched ? extra! : undefined,
     refresh: () => {
       if (!refreshing) setAttempt({ id, count: refreshCount + 1 });
     },
     refreshing,
     error,
-    loading: !known && !fetched && !!launch && !error,
+    loading: !fetched && !!launch && !error,
   };
 }
 

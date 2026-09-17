@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { productRequest } from "./product-request";
-import { preloadedProduct, readProduct } from "./product-server";
+import {
+  ProductUnavailableError,
+  preloadedProduct,
+  readProduct,
+} from "./product-server";
 import {
   cardCurve,
   cardExportTrio,
@@ -116,30 +120,75 @@ test("preloaded leaderboard and wallet share one supported-position calculation"
   }
 });
 
-test("index outage retains a labeled preload and never leaks provider details", async (t) => {
+test("an index outage is reported, never answered from the committed dataset", async (t) => {
   const old = process.env.INDEXER_API_URL,
-    offline = process.env.CHAIN_REFRESH_DISABLED;
+    offline = process.env.CHAIN_REFRESH_DISABLED,
+    fixtures = process.env.PRODUCT_FIXTURES;
   process.env.INDEXER_API_URL = "https://index.example";
   delete process.env.CHAIN_REFRESH_DISABLED;
+  /* Even a deployment that does name the fixtures must not have them
+     substituted for a read API it was configured with and could not reach. */
+  process.env.PRODUCT_FIXTURES = "1";
   t.after(() => {
     if (old === undefined) delete process.env.INDEXER_API_URL;
     else process.env.INDEXER_API_URL = old;
     if (offline === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
     else process.env.CHAIN_REFRESH_DISABLED = offline;
+    if (fixtures === undefined) delete process.env.PRODUCT_FIXTURES;
+    else process.env.PRODUCT_FIXTURES = fixtures;
   });
   let called = "";
   t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
     called = String(input);
     throw Error("secret-provider-debug");
   });
-  const result = await readProduct<AnalyticsExploreResponse>(
+  await assert.rejects(
+    readProduct<AnalyticsExploreResponse>(
+      ["explore"],
+      new URLSearchParams("limit=25"),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof ProductUnavailableError);
+      assert.ok(!String((error as Error).message).includes("secret-provider"));
+      return true;
+    },
+  );
+  assert.equal(called, "https://index.example/v1/explore?limit=25");
+  // The dataset the outage used to be answered from is still there, and still
+  // the fixture the browser suites read; it simply never stands in for a read.
+  const fixture = (await preloadedProduct(
+    "explore",
+    new URLSearchParams("limit=25"),
+  )) as AnalyticsExploreResponse;
+  assert.ok(fixture.items.length);
+});
+
+test("a deployment with no read API serves the committed dataset only when it names it", async (t) => {
+  const old = process.env.INDEXER_API_URL,
+    offline = process.env.CHAIN_REFRESH_DISABLED,
+    fixtures = process.env.PRODUCT_FIXTURES;
+  delete process.env.INDEXER_API_URL;
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  delete process.env.PRODUCT_FIXTURES;
+  t.after(() => {
+    if (old === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = old;
+    if (offline === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = offline;
+    if (fixtures === undefined) delete process.env.PRODUCT_FIXTURES;
+    else process.env.PRODUCT_FIXTURES = fixtures;
+  });
+  await assert.rejects(
+    readProduct(["explore"], new URLSearchParams("limit=25")),
+    (error: unknown) => error instanceof ProductUnavailableError,
+  );
+  process.env.PRODUCT_FIXTURES = "1";
+  const served = await readProduct<AnalyticsExploreResponse>(
     ["explore"],
     new URLSearchParams("limit=25"),
   );
-  assert.equal(called, "https://index.example/v1/explore?limit=25");
-  assert.equal(result.delivery.source, "preloaded");
-  assert.ok(result.items.length);
-  assert.ok(!JSON.stringify(result).includes("secret-provider-debug"));
+  assert.equal(served.delivery.source, "preloaded");
+  assert.ok(served.items.length);
 });
 
 test("proxy supports backend windows and uses matching bounds and fallback defaults", async () => {
@@ -197,12 +246,13 @@ test("a stale upstream window cannot masquerade as the newly selected window", a
     new URLSearchParams("window=All"),
   );
   t.mock.method(globalThis, "fetch", async () => Response.json(stale));
-  const result = await readProduct<AnalyticsLeaderboardResponse>(
-    ["leaderboard"],
-    new URLSearchParams("window=7d"),
+  await assert.rejects(
+    readProduct<AnalyticsLeaderboardResponse>(
+      ["leaderboard"],
+      new URLSearchParams("window=7d"),
+    ),
+    (error: unknown) => error instanceof ProductUnavailableError,
   );
-  assert.equal(result.window, "7d");
-  assert.equal(result.delivery.source, "preloaded");
 });
 
 test("share card options round-trip through the query the modal and the route share", () => {
@@ -373,11 +423,15 @@ test("share card chart follows the wallet's own curve and names its top position
 });
 
 test("an explicitly scoped share card cannot silently switch to global wallet PnL", async (t) => {
-  const previous = process.env.CHAIN_REFRESH_DISABLED;
+  const previous = process.env.CHAIN_REFRESH_DISABLED,
+    fixtures = process.env.PRODUCT_FIXTURES;
   process.env.CHAIN_REFRESH_DISABLED = "1";
+  process.env.PRODUCT_FIXTURES = "1";
   t.after(() => {
     if (previous === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
     else process.env.CHAIN_REFRESH_DISABLED = previous;
+    if (fixtures === undefined) delete process.env.PRODUCT_FIXTURES;
+    else process.env.PRODUCT_FIXTURES = fixtures;
   });
   const board = (await preloadedProduct(
     "leaderboard",
@@ -451,6 +505,17 @@ test("following activity fails closed during outage instead of inventing an empt
     "fetch",
     async () => new Response(null, { status: 503 }),
   );
+  await assert.rejects(
+    readProduct(
+      ["following"],
+      new URLSearchParams({ wallets: `0x${"1".repeat(40)}` }),
+    ),
+    (error: unknown) => error instanceof ProductUnavailableError,
+  );
+  // Nor does the fixture deployment have follow activity to invent.
+  process.env.CHAIN_REFRESH_DISABLED = "1";
+  process.env.PRODUCT_FIXTURES = "1";
+  t.after(() => delete process.env.PRODUCT_FIXTURES);
   await assert.rejects(
     readProduct(
       ["following"],
@@ -653,10 +718,7 @@ test("trade sharing never revives a preloaded PnL when saved evidence disappears
   assert.equal(saved.trade.realizedWei, "-1");
   for (const status of [404, 503]) {
     next = () => new Response(null, { status });
-    await assert.rejects(
-      readProduct(path, params),
-      /verified sale is unavailable/,
-    );
+    await assert.rejects(readProduct(path, params));
   }
   next = () =>
     Response.json({
@@ -665,9 +727,12 @@ test("trade sharing never revives a preloaded PnL when saved evidence disappears
     });
   await assert.rejects(
     readProduct(path, params),
-    /verified sale is unavailable/,
+    (error: unknown) => error instanceof ProductUnavailableError,
   );
+  // Even the fixture deployment has no verified sale to publish.
   process.env.CHAIN_REFRESH_DISABLED = "1";
+  process.env.PRODUCT_FIXTURES = "1";
+  t.after(() => delete process.env.PRODUCT_FIXTURES);
   await assert.rejects(
     readProduct(path, params),
     /verified sale is unavailable/,
@@ -799,7 +864,8 @@ test("a saved pool launch is read from either number or decimal-string heights",
   const raw = savedPool();
   validatePoolResponse(raw, stackBtc, "24h");
   assert.deepEqual(raw.pool.launch, savedPool().pool.launch);
-  // A pool outside the preload has no fallback, so rejection is the 404 page.
+  // A body this deployment cannot trust is as unusable as no body, and no
+  // stored pool stands in for it.
   for (const bad of ["63742277x", "6.5e7", " 63742277", "-1", "", 1.5, null])
     for (const field of ["block", "timestamp", "sourceBatchThroughBlock"]) {
       // An unrecorded source batch is absent data, not a malformed value.
@@ -808,7 +874,7 @@ test("a saved pool launch is read from either number or decimal-string heights",
       response.pool.launch[field] = bad;
       await assert.rejects(
         readProduct(path, new URLSearchParams()),
-        /outside available saved coverage/i,
+        (error: unknown) => error instanceof ProductUnavailableError,
       );
     }
   response = savedPool();
@@ -824,26 +890,30 @@ test("a saved pool launch is read from either number or decimal-string heights",
   );
 });
 
-test("a preloaded pool still resolves while the saved index is unavailable", async (t) => {
+test("a pool in the committed dataset is not resurrected while the index is unavailable", async (t) => {
   const prior = process.env.INDEXER_API_URL,
-    disabled = process.env.CHAIN_REFRESH_DISABLED;
+    disabled = process.env.CHAIN_REFRESH_DISABLED,
+    fixtures = process.env.PRODUCT_FIXTURES;
   process.env.INDEXER_API_URL = "https://index.example";
   delete process.env.CHAIN_REFRESH_DISABLED;
+  process.env.PRODUCT_FIXTURES = "1";
   t.after(() => {
     if (prior === undefined) delete process.env.INDEXER_API_URL;
     else process.env.INDEXER_API_URL = prior;
     if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
     else process.env.CHAIN_REFRESH_DISABLED = disabled;
+    if (fixtures === undefined) delete process.env.PRODUCT_FIXTURES;
+    else process.env.PRODUCT_FIXTURES = fixtures;
   });
   t.mock.method(globalThis, "fetch", async () => {
     throw Error("index offline");
   });
-  const preloaded = await readProduct<{ name: string }>(
-    ["pools", monkiiLabs],
-    new URLSearchParams(),
+  /* This is the pool page the captain was shown: it is in the committed
+     snapshot, so it used to answer with that snapshot's days-old figures. */
+  await assert.rejects(
+    readProduct<{ name: string }>(["pools", monkiiLabs], new URLSearchParams()),
+    (error: unknown) => error instanceof ProductUnavailableError,
   );
-  assert.equal(preloaded.delivery.source, "preloaded");
-  assert.equal(preloaded.name, "MonkiiLabs");
 });
 
 function withIndexer(t: import("node:test").TestContext, base?: string) {

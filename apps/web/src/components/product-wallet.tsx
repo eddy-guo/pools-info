@@ -17,7 +17,14 @@ import {
   utc,
   explorer,
 } from "./live-ui";
-import { AddressLabel, Avatar, Change, Chart, EmptyState } from "./ui";
+import {
+  AddressLabel,
+  Avatar,
+  Change,
+  Chart,
+  EmptyState,
+  UnavailableState,
+} from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { MyWalletButton, useMyWallet } from "./my-wallet";
@@ -120,9 +127,14 @@ function behaviour(data: AnalyticsWalletResponse | undefined) {
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
   const { params, set } = useQuery();
-  const { data, loading, stale, error } = useProduct<AnalyticsWalletResponse>(
-    `wallets/${address.toLowerCase()}?window=${period}`,
-  );
+  const { data, loading, stale, error, refresh } =
+    useProduct<AnalyticsWalletResponse>(
+      `wallets/${address.toLowerCase()}?window=${period}`,
+    );
+  /* Nothing was served for this wallet. Its identity is in the URL and stays
+     on screen; every figure below it is replaced by the one honest line,
+     never by a placeholder that goes on shimmering. */
+  const failed = !!error && !data;
   // The browser's own wallet reads as its portfolio; the server paints the
   // public framing and hydration swaps whole nodes, never text in place.
   const mine = useMyWallet().isMine(address);
@@ -155,12 +167,14 @@ export function ProductWallet({ address }: { address: string }) {
             <div className={styles.title}>
               <Fragment key={mine ? "portfolio" : "address"}>
                 <h1>{mine ? "Portfolio" : shortAddress(address)}</h1>
-                <span className={styles.mode} data-pending={!data}>
+                <span className={styles.mode} data-pending={!data && !failed}>
                   {w?.rank
                     ? `RANK ${w.rank}`
                     : data
                       ? "UNRANKED"
-                      : "RANK PENDING"}
+                      : failed
+                        ? "RANK UNAVAILABLE"
+                        : "RANK PENDING"}
                 </span>
               </Fragment>
             </div>
@@ -216,132 +230,232 @@ export function ProductWallet({ address }: { address: string }) {
           Updating saved wallet activity
         </span>
       )}
-      {error && (
+      {error && !failed && (
         <p role="alert" className="coverage-notice">
           {error}
         </p>
       )}
-      <>
-        <div className="stats-grid live-eight-stats">
-          <Stat pending={loading && !data} label="Realized PnL">
-            <Eth pending={!data} wei={w?.realizedWei} signed digits={5} />
-          </Stat>
-          <Stat pending={loading && !data} label="Unrealized">
-            <Eth pending={!data} wei={w?.unrealizedWei} signed digits={5} />
-          </Stat>
-          <Stat pending={loading && !data} label="ROI">
-            {w?.roi == null ? (
-              <Unavailable />
-            ) : (
-              <Change value={w.roi} digits={1} />
-            )}
-          </Stat>
-          <Stat pending={loading && !data} label="Win rate">
-            {pct(w?.winRate)}
-          </Stat>
-          <Stat pending={loading && !data} label="Trades">
-            {w?.rankingTradeCount ?? w?.supportedTradeCount ?? <Unavailable />}
-          </Stat>
-          <Stat pending={loading && !data} label="Volume">
-            <Eth pending={!data} wei={w?.volumeWei} digits={5} />
-          </Stat>
-          <Stat pending={loading && !data} label="Avg hold">
-            {w?.avgHold == null ? <Unavailable /> : `${Math.round(w.avgHold)}s`}
-          </Stat>
-          <Stat pending={loading && !data} label="Best trade">
-            <Eth pending={!data} wei={w?.bestWei} signed digits={5} />
-          </Stat>
-        </div>
-        <div className="workspace-grid">
-          <div>
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Cumulative realized PnL</h2>
-                <WindowTabs value={period} onChange={setWindow} />
-              </div>
-              <div className="wallet-chart-region" data-pending={!data}>
-                <Chart
-                  points={data?.curve ?? []}
-                  pending={!data}
-                  profit
-                  label="Cumulative realized PnL"
-                />
-              </div>
-            </section>
-            <section className="panel live-section wallet-activity">
-              <div
-                className="table-tabs"
-                role="tablist"
-                aria-label="Wallet activity"
-              >
-                {tabs.map((t) => {
-                  const count = tabCount(data, t.id);
-                  return (
-                    <button
-                      role="tab"
-                      aria-selected={tab === t.id}
-                      key={t.id}
-                      onClick={() => set({ tab: t.id })}
-                    >
-                      {t.label}
-                      <span className="tab-count">
-                        {/* Keyed so a count replaces its node rather than
+      {failed && <UnavailableState subject="Wallet" onRetry={refresh} />}
+      {!failed && (
+        <>
+          <div className="stats-grid live-eight-stats">
+            <Stat pending={loading && !data} label="Realized PnL">
+              <Eth pending={!data} wei={w?.realizedWei} signed digits={5} />
+            </Stat>
+            <Stat pending={loading && !data} label="Unrealized">
+              <Eth pending={!data} wei={w?.unrealizedWei} signed digits={5} />
+            </Stat>
+            <Stat pending={loading && !data} label="ROI">
+              {w?.roi == null ? (
+                <Unavailable />
+              ) : (
+                <Change value={w.roi} digits={1} />
+              )}
+            </Stat>
+            <Stat pending={loading && !data} label="Win rate">
+              {pct(w?.winRate)}
+            </Stat>
+            <Stat pending={loading && !data} label="Trades">
+              {w?.rankingTradeCount ?? w?.supportedTradeCount ?? (
+                <Unavailable />
+              )}
+            </Stat>
+            <Stat pending={loading && !data} label="Volume">
+              <Eth pending={!data} wei={w?.volumeWei} digits={5} />
+            </Stat>
+            <Stat pending={loading && !data} label="Avg hold">
+              {w?.avgHold == null ? (
+                <Unavailable />
+              ) : (
+                `${Math.round(w.avgHold)}s`
+              )}
+            </Stat>
+            <Stat pending={loading && !data} label="Best trade">
+              <Eth pending={!data} wei={w?.bestWei} signed digits={5} />
+            </Stat>
+          </div>
+          <div className="workspace-grid">
+            <div>
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Cumulative realized PnL</h2>
+                  <WindowTabs value={period} onChange={setWindow} />
+                </div>
+                <div className="wallet-chart-region" data-pending={!data}>
+                  <Chart
+                    points={data?.curve ?? []}
+                    pending={!data}
+                    profit
+                    label="Cumulative realized PnL"
+                  />
+                </div>
+              </section>
+              <section className="panel live-section wallet-activity">
+                <div
+                  className="table-tabs"
+                  role="tablist"
+                  aria-label="Wallet activity"
+                >
+                  {tabs.map((t) => {
+                    const count = tabCount(data, t.id);
+                    return (
+                      <button
+                        role="tab"
+                        aria-selected={tab === t.id}
+                        key={t.id}
+                        onClick={() => set({ tab: t.id })}
+                      >
+                        {t.label}
+                        <span className="tab-count">
+                          {/* Keyed so a count replaces its node rather than
                             rewriting text in place. */}
-                        {count !== null && (
-                          <Fragment key={count}>{count}</Fragment>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {tab === "positions" && (
-                <>
-                  <div
-                    className="table-region"
-                    data-empty={!!data && !data.positions.length}
-                  >
+                          {count !== null && (
+                            <Fragment key={count}>{count}</Fragment>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {tab === "positions" && (
+                  <>
                     <div
-                      className="table-scroll wallet-list-region"
-                      aria-busy={stale}
-                      data-stale-rows={stale}
+                      className="table-region"
+                      data-empty={!!data && !data.positions.length}
                     >
-                      <table className="data-table wallet-positions-table">
-                        {/* Fixed pixel widths, not percentages: a fractional
+                      <div
+                        className="table-scroll wallet-list-region"
+                        aria-busy={stale}
+                        data-stale-rows={stale}
+                      >
+                        <table className="data-table wallet-positions-table">
+                          {/* Fixed pixel widths, not percentages: a fractional
                             percentage of the panel's own width can round to
                             a different sub-pixel value between layout
                             passes, which the layout-shift observer scores
                             even though nothing visibly moves. */}
-                        <colgroup>
-                          <col />
-                          <col style={{ width: "150px" }} />
-                          <col style={{ width: "150px" }} />
-                          <col style={{ width: "150px" }} />
-                          <col style={{ width: "150px" }} />
-                        </colgroup>
-                        <thead>
-                          <tr>
-                            <th>Token</th>
-                            <th>Holding</th>
-                            <th>Cost</th>
-                            <th>Realized</th>
-                            <th>Unrealized</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Array.from(
-                            {
-                              length: Math.max(25, data?.positions.length ?? 0),
-                            },
-                            (_, index) => data?.positions[index],
-                          ).map((p, index) => (
-                            <tr
-                              key={index}
-                              aria-hidden={!p}
-                              data-row={p ? "resolved" : "reserved"}
-                            >
-                              <td data-pending={!p && !data}>
-                                {p ? (
+                          <colgroup>
+                            <col />
+                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "150px" }} />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>Token</th>
+                              <th>Holding</th>
+                              <th>Cost</th>
+                              <th>Realized</th>
+                              <th>Unrealized</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(
+                              {
+                                length: Math.max(
+                                  25,
+                                  data?.positions.length ?? 0,
+                                ),
+                              },
+                              (_, index) => data?.positions[index],
+                            ).map((p, index) => (
+                              <tr
+                                key={index}
+                                aria-hidden={!p}
+                                data-row={p ? "resolved" : "reserved"}
+                              >
+                                <td data-pending={!p && !data}>
+                                  {p ? (
+                                    <Link
+                                      className="wallet-token-cell"
+                                      href={poolHref({
+                                        id: p.poolId,
+                                        launchTx: p.launchTx,
+                                      })}
+                                    >
+                                      <Avatar address={p.token} />
+                                      <span>{p.symbol}</span>
+                                    </Link>
+                                  ) : data ? (
+                                    "\u00a0"
+                                  ) : (
+                                    "Pending"
+                                  )}
+                                </td>
+                                <td data-pending={!p && !data}>
+                                  {p ? (
+                                    <>
+                                      {holding(p) === null ? (
+                                        <Unavailable />
+                                      ) : (
+                                        `${holding(p)} ${p.symbol}`
+                                      )}
+                                    </>
+                                  ) : data ? (
+                                    "\u00a0"
+                                  ) : (
+                                    "Pending"
+                                  )}
+                                </td>
+                                <td data-pending={!p && !data}>
+                                  {p || !data ? (
+                                    <Eth
+                                      pending={!data}
+                                      wei={p?.position?.costWei}
+                                    />
+                                  ) : (
+                                    "\u00a0"
+                                  )}
+                                </td>
+                                <td data-pending={!p && !data}>
+                                  {p || !data ? (
+                                    <Eth
+                                      pending={!data}
+                                      wei={p?.realizedWei}
+                                      signed
+                                    />
+                                  ) : (
+                                    "\u00a0"
+                                  )}
+                                </td>
+                                <td data-pending={!p && !data}>
+                                  {p || !data ? (
+                                    <Eth
+                                      pending={!data}
+                                      wei={p?.unrealizedWei}
+                                      signed
+                                    />
+                                  ) : (
+                                    "\u00a0"
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {/* The rows where the table does not fit: the token with
+                        its realized and unrealized PnL at the right, then the
+                        holding and its cost. */}
+                      <div
+                        className="mobile-wallet-rows"
+                        aria-busy={stale}
+                        data-stale-rows={stale}
+                      >
+                        {Array.from(
+                          { length: Math.max(25, data?.positions.length ?? 0) },
+                          (_, index) => data?.positions[index],
+                        ).map((p, index) => (
+                          <div
+                            className="mobile-position"
+                            key={index}
+                            aria-hidden={!p}
+                            data-row={p ? "resolved" : "reserved"}
+                          >
+                            {p ? (
+                              <Fragment key="resolved">
+                                <div className="mobile-wallet-row-top">
                                   <Link
                                     className="wallet-token-cell"
                                     href={poolHref({
@@ -352,413 +466,327 @@ export function ProductWallet({ address }: { address: string }) {
                                     <Avatar address={p.token} />
                                     <span>{p.symbol}</span>
                                   </Link>
-                                ) : data ? (
-                                  "\u00a0"
-                                ) : (
-                                  "Pending"
-                                )}
+                                  <span className="mobile-position-pnl">
+                                    <Eth wei={p.realizedWei} signed />
+                                    <span>
+                                      Unrealized{" "}
+                                      <Eth wei={p.unrealizedWei} signed />
+                                    </span>
+                                  </span>
+                                </div>
+                                <div className="mobile-wallet-row-stats">
+                                  Holding {holding(p) ?? <Unavailable />} · Cost{" "}
+                                  <Eth wei={p.position?.costWei} />
+                                </div>
+                              </Fragment>
+                            ) : data ? null : (
+                              <Fragment key="pending">
+                                <div className="mobile-wallet-row-top">
+                                  <span data-pending="true">Token pending</span>
+                                  <span className="mobile-position-pnl">
+                                    <Eth wei={undefined} pending />
+                                  </span>
+                                </div>
+                                <div
+                                  className="mobile-wallet-row-stats"
+                                  data-pending="true"
+                                >
+                                  Pending
+                                </div>
+                              </Fragment>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {data && !data.positions.length && (
+                        <EmptyState
+                          title="No positions in this window"
+                          description="Select All to see this wallet's full history."
+                        />
+                      )}
+                    </div>
+                    {data?.positionsTruncated && (
+                      <p className="panel-footnote">
+                        Showing the first {data.positions.length} positions.
+                      </p>
+                    )}
+                  </>
+                )}
+                {tab === "trades" && (
+                  <>
+                    <div
+                      className="table-scroll wallet-list-region"
+                      aria-busy={stale}
+                      data-stale-rows={stale}
+                    >
+                      <table className="data-table wallet-trades-table">
+                        <thead>
+                          <tr>
+                            <th>Time (UTC)</th>
+                            <th>Pool</th>
+                            <th>Side</th>
+                            <th>ETH</th>
+                            <th>Transaction</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data?.trades.map((e) => (
+                            <tr
+                              key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
+                            >
+                              <td>{utc(e.trade.timestamp)}</td>
+                              <td>{e.symbol}</td>
+                              <td
+                                className={
+                                  e.trade.side === "buy"
+                                    ? "positive"
+                                    : "negative"
+                                }
+                              >
+                                {e.trade.side}
                               </td>
-                              <td data-pending={!p && !data}>
-                                {p ? (
-                                  <>
-                                    {holding(p) === null ? (
-                                      <Unavailable />
-                                    ) : (
-                                      `${holding(p)} ${p.symbol}`
-                                    )}
-                                  </>
-                                ) : data ? (
-                                  "\u00a0"
-                                ) : (
-                                  "Pending"
-                                )}
+                              <td>
+                                <Eth wei={e.trade.ethWei} />
                               </td>
-                              <td data-pending={!p && !data}>
-                                {p || !data ? (
-                                  <Eth
-                                    pending={!data}
-                                    wei={p?.position?.costWei}
-                                  />
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={!p && !data}>
-                                {p || !data ? (
-                                  <Eth
-                                    pending={!data}
-                                    wei={p?.realizedWei}
-                                    signed
-                                  />
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={!p && !data}>
-                                {p || !data ? (
-                                  <Eth
-                                    pending={!data}
-                                    wei={p?.unrealizedWei}
-                                    signed
-                                  />
-                                ) : (
-                                  "\u00a0"
-                                )}
+                              <td>
+                                <a
+                                  href={`${explorer}/tx/${e.trade.txHash}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  {shortAddress(e.trade.txHash)} ↗
+                                </a>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    {/* The rows where the table does not fit: the token with
-                        its realized and unrealized PnL at the right, then the
-                        holding and its cost. */}
                     <div
                       className="mobile-wallet-rows"
                       aria-busy={stale}
                       data-stale-rows={stale}
                     >
-                      {Array.from(
-                        { length: Math.max(25, data?.positions.length ?? 0) },
-                        (_, index) => data?.positions[index],
-                      ).map((p, index) => (
+                      {data?.trades.map((e) => (
                         <div
-                          className="mobile-position"
-                          key={index}
-                          aria-hidden={!p}
-                          data-row={p ? "resolved" : "reserved"}
+                          className="mobile-wallet-row"
+                          key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
                         >
-                          {p ? (
-                            <Fragment key="resolved">
-                              <div className="mobile-wallet-row-top">
-                                <Link
-                                  className="wallet-token-cell"
-                                  href={poolHref({
-                                    id: p.poolId,
-                                    launchTx: p.launchTx,
-                                  })}
-                                >
-                                  <Avatar address={p.token} />
-                                  <span>{p.symbol}</span>
-                                </Link>
-                                <span className="mobile-position-pnl">
-                                  <Eth wei={p.realizedWei} signed />
-                                  <span>
-                                    Unrealized{" "}
-                                    <Eth wei={p.unrealizedWei} signed />
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="mobile-wallet-row-stats">
-                                Holding {holding(p) ?? <Unavailable />} · Cost{" "}
-                                <Eth wei={p.position?.costWei} />
-                              </div>
-                            </Fragment>
-                          ) : data ? null : (
-                            <Fragment key="pending">
-                              <div className="mobile-wallet-row-top">
-                                <span data-pending="true">Token pending</span>
-                                <span className="mobile-position-pnl">
-                                  <Eth wei={undefined} pending />
-                                </span>
-                              </div>
-                              <div
-                                className="mobile-wallet-row-stats"
-                                data-pending="true"
-                              >
-                                Pending
-                              </div>
-                            </Fragment>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    {data && !data.positions.length && (
-                      <EmptyState
-                        title="No positions in this window"
-                        description="Select All to see this wallet's full history."
-                      />
-                    )}
-                  </div>
-                  {data?.positionsTruncated && (
-                    <p className="panel-footnote">
-                      Showing the first {data.positions.length} positions.
-                    </p>
-                  )}
-                </>
-              )}
-              {tab === "trades" && (
-                <>
-                  <div
-                    className="table-scroll wallet-list-region"
-                    aria-busy={stale}
-                    data-stale-rows={stale}
-                  >
-                    <table className="data-table wallet-trades-table">
-                      <thead>
-                        <tr>
-                          <th>Time (UTC)</th>
-                          <th>Pool</th>
-                          <th>Side</th>
-                          <th>ETH</th>
-                          <th>Transaction</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data?.trades.map((e) => (
-                          <tr
-                            key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
-                          >
-                            <td>{utc(e.trade.timestamp)}</td>
-                            <td>{e.symbol}</td>
-                            <td
+                          <div className="mobile-wallet-row-top">
+                            <strong>{e.symbol}</strong>
+                            <Eth wei={e.trade.ethWei} />
+                          </div>
+                          <div className="mobile-wallet-row-stats">
+                            <span
                               className={
                                 e.trade.side === "buy" ? "positive" : "negative"
                               }
                             >
                               {e.trade.side}
-                            </td>
-                            <td>
-                              <Eth wei={e.trade.ethWei} />
-                            </td>
-                            <td>
-                              <a
-                                href={`${explorer}/tx/${e.trade.txHash}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                {shortAddress(e.trade.txHash)} ↗
-                              </a>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div
-                    className="mobile-wallet-rows"
-                    aria-busy={stale}
-                    data-stale-rows={stale}
-                  >
-                    {data?.trades.map((e) => (
-                      <div
-                        className="mobile-wallet-row"
-                        key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
-                      >
-                        <div className="mobile-wallet-row-top">
-                          <strong>{e.symbol}</strong>
-                          <Eth wei={e.trade.ethWei} />
+                            </span>{" "}
+                            · {utc(e.trade.timestamp)} ·{" "}
+                            <a
+                              href={`${explorer}/tx/${e.trade.txHash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {shortAddress(e.trade.txHash)} ↗
+                            </a>
+                          </div>
                         </div>
-                        <div className="mobile-wallet-row-stats">
-                          <span
-                            className={
-                              e.trade.side === "buy" ? "positive" : "negative"
-                            }
-                          >
-                            {e.trade.side}
-                          </span>{" "}
-                          · {utc(e.trade.timestamp)} ·{" "}
-                          <a
-                            href={`${explorer}/tx/${e.trade.txHash}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {shortAddress(e.trade.txHash)} ↗
-                          </a>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {data?.tradesTruncated && (
-                    <p className="panel-footnote">
-                      Showing the latest {data.trades.length} trades.
-                    </p>
-                  )}
-                </>
-              )}
-              {tab === "launches" && (
-                <>
-                  <div
-                    className="table-scroll wallet-list-region"
-                    aria-busy={stale}
-                    data-stale-rows={stale}
-                  >
-                    <table className="data-table wallet-launches-table">
-                      <thead>
-                        <tr>
-                          <th>Token</th>
-                          <th>Launch (UTC)</th>
-                          <th>Evidence</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data?.launches.map((p) => (
-                          <tr key={p.id}>
-                            <td>
-                              <Link href={poolHref(p)}>
-                                {p.name} ({p.symbol})
-                              </Link>
-                            </td>
-                            <td>{utc(p.launchedAt)}</td>
-                            <td>
-                              <a
-                                href={`${explorer}/tx/${p.launchTx}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Launch transaction ↗
-                              </a>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div
-                    className="mobile-wallet-rows"
-                    aria-busy={stale}
-                    data-stale-rows={stale}
-                  >
-                    {data?.launches.map((p) => (
-                      <div className="mobile-wallet-row" key={p.id}>
-                        <div className="mobile-wallet-row-top">
-                          <Link href={poolHref(p)}>
-                            {p.name} ({p.symbol})
-                          </Link>
-                          <a
-                            href={`${explorer}/tx/${p.launchTx}`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Launch transaction ↗
-                          </a>
-                        </div>
-                        <div className="mobile-wallet-row-stats">
-                          {utc(p.launchedAt)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {data?.launchesTruncated && (
-                    <p className="panel-footnote">
-                      Showing the latest {data.launches.length} launches.
-                    </p>
-                  )}
-                </>
-              )}
-            </section>
-          </div>
-          <aside className="market-sidebar">
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Alerts</h2>
-              </div>
-              <div className="wallet-alerts">
-                {alerts(!!data?.launches.length).map(([label, note]) => (
-                  <button
-                    type="button"
-                    className={styles.alert}
-                    key={label}
-                    aria-pressed={false}
-                    disabled
-                  >
-                    <span>
-                      {label}
-                      <small>{note}</small>
-                    </span>
-                    <span className={styles.switch} aria-hidden="true" />
-                  </button>
-                ))}
-              </div>
-              <p className="panel-footnote">Alerts are not available yet.</p>
-            </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Behaviour</h2>
-              </div>
-              <div className="wallet-behaviour" aria-busy={!data || stale}>
-                {behaviour(data).map((b) => (
-                  <div className="wallet-behaviour-row" key={b.label}>
-                    <span>{b.label}</span>
-                    <span className="number" data-pending={!data}>
-                      {/* Keyed so a value replaces its node: rewriting
-                          right-aligned text in place moves its start. */}
-                      {!data ? (
-                        "Pending"
-                      ) : b.value === null ? null : (
-                        <Fragment key={b.value}>{b.value}</Fragment>
-                      )}
-                    </span>
-                    <span
-                      className="wallet-behaviour-bar"
-                      data-tone={b.tone}
-                      aria-hidden="true"
-                    >
-                      <i
-                        style={{
-                          width: `${Math.round(Math.min(1, Math.max(0, b.share)) * 100)}%`,
-                        }}
-                      />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Most traded pools</h2>
-              </div>
-              <div
-                className="wallet-top-pools"
-                aria-busy={!data || stale}
-                data-stale-rows={stale}
-              >
-                {!data &&
-                  Array.from({ length: 5 }, (_, index) => (
+                      ))}
+                    </div>
+                    {data?.tradesTruncated && (
+                      <p className="panel-footnote">
+                        Showing the latest {data.trades.length} trades.
+                      </p>
+                    )}
+                  </>
+                )}
+                {tab === "launches" && (
+                  <>
                     <div
-                      className="wallet-top-pool"
-                      key={index}
-                      aria-hidden="true"
+                      className="table-scroll wallet-list-region"
+                      aria-busy={stale}
+                      data-stale-rows={stale}
                     >
-                      <span className="avatar small" data-pending="true" />
-                      <span data-pending="true">Pool pending</span>
-                      <span className="number" data-pending="true">
-                        Pending
+                      <table className="data-table wallet-launches-table">
+                        <thead>
+                          <tr>
+                            <th>Token</th>
+                            <th>Launch (UTC)</th>
+                            <th>Evidence</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data?.launches.map((p) => (
+                            <tr key={p.id}>
+                              <td>
+                                <Link href={poolHref(p)}>
+                                  {p.name} ({p.symbol})
+                                </Link>
+                              </td>
+                              <td>{utc(p.launchedAt)}</td>
+                              <td>
+                                <a
+                                  href={`${explorer}/tx/${p.launchTx}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Launch transaction ↗
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div
+                      className="mobile-wallet-rows"
+                      aria-busy={stale}
+                      data-stale-rows={stale}
+                    >
+                      {data?.launches.map((p) => (
+                        <div className="mobile-wallet-row" key={p.id}>
+                          <div className="mobile-wallet-row-top">
+                            <Link href={poolHref(p)}>
+                              {p.name} ({p.symbol})
+                            </Link>
+                            <a
+                              href={`${explorer}/tx/${p.launchTx}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Launch transaction ↗
+                            </a>
+                          </div>
+                          <div className="mobile-wallet-row-stats">
+                            {utc(p.launchedAt)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {data?.launchesTruncated && (
+                      <p className="panel-footnote">
+                        Showing the latest {data.launches.length} launches.
+                      </p>
+                    )}
+                  </>
+                )}
+              </section>
+            </div>
+            <aside className="market-sidebar">
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Alerts</h2>
+                </div>
+                <div className="wallet-alerts">
+                  {alerts(!!data?.launches.length).map(([label, note]) => (
+                    <button
+                      type="button"
+                      className={styles.alert}
+                      key={label}
+                      aria-pressed={false}
+                      disabled
+                    >
+                      <span>
+                        {label}
+                        <small>{note}</small>
+                      </span>
+                      <span className={styles.switch} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+                <p className="panel-footnote">Alerts are not available yet.</p>
+              </section>
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Behaviour</h2>
+                </div>
+                <div className="wallet-behaviour" aria-busy={!data || stale}>
+                  {behaviour(data).map((b) => (
+                    <div className="wallet-behaviour-row" key={b.label}>
+                      <span>{b.label}</span>
+                      <span className="number" data-pending={!data}>
+                        {/* Keyed so a value replaces its node: rewriting
+                          right-aligned text in place moves its start. */}
+                        {!data ? (
+                          "Pending"
+                        ) : b.value === null ? null : (
+                          <Fragment key={b.value}>{b.value}</Fragment>
+                        )}
+                      </span>
+                      <span
+                        className="wallet-behaviour-bar"
+                        data-tone={b.tone}
+                        aria-hidden="true"
+                      >
+                        <i
+                          style={{
+                            width: `${Math.round(Math.min(1, Math.max(0, b.share)) * 100)}%`,
+                          }}
+                        />
                       </span>
                     </div>
                   ))}
-                {topPools.map((p) => (
-                  <Link
-                    className="wallet-top-pool"
-                    key={p.poolId}
-                    href={poolHref({ id: p.poolId, launchTx: p.launchTx })}
-                  >
-                    <PoolImage
-                      poolId={p.poolId}
-                      token={p.token}
-                      hasImage={false}
-                      size="small"
-                    />
-                    <span>
-                      <strong>{p.symbol}</strong>
-                      <small>
-                        <Eth wei={p.volumeWei} /> traded
-                      </small>
-                    </span>
-                    <Eth wei={p.realizedWei} signed />
-                  </Link>
-                ))}
-                {data && !topPools.length && (
-                  <p className="panel-footnote">
-                    No pool activity in this window.
-                  </p>
-                )}
-              </div>
-            </section>
-            <ComingSoonRow items={["Copy trading", "Profile editing"]} />
-          </aside>
-        </div>
-      </>
+                </div>
+              </section>
+              <section className="panel">
+                <div className="panel-heading">
+                  <h2>Most traded pools</h2>
+                </div>
+                <div
+                  className="wallet-top-pools"
+                  aria-busy={!data || stale}
+                  data-stale-rows={stale}
+                >
+                  {!data &&
+                    Array.from({ length: 5 }, (_, index) => (
+                      <div
+                        className="wallet-top-pool"
+                        key={index}
+                        aria-hidden="true"
+                      >
+                        <span className="avatar small" data-pending="true" />
+                        <span data-pending="true">Pool pending</span>
+                        <span className="number" data-pending="true">
+                          Pending
+                        </span>
+                      </div>
+                    ))}
+                  {topPools.map((p) => (
+                    <Link
+                      className="wallet-top-pool"
+                      key={p.poolId}
+                      href={poolHref({ id: p.poolId, launchTx: p.launchTx })}
+                    >
+                      <PoolImage
+                        poolId={p.poolId}
+                        token={p.token}
+                        hasImage={false}
+                        size="small"
+                      />
+                      <span>
+                        <strong>{p.symbol}</strong>
+                        <small>
+                          <Eth wei={p.volumeWei} /> traded
+                        </small>
+                      </span>
+                      <Eth wei={p.realizedWei} signed />
+                    </Link>
+                  ))}
+                  {data && !topPools.length && (
+                    <p className="panel-footnote">
+                      No pool activity in this window.
+                    </p>
+                  )}
+                </div>
+              </section>
+              <ComingSoonRow items={["Copy trading", "Profile editing"]} />
+            </aside>
+          </div>
+        </>
+      )}
       <CopyTradePreview open={copyTrade} onClose={() => setCopyTrade(false)} />
       <PnlCardModal
         address={address}

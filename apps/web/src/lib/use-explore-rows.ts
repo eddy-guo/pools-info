@@ -1,7 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { AnalyticsExploreResponse, AnalyticsPoolRow } from "@pools/core";
-import { fetchProduct, type ProductDelivery } from "./use-product";
+import {
+  DATA_UNAVAILABLE,
+  fetchProduct,
+  type ProductDelivery,
+} from "./use-product";
 
 /** The most rows the read API serves in one request. */
 const MAX_REQUEST_ROWS = 100;
@@ -15,9 +19,9 @@ type Loaded = {
   rows: readonly AnalyticsPoolRow[];
   total: number;
   nextOffset: number | null;
-  /** Where the first rows came from: a chunk from another source is the
-      proxy's outage fallback, whose rows belong to another catalog and
-      cannot join the list. */
+  /** Where the first rows came from. A fixture deployment and a read API
+      hold different catalogs, so a later chunk from the other source cannot
+      join rows already on hand. */
   source: ProductDelivery["source"];
 };
 type Failure = { query: string; generation: number; message: string };
@@ -67,7 +71,7 @@ export function useExploreRows(query: string, shown: number) {
         (page) => {
           if (controller.signal.aborted) return;
           if (offset > 0 && page.delivery.source !== source) {
-            fail("Saved data is temporarily unavailable.");
+            fail(DATA_UNAVAILABLE);
             return;
           }
           setFailure(undefined);
@@ -94,11 +98,7 @@ export function useExploreRows(query: string, shown: number) {
         },
         (reason: unknown) => {
           if (controller.signal.aborted) return;
-          fail(
-            reason instanceof Error
-              ? reason.message
-              : "Saved data is unavailable.",
-          );
+          fail(reason instanceof Error ? reason.message : DATA_UNAVAILABLE);
         },
       );
     });

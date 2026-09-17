@@ -1,28 +1,26 @@
 "use client";
-import Link from "next/link";
-import styles from "./detail-design.module.css";
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
-import {
-  poolWindow,
-  type AnalyticsPoolDetail,
-  type ObservedMarket,
-} from "@pools/core";
-import { useProduct } from "@/lib/use-product";
+import { type AnalyticsPoolDetail, type ObservedMarket } from "@pools/core";
+import { DATA_UNAVAILABLE, useProduct } from "@/lib/use-product";
 import { useRememberedPoolRow } from "@/lib/pool-row-memory";
 import { useQuery } from "./state";
-import { useLive } from "./live-provider";
-import { WatchButton } from "./ui";
-import { Eth, Stat, explorer, useMarket } from "./live-ui";
-import { Candles, type ChartRange } from "./candles";
+import { useMarket } from "./live-ui";
 import {
   ObservedPoolDetail,
-  PoolChartHead,
-  PoolHeading,
-  windowChanges,
   type ObservedPoolIdentity,
 } from "./observed-pool-detail";
-/** `renderedAt` is the server's clock at render, the basis of the launch age. */
+/**
+ * The pool page, served by the read API through the app's own proxy.
+ *
+ * There is one page here rather than two. The committed snapshot in this
+ * bundle used to render a second, complete page for the handful of pools it
+ * happens to contain, which meant an outage left those pools showing days-old
+ * prices and volumes as if they were current. Every pool now reads from the
+ * proxy, and a read that cannot be served leaves the page on its unavailable
+ * state with no figures at all.
+ *
+ * `renderedAt` is the server's clock at render, the basis of the launch age.
+ */
 export function PoolDetail({
   id,
   renderedAt,
@@ -31,38 +29,40 @@ export function PoolDetail({
   renderedAt: number;
 }) {
   const { params } = useQuery();
-  const {
-    market: loadedMarket,
-    snapshot: loadedSnapshot,
-    loading,
-    refresh,
-    refreshing,
-  } = useMarket(id, params.get("launch"));
-  const { audits, snapshot: initialSnapshot } = useLive();
-  const [preloadedIds] = useState(
-    () => new Set(initialSnapshot.markets.map((market) => market.id)),
-  );
   const saved = useProduct<{
     name: string;
     symbol: string;
     token: string;
     imageUrl?: string | null;
+    launch?: ObservedPoolIdentity["launch"];
     pool?: {
       poolId: string;
       name: string;
       symbol: string;
       token: string;
       imageUrl?: string | null;
+      launch?: ObservedPoolIdentity["launch"];
     };
     analytics: AnalyticsPoolDetail | null;
     market?: ObservedMarket;
   }>(`pools/${id}`);
+  const savedIdentity = saved.data?.pool ?? saved.data;
+  /* The accounted cut is a second read, and only a link that already names
+     the launch asks for it: this pool's own read carries its publication, so
+     a bare URL costs the read API one request, as it did before. */
+  const launch = params.get("launch");
+  const {
+    market: loadedMarket,
+    snapshot: loadedSnapshot,
+    refresh,
+    refreshing,
+    loading,
+  } = useMarket(id, launch);
   const remembered = useRememberedPoolRow(id);
   /* Hydration paints the server's markup, which never sees a remembered row, so
      only an arrival from a row can size the chart region before the first
      paint. Reading it once keeps that region's height fixed from then on. */
   const [expectChart] = useState(() => remembered?.measured !== false);
-  const savedIdentity = saved.data?.pool ?? saved.data;
   const publication = saved.data?.analytics;
   const publishedMarket = publication?.snapshot.markets.find(
     (m) => m.id === id && m.accounting?.executions,
@@ -70,167 +70,57 @@ export function PoolDetail({
   const usePublished =
     publishedMarket &&
     (!loadedMarket?.accounting?.executions ||
+      !loadedSnapshot ||
       // useMarket already prefers its refreshed response at the same cutoff.
       // A matching publication must not replace that response with old data.
       publication!.snapshot.toBlock > loadedSnapshot.toBlock);
   const m = usePublished ? publishedMarket : loadedMarket;
   const s = usePublished ? publication!.snapshot : loadedSnapshot;
-  const [range, setRange] = useState<ChartRange>("All");
-  if (!preloadedIds.has(id)) {
-    const pool =
-      savedIdentity || m || remembered
-        ? {
-            poolId: id,
-            name: savedIdentity?.name ?? m?.name ?? remembered?.name,
-            symbol: savedIdentity?.symbol ?? m?.symbol ?? remembered?.symbol,
-            token: savedIdentity?.token ?? m?.token ?? remembered?.token,
-            imageUrl: savedIdentity?.imageUrl ?? remembered?.imageUrl,
-            launch:
-              "launch" in (savedIdentity ?? {})
-                ? (savedIdentity as ObservedPoolIdentity).launch
-                : m
-                  ? {
-                      timestamp: m.launchedAt,
-                      transactionHash: m.launchTx,
-                      transactionInitiator: m.launchSender,
-                    }
-                  : remembered?.launch,
-          }
-        : undefined;
-    return (
-      <ObservedPoolDetail
-        id={id}
-        pool={pool}
-        market={saved.data?.market}
-        accountedMarket={m}
-        snapshot={m ? s : undefined}
-        chart={expectChart}
-        refresh={() => {
-          refresh();
-          saved.refresh();
-        }}
-        loading={loading || saved.loading || refreshing}
-        pending={!saved.data && !m && saved.loading}
-        renderedAt={renderedAt}
-      />
-    );
-  }
-  if (
-    saved.data?.market &&
-    saved.data.pool &&
-    !m?.accounting?.executions &&
-    !audits[id]
-  )
-    return (
-      <ObservedPoolDetail
-        id={id}
-        pool={saved.data.pool as ObservedPoolIdentity}
-        market={saved.data.market}
-        refresh={saved.refresh}
-        loading={saved.loading}
-        renderedAt={renderedAt}
-      />
-    );
-  if (!m)
-    return (
-      <div className={`page ${styles.page}`}>
-        <h1>
-          {savedIdentity?.name ??
-            remembered?.name ??
-            (loading ? "Loading saved pool…" : "Pool name unavailable")}
-        </h1>
-        <Link className="button" href="/">
-          Explore pools
-        </Link>
-      </div>
-    );
-  const stats = poolWindow(m, s, "24h"),
-    fdv =
-      m.priceWei === null
-        ? null
-        : (
-            (BigInt(m.priceWei) * BigInt(m.supply)) /
-            10n ** BigInt(m.decimals)
-          ).toString();
+  const pending = !saved.data && !m && saved.loading;
+  /* Nothing was served, so nothing is shown: the page keeps its reserved
+     shape and says why in place of the chart. A read the API answered, saying
+     this pool has no published detail, is not that: the page keeps its own
+     "Price chart unavailable" for it. */
+  const notice =
+    saved.error === DATA_UNAVAILABLE && !saved.data && !m
+      ? DATA_UNAVAILABLE
+      : undefined;
+  const pool =
+    savedIdentity || m || remembered
+      ? {
+          poolId: id,
+          name: savedIdentity?.name ?? m?.name ?? remembered?.name,
+          symbol: savedIdentity?.symbol ?? m?.symbol ?? remembered?.symbol,
+          token: savedIdentity?.token ?? m?.token ?? remembered?.token,
+          imageUrl: savedIdentity?.imageUrl ?? remembered?.imageUrl,
+          launch:
+            savedIdentity?.launch ??
+            (m
+              ? {
+                  block: m.launchBlock,
+                  timestamp: m.launchedAt,
+                  transactionHash: m.launchTx,
+                  transactionInitiator: m.launchSender,
+                }
+              : remembered?.launch),
+        }
+      : undefined;
   return (
-    <div className={`page pool-page ${styles.page}`}>
-      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
-        <Link href="/">Pools</Link>
-        <span>/</span>
-        <span>{m.symbol}</span>
-      </nav>
-      <PoolHeading
-        id={m.id}
-        pool={{
-          poolId: m.id,
-          name: m.name,
-          symbol: m.symbol,
-          token: m.token,
-          imageUrl: savedIdentity?.imageUrl,
-          launch: {
-            timestamp: m.launchedAt,
-            transactionHash: m.launchTx,
-            transactionInitiator: m.launchSender,
-          },
-        }}
-        renderedAt={renderedAt}
-      >
-        <WatchButton id={m.id} />
-        <button
-          className="icon-button"
-          title="Refresh"
-          aria-label="Refresh"
-          onClick={() => {
-            refresh();
-            saved.refresh();
-          }}
-          disabled={refreshing}
-        >
-          <RefreshCw size={14} />
-        </button>
-        <a
-          className="button secondary"
-          href={`${explorer}/token/${m.token}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Explorer ↗
-        </a>
-        <a
-          className="button"
-          href={`https://pools.xyz/t/robinhood/${m.token}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Trade on Pools ↗
-        </a>
-      </PoolHeading>
-      <section className="panel pool-chart-panel">
-        <PoolChartHead
-          price={m.priceWei}
-          change={stats.change}
-          windows={windowChanges(m, s, undefined)}
-          range={range}
-          onRange={setRange}
-        />
-        <div className="pool-chart-region" data-chart="reserved">
-          <Candles range={range} market={m} snapshot={s} />
-        </div>
-      </section>
-      <div className="stats-grid live-six-stats">
-        <Stat label="FDV">
-          <Eth wei={fdv} digits={5} />
-        </Stat>
-        <Stat
-          label="Volume 24h"
-          note={`${stats.trades.length.toLocaleString("en-US")} trades`}
-        >
-          <Eth wei={stats.volumeWei} digits={5} />
-        </Stat>
-        <Stat label="Creator fee">
-          {m.creatorFees ? "Enabled" : "Disabled"}
-        </Stat>
-      </div>
-    </div>
+    <ObservedPoolDetail
+      id={id}
+      pool={pool}
+      market={saved.data?.market}
+      accountedMarket={m}
+      snapshot={m ? s : undefined}
+      chart={expectChart}
+      refresh={() => {
+        refresh();
+        saved.refresh();
+      }}
+      loading={loading || saved.loading || refreshing}
+      pending={pending}
+      notice={notice}
+      renderedAt={renderedAt}
+    />
   );
 }

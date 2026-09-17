@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Check,
   ChevronLeft,
+  CloudOff,
   ChevronRight,
   Copy,
   ExternalLink,
@@ -412,20 +413,53 @@ export function EmptyState({
   title = "No results found",
   description,
   action,
+  symbol,
+  alert = false,
 }: {
   title?: string;
   description: string;
   action?: React.ReactNode;
+  /** The magnifier suits a search that found nothing; an outage has its own. */
+  symbol?: React.ReactNode;
+  alert?: boolean;
 }) {
   return (
-    <div className="empty-state">
-      <span className="empty-symbol">
-        <Search size={25} />
-      </span>
+    <div className="empty-state" role={alert ? "alert" : undefined}>
+      <span className="empty-symbol">{symbol ?? <Search size={25} />}</span>
       <h3>{title}</h3>
       <p>{description}</p>
       {action}
     </div>
+  );
+}
+/**
+ * What a list shows when its read could not be served: its own name, one line
+ * telling the reader to come back, and not a single figure. It never stands in
+ * a stored or preloaded number for the one the read API owes, and it carries
+ * no as-of line to make an old number acceptable.
+ */
+export function UnavailableState({
+  subject,
+  onRetry,
+}: {
+  /** The thing that is unavailable, capitalised: "Pools", "Leaderboard". */
+  subject: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <EmptyState
+      alert
+      symbol={<CloudOff size={25} />}
+      title={`${subject} unavailable`}
+      description="Try again shortly."
+      action={
+        onRetry && (
+          <button type="button" className="button secondary" onClick={onRetry}>
+            Try again
+          </button>
+        )
+      }
+    />
   );
 }
 export function Pagination({

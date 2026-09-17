@@ -27,7 +27,14 @@ import {
 } from "@/lib/watchlist";
 import { useDebouncedInput, useQuery, useWatchlist } from "./state";
 import { WatchlistControls } from "./watchlist-controls";
-import { AddressChip, Change, EmptyState, Price, WatchButton } from "./ui";
+import {
+  AddressChip,
+  Change,
+  EmptyState,
+  Price,
+  UnavailableState,
+  WatchButton,
+} from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
@@ -213,6 +220,9 @@ export function ProductExplore() {
         ? Math.min(rawLimit, CAP)
         : SHOW_MORE_STEP;
   const filter = useDebouncedInput(q, (next) => set({ q: next }));
+  /* Each rail reads on its own, so each says for itself whether it was served. */
+  const launchesFailed = !!launches.error && !launches.data;
+  const leadersFailed = !!leaders.error && !leaders.data;
   /* Both read paths pin the launches view to launch order, so no header
      claims it there. */
   const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
@@ -268,6 +278,10 @@ export function ProductExplore() {
   );
   const launchPage = !!list?.rows.length && list.rows.every(launchOnly);
   const empty = settled && list?.total === 0;
+  /* Nothing was served for this query. The reserved rows stay reserved and
+     stay blank: a shimmer would read as "still loading" and the previous
+     query's rows would read as this query's answer. */
+  const failed = !!error && !list;
   /* The rows on show, reserved from the URL before any data so a read that
      lands never resizes the table. A view, sort, window or filter change
      swaps straight to skeleton rows instead of dimming the previous view's,
@@ -280,7 +294,7 @@ export function ProductExplore() {
     (_, index) => list?.rows[index],
   );
   const skeletonAt = (index: number) =>
-    !list || (loading && index < list.total);
+    !failed && (!list || (loading && index < list.total));
   /* Show more keeps the reader where they are and lands them on the first
      new row once it arrives, rather than bringing the panel's head back. It
      asks for no more than the list holds, so the last page reserves the rows
@@ -326,89 +340,94 @@ export function ProductExplore() {
           </button>
         </div>
         <div className="launch-rail">
-          {Array.from(
-            { length: 6 },
-            (_, index) => launches.data?.items[index],
-          ).map((p, index) => (
-            <Link
-              className="launch-card"
-              key={index}
-              href={p ? poolHref(p) : "/"}
-              prefetch={!!p}
-              aria-disabled={!p}
-              tabIndex={p ? undefined : -1}
-              onClick={(event) => {
-                if (!p) event.preventDefault();
-              }}
-            >
-              <div className="launch-card-identity">
-                {p ? (
-                  <PoolImage
-                    poolId={p.id}
-                    token={p.token}
-                    hasImage={!!p.imageUrl}
-                    size="small"
-                  />
-                ) : (
-                  <span
-                    className="chain-token small"
-                    data-pending={!launches.data}
-                  >
-                    Token
-                  </span>
-                )}
-                <span className="launch-card-label">
-                  <strong data-pending={!p && !launches.data}>
-                    {p?.name ?? (launches.data ? "\u00a0" : "Pool pending")}
-                  </strong>
-                  <small>
-                    <time
-                      data-pending={
-                        (!p && !launches.data) || (!!p && now === null)
-                      }
-                      data-launched-at={p?.launchedAt}
-                      dateTime={
-                        p
-                          ? new Date(p.launchedAt * 1000).toISOString()
-                          : undefined
-                      }
-                      title={p ? utc(p.launchedAt) : undefined}
-                    >
-                      {p && now !== null
-                        ? since(p.launchedAt, now)
-                        : launches.data && !p
-                          ? "\u00a0"
-                          : "Pending"}
-                    </time>
-                  </small>
-                </span>
-              </div>
-              <div className="launch-card-values">
-                {p && launchOnly(p) ? (
-                  <span className="mono launch-card-sender">
-                    {shortAddress(p.launchSender)}
-                  </span>
-                ) : p ? (
-                  <>
-                    <Price wei={p.stats.priceWei} />
-                    <Change value={p.stats.change} />
-                  </>
-                ) : (
-                  <>
-                    <span data-pending={!launches.data}>
-                      {launches.data ? "\u00a0" : "Price"}
-                    </span>
+          {/* The rail's own height is fixed by `.launch-section`, so saying
+              nothing arrived costs the page no movement. Six shimmering
+              cards would go on claiming the launches are still coming. */}
+          {launchesFailed && <p className="rail-note">Launches unavailable</p>}
+          {!launchesFailed &&
+            Array.from(
+              { length: 6 },
+              (_, index) => launches.data?.items[index],
+            ).map((p, index) => (
+              <Link
+                className="launch-card"
+                key={index}
+                href={p ? poolHref(p) : "/"}
+                prefetch={!!p}
+                aria-disabled={!p}
+                tabIndex={p ? undefined : -1}
+                onClick={(event) => {
+                  if (!p) event.preventDefault();
+                }}
+              >
+                <div className="launch-card-identity">
+                  {p ? (
+                    <PoolImage
+                      poolId={p.id}
+                      token={p.token}
+                      hasImage={!!p.imageUrl}
+                      size="small"
+                    />
+                  ) : (
                     <span
-                      className="mono launch-card-sender"
+                      className="chain-token small"
                       data-pending={!launches.data}
                     >
-                      {launches.data ? "\u00a0" : "Sender"}
+                      Token
                     </span>
-                  </>
-                )}
-              </div>
-            </Link>
-          ))}
+                  )}
+                  <span className="launch-card-label">
+                    <strong data-pending={!p && !launches.data}>
+                      {p?.name ?? (launches.data ? "\u00a0" : "Pool pending")}
+                    </strong>
+                    <small>
+                      <time
+                        data-pending={
+                          (!p && !launches.data) || (!!p && now === null)
+                        }
+                        data-launched-at={p?.launchedAt}
+                        dateTime={
+                          p
+                            ? new Date(p.launchedAt * 1000).toISOString()
+                            : undefined
+                        }
+                        title={p ? utc(p.launchedAt) : undefined}
+                      >
+                        {p && now !== null
+                          ? since(p.launchedAt, now)
+                          : launches.data && !p
+                            ? "\u00a0"
+                            : "Pending"}
+                      </time>
+                    </small>
+                  </span>
+                </div>
+                <div className="launch-card-values">
+                  {p && launchOnly(p) ? (
+                    <span className="mono launch-card-sender">
+                      {shortAddress(p.launchSender)}
+                    </span>
+                  ) : p ? (
+                    <>
+                      <Price wei={p.stats.priceWei} />
+                      <Change value={p.stats.change} />
+                    </>
+                  ) : (
+                    <>
+                      <span data-pending={!launches.data}>
+                        {launches.data ? "\u00a0" : "Price"}
+                      </span>
+                      <span
+                        className="mono launch-card-sender"
+                        data-pending={!launches.data}
+                      >
+                        {launches.data ? "\u00a0" : "Sender"}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </Link>
+            ))}
         </div>
       </section>
       <div className="workspace-grid">
@@ -485,7 +504,11 @@ export function ProductExplore() {
                 Updating saved pools
               </span>
             )}
-            {error && (
+            {/* Rows already on show and a read that failed after them: the
+                list keeps what it has and says the rest did not arrive. A
+                first read that failed has no rows, and speaks for itself
+                inside the table region below. */}
+            {error && !failed && (
               <p className="panel-footnote" role="alert">
                 {error}
               </p>
@@ -494,7 +517,7 @@ export function ProductExplore() {
                 nothing; the empty state overlays the top of that area so the
                 message reads directly under the toolbar instead of below a
                 screen and a half of blank rows. */}
-            <div className="table-region" data-empty={empty}>
+            <div className="table-region" data-empty={empty || failed}>
               <div className="table-scroll desktop-pools" aria-busy={loading}>
                 <table className="data-table pool-table">
                   {/* Column widths live here so a row that spans the metric
@@ -635,7 +658,11 @@ export function ProductExplore() {
                             <PoolCell
                               pool={p}
                               subtitle={
-                                <RowSubtitle pool={p} now={now} trades={false} />
+                                <RowSubtitle
+                                  pool={p}
+                                  now={now}
+                                  trades={false}
+                                />
                               }
                             />
                             {!launchOnly(p) && (
@@ -728,6 +755,7 @@ export function ProductExplore() {
                   );
                 })}
               </div>
+              {failed && <UnavailableState subject="Pools" onRetry={refresh} />}
               {empty && (
                 <EmptyState
                   title={
@@ -753,7 +781,7 @@ export function ProductExplore() {
             </div>
             <ShowMore
               shown={shown}
-              total={list?.total ?? null}
+              total={failed ? 0 : (list?.total ?? null)}
               cap={CAP}
               loading={loading}
               onMore={showMore}
@@ -767,7 +795,11 @@ export function ProductExplore() {
               <h2>Top traders · 24h</h2>
             </div>
             <div className="explore-leader-rows">
+              {leadersFailed && (
+                <p className="rail-note">Top traders unavailable</p>
+              )}
               {!leaders.data &&
+                !leadersFailed &&
                 Array.from({ length: 5 }, (_, index) => (
                   <div className="leader-link" key={index} aria-hidden="true">
                     <span data-pending="true">Wallet pending</span>
@@ -788,11 +820,13 @@ export function ProductExplore() {
                   <Eth wei={w.realizedWei} signed />
                 </Link>
               ))}
-              {!leaders.loading && !leaders.data?.items.length && (
-                <p className="panel-footnote">
-                  No qualifying saved traders in this window yet.
-                </p>
-              )}
+              {!leaders.loading &&
+                !leadersFailed &&
+                !leaders.data?.items.length && (
+                  <p className="panel-footnote">
+                    No qualifying saved traders in this window yet.
+                  </p>
+                )}
             </div>
             <Link className="leader-link" href="/traders/">
               Full leaderboard ↗
