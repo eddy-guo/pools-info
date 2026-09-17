@@ -163,8 +163,6 @@ export {
   ledgerLaunchStream,
   ledgerPassPolicy,
   ledgerQueryRecord,
-  ledgerSwapQueries,
-  ledgerTransferQueries,
   planLedgerRange,
   readLaunchMetadata,
   verifyLedgerLaunchBatch,

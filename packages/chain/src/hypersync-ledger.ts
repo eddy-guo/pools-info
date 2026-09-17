@@ -153,43 +153,6 @@ export function ledgerLaunchQuery(range: LedgerBlockRange): HyperSyncQuery {
     max_num_logs: hypersyncPolicy.maxLogsPerPage,
   });
 }
-function checkedValues(values: readonly string[], test: RegExp, what: string) {
-  const sorted = [...new Set(values.map(lower))].sort();
-  for (const v of sorted) if (!test.test(v)) throw Error(what);
-  return sorted;
-}
-/** The swap lane's queries: the registered pool ids, sorted, in selections of
- * `poolIdsPerQuery`, one selection per query. */
-export function ledgerSwapQueries(
-  range: LedgerBlockRange,
-  poolIds: readonly string[],
-): HyperSyncQuery[] {
-  checkedRange(range);
-  const ids = checkedValues(
-    poolIds,
-    /^0x[\da-f]{64}$/,
-    "Invalid HyperSync pool id selection",
-  );
-  return chunkValues(ids, ledgerPassPolicy.poolIdsPerQuery).map((chunk) =>
-    swapLogQuery(range, chunk, ledgerPassPolicy.poolIdsPerQuery),
-  );
-}
-/** The transfer lane's queries: the registered token addresses, sorted, in
- * selections of `tokensPerQuery`, one selection per query. */
-export function ledgerTransferQueries(
-  range: LedgerBlockRange,
-  tokens: readonly string[],
-): HyperSyncQuery[] {
-  checkedRange(range);
-  const addresses = checkedValues(
-    tokens,
-    /^0x[\da-f]{40}$/,
-    "Invalid HyperSync token selection",
-  );
-  return chunkValues(addresses, ledgerPassPolicy.tokensPerQuery).map((chunk) =>
-    transferLogQuery(range, chunk, ledgerPassPolicy.tokensPerQuery),
-  );
-}
 /** What the batch row keeps of a value-list query: the range, the number of
  * values and a digest of the sorted list, never the list itself; the list is
  * the registry as of the range end, reconstructible from the catalog. */

@@ -152,7 +152,6 @@ export function fakeTransfer(options: {
   value: bigint;
   transactionHash?: string;
   sender?: string;
-  txTo?: string | null;
 }): FakeHyperSyncLog {
   const topic = (a: string) =>
     `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
@@ -169,7 +168,6 @@ export function fakeTransfer(options: {
     ],
     data: encodeAbiParameters([{ type: "uint256" }], [options.value]),
     from: options.sender ?? options.from,
-    ...(options.txTo === undefined ? {} : { to: options.txTo }),
   };
 }
 export class FakeHyperSync {

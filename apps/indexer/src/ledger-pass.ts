@@ -35,7 +35,6 @@ import {
   type LedgerStreamState,
   type Stream,
 } from "@pools/db";
-import { safeError } from "./errors";
 import { hypersyncSafeError } from "./hypersync-backfill";
 
 /** The aggregate ledger's one-time history pass (docs/AGGREGATE-LEDGER.md
@@ -637,6 +636,35 @@ export async function runLedgerPass(
   const log = options.log ?? quiet;
   const throttled = options.throttled ?? (() => 0);
   const started = performance.now();
+  /** A throttle or budget error from any HyperSync/RPC call the pass makes,
+   * not only inside a range: classifies it onto `summary` and returns true,
+   * or returns false for the caller to rethrow. */
+  const classifyStop = (error: unknown): boolean => {
+    if (options.signal?.aborted) {
+      summary.stopped = "aborted";
+      return true;
+    }
+    if (
+      error instanceof HyperSyncRateLimitExhausted ||
+      error instanceof RpcRateLimitExhausted
+    ) {
+      summary.stopped = "throttled";
+      summary.error = ledgerPassSafeError(error);
+      log({
+        event: "ledger_pass_throttled",
+        error: summary.error,
+        through: summary.through,
+      });
+      return true;
+    }
+    if (error instanceof HyperSyncBudgetExceeded) {
+      summary.stopped = "budget";
+      summary.error = ledgerPassSafeError(error);
+      log({ event: "ledger_pass_budget", error: summary.error });
+      return true;
+    }
+    return false;
+  };
   const summary: LedgerPassSummary = {
     stopped: "complete",
     ranges: 0,
@@ -708,8 +736,15 @@ export async function runLedgerPass(
   )
     throw Error("Invalid LEDGER_PASS_MAX_RANGE_BLOCKS");
   let rangeBlocks = options.rangeBlocks;
-  const { ledger } = await reconcileLedgerPass(db, client, log);
-  let height = await client.height();
+  let ledger: LedgerStreamState;
+  let height: number;
+  try {
+    ({ ledger } = await reconcileLedgerPass(db, client, log));
+    height = await client.height();
+  } catch (error) {
+    if (classifyStop(error)) return finish(null);
+    throw error;
+  }
   const progress = new LedgerPassProgress(await ledgerTotals(db), ledger.start);
   summary.archiveHeight = height;
   log({
@@ -746,29 +781,7 @@ export async function runLedgerPass(
         signal: options.signal,
       });
     } catch (error) {
-      if (options.signal?.aborted) {
-        summary.stopped = "aborted";
-        break;
-      }
-      if (
-        error instanceof HyperSyncRateLimitExhausted ||
-        error instanceof RpcRateLimitExhausted
-      ) {
-        summary.stopped = "throttled";
-        summary.error = ledgerPassSafeError(error);
-        log({
-          event: "ledger_pass_throttled",
-          error: summary.error,
-          through: summary.through,
-        });
-        break;
-      }
-      if (error instanceof HyperSyncBudgetExceeded) {
-        summary.stopped = "budget";
-        summary.error = ledgerPassSafeError(error);
-        log({ event: "ledger_pass_budget", error: summary.error });
-        break;
-      }
+      if (classifyStop(error)) break;
       throw error;
     }
     if (result.idle) {
@@ -777,7 +790,13 @@ export async function runLedgerPass(
       // never stops producing blocks, so waiting for an exact zero gap would
       // never exit; a gap still at or above the margin is a backlog worth
       // another pass, a gap under it is close enough to the tip to hand over.
-      const fresh = await client.height();
+      let fresh: number;
+      try {
+        fresh = await client.height();
+      } catch (error) {
+        if (classifyStop(error)) break;
+        throw error;
+      }
       const freshSafeTo = fresh - hypersyncPolicy.safeDistance;
       if (fresh > height && freshSafeTo - result.from >= catchUpMargin) {
         height = fresh;
@@ -927,7 +946,5 @@ export function ledgerPassSafeError(e: unknown): string {
     )
   )
     return "ledger_catalog_conflict: the launch stream refused the range; inspect the catalog before resuming";
-  return hypersyncSafeError(e) === safeError(e)
-    ? safeError(e)
-    : hypersyncSafeError(e);
+  return hypersyncSafeError(e);
 }

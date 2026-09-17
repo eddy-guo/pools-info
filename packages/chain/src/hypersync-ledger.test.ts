@@ -10,8 +10,10 @@ import {
 } from "viem";
 import {
   HyperSyncClient,
+  chunkValues,
   hypersyncPolicy,
   swapLogQuery,
+  transferLogQuery,
   type HyperSyncLogSelection,
   type HyperSyncQuery,
 } from "./hypersync";
@@ -20,8 +22,6 @@ import {
   ledgerLaunchQuery,
   ledgerPassPolicy,
   ledgerQueryRecord,
-  ledgerSwapQueries,
-  ledgerTransferQueries,
   planLedgerRange,
   verifyLedgerLaunchBatch,
 } from "./hypersync-ledger";
@@ -47,6 +47,28 @@ const fixture = (name: string) =>
 const apiToken = "x".repeat(16);
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const start = ledgerPassPolicy.startBlock;
+/** The swap lane's queries as `collectLedgerRange` itself builds them: sort
+ * and dedup the registry's ids the way its `Map` keys already are, then one
+ * query per `chunkValues` chunk. Test-only composition of the collector's own
+ * exported primitives, not a second production implementation. */
+const testSwapQueries = (
+  range: { fromBlock: number; toBlock: number },
+  poolIds: readonly string[],
+) =>
+  chunkValues(
+    [...new Set(poolIds.map((id) => id.toLowerCase()))].sort(),
+    ledgerPassPolicy.poolIdsPerQuery,
+  ).map((chunk) => swapLogQuery(range, chunk, ledgerPassPolicy.poolIdsPerQuery));
+const testTransferQueries = (
+  range: { fromBlock: number; toBlock: number },
+  tokens: readonly string[],
+) =>
+  chunkValues(
+    [...new Set(tokens.map((t) => t.toLowerCase()))].sort(),
+    ledgerPassPolicy.tokensPerQuery,
+  ).map((chunk) =>
+    transferLogQuery(range, chunk, ledgerPassPolicy.tokensPerQuery),
+  );
 
 /** A JSON-RPC provider answering name(), symbol() and decimals() through
  * Multicall3 at a fixed head, counting every call. */
@@ -113,13 +135,13 @@ test("the pass selects 20,000 pool ids and 31,000 token addresses per query, eve
   const n = 62393;
   const range = { fromBlock: start, toBlock: start + 99999 };
   const ids = Array.from({ length: n }, (_, i) => word(i + 1));
-  const swaps = ledgerSwapQueries(range, ids);
+  const swaps = testSwapQueries(range, ids);
   assert.deepEqual(
     swaps.map((q) => q.logs![0].topics![1].length),
     [20000, 20000, 20000, 2393],
   );
   const tokens = Array.from({ length: n }, (_, i) => addr(i + 1));
-  const transfers = ledgerTransferQueries(range, tokens);
+  const transfers = testTransferQueries(range, tokens);
   assert.deepEqual(
     transfers.map((q) => q.logs![0].address!.length),
     [31000, 31000, 393],
@@ -137,7 +159,7 @@ test("the pass selects 20,000 pool ids and 31,000 token addresses per query, eve
   assert.ok(Buffer.byteLength(JSON.stringify(transfers[0])) > 1_300_000);
   // Sorted and deduplicated, so a range's query bodies are reproducible.
   assert.deepEqual(
-    ledgerSwapQueries(range, [ids[5], ids[2], ids[5]])[0].logs![0].topics![1],
+    testSwapQueries(range, [ids[5], ids[2], ids[5]])[0].logs![0].topics![1],
     [ids[2], ids[5]].sort(),
   );
   // The batch row keeps the count and a digest of the list, never the list.
@@ -156,17 +178,18 @@ test("the pass selects 20,000 pool ids and 31,000 token addresses per query, eve
   assert.equal(ledgerQueryRecord(transfers[2]).count, 393);
   assert.ok(JSON.stringify(record).length < 300);
   assert.throws(
-    () => ledgerSwapQueries(range, ["0x12"]),
+    () => testSwapQueries(range, ["0x12"]),
     /Invalid HyperSync pool id selection/,
   );
+  // The max-range-span guard is shared with ledgerLaunchQuery (both call the
+  // same local checkedRange); collectLedgerRange enforces it for a real pass.
   assert.throws(
-    () =>
-      ledgerTransferQueries({ fromBlock: 5, toBlock: 5 + 1_000_000 }, tokens),
+    () => ledgerLaunchQuery({ fromBlock: 5, toBlock: 5 + 1_000_000 }),
     /Invalid HyperSync ledger range/,
   );
   // A four-id selection is the recorded pool-filter body up to id order.
   const recorded = fixture("swaps-pool-filter.request") as HyperSyncQuery;
-  const four = ledgerSwapQueries(
+  const four = testSwapQueries(
     { fromBlock: 62688988, toBlock: 62689007 },
     recorded.logs![0].topics![1],
   );
@@ -816,7 +839,7 @@ test("swap and transfer selections reproduce the recorded single-selection bodie
     swapLogQuery(range, ids, ledgerPassPolicy.poolIdsPerQuery),
     fixture("swaps-pool-filter.request"),
   );
-  const transfers = ledgerTransferQueries(range, [
+  const transfers = testTransferQueries(range, [
     "0xb480aa907f5ca5364daa47508f06d248411f28be",
     "0x433025fe9550ed919d8b28b53a3f5419be678d0d",
   ]);

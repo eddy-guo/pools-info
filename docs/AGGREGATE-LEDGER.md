@@ -257,5 +257,8 @@ three wallets against report 4.4.
 Decisions D1 (wrapper-routed wallets on the board) and D2 (zero-cost inflows
 in ranking) are query predicates on `flags`; D3's flip adds a per-sale table
 fed by `LedgerSale`; D4 and D5 belong to phases 5 and 4. The pass leaves the
-stream in mode `tip` when it reaches the confirmed cutoff; phase 3 takes it
-from there.
+stream in mode `tip` once a fresh archive height leaves a gap under
+`ledgerPassPolicy.catchUpMargin` (2,000 blocks) past the 128-block safety lag,
+not on an exact zero gap: a chain that never stops producing blocks never
+closes that gap to zero, so the cursor can sit up to about 2,128 blocks below
+the archive height when mode flips to `tip`. Phase 3 takes it from there.
