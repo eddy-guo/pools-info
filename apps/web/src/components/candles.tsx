@@ -20,7 +20,6 @@ import {
 import {
   buildCandles,
   candleIntervals,
-  candleValue,
   visualTheme,
   type ChainMarket,
   type ChainSnapshot,
@@ -29,7 +28,7 @@ import {
 } from "@pools/core";
 import { Price } from "./ui";
 import { Eth, utc } from "./live-ui";
-const ranges = {
+export const chartRanges = {
   "5m": 300,
   "1h": 3600,
   "6h": 21600,
@@ -37,7 +36,56 @@ const ranges = {
   "1W": 604800,
   All: Infinity,
 };
+export type ChartRange = keyof typeof chartRanges;
 const noHydrationUpdates = () => () => {};
+/** The server preview must not accept selections before React can retain them. */
+export function useHydrated() {
+  return useSyncExternalStore(
+    noHydrationUpdates,
+    () => true,
+    () => false,
+  );
+}
+/** The range control of the chart panel's head: one segmented control. */
+export function ChartRangeControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: ChartRange;
+  onChange: (range: ChartRange) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="segmented" aria-label="Chart range">
+      {(Object.keys(chartRanges) as ChartRange[]).map((range) => (
+        <button
+          key={range}
+          disabled={disabled}
+          aria-pressed={value === range}
+          onClick={() => onChange(range)}
+        >
+          {range}
+        </button>
+      ))}
+    </div>
+  );
+}
+/* The candle follows the range, as on the token pages the site is modelled on:
+   about sixty to three hundred bars across the panel. A market observed from
+   its swap history carries minute candles and nothing finer. */
+function intervalFor(
+  range: ChartRange,
+  span: number,
+  observed: boolean,
+): keyof typeof candleIntervals {
+  const seconds = range === "All" ? span : chartRanges[range];
+  if (seconds <= 600) return observed ? "1m" : "1s";
+  if (seconds <= 7200) return "1m";
+  if (seconds <= 86400) return "5m";
+  if (seconds <= 14 * 86400) return "1h";
+  return "4h";
+}
 function axisPrice(value: number) {
   if (!Number.isFinite(value)) return "N/A";
   if (value === 0) return "0";
@@ -54,13 +102,6 @@ function axisPrice(value: number) {
     .split("")
     .map((n) => "₀₁₂₃₄₅₆₇₈₉"[Number(n)])
     .join("")}${digits}`;
-}
-function chartValue(
-  value: bigint,
-  market: ChainMarket | null,
-  metric: "Price" | "FDV",
-) {
-  return market ? candleValue(value, market, metric) : value;
 }
 function observedBars(observed: ObservedMarket, interval: number): Candle[] {
   const bars = new Map<number, Candle>();
@@ -84,12 +125,17 @@ function observedBars(observed: ObservedMarket, interval: number): Candle[] {
   }
   return [...bars.values()];
 }
+/* The tooltip's box, so it can flip to the crosshair's other side before it
+   would leave the chart. */
+const tooltipWidth = 196;
 export function Candles(
-  props:
+  props: { range: ChartRange } & (
     | { market: ChainMarket; snapshot: ChainSnapshot }
     | { observed: ObservedMarket }
-    | { poolId: string; pending: boolean },
+    | { poolId: string; pending: boolean }
+  ),
 ) {
+  const { range } = props;
   const market = "market" in props ? props.market : null;
   const snapshot = "snapshot" in props ? props.snapshot : null;
   const observed = "observed" in props ? props.observed : null;
@@ -98,22 +144,27 @@ export function Candles(
     market?.id ?? observed?.poolId ?? ("poolId" in props ? props.poolId : "");
   const toTimestamp =
     snapshot?.toTimestamp ?? observed?.coverage.cutoff?.asOf ?? 0;
-  // The server preview must not accept selections before React can retain them.
-  const hydrated = useSyncExternalStore(
-    noHydrationUpdates,
-    () => true,
-    () => false,
-  );
-  const [interval, setInterval] = useState<keyof typeof candleIntervals>("1m"),
-    [metric, setMetric] = useState<"Price" | "FDV">("Price"),
-    [range, setRange] = useState<keyof typeof ranges>("All"),
-    [focused, setFocused] = useState<number>();
+  const hydrated = useHydrated();
+  /* The bar under the crosshair and where the crosshair is, for the tooltip. */
+  const [focus, setFocus] = useState<{
+    time: number;
+    x: number;
+    width: number;
+  }>();
   const container = useRef<HTMLDivElement>(null);
   const api = useRef<{
     chart: IChartApi;
     price: ISeriesApi<"Candlestick">;
     volume: ISeriesApi<"Histogram">;
   } | null>(null);
+  const span =
+    (market && snapshot
+      ? toTimestamp -
+        Math.min(market.launchedAt, market.series[0]?.time ?? toTimestamp)
+      : observed?.history.fromTimestamp != null
+        ? toTimestamp - observed.history.fromTimestamp
+        : 0) || 0;
+  const interval = intervalFor(range, span, !!observed);
   const bars = useMemo(
     () =>
       market && snapshot
@@ -123,7 +174,7 @@ export function Candles(
           : [],
     [market, snapshot, observed, interval],
   );
-  const active = bars.find((b) => b.time === focused) ?? bars.at(-1);
+  const active = focus && bars.find((b) => b.time === focus.time);
   const viewKey = `${id}:${range}:${interval}`;
   const previousView = useRef("");
   useEffect(() => {
@@ -147,7 +198,7 @@ export function Candles(
         horzLines: { color: visualTheme.surface4 },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: visualTheme.line, minimumWidth: 120 },
+      rightPriceScale: { borderColor: visualTheme.line, minimumWidth: 80 },
       timeScale: {
         borderColor: visualTheme.line,
         timeVisible: true,
@@ -181,9 +232,17 @@ export function Candles(
       },
       1,
     );
-    chart.panes()[1].setHeight(90);
+    chart.panes()[1].setHeight(70);
     chart.subscribeCrosshairMove((p) =>
-      setFocused(typeof p.time === "number" ? p.time : undefined),
+      setFocus(
+        typeof p.time === "number" && p.point && container.current
+          ? {
+              time: p.time,
+              x: p.point.x,
+              width: container.current.clientWidth,
+            }
+          : undefined,
+      ),
     );
     api.current = { chart, price, volume };
     return () => {
@@ -199,10 +258,10 @@ export function Candles(
     a.price.setData(
       bars.map((b) => ({
         time: b.time as UTCTimestamp,
-        open: Number(chartValue(b.open, market, metric)),
-        high: Number(chartValue(b.high, market, metric)),
-        low: Number(chartValue(b.low, market, metric)),
-        close: Number(chartValue(b.close, market, metric)),
+        open: Number(b.open),
+        high: Number(b.high),
+        low: Number(b.low),
+        close: Number(b.close),
       })),
     );
     a.volume.setData(
@@ -227,159 +286,84 @@ export function Candles(
           a.chart.timeScale().setVisibleRange({
             from: Math.max(
               bars[0].time,
-              toTimestamp - ranges[range],
+              toTimestamp - chartRanges[range],
             ) as UTCTimestamp,
             to: Math.max(bars[0].time + 1, toTimestamp) as UTCTimestamp,
           });
       } else if (previous) a.chart.timeScale().setVisibleLogicalRange(previous);
     }
     previousView.current = viewKey;
-  }, [bars, metric, market, range, interval, toTimestamp, viewKey]);
+  }, [bars, range, interval, toTimestamp, viewKey]);
   return (
-    <div className="live-candles">
-      <div className="live-controls chart-toolbar">
-        <strong>
-          {metric} <small>ETH</small>
-        </strong>
-        <div className="chart-selects">
-          <label>
-            Display
-            <select
-              aria-label="Chart display"
-              disabled={!hydrated || !market}
-              value={metric}
-              onChange={(e) => setMetric(e.target.value as typeof metric)}
-            >
-              <option>Price</option>
-              {market && <option>FDV</option>}
-            </select>
-          </label>
-          <label>
-            Candle interval
-            <select
-              aria-label="Candle interval"
-              disabled={!hydrated || pending}
-              value={interval}
-              onChange={(e) => {
-                setInterval(e.target.value as typeof interval);
-                setFocused(undefined);
-              }}
-            >
-              {Object.keys(candleIntervals)
-                .filter((i) => !observed || i !== "1s")
-                .map((i) => (
-                  <option key={i}>{i}</option>
-                ))}
-            </select>
-          </label>
-        </div>
-      </div>
-      <div className="candle-readout" aria-live="off">
-        <>
-          <span data-pending={pending}>
-            {active
-              ? utc(active.time)
-              : pending
-                ? "Pending observation"
-                : "No observed candles in the loaded history"}
-          </span>
+    <div
+      className="interactive-chart"
+      role="img"
+      aria-busy={!hydrated || pending}
+      aria-label="Price candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect."
+      tabIndex={hydrated ? 0 : -1}
+      onKeyDown={(e) => {
+        if ((e.key !== "ArrowRight" && e.key !== "ArrowLeft") || !bars.length)
+          return;
+        e.preventDefault();
+        const i = Math.max(
+          0,
+          bars.findIndex((b) => b.time === (focus?.time ?? bars.at(-1)?.time)),
+        );
+        const b =
+          bars[
+            Math.min(
+              bars.length - 1,
+              Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)),
+            )
+          ];
+        const a = api.current;
+        if (!a || !container.current) return;
+        a.chart.setCrosshairPosition(
+          Number(b.close),
+          b.time as UTCTimestamp,
+          a.price,
+        );
+        setFocus({
+          time: b.time,
+          x: a.chart.timeScale().timeToCoordinate(b.time as UTCTimestamp) ?? 0,
+          width: container.current.clientWidth,
+        });
+      }}
+    >
+      <div className="chart-surface" ref={container} />
+      {/* The OHLC readout follows the crosshair instead of holding a row. */}
+      {active && (
+        <div
+          className="chart-tooltip"
+          style={{
+            left:
+              focus.x + 16 + tooltipWidth > focus.width
+                ? Math.max(0, focus.x - 16 - tooltipWidth)
+                : focus.x + 16,
+          }}
+        >
+          <time dateTime={new Date(active.time * 1000).toISOString()}>
+            {utc(active.time)}
+          </time>
           {(
             [
-              ["O", active?.open],
-              ["H", active?.high],
-              ["L", active?.low],
-              ["C", active?.close],
+              ["O", active.open],
+              ["H", active.high],
+              ["L", active.low],
+              ["C", active.close],
             ] as const
           ).map(([name, value]) => (
             <span key={name}>
-              {name}{" "}
-              {metric === "Price" ? (
-                <Price wei={value?.toString()} pending={pending} />
-              ) : (
-                <Eth
-                  wei={
-                    value == null
-                      ? undefined
-                      : chartValue(value, market, metric).toString()
-                  }
-                  pending={pending}
-                />
-              )}
+              <b>{name}</b>
+              <Price wei={value.toString()} />
             </span>
           ))}
           <span>
-            V <Eth wei={active?.volume.toString()} pending={pending} />
+            <b>V</b>
+            <Eth wei={active.volume.toString()} />
           </span>
-        </>
-      </div>
-      <div
-        className="interactive-chart"
-        ref={container}
-        role="img"
-        aria-busy={!hydrated || pending}
-        aria-label={`${metric} candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect.`}
-        tabIndex={hydrated ? 0 : -1}
-        onKeyDown={(e) => {
-          if ((e.key !== "ArrowRight" && e.key !== "ArrowLeft") || !bars.length)
-            return;
-          e.preventDefault();
-          const i = Math.max(
-            0,
-            bars.findIndex((b) => b.time === (focused ?? bars.at(-1)?.time)),
-          );
-          const b =
-            bars[
-              Math.min(
-                bars.length - 1,
-                Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)),
-              )
-            ];
-          setFocused(b.time);
-          if (api.current)
-            api.current.chart.setCrosshairPosition(
-              Number(chartValue(b.close, market, metric)),
-              b.time as UTCTimestamp,
-              api.current.price,
-            );
-        }}
-      />
-      <div className="chart-bottom">
-        <div className="segmented" aria-label="Chart range">
-          {Object.keys(ranges).map((r) => (
-            <button
-              key={r}
-              disabled={!hydrated || pending}
-              aria-pressed={range === r}
-              onClick={() => {
-                setRange(r as keyof typeof ranges);
-                setFocused(undefined);
-              }}
-            >
-              {r}
-            </button>
-          ))}
         </div>
-        <button
-          className="text-button"
-          disabled={!hydrated || pending}
-          onClick={() => {
-            api.current?.chart.timeScale().fitContent();
-            if (bars.length < 40)
-              api.current?.chart.timeScale().setVisibleLogicalRange({
-                from: bars.length - 40,
-                to: bars.length + 3,
-              });
-          }}
-        >
-          Fit loaded history
-        </button>
-      </div>
-      <p className="chart-credit">
-        <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
-          TradingView Lightweight Charts™
-        </a>{" "}
-        · Copyright (c) 2026 TradingView, Inc.
-      </p>
+      )}
     </div>
   );
 }

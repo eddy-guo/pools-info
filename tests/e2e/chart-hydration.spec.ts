@@ -30,30 +30,24 @@ test("chart accepts its first selection only once hydration can retain it", asyn
   });
   try {
     await page.goto(poolHref(market), { waitUntil: "commit" });
-    const interval = page.getByLabel("Candle interval", { exact: true });
-    const display = page.getByLabel("Chart display", { exact: true });
-    const range = page.getByRole("button", { name: "6h", exact: true });
-    const fit = page.getByRole("button", { name: "Fit loaded history" });
-    await expect(interval).toBeVisible();
+    const control = page.locator(".pool-chart-head .segmented");
+    const range = control.getByRole("button", { name: "6h", exact: true });
+    const all = control.getByRole("button", { name: "All", exact: true });
+    await expect(control).toBeVisible();
     await expect(page.locator(".interactive-chart canvas")).toHaveCount(0);
-    await expect(interval).toBeDisabled();
-    await expect(display).toBeDisabled();
     await expect(range).toBeDisabled();
-    await expect(fit).toBeDisabled();
+    await expect(all).toBeDisabled();
 
     releaseScripts();
-    await interval.selectOption("1s");
+    await range.click();
     await expect(
       page.locator(".interactive-chart canvas").first(),
     ).toBeVisible();
-    await display.selectOption("FDV");
-    await range.click();
     await expect(
-      page.getByRole("img", { name: /FDV candle chart/ }),
+      page.getByRole("img", { name: /Price candle chart/ }),
     ).toBeVisible();
-    await expect(interval).toHaveValue("1s");
     await expect(range).toHaveAttribute("aria-pressed", "true");
-    await expect(fit).toBeEnabled();
+    await expect(all).toHaveAttribute("aria-pressed", "false");
 
     const refreshed = page.waitForResponse((response) =>
       response.url().includes(`/api/markets/${market.id}/?`),
@@ -63,8 +57,6 @@ test("chart accepts its first selection only once hydration can retain it", asyn
     await expect(
       page.getByRole("heading", { name: updated.markets[0].name, exact: true }),
     ).toBeVisible();
-    await expect(interval).toHaveValue("1s");
-    await expect(display).toHaveValue("FDV");
     await expect(range).toHaveAttribute("aria-pressed", "true");
   } finally {
     releaseScripts();

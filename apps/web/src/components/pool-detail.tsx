@@ -13,26 +13,27 @@ import { useProduct } from "@/lib/use-product";
 import { useRememberedPoolRow } from "@/lib/pool-row-memory";
 import { useQuery } from "./state";
 import { useLive } from "./live-provider";
-import { AddressLabel, Change, Price, WatchButton } from "./ui";
-import {
-  Eth,
-  Stat,
-  Trades,
-  Unavailable,
-  explorer,
-  useMarket,
-  utc,
-} from "./live-ui";
+import { WatchButton } from "./ui";
+import { Eth, Stat, Trades, Unavailable, explorer, useMarket } from "./live-ui";
 import { RowsSkeleton } from "./skeletons";
 import { TradeStream } from "./trade-stream";
-import { Candles } from "./candles";
+import { Candles, type ChartRange } from "./candles";
 import { AuditLeaderboard } from "./traders";
-import { PoolImage } from "./pool-image";
 import {
   ObservedPoolDetail,
+  PoolChartHead,
+  PoolHeading,
+  windowChanges,
   type ObservedPoolIdentity,
 } from "./observed-pool-detail";
-export function PoolDetail({ id }: { id: string }) {
+/** `renderedAt` is the server's clock at render, the basis of the launch age. */
+export function PoolDetail({
+  id,
+  renderedAt,
+}: {
+  id: string;
+  renderedAt: number;
+}) {
   const { params } = useQuery();
   const {
     market: loadedMarket,
@@ -79,6 +80,7 @@ export function PoolDetail({ id }: { id: string }) {
   const m = usePublished ? publishedMarket : loadedMarket;
   const s = usePublished ? publication!.snapshot : loadedSnapshot;
   const [tab, setTab] = useState("Top traders");
+  const [range, setRange] = useState<ChartRange>("All");
   if (!preloadedIds.has(id)) {
     const pool =
       savedIdentity || m || remembered
@@ -116,6 +118,7 @@ export function PoolDetail({ id }: { id: string }) {
         }}
         loading={loading || saved.loading || refreshing}
         pending={!saved.data && !m && saved.loading}
+        renderedAt={renderedAt}
       />
     );
   }
@@ -132,6 +135,7 @@ export function PoolDetail({ id }: { id: string }) {
         market={saved.data.market}
         refresh={saved.refresh}
         loading={saved.loading}
+        renderedAt={renderedAt}
       />
     );
   if (!m)
@@ -190,109 +194,90 @@ export function PoolDetail({ id }: { id: string }) {
             10n ** BigInt(m.decimals)
           ).toString();
   return (
-    <div className={`page ${styles.page}`}>
+    <div className={`page pool-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
-        <Link href="/">Explore</Link>
+        <Link href="/">Pools</Link>
         <span>/</span>
         <span>{m.symbol}</span>
       </nav>
-      <div className="page-heading">
-        <div className={styles.identity}>
-          <PoolImage
-            poolId={m.id}
-            token={m.token}
-            hasImage={!!savedIdentity?.imageUrl}
-            size="large"
-          />
-          <div>
-            <div className={styles.title}>
-              <h1>{m.name}</h1>
-              <span className={styles.symbol}>{m.symbol}</span>
-              <span className={styles.mode}>INSTANT</span>
-            </div>
-            <AddressLabel address={m.token} full />
-            <div className={styles.meta}>
-              Launched {utc(m.launchedAt)} · sender{" "}
-              <Link href={`/creators/${m.launchSender.toLowerCase()}/`}>
-                {shortAddress(m.launchSender)}
-              </Link>
-            </div>
-          </div>
-        </div>
-        <div className={styles.actions}>
-          <WatchButton id={m.id} />
-          <button
-            className="icon-button"
-            title="Refresh"
-            aria-label="Refresh"
-            onClick={() => {
-              refresh();
-              saved.refresh();
-            }}
-            disabled={refreshing}
-          >
-            <RefreshCw size={14} />
-          </button>
-          <a
-            className="button secondary"
-            href={`${explorer}/token/${m.token}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Explorer ↗
-          </a>
-          <a
-            className="button"
-            href={`https://pools.xyz/t/robinhood/${m.token}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Trade on Pools ↗
-          </a>
-        </div>
-      </div>
+      <PoolHeading
+        id={m.id}
+        pool={{
+          poolId: m.id,
+          name: m.name,
+          symbol: m.symbol,
+          token: m.token,
+          imageUrl: savedIdentity?.imageUrl,
+          launch: {
+            timestamp: m.launchedAt,
+            transactionHash: m.launchTx,
+            transactionInitiator: m.launchSender,
+          },
+        }}
+        renderedAt={renderedAt}
+      >
+        <WatchButton id={m.id} />
+        <button
+          className="icon-button"
+          title="Refresh"
+          aria-label="Refresh"
+          onClick={() => {
+            refresh();
+            saved.refresh();
+          }}
+          disabled={refreshing}
+        >
+          <RefreshCw size={14} />
+        </button>
+        <a
+          className="button secondary"
+          href={`${explorer}/token/${m.token}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Explorer ↗
+        </a>
+        <a
+          className="button"
+          href={`https://pools.xyz/t/robinhood/${m.token}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Trade on Pools ↗
+        </a>
+      </PoolHeading>
       <div className="workspace-grid">
         <div>
-          <section className="panel">
-            <div className={styles.chartHeader}>
-              <div className="live-price-heading">
-                {m.priceWei ? (
-                  <Price wei={m.priceWei} />
-                ) : (
-                  <Unavailable reason="No observed swap price" />
-                )}
-                <div className="live-changes">
-                  {(["1h", "6h", "24h", "7d"] as const).map((w) => {
-                    const v = poolWindow(m, s, w);
-                    return (
-                      <span key={w}>
-                        {w}{" "}
-                        {v.change === null ? (
-                          <Unavailable />
-                        ) : (
-                          <Change value={v.change} />
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
+          <section className="panel pool-chart-panel">
+            <PoolChartHead
+              price={m.priceWei}
+              change={stats.change}
+              windows={windowChanges(m, s, undefined)}
+              range={range}
+              onRange={setRange}
+            />
+            <div className="pool-chart-region" data-chart="reserved">
+              <Candles range={range} market={m} snapshot={s} />
             </div>
-            <Candles market={m} snapshot={s} />
           </section>
           <div className="stats-grid live-six-stats">
             <Stat label="FDV">
-              <Eth wei={fdv} />
+              <Eth wei={fdv} digits={5} />
             </Stat>
             <Stat label="Liquidity">
               <Unavailable />
             </Stat>
-            <Stat label="Observed 24h volume">
-              <Eth wei={stats.volumeWei} />
+            <Stat
+              label="Volume 24h"
+              note={`${stats.trades.length.toLocaleString("en-US")} trades`}
+            >
+              <Eth wei={stats.volumeWei} digits={5} />
             </Stat>
             <Stat label="Holders" pending={saved.loading && !saved.data}>
               {holders?.complete ? (
-                holders.positiveHoldersExcludingInfrastructure
+                holders.positiveHoldersExcludingInfrastructure.toLocaleString(
+                  "en-US",
+                )
               ) : saved.loading && !saved.data ? null : (
                 <Unavailable />
               )}
@@ -300,7 +285,7 @@ export function PoolDetail({ id }: { id: string }) {
             <Stat label="Fees compounded">
               <Unavailable />
             </Stat>
-            <Stat label="Creator fee option">
+            <Stat label="Creator fee">
               {m.creatorFees ? "Enabled" : "Disabled"}
             </Stat>
           </div>

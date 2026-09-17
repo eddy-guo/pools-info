@@ -109,10 +109,43 @@ cards are sized to the price, its change box and the value alone.
 
 Under 768px the pool heading stacks into one column that never wraps, and its
 slots are sized for a 390px phone: the title holds two rows (the name beside
-its fixed-width symbol, then the launch mode badge), the address slot holds the
-short address at the 44px control height (the full one is in the DOM for wider
-layouts), and the launch meta holds two lines; the heading is the sum of those,
-the avatar and the two-row action grid.
+its symbol, then the launch mode chip), then the short address and the launch
+line on 44px rows; the heading is the sum of those and the two-row action grid
+(see "Pool page laid out like the export").
+
+## Pool page laid out like the export (W4)
+
+The pool page follows the export's token page: a 17px breadcrumb, a 57px
+header (54px r16 identity, name 26/600 with the mono symbol and the launch
+mode chip on a 34px row, then the short address with copy and explorer beside
+`launched <age> by <sender>` on an 18px line; the age is `since()` against the
+server's render clock, passed down as `renderedAt` so both sides of hydration
+paint the same text), the chart panel at 233px from the top on a 1440x1000
+desktop (export 224) and 531px on a 390px phone (export 529), then the stat
+cards and the tabs panel.
+
+The chart panel is 498px: a 98px head (18px padding, the 30/600 mono price
+with its 14px ETH unit and the 15/600 signed change on a 42px row, the
+`1h 6h 24h 7d` changes the evidence supports on a 17px row, and the 32px range
+control at the right), a 390px chart region and 8px under it. The panel holds
+no select: the candle interval follows the range (5m -> 1s or 1m, 1h -> 1m,
+6h and 24h -> 5m, 1W -> 1h, All by the loaded span) and the OHLC readout is a
+tooltip at the crosshair. On the phone the head is 168px (the control wraps
+under the changes on a 50px row) over a 282px region, the export's 460px
+panel. The region's two reserved heights are 390px and 156px on the desktop
+(282px and 156px on the phone); a launch-only row shows the empty state alone,
+with no head.
+
+Every slot is fixed at first paint: the pending address is a skeleton of the
+short address's shape (11 mono characters and two 18px controls) so the launch
+line after it never moves, and that line, the symbol and chip after the name,
+the signed change after the price and the centred empty-state headings are
+remounted with the response rather than rewritten, because Chrome scores a
+rewritten text run whose start moves as a shift. The price box is the row's
+42px whether or not a subscript hangs in it. Stat cards are the export's 95px
+(14px padding, 16px label, 23px value at 18/600, 15px fact line, or the same
+height without one); the volume card's fact line is the trade count from the
+same source as its figure.
 
 Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
 (`screener-before-desktop.png` / `screener-after-desktop.png`, and mobile peers).
