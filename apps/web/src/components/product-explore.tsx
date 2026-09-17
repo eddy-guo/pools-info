@@ -745,8 +745,8 @@ export function ProductExplore() {
                                 )}
                               </span>
                               <span className="mobile-pool-spark">
-                                {p.marketCoverage?.source !==
-                                  "canonical_broad" &&
+                                {p.marketCoverage?.source ===
+                                  "deep_publication" &&
                                 p.market?.series.length ? (
                                   <Sparkline
                                     points={p.market.series}
