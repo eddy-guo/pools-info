@@ -79,11 +79,12 @@ test(
       `UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode(lpad(to_hex($1::bigint),64,'0'),'hex'),cursor_timestamp=$2`,
       [cursorBlock, cursorTime],
     );
-    // Pool hours at production's count: the busiest pool trades in every one
-    // of 1,170 hours, a hundred pools in each of their last 400, and every
-    // other pool in two adjacent hours spread over the last 1,100, so each
-    // window has its own active set (about 2% of pools in a day, 15% in a
-    // week, 65% in 30 days). A price state rises and falls by hour and pool.
+    // Pool hours at production's count and activity: the busiest pool trades
+    // in every one of 1,170 hours, a hundred pools in each of their last 400,
+    // and every other pool in two adjacent hours whose newer one is k hours
+    // back, spread so a day, a week and 30 days hold about the share of pools
+    // they did on 17 Sep 2026 (654, 3,663 and 17,726 of 62,858: 1%, 6%, 28%).
+    // A price state rises and falls by hour and pool.
     const hourRows = (pools: string, hours: string) => `
       INSERT INTO agg_pool_hours(chain_id,pool_ref,hour,trades,buys,sells,unattributed,volume_wei,buyers,sellers,open_sqrt_price_x96,close_sqrt_price_x96,high_sqrt_price_x96,low_sqrt_price_x96,close_block,close_log_index)
       SELECT 4663,p.pool_ref,h,t,t,0,0,t*10000000000000000::numeric,1,0,v,v+1000000000000000000000000,v+2000000000000000000000000,v,$3::bigint-($4::integer-h),0
@@ -108,7 +109,7 @@ test(
       db.query(
         hourRows(
           "generate_series($1::integer,$2::integer) i",
-          "(VALUES ($4::integer-mod(i,1100)-1,3),($4::integer-mod(i,1100),2)) hours(h,t)",
+          "(SELECT CASE WHEN mod(i,100)<1 THEN mod(i,23) WHEN mod(i,100)<6 THEN 23+mod(i,145) WHEN mod(i,100)<28 THEN 168+mod(i,551) ELSE 719+mod(i,449) END AS k) back CROSS JOIN LATERAL (SELECT $4::integer-back.k-1 AS h,3 AS t UNION ALL SELECT $4::integer-back.k,2) hours",
         ),
         [lo, hi, cursorBlock, H],
       ),
@@ -171,9 +172,17 @@ test(
     // A change needs an hour before the window: a two-hour pool k hours back
     // has none when both hours are inside an n-hour window (k <= n-2), and
     // the hundred 400-hour pools have none inside 30 days.
+    const back = (i: number) =>
+      i % 100 < 1
+        ? i % 23
+        : i % 100 < 6
+          ? 23 + (i % 145)
+          : i % 100 < 28
+            ? 168 + (i % 551)
+            : 719 + (i % 449);
     const withoutBaseline = (n: number) => {
       let count = 0;
-      for (let i = 102; i <= scalePools; i++) if (i % 1100 <= n - 2) count++;
+      for (let i = 102; i <= scalePools; i++) if (back(i) <= n - 2) count++;
       return count;
     };
     const day = await explore("change24h", "window=24h&sort=change&limit=25");

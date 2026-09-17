@@ -206,7 +206,9 @@ export const ledgerFlowCtes = `, ledger_launches AS (
  * bounds the set: gainers need a trade inside the window, a liquidity order a
  * published liquidity, and a change order every covered launch with its
  * baseline probed only where it traded inside the window. `where` holds the
- * catalog filters (on `p`). Requires `ledgerFlowCtes`. */
+ * catalog filters (on `p`). Requires `ledgerFlowCtes`. Only the deep
+ * publications' narrow columns ride its 62k-row joins, and it streams into
+ * the rank rather than being stored, so neither spills past work_mem. */
 export function ledgerRankedCte(
   where: string,
   mode: "change" | "gainers" | "liquidity",
@@ -214,7 +216,7 @@ export function ledgerRankedCte(
 ) {
   const active = "f.pool_ref IS NOT NULL",
     answers = ledgerAnswers(window);
-  return `, ledger_ranked AS MATERIALIZED (
+  return `, ledger_ranked AS (
     SELECT p.pool_id,p.launch_block,
       ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.trades,0) ELSE coalesce(f.trades,0) END" : "NULL::bigint"} AS trades,
       ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.volume_wei,0) ELSE coalesce(f.volume,0) END" : "NULL::numeric"} AS volume,
@@ -225,7 +227,7 @@ export function ledgerRankedCte(
           : ledgerServedChangeSql({
               hour: "$8::integer",
               decimals: "p.decimals",
-              conflict: "coalesce((a.market->>'decimals')::integer<>p.decimals,false)",
+              conflict: "coalesce(a.decimals<>p.decimals,false)",
               latest: "s.sqrt_price_x96",
               active,
               baseline: "base.sqrt",
@@ -233,15 +235,16 @@ export function ledgerRankedCte(
       } AS change
     FROM indexed_pools p
     ${mode === "gainers" ? "JOIN" : "LEFT JOIN"} ledger_flow f ON f.pool_ref=p.pool_ref
-    ${mode === "liquidity" ? "JOIN" : "LEFT JOIN"} analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id${mode === "liquidity" ? " AND a.liquidity_wei IS NOT NULL" : ""}
+    ${mode === "liquidity" ? "JOIN" : "LEFT JOIN"} (SELECT pool_id,through_block,liquidity_wei,(market->>'decimals')::integer AS decimals
+      FROM analytics_accounting_pools WHERE chain_id=4663${mode === "liquidity" ? " AND liquidity_wei IS NOT NULL" : ""}) a ON a.pool_id=p.pool_id
     LEFT JOIN agg_pool_state s ON s.chain_id=4663 AND s.pool_ref=p.pool_ref${
       mode === "liquidity"
         ? ""
         : `
     LEFT JOIN LATERAL (${ledgerBaselineSql("p.pool_ref", "$8::integer", active)}) base ON true`
     }
-    WHERE p.chain_id=4663${where ? " AND " + where.replace(/^WHERE /, "") : ""} AND p.launch_block BETWEEN $9 AND $7
-      AND p.pool_id IN (SELECT pool_id FROM ledger_launches) AND (a.through_block IS NULL OR $7 >= a.through_block)
+    WHERE p.chain_id=4663${where ? " AND " + where.replace(/^WHERE /, "") : ""} AND ${ledgerLaunchSql("p.", "$9", "$7")}
+      AND (a.through_block IS NULL OR $7 >= a.through_block)
   )`;
 }
 // Full per-pool market state (dated units, latest and baseline price states)
