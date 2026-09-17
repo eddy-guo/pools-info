@@ -1,7 +1,7 @@
 "use client";
 import { FollowActivity } from "./follow-activity";
 import Link from "next/link";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import {
   shortAddress,
   poolHref,
@@ -22,6 +22,7 @@ import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { useQuery } from "./state";
 import { WalletTokenTransfers, WalletTransactions } from "./wallet-history";
+import { PnlCardModal } from "./pnl-card-modal";
 import styles from "./detail-design.module.css";
 /** Saved profile tabs first, then the wallet's own on-demand explorer history. */
 const tabs = [
@@ -41,20 +42,12 @@ export function ProductWallet({ address }: { address: string }) {
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
     [opened, setOpened] = useState<string[]>([]),
     [showSignals, setShowSignals] = useState(false),
-    [copied, setCopied] = useState(false),
-    [card, setCard] = useState(false),
-    [cardError, setCardError] = useState(false);
-  const dialog = useRef<HTMLDialogElement>(null);
+    [card, setCard] = useState(false);
   // An explorer page costs credits, so a tab keeps its pages once opened
   // instead of paying for them again on every visit.
   if (historyTabs.includes(tab) && !opened.includes(tab))
     setOpened([...opened, tab]);
-  useEffect(() => {
-    if (card) dialog.current?.showModal();
-    else dialog.current?.close();
-  }, [card]);
-  const w = data?.wallet,
-    cardUrl = `/cards/${address.toLowerCase()}.png?window=${period}`;
+  const w = data?.wallet;
   const topPools = (data?.positions ?? [])
     .slice()
     .sort((a, b) => (BigInt(b.volumeWei) > BigInt(a.volumeWei) ? 1 : -1))
@@ -103,13 +96,7 @@ export function ProductWallet({ address }: { address: string }) {
           >
             Explorer ↗
           </a>
-          <button
-            className="button secondary"
-            onClick={() => {
-              setCard(true);
-              setCardError(false);
-            }}
-          >
+          <button className="button secondary" onClick={() => setCard(true)}>
             Share PnL card
           </button>
         </div>
@@ -482,75 +469,12 @@ export function ProductWallet({ address }: { address: string }) {
           </aside>
         </div>
       </>
-      <dialog
-        ref={dialog}
-        className={styles.cardModal}
-        aria-label="PnL share card preview"
+      <PnlCardModal
+        address={address}
+        window={period}
+        open={card}
         onClose={() => setCard(false)}
-        onClick={(event) => {
-          if (event.target === dialog.current) setCard(false);
-        }}
-      >
-        <div className="panel-heading">
-          <h2>Share PnL card</h2>
-          <button
-            className="icon-button"
-            aria-label="Close card preview"
-            onClick={() => setCard(false)}
-          >
-            ×
-          </button>
-        </div>
-        {card && !cardError ? ( // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={cardUrl}
-            alt="Saved wallet PnL card"
-            style={{
-              width: "100%",
-              maxWidth: 800,
-              display: "block",
-              margin: "20px auto 0",
-            }}
-            onError={() => setCardError(true)}
-          />
-        ) : (
-          <p className="panel-footnote">
-            No supported saved PnL is available for this card.
-          </p>
-        )}
-        <div className="live-share-actions">
-          <button
-            className="button secondary"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(window.location.href);
-                setCopied(true);
-              } catch {
-                setCopied(false);
-              }
-            }}
-          >
-            {copied ? "Copied" : "Copy link"}
-          </button>
-          <button
-            className="button secondary"
-            onClick={() =>
-              window.open(
-                `https://twitter.com/intent/tweet?url=${encodeURIComponent(window.location.href)}`,
-                "_blank",
-                "noopener,noreferrer",
-              )
-            }
-          >
-            Post on X
-          </button>
-          {!cardError && (
-            <a className="button" href={cardUrl} download={`${address}.png`}>
-              Download PNG ↗
-            </a>
-          )}
-        </div>
-      </dialog>
+      />
     </div>
   );
 }

@@ -2,7 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { productRequest } from "./product-request";
 import { preloadedProduct, readProduct } from "./product-server";
-import { walletCaptureLabel, readCardWallet } from "./product-card";
+import {
+  cardCurve,
+  cardHero,
+  cardStats,
+  cardTopPosition,
+  readCardWallet,
+} from "./product-card";
+import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { validatePoolResponse } from "./pool-response";
 import type {
   AnalyticsExploreResponse,
@@ -168,19 +175,139 @@ test("a stale upstream window cannot masquerade as the newly selected window", a
   assert.equal(result.delivery.source, "preloaded");
 });
 
-test("share card timestamps use the wallet's own capture range and preserve unknown cutoff", () => {
+test("share card options round-trip through the query the modal and the route share", () => {
+  assert.deepEqual(parseCardOptions(new URLSearchParams("")), {
+    window: "All",
+    preset: "pink",
+    anonymous: false,
+    notional: false,
+  });
+  const chosen = {
+    window: "7d" as const,
+    preset: "mint" as const,
+    anonymous: true,
+    notional: true,
+  };
+  assert.deepEqual(parseCardOptions(cardQuery(chosen)), chosen);
   assert.equal(
-    walletCaptureLabel({ asOf: 2000, oldestAsOf: 1000 }),
-    "Wallet captures 1970-01-01 00:16:40 to 1970-01-01 00:33:20 UTC",
+    cardUrl(`0x${"A".repeat(40)}`, { ...chosen, anonymous: false }),
+    `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&notional=1`,
   );
+  // A stale or hand-edited link still renders with the defaults.
+  assert.deepEqual(
+    parseCardOptions(new URLSearchParams("window=2y&theme=neon&anon=yes")),
+    parseCardOptions(new URLSearchParams("")),
+  );
+});
+
+test("share card figures are signed, amount-free without notional and never placeholders", () => {
+  const wallet = {
+    address: `0x${"1".repeat(40)}`,
+    rank: 12,
+    realizedWei: "-23357282114254574",
+    unrealizedWei: null,
+    netWei: null,
+    volumeWei: "514442717885745426",
+    roi: -16.042,
+    wins: 3,
+    losses: 5,
+    winRate: 37.5,
+    tradeCount: 85,
+    supportedTradeCount: 85,
+    supportedPositionCount: 14,
+    excludedPositionCount: 0,
+    bestWei: "11471084300772102",
+    avgHold: null,
+    last: null,
+    asOf: null,
+    oldestAsOf: null,
+    completeWindow: true,
+  };
+  assert.deepEqual(cardHero(wallet), { value: "-16.04%", tone: "down" });
+  assert.deepEqual(cardHero({ ...wallet, roi: 0.004 }), {
+    value: "0.00%",
+    tone: "text",
+  });
+  assert.deepEqual(cardHero({ ...wallet, roi: null }), {
+    value: "-0.02336 ETH",
+    tone: "down",
+  });
+  assert.equal(cardHero({ ...wallet, roi: null, realizedWei: null }), null);
+  assert.deepEqual(
+    cardStats(wallet, false).map((s) => [s.label, s.value]),
+    [
+      ["Win rate", "37.5%"],
+      ["Record", "3W · 5L"],
+      ["Trades", "85"],
+    ],
+  );
+  assert.deepEqual(
+    cardStats(wallet, true).map((s) => [s.label, s.value]),
+    [
+      ["Volume", "0.5144 ETH"],
+      ["Win rate", "37.5%"],
+      ["Trades", "85"],
+    ],
+  );
+  // No closed cycle: the win rate slot is dropped, not dashed.
+  assert.deepEqual(
+    cardStats({ ...wallet, winRate: null, wins: 0, losses: 0 }, false).map(
+      (s) => s.label,
+    ),
+    ["Record", "Trades", "Positions"],
+  );
+});
+
+test("share card chart follows the wallet's own curve and names its top position", () => {
+  const curve = cardCurve(
+    [
+      { time: 100, wei: "0" },
+      { time: 150, wei: "2000000000000000000" },
+      { time: 300, wei: "-1000000000000000000" },
+    ],
+    300,
+    100,
+  )!;
+  assert.deepEqual(
+    curve.points.map(([x, y]) => [Math.round(x), Math.round(y)]),
+    [
+      [0, 67],
+      [75, 0],
+      [300, 100],
+    ],
+  );
+  assert.equal(Math.round(curve.zeroY!), 67);
+  assert.equal(cardCurve([{ time: 100, wei: "5" }], 300, 100), null);
+  const flat = cardCurve(
+    [
+      { time: 0, wei: "7" },
+      { time: 10, wei: "7" },
+    ],
+    100,
+    50,
+  )!;
+  assert.deepEqual(
+    flat.points.map(([, y]) => y),
+    [25, 25],
+  );
+  const position = (
+    symbol: string,
+    realizedWei: string | null,
+    volumeWei: string,
+  ) =>
+    ({ symbol, realizedWei, volumeWei }) as Parameters<
+      typeof cardTopPosition
+    >[0][number];
   assert.equal(
-    walletCaptureLabel({ asOf: 1000, oldestAsOf: 1000 }),
-    "Wallet captured 1970-01-01 00:16:40 UTC",
+    cardTopPosition([
+      position("A", "5", "1"),
+      position("B", "9", "1"),
+      position("C", null, "99"),
+      position("D", "9", "2"),
+    ])?.symbol,
+    "D",
   );
-  assert.equal(
-    walletCaptureLabel({ asOf: null, oldestAsOf: null }),
-    "Wallet cutoff unavailable",
-  );
+  assert.equal(cardTopPosition([]), null);
 });
 
 test("an explicitly scoped share card cannot silently switch to global wallet PnL", async (t) => {
@@ -205,7 +332,7 @@ test("an explicitly scoped share card cannot silently switch to global wallet Pn
     position.poolId,
     position.launchTx,
   );
-  assert.equal(card.global, false);
+  assert.equal(card.poolSymbol, position.symbol);
   assert.equal(card.result.positions.length, 1);
   assert.equal(card.result.wallet.realizedWei, position.realizedWei);
   assert.equal(card.result.wallet.asOf, position.asOf);
