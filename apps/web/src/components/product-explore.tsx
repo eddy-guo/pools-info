@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, Star } from "lucide-react";
 import { TradeStream } from "./trade-stream";
 import {
   poolHref,
@@ -67,23 +67,26 @@ function headIntoView(panel: HTMLElement | null) {
 const integers = new Intl.NumberFormat("en-US");
 /**
  * The table row's subtitle, as the export sets it: the symbol in mono, the
- * pool's age and its trade count in the window, separated by middle dots. A
- * launch without market evidence keeps its symbol alone (its launch line
- * carries the age), and a figure the read API does not send is left out
- * rather than marked.
+ * pool's age and (on desktop) its trade count in the window, separated by
+ * middle dots. A launch without market evidence keeps its symbol alone (its
+ * launch line carries the age), and a figure the read API does not send is
+ * left out rather than marked. The phone row keeps only the age (`trades`
+ * false) to hold its identity tile to `SYMBOL · age`.
  */
 function RowSubtitle({
   pool,
   now,
+  trades = true,
 }: {
   pool: AnalyticsPoolRow;
   now: number | null;
+  trades?: boolean;
 }) {
   const facts = launchOnly(pool)
     ? []
     : [
         now === null ? null : since(pool.launchedAt, now),
-        pool.stats.trades === null
+        !trades || pool.stats.trades === null
           ? null
           : `${integers.format(pool.stats.trades)} trades`,
       ].filter((fact) => fact !== null);
@@ -687,68 +690,71 @@ export function ProductExplore() {
                       {p ? (
                         <>
                           <div className="mobile-pool-top">
-                            <PoolCell pool={p} />
+                            <PoolCell
+                              pool={p}
+                              subtitle={
+                                <RowSubtitle pool={p} now={now} trades={false} />
+                              }
+                            />
+                            {!launchOnly(p) && (
+                              <div className="mobile-pool-price">
+                                <Price wei={p.stats.priceWei} />
+                                <Change value={p.stats.change} />
+                              </div>
+                            )}
                             <WatchButton id={p.id} />
                           </div>
                           {launchOnly(p) ? (
                             /* The card holds a fixed height, so the launch
-                             facts take the stat slots rather than leaving
-                             most of it empty. */
+                             age and sender take the stat slot rather than
+                             leaving most of it empty. The chip is the same
+                             shared small one the leaderboard's mobile row
+                             uses, at its own compact size. */
                             <div
                               className="mobile-pool-stats"
                               data-launch-row="true"
                             >
                               <span>
-                                Launched
-                                <strong>
-                                  <time
-                                    data-pending={now === null}
-                                    dateTime={new Date(
-                                      p.launchedAt * 1000,
-                                    ).toISOString()}
-                                    title={utc(p.launchedAt)}
-                                  >
-                                    {now === null
-                                      ? "Pending"
-                                      : `${since(p.launchedAt, now)} ago`}
-                                  </time>
-                                </strong>
+                                Launched{" "}
+                                <time
+                                  data-pending={now === null}
+                                  dateTime={new Date(
+                                    p.launchedAt * 1000,
+                                  ).toISOString()}
+                                  title={utc(p.launchedAt)}
+                                >
+                                  {now === null
+                                    ? "Pending"
+                                    : `${since(p.launchedAt, now)} ago`}
+                                </time>
                               </span>
-                              <span>
-                                Sender
-                                <strong>
-                                  <AddressChip
-                                    address={p.launchSender}
-                                    href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                  />
-                                </strong>
-                              </span>
+                              <AddressChip
+                                address={p.launchSender}
+                                href={`/wallet/${p.launchSender.toLowerCase()}/`}
+                              />
                             </div>
                           ) : (
                             <div className="mobile-pool-stats">
                               <span>
-                                Price
-                                <strong>
-                                  <Price wei={p.stats.priceWei} />
-                                </strong>
+                                Vol <Eth wei={p.stats.volumeWei} />
+                                {p.stats.trades !== null && (
+                                  <>
+                                    {" · "}
+                                    {integers.format(p.stats.trades)} trades
+                                  </>
+                                )}
                               </span>
-                              <span>
-                                {window} volume
-                                <strong>
-                                  <Eth wei={p.stats.volumeWei} />
-                                </strong>
-                              </span>
-                              <span>
-                                Trades
-                                <strong>
-                                  {p.stats.trades ?? <Unavailable />}
-                                </strong>
-                              </span>
-                              <span>
-                                Change
-                                <strong>
-                                  <Change value={p.stats.change} />
-                                </strong>
+                              <span className="mobile-pool-spark">
+                                {p.marketCoverage?.source ===
+                                  "deep_publication" &&
+                                p.market?.series.length ? (
+                                  <Sparkline
+                                    points={p.market.series}
+                                    positive={(p.stats.change ?? 0) >= 0}
+                                  />
+                                ) : (
+                                  <Unavailable reason="No observed price series" />
+                                )}
                               </span>
                             </div>
                           )}
@@ -764,24 +770,27 @@ export function ProductExplore() {
                                 <strong data-pending="true">
                                   Pool pending
                                 </strong>
-                                <small data-pending="true">
-                                  Coverage pending
-                                </small>
+                                <small data-pending="true">{"\u00a0"}</small>
                               </span>
                             </span>
+                            <div className="mobile-pool-price">
+                              <Price pending />
+                              <Change pending />
+                            </div>
+                            {/* Reserves the star's box so the price box next
+                                to it does not move once the real button
+                                mounts. */}
+                            <button
+                              className="icon-button watch"
+                              disabled
+                              aria-hidden="true"
+                              tabIndex={-1}
+                            >
+                              <Star size={16} />
+                            </button>
                           </div>
                           <div className="mobile-pool-stats">
-                            {[
-                              "Price",
-                              `${window} volume`,
-                              "Trades",
-                              "Change",
-                            ].map((label) => (
-                              <span key={label}>
-                                {label}
-                                <strong data-pending="true">Pending</strong>
-                              </span>
-                            ))}
+                            <span data-pending="true">{"\u00a0"}</span>
                           </div>
                         </>
                       ) : null}

@@ -1,14 +1,24 @@
 .rail button {
   min-height: var(--ctl-min, 32px);
 }
-.events {
-  height: calc(3 * 80px);
+/* A shared, legacy `.activity-list` rule below 1000px turns this into a grid
+   for a component this list never uses; unscoped, a quiet pool's one or two
+   rows would stretch to fill the reserved three-row height instead of
+   staying their own size. */
+.events:global(.activity-list) {
+  display: block;
+  height: calc(3 * 51px);
   overflow-y: auto;
   scrollbar-width: thin;
 }
+/* The export's dense row, at both viewports: symbol + side over address +
+   age, no label before the address (gap-live-trades-1440.png). */
 .row {
-  min-height: 80px;
+  min-height: 51px;
   transition: background-color 250ms ease;
+}
+.row:global(.stream-event) {
+  padding: 8px 14px;
 }
 .row[data-new="true"] {
   animation: arrive 1.8s ease-out;
@@ -16,7 +26,6 @@
 .row a {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
 }
 .top {
   display: flex;
@@ -28,6 +37,9 @@
 }
 .meta {
   justify-content: space-between;
+}
+.row .meta {
+  margin-top: 2px;
 }
 .note {
   margin: 0;
@@ -89,17 +101,6 @@
   .row[data-new="true"],
   .state[data-state] > i {
     animation: none;
-  }
-}
-@container site (max-width: 767px) {
-  .row a {
-    min-height: 44px;
-  }
-  .events {
-    height: calc(3 * 120px);
-  }
-  .row {
-    min-height: 120px;
   }
 }
 .meta > span {

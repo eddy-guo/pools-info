@@ -22,7 +22,7 @@ function layout(testInfo: TestInfo) {
         wrapper: ".explore-page .mobile-pools",
         list: ".explore-page .mobile-pools",
         rows: ".explore-page .mobile-pools .mobile-pool",
-        rowHeight: 168,
+        rowHeight: 104,
       };
 }
 /** Explore page reads: the list's, not the launch rail's six. */

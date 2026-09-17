@@ -27,7 +27,7 @@ test("a token subtitle never reaches the price on page one", async ({
         const subtitle = row.querySelector(".token-cell small")!;
         const price = row
           .querySelector(".price")!
-          .closest(layout === ".desktop-pools" ? "td" : "span:not(.price)")!;
+          .closest(layout === ".desktop-pools" ? "td" : ".mobile-pool-price")!;
         /* The text's own extent, cut to the subtitle's box when that box
            clips its overflow. */
         const range = document.createRange();
