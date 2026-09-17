@@ -2636,7 +2636,7 @@ main {
   .live-podium {
     gap: 8px;
   }
-  .live-podium a {
+  .live-podium > a {
     padding: 14px;
   }
 }
@@ -2658,7 +2658,7 @@ main {
     grid-template-columns: 1fr;
     padding: 16px;
   }
-  .live-podium a {
+  .live-podium > a {
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
