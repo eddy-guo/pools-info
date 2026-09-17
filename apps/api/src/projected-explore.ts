@@ -154,8 +154,13 @@ export async function readProjectedExplore(
   if (deepRanked && ledger) {
     const catalogWhere = where(catalogConditions(metricValues.length));
     // The deep-published pools the ledger does not serve keep today's full
-    // metrics; `ledger_ranked` holds the ones it does.
-    const rankCtes = `${catalogCte}${ledgerFlowCtes}${ledgerRankedCte(catalogWhere, options.view === "gainers" ? "gainers" : sort === "change" ? "change" : "liquidity", window)}, page AS (SELECT * FROM catalog p ${where([...catalogConditions(metricValues.length), `EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=4663 AND a.pool_id=p.pool_id AND NOT (${ledgerLaunchSql("p.", "$9", "$7")} AND $7>=a.through_block))`])})${deepCtes(false)}, ranked AS (
+    // metrics; `ledger_ranked` holds the ones it does. That page is found
+    // from the deep publications and bound as an array, so the catalog is
+    // read by key for those few pools rather than built whole.
+    const rankCtes = `${catalogCte}${ledgerFlowCtes}${ledgerRankedCte(catalogWhere, options.view === "gainers" ? "gainers" : sort === "change" ? "change" : "liquidity", window)}, deep_unserved AS MATERIALIZED (
+    SELECT a.pool_id FROM analytics_accounting_pools a LEFT JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=a.pool_id
+    WHERE a.chain_id=4663 AND NOT (ip.pool_id IS NOT NULL AND ${ledgerLaunchSql("ip.", "$9", "$7")} AND $7>=a.through_block)
+  ), page AS (SELECT * FROM catalog p ${where([...catalogConditions(metricValues.length), "p.pool_id=ANY(ARRAY(SELECT pool_id FROM deep_unserved))"])})${deepCtes(false)}, ranked AS (
     SELECT p.pool_id,p.launch_block,m.volume,m.trades,m.liquidity_wei,m.change FROM page p LEFT JOIN metrics m USING(pool_id)
     UNION ALL SELECT pool_id,launch_block,volume,trades,liquidity_wei,change FROM ledger_ranked
   )`;

@@ -159,7 +159,13 @@ export function rankedFlowCtes(
     : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
   return `${catalogCte}, flow AS (
     ${flow}
-  )${broadFlowCte("catalog")}${ledger ? ledgerFlowCtes : ""}, ranked AS MATERIALIZED (
+  )${broadFlowCte("catalog")}${
+    ledger
+      ? `${ledgerFlowCtes}, ledger_flow_ids AS (
+    SELECT ip.pool_id,f.trades,f.volume FROM ledger_flow f JOIN indexed_pools ip ON ip.pool_ref=f.pool_ref
+  )`
+      : ""
+  }, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
       CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
       CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
@@ -174,8 +180,7 @@ export function rankedFlowCtes(
       ledger
         ? `
     LEFT JOIN ledger_launches ll ON ll.pool_id=p.pool_id
-    LEFT JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=p.pool_id
-    LEFT JOIN ledger_flow lf ON lf.pool_ref=ip.pool_ref`
+    LEFT JOIN ledger_flow_ids lf ON lf.pool_id=p.pool_id`
         : ""
     } ${where}
   )`;
@@ -184,7 +189,9 @@ export function rankedFlowCtes(
 // block, $8 the window's first UTC hour (null for All), $9 the ledger's start
 // block. The launches the ledger covers and every pool's window flow, over the
 // whole catalog: All reads the pool state's lifetime totals, a window sums its
-// hours from the hour index.
+// hours from the hour index. The flow is keyed by pool_ref; a catalog-keyed
+// read maps it to pool ids through the pool_ref index, so a window only looks
+// up the pools that traded in it rather than scanning the registry again.
 export const ledgerFlowCtes = `, ledger_launches AS (
     SELECT DISTINCT pool_id FROM pool_launch_sources WHERE chain_id=4663 AND stream_key='launches:agg:v1' AND batch_end<=$7
   ), ledger_flow AS (
