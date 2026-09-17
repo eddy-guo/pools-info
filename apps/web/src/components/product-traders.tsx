@@ -9,12 +9,12 @@ import {
   type AnalyticsWalletSummary,
   type LiveWindow,
 } from "@pools/core";
-import { fetchProduct, useProduct } from "@/lib/use-product";
+import { DATA_UNAVAILABLE, fetchProduct, useProduct } from "@/lib/use-product";
 import { useFollowedLeaderboard } from "@/lib/use-followed-leaderboard";
 import { useQuery } from "./state";
 import { useFollowing, FollowRowButton } from "./following";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { AddressChip, Avatar, Change } from "./ui";
+import { AddressChip, Avatar, Change, UnavailableState } from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
 
@@ -135,10 +135,7 @@ function useLeaderboard(
           ...s,
           key,
           loading: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Saved data is unavailable.",
+          error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
         }));
       }
     })();
@@ -404,7 +401,9 @@ function PodiumCard({
       <div className="trader-podium-card-pnl">
         <Eth
           pending={pending}
-          wei={w ? (metric === "realized" ? w.realizedWei : w.netWei) : undefined}
+          wei={
+            w ? (metric === "realized" ? w.realizedWei : w.netWei) : undefined
+          }
           signed
         />
       </div>
@@ -465,7 +464,7 @@ function MyRankRow({
   address: string;
   window: LiveWindow;
 }) {
-  const { data } = useProduct<AnalyticsWalletResponse>(
+  const { data, error } = useProduct<AnalyticsWalletResponse>(
     `wallets/${address}?window=${window}`,
   );
   const w = data?.wallet;
@@ -480,7 +479,11 @@ function MyRankRow({
       </span>
       {/* Each state is its own node, so a resolved value never rewrites the
           pending text in place. */}
-      {!w ? (
+      {!w && error ? (
+        <span className="my-rank-summary" key="unavailable">
+          unavailable
+        </span>
+      ) : !w ? (
         <span className="my-rank-summary" data-pending="true" key="pending">
           Pending
         </span>
@@ -507,8 +510,7 @@ export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
   const metric = (params.get("metric") ?? "realized") as Metric;
-  const view =
-    params.get("view") === "following" ? "following" : "leaderboard";
+  const view = params.get("view") === "following" ? "following" : "leaderboard";
   const rawShown = Number(params.get("limit"));
   const shown =
     Number.isInteger(rawShown) && rawShown > 0 && rawShown <= CAP
@@ -521,11 +523,14 @@ export function ProductTraders() {
   const items = forKey ? state.items.slice(0, shown) : [];
   const total = settled ? state.total : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
+  /* No ranking was served, so none is drawn: the podium and the rows would
+     otherwise shimmer indefinitely, reading as a board still on its way. */
+  const failed = forKey && !!state.error && items.length === 0;
   // Optimistic until settled, so the podium band never pops in after first
   // paint; a settled total under 3 wallets is the one case it disappears.
-  const showPodium = total === null || total >= PODIUM_SIZE;
+  const showPodium = !failed && (total === null || total >= PODIUM_SIZE);
   const listOffset = showPodium ? PODIUM_SIZE : 0;
-  const listCount = Math.max(0, shown - listOffset);
+  const listCount = failed ? 0 : Math.max(0, shown - listOffset);
   // Frozen at mount so a later re-render (a Show more click) never rewrites
   // an already-painted "Last" cell's relative age out from under it.
   const [now] = useState(() => Math.floor(Date.now() / 1000));
@@ -546,6 +551,7 @@ export function ProductTraders() {
       : SHOW_MORE_STEP;
   const followedReserved = Math.min(followedShown, followedTotal);
   const followedPending = !following.settled;
+  const followingFailed = !!following.error && following.items.length === 0;
 
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -556,9 +562,7 @@ export function ProductTraders() {
   }, [shown, set, total]);
   const handleFollowedMore = useCallback(() => {
     set({
-      flimit: String(
-        Math.min(followedShown + SHOW_MORE_STEP, followedTotal),
-      ),
+      flimit: String(Math.min(followedShown + SHOW_MORE_STEP, followedTotal)),
     });
   }, [followedShown, followedTotal, set]);
   useEffect(() => {
@@ -637,7 +641,10 @@ export function ProductTraders() {
                 Updating saved rankings
               </span>
             )}
-            {state.error && (
+            {/* Rows already on show keep their place and this line reports
+                what did not arrive; a first read that failed has no rows and
+                speaks through the unavailable state below instead. */}
+            {state.error && !failed && (
               <p role="alert" className="panel-footnote">
                 {state.error}
               </p>
@@ -645,18 +652,19 @@ export function ProductTraders() {
             <>
               {showPodium && (
                 <div className="live-podium">
-                  {Array.from({ length: PODIUM_SIZE }, (_, index) => items[index]).map(
-                    (w, index) => (
-                      <PodiumCard
-                        key={index}
-                        rank={index + 1}
-                        w={w}
-                        pending={!w && !knownAbsent(index)}
-                        metric={metric}
-                        window={window}
-                      />
-                    ),
-                  )}
+                  {Array.from(
+                    { length: PODIUM_SIZE },
+                    (_, index) => items[index],
+                  ).map((w, index) => (
+                    <PodiumCard
+                      key={index}
+                      rank={index + 1}
+                      w={w}
+                      pending={!w && !knownAbsent(index)}
+                      metric={metric}
+                      window={window}
+                    />
+                  ))}
                 </div>
               )}
               <div className="table-scroll desktop-traders">
@@ -665,7 +673,9 @@ export function ProductTraders() {
                     <tr>
                       <th>Rank</th>
                       <th>Trader</th>
-                      <th>{metric === "realized" ? "Realized PnL" : "Net ETH"}</th>
+                      <th>
+                        {metric === "realized" ? "Realized PnL" : "Net ETH"}
+                      </th>
                       <th>ROI</th>
                       <th>W / L</th>
                       <th>Trades</th>
@@ -710,6 +720,7 @@ export function ProductTraders() {
                 ))}
               </div>
             </>
+            {failed && <UnavailableState subject="Leaderboard" />}
             {settled && total === 0 && (
               <div className="empty-state">
                 <h3>No qualifying traders in this window</h3>
@@ -718,7 +729,7 @@ export function ProductTraders() {
             )}
             <ShowMore
               shown={shown}
-              total={total}
+              total={failed ? 0 : total}
               cap={CAP}
               loading={state.loading}
               onMore={handleMore}
@@ -726,12 +737,13 @@ export function ProductTraders() {
           </>
         ) : (
           <>
-            {following.error && (
+            {following.error && !followingFailed && (
               <p role="alert" className="panel-footnote">
                 {following.error}
               </p>
             )}
-            {followedTotal > 0 && (
+            {followingFailed && <UnavailableState subject="Following" />}
+            {followedTotal > 0 && !followingFailed && (
               <>
                 <div className="table-scroll desktop-traders following-traders">
                   <table className="data-table">
@@ -753,10 +765,8 @@ export function ProductTraders() {
                       </tr>
                     </thead>
                     <tbody>
-                      {Array.from(
-                        { length: followedReserved },
-                        (_, index) =>
-                          followedPending ? undefined : following.items[index],
+                      {Array.from({ length: followedReserved }, (_, index) =>
+                        followedPending ? undefined : following.items[index],
                       ).map((w, index) => (
                         <DesktopTraderRow
                           key={index}
@@ -772,10 +782,8 @@ export function ProductTraders() {
                   </table>
                 </div>
                 <div className="mobile-traders following-traders">
-                  {Array.from(
-                    { length: followedReserved },
-                    (_, index) =>
-                      followedPending ? undefined : following.items[index],
+                  {Array.from({ length: followedReserved }, (_, index) =>
+                    followedPending ? undefined : following.items[index],
                   ).map((w, index) => (
                     <MobileTraderCard
                       key={index}

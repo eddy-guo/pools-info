@@ -15,8 +15,11 @@ test("chart accepts its first selection only once hydration can retain it", asyn
   const marketReady = new Promise<void>((resolve) => {
     releaseMarket = resolve;
   });
+  /* The pool's identity comes from its own read; this route serves the
+     accounted cut the chart is drawn from, so the refresh is observed
+     through the price that cut carries. */
   const updated = structuredClone(chain);
-  updated.markets[0].name = "Refreshed chart market";
+  updated.markets[0].priceWei = "2000000000000000000";
   await page.route("**/_next/static/**/*.js", async (route) => {
     await scriptsReady;
     await route.continue();
@@ -54,8 +57,12 @@ test("chart accepts its first selection only once hydration can retain it", asyn
     );
     releaseMarket();
     await refreshed;
+    await expect(page.locator(".live-price-heading .price")).toHaveText(
+      "2 ETH",
+    );
     await expect(
-      page.getByRole("heading", { name: updated.markets[0].name, exact: true }),
+      page.getByRole("heading", { name: market.name, exact: true }),
+      "the pool keeps the identity its own read named",
     ).toBeVisible();
     await expect(range).toHaveAttribute("aria-pressed", "true");
   } finally {

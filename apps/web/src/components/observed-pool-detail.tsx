@@ -237,6 +237,7 @@ export function ObservedPoolDetail({
   refresh,
   loading,
   pending = false,
+  notice,
   chart = true,
   renderedAt,
 }: {
@@ -248,6 +249,8 @@ export function ObservedPoolDetail({
   refresh: () => void;
   loading: boolean;
   pending?: boolean;
+  /** Why this page has no market to show, in place of the chart. */
+  notice?: string;
   /** A chart can still arrive, so its region holds that height from first paint. */
   chart?: boolean;
   renderedAt: number;
@@ -354,8 +357,11 @@ export function ObservedPoolDetail({
                   : { poolId: id, pending })}
             />
           ) : (
-            <div className="empty-state">
-              <h3>Price chart unavailable</h3>
+            /* The reserved region is where the page says what it has, so a
+               read that failed reports itself here rather than leaving a
+               chart-shaped hole or, worse, a stored chart. */
+            <div className="empty-state" role={notice ? "alert" : undefined}>
+              <h3>{notice ?? "Price chart unavailable"}</h3>
             </div>
           )}
         </div>

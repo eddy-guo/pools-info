@@ -5,7 +5,7 @@ import type {
   AnalyticsWalletSummary,
   LiveWindow,
 } from "@pools/core";
-import { fetchProduct } from "./use-product";
+import { DATA_UNAVAILABLE, fetchProduct } from "./use-product";
 /** Followed wallets read one at a time from the leaderboard; this bounds how
     many of those requests are in flight together. */
 const CONCURRENCY = 6;
@@ -58,14 +58,13 @@ export function useFollowedLeaderboard(
       if (controller.signal.aborted) return;
       const items = results
         .filter((w): w is AnalyticsWalletSummary => w !== null)
-        .sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address));
+        .sort(
+          (a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address),
+        );
       setState({
         key,
         items,
-        error:
-          failures && !items.length
-            ? "Saved data is temporarily unavailable."
-            : "",
+        error: failures && !items.length ? DATA_UNAVAILABLE : "",
       });
     });
     return () => controller.abort();

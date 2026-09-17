@@ -168,6 +168,14 @@ function creatorsPreload(
     nextOffset: offset + limit < scoped.length ? offset + limit : null,
   };
 }
+/**
+ * The committed dataset under `data/` is a build-time fixture: the browser
+ * suites and the scripts read it, and nothing else may. A deployment serves it
+ * only when it names it with `PRODUCT_FIXTURES=1`; production never sets that,
+ * so a read the read API cannot answer is reported as unavailable instead of
+ * being answered from a snapshot the page would present as current.
+ */
+export const productFixtures = () => process.env.PRODUCT_FIXTURES === "1";
 let model: ReturnType<typeof preloadModel> | undefined;
 export function preloadedProduct(
   endpoint: string,
@@ -249,6 +257,16 @@ function indexerOrigin() {
     throw Error("Invalid configured indexer origin");
   return origin;
 }
+/**
+ * A product read this deployment could not serve. It is the page's honest
+ * answer: the surface that asked shows its unavailable state and no figures,
+ * exactly as the ETH price does, rather than any stored stand-in.
+ */
+export class ProductUnavailableError extends Error {
+  constructor(readonly retryAfter = 30) {
+    super("Live data is unavailable.");
+  }
+}
 /** The read API's own 503 contract for the Coinbase-backed price, carried to
  * the browser unchanged: no cached or fabricated rate stands in for it. */
 export class EthPriceUnavailableError extends Error {
@@ -294,6 +312,17 @@ export async function readEthPrice(
   }
   return body;
 }
+/**
+ * One product read, from the configured read API and nowhere else.
+ *
+ * A read the API cannot answer raises {@link ProductUnavailableError}: the
+ * committed dataset is never substituted for it, because the page has no way
+ * to tell a visitor that the figures it just painted are days old, and the
+ * captain's rule is that what cannot be shown honestly shows nothing. The
+ * fixture deployment (`PRODUCT_FIXTURES=1`, which the browser suites set and
+ * production never does) is the one deployment that serves that dataset, and
+ * it serves it as its only source rather than as a stand-in.
+ */
 export async function readProduct<T>(
   path: string[],
   params: URLSearchParams,
@@ -301,16 +330,24 @@ export async function readProduct<T>(
   const checked = productRequest(path, params);
   const base = process.env.INDEXER_API_URL;
   if (base && process.env.CHAIN_REFRESH_DISABLED !== "1") {
+    let response: Response;
     try {
       const origin = indexerOrigin()!;
       const url = new URL(`/v1/${checked.endpoint}`, origin);
       url.search = checked.params.toString();
-      const response = await fetch(url, {
+      response = await fetch(url, {
         signal: AbortSignal.timeout(8000),
         cache: "no-store",
         redirect: "error",
       });
-      if (!response.ok) throw Error("Saved index unavailable");
+    } catch {
+      throw new ProductUnavailableError();
+    }
+    /* The read API's own 404 is an answer, not an outage: this pool, wallet or
+       sale is outside its coverage, and the page says so. */
+    if (response.status === 404) throw Error("Outside available coverage");
+    if (!response.ok) throw new ProductUnavailableError();
+    try {
       const data = await response.json();
       if (!data || typeof data !== "object" || Array.isArray(data))
         throw Error("Invalid saved data");
@@ -365,27 +402,18 @@ export async function readProduct<T>(
         validateCreatorsResponse(data, checked.params);
       if (checked.endpoint.startsWith("trades/"))
         validateTradeShareResponse(data, checked.endpoint, checked.params);
-      return {
-        ...data,
-        delivery: { source: "indexer", notice: null },
-      } as Delivered<T>;
+      return { ...data, delivery: { source: "indexer" } } as Delivered<T>;
     } catch {
-      /* Keep the captured public dataset available during an outage. */
+      /* A body this deployment cannot trust is as unusable as no body. */
+      throw new ProductUnavailableError();
     }
   }
+  if (!productFixtures()) throw new ProductUnavailableError();
   if (checked.endpoint === "following")
     throw Error("Saved following activity is temporarily unavailable.");
   if (checked.endpoint.startsWith("trades/"))
     throw Error("This verified sale is unavailable in the saved index.");
   const data = await preloadedProduct(checked.endpoint, checked.params);
   if (!data) throw Error("Outside available saved coverage");
-  return {
-    ...(data as T),
-    delivery: {
-      source: "preloaded",
-      notice: base
-        ? "The saved index is unavailable. Showing the preloaded public dataset."
-        : "Showing the preloaded public dataset. Wider indexed coverage is not connected.",
-    },
-  };
+  return { ...(data as T), delivery: { source: "preloaded" } };
 }

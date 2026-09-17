@@ -134,3 +134,107 @@ test("the wallet's empty positions use the same designed empty state", async ({
     "every non-input layout shift since navigation",
   ).toBe(0);
 });
+
+/*
+ * The captain's escalation of 17 Sep 2026: on a cold home page against a read
+ * API that was not answering, the visitor watched skeletons for eight seconds
+ * and was then shown "Pepe in Hood at 14.1333 ETH" with launch cards reading
+ * "3d", because the proxy quietly answered from the committed dataset. The
+ * measured proxy response in that state is now exactly the one these routes
+ * fulfil: HTTP 503 with `{"error":"data_unavailable"}` and a Retry-After.
+ * `apps/web/src/lib/product-request.test.ts` pins the server side of that
+ * contract, so this spec and the server cannot drift apart unnoticed.
+ */
+const unavailable = { error: "data_unavailable" };
+/* Names and figures the committed dataset carries. None may reach the screen
+   while the read API has nothing to say. */
+const preloadedNames = [
+  "Pepe in Hood",
+  "MonkiiLabs",
+  "Seymour Cash",
+  "Longfolio",
+];
+
+async function withNoLiveData(page: Page) {
+  await page.route("**/api/product/**", (route) =>
+    route.fulfill({
+      status: 503,
+      json: unavailable,
+      headers: { "retry-after": "30", "cache-control": "no-store" },
+    }),
+  );
+  /* The pool page's accounted cut reads the same outage through its own route. */
+  await page.route("**/api/markets/**", (route) =>
+    route.fulfill({ status: 503, json: unavailable }),
+  );
+}
+
+for (const [name, url, heading] of [
+  ["home", "/", "Pools unavailable"],
+  ["leaderboard", "/traders/", "Leaderboard unavailable"],
+  ["creators", "/creators/", "Creators unavailable"],
+  ["wallet", `/wallet/${wallet}/?window=All`, "Wallet unavailable"],
+  [
+    "pool",
+    "/pool/0x2b92729e11429b6452872cca4d1cdc26568274b716093f1ae2e3e10b88844e5c/",
+    "Price chart unavailable",
+  ],
+] as const)
+  test(`the ${name} page shows nothing rather than stale figures when no live data is served`, async ({
+    page,
+  }, testInfo) => {
+    const { viewport } = surface(testInfo);
+    await page.setViewportSize(viewport);
+    await withNoLiveData(page);
+
+    await page.goto(url);
+    const main = page.locator("main");
+    if (name === "pool")
+      /* The pool page has no list to empty; its reserved chart region is
+         where it reports what it could not get. */
+      await expect(
+        main.locator(".pool-chart-region .empty-state"),
+      ).toContainText("Live data is unavailable.");
+    else
+      await expect(
+        main.getByRole("heading", { name: heading, exact: true }),
+      ).toBeVisible();
+
+    const text = await main.innerText();
+    expect(text, "no ETH amount survives an outage").not.toMatch(
+      /[\d.]+\s*ETH/,
+    );
+    expect(text, "no percentage change survives an outage").not.toMatch(
+      /[-+][\d.]+%/,
+    );
+    for (const stale of preloadedNames)
+      expect(text, `${stale} is a committed fixture name`).not.toContain(stale);
+    expect(
+      await main.locator("[data-pending='true']").count(),
+      "nothing is left shimmering as though it were still on its way",
+    ).toBe(0);
+  });
+
+test("the home page's launch cards and rails report the outage instead of pending forever", async ({
+  page,
+}, testInfo) => {
+  const { viewport } = surface(testInfo);
+  await page.setViewportSize(viewport);
+  await withNoLiveData(page);
+
+  await page.goto("/");
+  await expect(
+    page.locator(".launch-rail").getByText("Launches unavailable"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".trade-stream").getByText("Live trades unavailable"),
+  ).toBeVisible();
+  await expect(
+    page.locator(".explore-leaders").getByText("Top traders unavailable"),
+  ).toBeVisible();
+  await expect(page.locator(".launch-rail .launch-card")).toHaveCount(0);
+  /* The count under the list never claims rows it does not have. */
+  await expect(page.locator(".pagination .pagination-count")).toHaveText(
+    "0 results",
+  );
+});

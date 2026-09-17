@@ -3487,6 +3487,19 @@ main {
   padding: 0 0 4px;
   align-items: stretch;
 }
+/* A rail that was served nothing says so inside its own reserved height, so
+   the page keeps the shape it painted with (`.launch-section` and
+   `.explore-leader-rows` both fix theirs). */
+.rail-note {
+  margin: 0;
+  padding: 12px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.explore-leader-rows > .rail-note {
+  padding: 12px 18px;
+}
 .launch-rail .launch-card {
   height: var(--launch-card-height, 94px);
   display: block;

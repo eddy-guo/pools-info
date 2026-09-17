@@ -14,14 +14,19 @@ import type {
   CreatorRow,
   CreatorsResponse,
 } from "@pools/core";
-import { fetchProduct, type Delivered } from "@/lib/use-product";
+import {
+  DATA_UNAVAILABLE,
+  OUTSIDE_COVERAGE,
+  fetchProduct,
+  type Delivered,
+} from "@/lib/use-product";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
-import { AddressChip, AddressLabel } from "./ui";
+import { AddressChip, AddressLabel, UnavailableState } from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 
 /** The explore API pages at most 100 rows; one batch streams 20 pages before pausing on Load more. */
@@ -171,7 +176,9 @@ function useCatalog(address: string) {
           },
         );
         if (!response.ok)
-          throw Error("The saved creator catalog is temporarily unavailable.");
+          throw Error(
+            response.status === 503 ? DATA_UNAVAILABLE : OUTSIDE_COVERAGE,
+          );
         const page =
           (await response.json()) as Delivered<AnalyticsExploreResponse>;
         if (controller.signal.aborted) return;
@@ -191,7 +198,7 @@ function useCatalog(address: string) {
                 ? "The saved creator catalog is responding slowly."
                 : error instanceof Error
                   ? error.message
-                  : "Saved catalog unavailable",
+                  : DATA_UNAVAILABLE,
           }));
       }
     })();
@@ -279,10 +286,7 @@ function useCreatorsBoard(
           ...s,
           key,
           loading: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Saved data is unavailable.",
+          error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
         }));
       }
     })();
@@ -313,6 +317,9 @@ function CreatorDirectory() {
   // top-100 leaderboard even before the data side caps the read itself.
   const total = settled ? Math.min(state.total, CAP) : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
+  /* No board was served: the reserved rows stay blank rather than shimmering
+     on for ever, and the panel says what happened. */
+  const failed = forKey && !!state.error && items.length === 0;
 
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -374,7 +381,7 @@ function CreatorDirectory() {
             Updating saved creators
           </span>
         )}
-        {state.error && (
+        {state.error && !failed && (
           <p role="alert" className="panel-footnote">
             {state.error}
           </p>
@@ -393,111 +400,109 @@ function CreatorDirectory() {
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: shown }, (_, index) => items[index]).map(
-                (r, index) => {
-                  const absent = knownAbsent(index);
-                  const pending = !r && !absent;
-                  return (
-                    <tr
-                      key={index}
-                      data-row-index={index}
-                      aria-hidden={!r}
-                      data-row={r ? "resolved" : "reserved"}
-                    >
-                      <td className="rank-number" data-pending={pending}>
-                        {r ? index + 1 : pending ? "Pending" : "\u00a0"}
-                      </td>
-                      <td data-pending={pending}>
-                        {r ? (
-                          <AddressChip
-                            address={r.address}
-                            href={`/creators/${r.address}/`}
-                            size="large"
-                            badge={
-                              r.boughtOwnLaunch === true ? (
-                                <span className="badge lavender">
-                                  BOUGHT OWN
-                                </span>
-                              ) : undefined
-                            }
+              {Array.from(
+                { length: failed ? 0 : shown },
+                (_, index) => items[index],
+              ).map((r, index) => {
+                const absent = knownAbsent(index);
+                const pending = !r && !absent;
+                return (
+                  <tr
+                    key={index}
+                    data-row-index={index}
+                    aria-hidden={!r}
+                    data-row={r ? "resolved" : "reserved"}
+                  >
+                    <td className="rank-number" data-pending={pending}>
+                      {r ? index + 1 : pending ? "Pending" : "\u00a0"}
+                    </td>
+                    <td data-pending={pending}>
+                      {r ? (
+                        <AddressChip
+                          address={r.address}
+                          href={`/creators/${r.address}/`}
+                          size="large"
+                          badge={
+                            r.boughtOwnLaunch === true ? (
+                              <span className="badge lavender">BOUGHT OWN</span>
+                            ) : undefined
+                          }
+                        />
+                      ) : pending ? (
+                        "Creator pending"
+                      ) : (
+                        "\u00a0"
+                      )}
+                    </td>
+                    <td data-pending={pending}>
+                      {r ? (
+                        // Keyed so a new count replaces its text node: rewriting
+                        // right-aligned text in place moves its start, which
+                        // Chrome scores as a layout shift.
+                        <Fragment key={r.launches}>{r.launches}</Fragment>
+                      ) : pending ? (
+                        "Pending"
+                      ) : (
+                        "\u00a0"
+                      )}
+                    </td>
+                    <td data-pending={pending}>
+                      {r ? (
+                        r.measured ? (
+                          <StillTrading
+                            traded={r.traded}
+                            measured={r.measured}
                           />
-                        ) : pending ? (
-                          "Creator pending"
                         ) : (
-                          "\u00a0"
-                        )}
-                      </td>
-                      <td data-pending={pending}>
-                        {r ? (
-                          // Keyed so a new count replaces its text node: rewriting
-                          // right-aligned text in place moves its start, which
-                          // Chrome scores as a layout shift.
-                          <Fragment key={r.launches}>{r.launches}</Fragment>
-                        ) : pending ? (
-                          "Pending"
+                          <Unavailable reason="No measured launch" />
+                        )
+                      ) : pending ? (
+                        "Pending"
+                      ) : (
+                        "\u00a0"
+                      )}
+                    </td>
+                    <td data-pending={pending}>
+                      <Eth wei={r?.volumeWei} pending={pending} />
+                    </td>
+                    <td data-pending={pending}>
+                      <Eth wei={r?.medianVolumeWei} pending={pending} />
+                    </td>
+                    <td data-pending={pending}>
+                      {r ? (
+                        r.bestLaunch ? (
+                          <Link className="mono" href={poolHref(r.bestLaunch)}>
+                            {r.bestLaunch.symbol}
+                          </Link>
                         ) : (
-                          "\u00a0"
-                        )}
-                      </td>
-                      <td data-pending={pending}>
-                        {r ? (
-                          r.measured ? (
-                            <StillTrading
-                              traded={r.traded}
-                              measured={r.measured}
-                            />
-                          ) : (
-                            <Unavailable reason="No measured launch" />
-                          )
-                        ) : pending ? (
-                          "Pending"
-                        ) : (
-                          "\u00a0"
-                        )}
-                      </td>
-                      <td data-pending={pending}>
-                        <Eth wei={r?.volumeWei} pending={pending} />
-                      </td>
-                      <td data-pending={pending}>
-                        <Eth wei={r?.medianVolumeWei} pending={pending} />
-                      </td>
-                      <td data-pending={pending}>
-                        {r ? (
-                          r.bestLaunch ? (
-                            <Link
-                              className="mono"
-                              href={poolHref(r.bestLaunch)}
-                            >
-                              {r.bestLaunch.symbol}
-                            </Link>
-                          ) : (
-                            <Unavailable />
-                          )
-                        ) : pending ? (
-                          "Pending"
-                        ) : (
-                          "\u00a0"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                },
-              )}
+                          <Unavailable />
+                        )
+                      ) : pending ? (
+                        "Pending"
+                      ) : (
+                        "\u00a0"
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
         <div className="mobile-creators">
-          {Array.from({ length: shown }, (_, index) => items[index]).map(
-            (r, index) => (
-              <MobileCreatorRow
-                key={index}
-                r={r}
-                index={index}
-                pending={!r && !knownAbsent(index)}
-              />
-            ),
-          )}
+          {Array.from(
+            { length: failed ? 0 : shown },
+            (_, index) => items[index],
+          ).map((r, index) => (
+            <MobileCreatorRow
+              key={index}
+              r={r}
+              index={index}
+              pending={!r && !knownAbsent(index)}
+            />
+          ))}
         </div>
+        {failed && <UnavailableState subject="Creators" />}
         {settled && total === 0 && (
           <div className="empty-state">
             <h3>No creators in this window</h3>
@@ -506,7 +511,7 @@ function CreatorDirectory() {
         )}
         <ShowMore
           shown={shown}
-          total={total}
+          total={failed ? 0 : total}
           cap={CAP}
           loading={state.loading}
           onMore={handleMore}
@@ -542,6 +547,7 @@ function CreatorProfile({ address }: { address: string }) {
     [catalog.items, address],
   );
   const pending = !pools.length && catalog.streaming;
+  const failed = !!catalog.error && !pools.length;
   return (
     <div className={`page ${styles.page}`}>
       <div className="page-heading">
@@ -553,7 +559,7 @@ function CreatorProfile({ address }: { address: string }) {
           <AddressLabel address={address} full />
         </div>
       </div>
-      {catalog.error && (
+      {catalog.error && !failed && (
         <p role="alert" className="coverage-notice">
           {catalog.error}
         </p>
@@ -563,14 +569,20 @@ function CreatorProfile({ address }: { address: string }) {
           <h2>
             Launches{" "}
             <span className="badge" data-pending={pending}>
-              {pending ? "count pending" : `${pools.length} covered`}
+              {failed
+                ? "unavailable"
+                : pending
+                  ? "count pending"
+                  : `${pools.length} covered`}
             </span>
           </h2>
           <Link href={`/wallet/${address}/?window=All`}>
             View wallet profile ↗
           </Link>
         </div>
-        {pools.length || pending ? (
+        {failed ? (
+          <UnavailableState subject="Launches" onRetry={catalog.retry} />
+        ) : pools.length || pending ? (
           <>
             <div className="table-scroll desktop-creator-launches">
               <table className="data-table creator-launches-table">

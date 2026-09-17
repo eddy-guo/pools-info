@@ -1,7 +1,7 @@
 import type { AnalyticsPoolDetail, ChainSnapshot } from "@pools/core";
 import captured from "../../../../data/pools/index.json";
 import initial from "../../../../data/snapshots/chain.json";
-import { readProduct } from "./product-server";
+import { productFixtures, readProduct } from "./product-server";
 export function capturedPoolSnapshot(
   poolId: string,
   launchTx: string,
@@ -13,8 +13,13 @@ export function capturedPoolSnapshot(
     ? snapshot
     : undefined;
 }
-/** Shared legacy context is a preloaded snapshot. Product views read saved DB pages. */
+/**
+ * The committed snapshot, and only where it is the named source. It is the
+ * browser suites' fixture, never a production answer: a deployment without
+ * `PRODUCT_FIXTURES=1` has no current snapshot to give, and says so.
+ */
 export async function currentChainSnapshot(): Promise<ChainSnapshot> {
+  if (!productFixtures()) throw Error("No current chain snapshot");
   return initial as ChainSnapshot;
 }
 export async function targetedMarketSnapshot(
