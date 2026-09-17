@@ -1,5 +1,13 @@
 import type { LiveWindow, MarketBoundary } from "@pools/core";
 import { catalogCte, type ReadQuery } from "./catalog-read";
+import {
+  ledgerAnswers,
+  ledgerBaselineFoundSql,
+  ledgerBaselineSql,
+  ledgerLaunchSql,
+  ledgerPriceSql,
+  ledgerServedChangeSql,
+} from "./ledger-market";
 import { RequestError } from "./request";
 
 export interface BroadExploreCut extends MarketBoundary {
@@ -125,8 +133,22 @@ export function broadFlowCte(source: "catalog" | "page") {
 // source's whole covered history rather than the window. Deep evidence rides
 // the flow scan the rank already pays for; broad evidence is one hash
 // semi-join over broad_swaps at or below the served cutoff.
-export function rankedFlowCtes(where = "", { ownBuys = false } = {}) {
+// With `ledger` (the served window), the ledger's flow comes first for every
+// launch it covers whose deep publication, if any, is no newer than its
+// cursor ($7-$9 below), so the broad and deep rules only ever evaluate for
+// the launches it does not; a window whole hours cannot answer proves no flow.
+export function rankedFlowCtes(
+  where = "",
+  {
+    ownBuys = false,
+    ledger = null as LiveWindow | null,
+  } = {},
+) {
   const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
+  const ledgerSelected = (value: string) =>
+    ledger
+      ? `WHEN ll.pool_id IS NOT NULL AND p.launch_block BETWEEN $9 AND $7 AND (a.through_block IS NULL OR $7 >= a.through_block) THEN ${ledgerAnswers(ledger) ? value : "NULL"} `
+      : "";
   const flow = ownBuys
     ? `SELECT t.pool_id,sum(t.eth_wei) FILTER (WHERE t.timestamp >= $1) AS volume,count(*) FILTER (WHERE t.timestamp >= $1)::integer AS trades,
       bool_or(t.side='buy' AND t.wallet=p.launch_sender) AS own
@@ -137,10 +159,10 @@ export function rankedFlowCtes(where = "", { ownBuys = false } = {}) {
     : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
   return `${catalogCte}, flow AS (
     ${flow}
-  )${broadFlowCte("catalog")}, ranked AS MATERIALIZED (
+  )${broadFlowCte("catalog")}${ledger ? ledgerFlowCtes : ""}, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
-      CASE WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
-      CASE WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
+      CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
+      CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
         ownBuys
           ? `,
       CASE WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(f.own,false) END AS own`
@@ -148,14 +170,114 @@ export function rankedFlowCtes(where = "", { ownBuys = false } = {}) {
       }
     FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id${ownBuys ? " LEFT JOIN broad_own bo ON bo.pool_id=p.pool_id" : ""}
     LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
-    LEFT JOIN flow f ON f.pool_id=p.pool_id ${where}
+    LEFT JOIN flow f ON f.pool_id=p.pool_id${
+      ledger
+        ? `
+    LEFT JOIN ledger_launches ll ON ll.pool_id=p.pool_id
+    LEFT JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=p.pool_id
+    LEFT JOIN ledger_flow lf ON lf.pool_ref=ip.pool_ref`
+        : ""
+    } ${where}
+  )`;
+}
+// Ledger parameters, bound after the broad ones: $7 the ledger's cursor
+// block, $8 the window's first UTC hour (null for All), $9 the ledger's start
+// block. The launches the ledger covers and every pool's window flow, over the
+// whole catalog: All reads the pool state's lifetime totals, a window sums its
+// hours from the hour index.
+export const ledgerFlowCtes = `, ledger_launches AS (
+    SELECT DISTINCT pool_id FROM pool_launch_sources WHERE chain_id=4663 AND stream_key='launches:agg:v1' AND batch_end<=$7
+  ), ledger_flow AS (
+    SELECT pool_ref,trades,volume_wei AS volume FROM agg_pool_state WHERE chain_id=4663 AND $8::integer IS NULL
+    UNION ALL
+    SELECT pool_ref,sum(trades),sum(volume_wei) FROM agg_pool_hours WHERE chain_id=4663 AND hour>=$8::integer GROUP BY pool_ref
+  )`;
+/** Every launch the ledger serves, ranked for a deep-ranked order on the
+ * columns it needs: window flow, the deep liquidity (the ledger holds no ETH
+ * liquidity) and the change `ledger_metrics` serves. It reads `indexed_pools`
+ * directly (the catalog's recent-only rows are never covered), and `mode`
+ * bounds the set: gainers need a trade inside the window, a liquidity order a
+ * published liquidity, and a change order every covered launch with its
+ * baseline probed only where it traded inside the window. `where` holds the
+ * catalog filters (on `p`). Requires `ledgerFlowCtes`. */
+export function ledgerRankedCte(
+  where: string,
+  mode: "change" | "gainers" | "liquidity",
+  window: LiveWindow,
+) {
+  const active = "f.pool_ref IS NOT NULL",
+    answers = ledgerAnswers(window);
+  return `, ledger_ranked AS MATERIALIZED (
+    SELECT p.pool_id,p.launch_block,
+      ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.trades,0) ELSE coalesce(f.trades,0) END" : "NULL::bigint"} AS trades,
+      ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.volume_wei,0) ELSE coalesce(f.volume,0) END" : "NULL::numeric"} AS volume,
+      a.liquidity_wei,
+      ${
+        mode === "liquidity" || !answers
+          ? "NULL::numeric"
+          : ledgerServedChangeSql({
+              hour: "$8::integer",
+              decimals: "p.decimals",
+              conflict: "coalesce((a.market->>'decimals')::integer<>p.decimals,false)",
+              latest: "s.sqrt_price_x96",
+              active,
+              baseline: "base.sqrt",
+            })
+      } AS change
+    FROM indexed_pools p
+    ${mode === "gainers" ? "JOIN" : "LEFT JOIN"} ledger_flow f ON f.pool_ref=p.pool_ref
+    ${mode === "liquidity" ? "JOIN" : "LEFT JOIN"} analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id${mode === "liquidity" ? " AND a.liquidity_wei IS NOT NULL" : ""}
+    LEFT JOIN agg_pool_state s ON s.chain_id=4663 AND s.pool_ref=p.pool_ref${
+      mode === "liquidity"
+        ? ""
+        : `
+    LEFT JOIN LATERAL (${ledgerBaselineSql("p.pool_ref", "$8::integer", active)}) base ON true`
+    }
+    WHERE p.chain_id=4663${where ? " AND " + where.replace(/^WHERE /, "") : ""} AND p.launch_block BETWEEN $9 AND $7
+      AND p.pool_id IN (SELECT pool_id FROM ledger_launches) AND (a.through_block IS NULL OR $7 >= a.through_block)
   )`;
 }
 // Full per-pool market state (dated units, latest and baseline price states)
 // for the `page` relation being served. Never run over the whole catalog: the
 // per-pool lateral lookups cost seconds at catalog scale on a small host.
-export function broadExploreCtes() {
-  return `${broadFlowCte("page")}, broad_metrics AS (
+// With `ledger` (the served window), `ledger_metrics` serves every page pool
+// the ledger covers and wins over broad and deep wherever no deep publication
+// is newer than its cursor; `ledger_selected` names those rows. Its units
+// conflict when a deep publication declares other decimals, exactly as
+// broad's do. A window whole hours cannot answer serves no flow or change.
+export function broadExploreCtes({ ledger = null as LiveWindow | null } = {}) {
+  const answers = !!ledger && ledgerAnswers(ledger);
+  const selected = `l.pool_id IS NOT NULL AND (a.through_block IS NULL OR $7>=a.through_block)`;
+  const when = (value: string) =>
+    ledger ? `WHEN ${selected} THEN ${value} ` : "";
+  const column = (plain: string, value: string, name: string) =>
+    ledger ? `CASE ${when(value)}ELSE ${plain} END AS ${name}` : plain;
+  return `${broadFlowCte("page")}${
+    ledger
+      ? `, ledger_page AS (
+  SELECT p.pool_id,ip.pool_ref,ip.decimals FROM page p JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=p.pool_id
+  WHERE ${ledgerLaunchSql("p.", "$9", "$7")}
+), ledger_page_flow AS (
+  SELECT pool_ref,sum(trades) AS trades,sum(volume_wei) AS volume FROM agg_pool_hours
+  WHERE chain_id=4663 AND hour>=$8::integer AND pool_ref IN (SELECT pool_ref FROM ledger_page) GROUP BY pool_ref
+), ledger_metrics AS (
+  SELECT lp.pool_id,
+    ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.trades,0) ELSE coalesce(f.trades,0) END" : "NULL::bigint"} AS trades,
+    ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.volume_wei,0) ELSE coalesce(f.volume,0) END" : "NULL::numeric"} AS volume,
+    units.conflict AS units_conflict,
+    CASE WHEN NOT units.conflict THEN lp.decimals END AS decimals,
+    CASE WHEN NOT units.conflict THEN ${ledgerPriceSql("s.sqrt_price_x96", "lp.decimals")} END AS price,
+    ${answers ? ledgerServedChangeSql({ hour: "$8::integer", decimals: "lp.decimals", conflict: "units.conflict", latest: "s.sqrt_price_x96", active: "f.pool_ref IS NOT NULL", baseline: "base.sqrt" }) : "NULL::numeric"} AS change,
+    ${answers ? ledgerBaselineFoundSql("s.sqrt_price_x96", "f.pool_ref IS NOT NULL", "base.sqrt") : "false"} AS baseline
+  FROM ledger_page lp
+  LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=lp.pool_id
+  CROSS JOIN LATERAL (SELECT coalesce((a.market->>'decimals')::integer<>lp.decimals,false) AS conflict) units
+  LEFT JOIN agg_pool_state s ON s.chain_id=4663 AND s.pool_ref=lp.pool_ref
+  LEFT JOIN ledger_page_flow f ON f.pool_ref=lp.pool_ref
+  LEFT JOIN LATERAL (${ledgerBaselineSql("lp.pool_ref", "$8::integer", "f.pool_ref IS NOT NULL")}) base ON true
+)`
+      : ""
+  }, broad_metrics AS (
   SELECT p.pool_id,$2::bigint AS through_block,$6::bigint AS asof_timestamp,$3::bigint AS window_start,
     coalesce(f.trades,0) AS trades,CASE WHEN coalesce(f.unsupported,0)=0 THEN coalesce(f.volume,0) END AS volume,
     units.decimals,units.block_number AS unit_block,units.block_hash AS unit_hash,units.timestamp AS unit_time,units.source AS unit_source,
@@ -190,15 +312,20 @@ export function broadExploreCtes() {
   WHERE ${broadCoverageSql("p.")}
 ), metrics AS (
   SELECT p.pool_id,a.market,a.liquidity_wei,a.holders_count,a.from_block,a.from_timestamp,a.generated_at,a.source_kind,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN true ELSE false END AS broad_selected,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.volume ELSE a.volume END AS volume,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.trades ELSE a.trades END AS trades,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.price ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN (a.market->>'priceWei')::numeric END END AS price,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.change ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN a.change END END AS change,
+    CASE ${when("false")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN true ELSE false END AS broad_selected,
+    CASE ${when("l.volume")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.volume ELSE a.volume END AS volume,
+    CASE ${when("l.trades")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.trades ELSE a.trades END AS trades,
+    CASE ${when("l.price")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.price ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN (a.market->>'priceWei')::numeric END END AS price,
+    CASE ${when("l.change")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.change ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN a.change END END AS change,
     a.through_block,a.asof_timestamp,
-    b.unit_block,b.unit_hash,b.unit_time,b.unit_source,b.decimals,
-    CASE WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.units_conflict ELSE a.units_conflict END AS units_conflict,b.sqrt_price_x96,b.price_block,b.price_hash,b.price_time,
-    b.baseline_block,b.baseline_hash,b.baseline_time,b.window_start,a.through_hash AS deep_hash
-  FROM page p LEFT JOIN deep_metrics a USING(pool_id) LEFT JOIN broad_metrics b USING(pool_id)
+    b.unit_block,b.unit_hash,b.unit_time,b.unit_source,${column("b.decimals", "l.decimals", "decimals")},
+    CASE ${when("l.units_conflict")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.units_conflict ELSE a.units_conflict END AS units_conflict,b.sqrt_price_x96,b.price_block,b.price_hash,b.price_time,
+    b.baseline_block,b.baseline_hash,b.baseline_time,b.window_start,a.through_hash AS deep_hash${
+      ledger
+        ? `,
+    ${selected} AS ledger_selected,l.baseline AS ledger_baseline`
+        : ""
+    }
+  FROM page p LEFT JOIN deep_metrics a USING(pool_id) LEFT JOIN broad_metrics b USING(pool_id)${ledger ? " LEFT JOIN ledger_metrics l USING(pool_id)" : ""}
 )`;
 }

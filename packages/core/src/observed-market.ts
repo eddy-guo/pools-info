@@ -10,6 +10,10 @@ export interface ObservedMarket {
   token: string;
   decimals: number | null;
   priceWei: string | null;
+  /** Fully diluted value in wei: the price times the token's measured total
+   * supply. Served only with the aggregate ledger's market, null there until
+   * the supply has been read; absent on the broad and raw paths. */
+  fdvWei?: string | null;
   window: LiveWindow;
   volumeWei: string | null;
   trades: number | null;
@@ -35,7 +39,10 @@ export interface ObservedMarket {
     unitBasis:
       | (MarketBoundary & {
           decimals: number;
-          source: "broad_token_units" | "verified_deep_snapshot";
+          source:
+            | "broad_token_units"
+            | "verified_deep_snapshot"
+            | "aggregate_ledger";
         })
       | null;
     unitsConflict: boolean;
@@ -44,7 +51,9 @@ export interface ObservedMarket {
   };
   history: {
     priceSemantics: "declared_cutoff_display_units";
-    intervalSeconds: 60;
+    /** One minute from the broad rollups and raw copies; one hour from the
+     * aggregate ledger's pool hours. Every candle time is a multiple of it. */
+    intervalSeconds: 60 | 3600;
     fromTimestamp: number | null;
     truncated: boolean;
     candles: {
@@ -88,6 +97,8 @@ export function assertObservedMarket(
     v.window !== window ||
     !(v.decimals === null || (integer(v.decimals) && v.decimals <= 36)) ||
     !(v.priceWei === null || uint(v.priceWei)) ||
+    !(v.fdvWei === undefined || v.fdvWei === null || uint(v.fdvWei)) ||
+    (v.fdvWei != null && v.priceWei === null) ||
     !(v.volumeWei === null || uint(v.volumeWei)) ||
     !(v.trades === null || integer(v.trades)) ||
     !(
@@ -115,7 +126,7 @@ export function assertObservedMarket(
     v.observations.length > 50 ||
     !v.history ||
     v.history.priceSemantics !== "declared_cutoff_display_units" ||
-    v.history.intervalSeconds !== 60 ||
+    (v.history.intervalSeconds !== 60 && v.history.intervalSeconds !== 3600) ||
     typeof v.history.truncated !== "boolean" ||
     !(v.history.fromTimestamp === null || integer(v.history.fromTimestamp)) ||
     !Array.isArray(v.history.candles) ||
@@ -161,9 +172,11 @@ export function assertObservedMarket(
   if (
     (c.unitBasis &&
       (c.unitBasis.decimals !== v.decimals ||
-        !["broad_token_units", "verified_deep_snapshot"].includes(
-          c.unitBasis.source,
-        ))) ||
+        ![
+          "broad_token_units",
+          "verified_deep_snapshot",
+          "aggregate_ledger",
+        ].includes(c.unitBasis.source))) ||
     (c.unitBasis &&
       (!c.cutoff ||
         c.unitBasis.block > c.cutoff.block ||
@@ -209,7 +222,7 @@ export function assertObservedMarket(
     if (
       !bar ||
       !integer(bar.time) ||
-      bar.time % 60 ||
+      bar.time % v.history.intervalSeconds ||
       bar.time <= previous ||
       ![bar.open, bar.high, bar.low, bar.close, bar.volume].every(uint) ||
       !c.cutoff ||

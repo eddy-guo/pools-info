@@ -39,7 +39,7 @@ export interface AnalyticsPoolStats {
 }
 export interface AnalyticsPoolRow extends CatalogPool {
   marketCoverage?: {
-    source: "canonical_broad" | "deep_publication";
+    source: "canonical_broad" | "deep_publication" | "aggregate_ledger";
     startBlock: number;
     cutoff: MarketBoundary;
     windowStart: number;
