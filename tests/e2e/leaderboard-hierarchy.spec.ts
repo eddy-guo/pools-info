@@ -80,7 +80,7 @@ test("leaderboard leads with signed realized, ROI and W/L over secondary columns
     );
     expect(
       await rows.first().evaluate((row) => row.getBoundingClientRect().height),
-    ).toBe(74);
+    ).toBe(62);
     return;
   }
   const cards = page.locator(".mobile-trader");

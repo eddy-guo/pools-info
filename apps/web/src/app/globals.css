@@ -41,21 +41,6 @@
   --purple: #e894f0;
   color-scheme: dark;
 }
-.evidence-badge {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px 7px;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--muted);
-  background: var(--panel);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: normal;
-}
 * {
   box-sizing: border-box;
 }
@@ -4808,7 +4793,9 @@ main {
     font-size: 22px;
     font-weight: 600;
   }
-  .mobile-trader-value > span:last-child {
+  /* The caption follows the number; a pending row holds the number alone and
+     must keep the number's size so the card below it never moves on resolve. */
+  .mobile-trader-value > .number + span {
     font-size: 11px;
     color: var(--muted);
   }
@@ -4847,9 +4834,6 @@ main {
     font-size: var(--text-base);
     font-weight: 400;
     color: var(--color-text-2);
-  }
-  .mobile-trader > .panel-footnote {
-    font-weight: 400;
   }
   .mobile-trader > .record-cell {
     margin-top: 14px;
@@ -5384,17 +5368,18 @@ a.wallet-top-pool:hover {
   color: var(--color-faint);
 }
 .leaderboard-panel .desktop-traders {
-  min-height: calc(25 * 74px + 44px);
+  min-height: calc(25 * 62px + 44px);
 }
-.leaderboard-panel .data-table tbody tr {
-  height: 74px;
+.leaderboard-panel .data-table tbody tr,
+.leaderboard-panel .data-table tbody td {
+  height: 62px;
 }
 .leaderboard-panel .live-podium {
-  height: 236px;
+  height: 215px;
   padding-top: 16px;
 }
 .leaderboard-panel .live-podium > * {
-  height: 204px;
+  height: 183px;
   overflow: auto;
 }
 
@@ -5536,11 +5521,11 @@ a.wallet-top-pool:hover {
      its neighbours now that the podium sits inside the first mobile screen. */
   .leaderboard-panel .live-podium a {
     display: grid;
-    grid-template-columns: 35px minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: 35px minmax(0, 1fr);
     grid-template-areas:
-      "avatar label label"
-      "avatar name name"
-      "badge badge value";
+      "avatar label"
+      "avatar name"
+      ". value";
     column-gap: 12px;
     row-gap: 8px;
     align-items: center;
@@ -5554,18 +5539,19 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .live-podium a > strong {
     grid-area: name;
   }
-  .leaderboard-panel .live-podium a > strong + span {
-    grid-area: badge;
-  }
   .leaderboard-panel .live-podium a > .number {
     grid-area: value;
   }
   .leaderboard-panel .mobile-traders {
-    min-height: calc(25 * 268px);
+    min-height: calc(25 * 224px);
   }
   .leaderboard-panel .mobile-trader {
-    height: 268px;
+    height: 224px;
     overflow: auto;
+  }
+  /* The identity follows its rank now that no badge holds the right edge. */
+  .leaderboard-panel .mobile-trader-heading {
+    justify-content: flex-start;
   }
   /* Mobile pools are cards with no header row, so the message starts flush. */
   .explore-page .table-region > .empty-state {

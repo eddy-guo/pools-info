@@ -39,7 +39,7 @@ const cells: Cell[] = [
       mobile: ".mobile-traders .mobile-trader:has(.address-chip)",
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/\?window=All$/,
-    height: { desktop: 74, mobile: 268 },
+    height: { desktop: 62, mobile: 224 },
   },
   {
     name: "creators sender",
