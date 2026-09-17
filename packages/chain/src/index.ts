@@ -34,6 +34,11 @@ export {
   type ContractReads,
   type ExpandedContractRead,
 } from "./multicall";
+export {
+  readTokenSupplies,
+  totalSupplySelector,
+  type TokenSupply,
+} from "./token-supply";
 
 export { resolveEnsName, normalizeEnsName } from "./ens";
 

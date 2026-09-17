@@ -31,7 +31,8 @@
     "recent:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/recent-main.ts run",
     "hypersync:plan": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts plan",
     "hypersync:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts run",
-    "ledger:pass": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-pass-main.ts"
+    "ledger:pass": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-pass-main.ts",
+    "supply:read": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/token-supply-main.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
