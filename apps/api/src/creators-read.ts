@@ -5,6 +5,7 @@ import type {
 } from "@pools/core";
 import { accountingCoverage, windowFrom } from "./accounting-read";
 import {
+  announcedBroadMarketCutoff,
   broadExploreCut,
   broadWindowStart,
   rankedFlowCtes,
@@ -128,7 +129,7 @@ export async function readCreators(
   }));
   return {
     coverage,
-    broadMarketCutoff: broadCut,
+    broadMarketCutoff: announcedBroadMarketCutoff(broadCut),
     window,
     sort,
     direction: direction === "ASC" ? "asc" : "desc",

@@ -183,6 +183,14 @@ function integerString(value: unknown): string {
 function text(value: unknown): string {
   return typeof value === "string" ? value : invalid();
 }
+/** A display string the website renders as-is. The website's validator
+ * requires null or a non-empty string of at most 256 characters, so an
+ * empty upstream string maps to null and a longer one clips to fit. */
+function display(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const s = text(value);
+  return s === "" ? null : s.slice(0, 256);
+}
 function seconds(value: unknown): number {
   const ms = Date.parse(text(value));
   return Number.isFinite(ms) ? Math.floor(ms / 1000) : invalid();
@@ -215,7 +223,7 @@ export function normalizeTransaction(value: unknown): WalletHistoryTransaction {
     timestamp: nullable(t.timestamp, seconds),
     from: address(t.from),
     to: nullable(t.to, address),
-    method: nullable(t.method, text),
+    method: display(t.method),
     status,
     value: integerString(t.value),
     fee: fee ? nullable(fee.value, integerString) : null,
@@ -236,14 +244,14 @@ export function normalizeTokenTransfer(
     to: address(t.to),
     token: {
       address: address(token.address_hash),
-      symbol: nullable(token.symbol, text),
-      name: nullable(token.name, text),
+      symbol: display(token.symbol),
+      name: display(token.name),
       decimals: decimals(total.decimals ?? token.decimals),
-      type: nullable(token.type, text),
+      type: display(token.type),
     },
     value: nullable(total.value, integerString),
     tokenId: nullable(total.token_id, integerString),
-    method: nullable(t.method, text),
+    method: display(t.method),
   };
 }
 

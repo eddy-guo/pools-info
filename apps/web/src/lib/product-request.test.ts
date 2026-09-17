@@ -832,3 +832,40 @@ test("explorer history rejects another wallet's page and unshowable rows", async
     },
   );
 });
+
+test("explorer history display strings accept null and up to 256 characters, and reject empty or longer", async () => {
+  const { validateWalletHistoryResponse } = await import(
+    "./wallet-history-response"
+  );
+  const valid = historyPage();
+  const withMethod = (method: string | null) =>
+    historyPage({ items: [{ ...valid.items[0], method }] });
+  assert.doesNotThrow(() =>
+    validateWalletHistoryResponse(
+      withMethod(null),
+      historyWallet,
+      "transactions",
+    ),
+  );
+  assert.doesNotThrow(() =>
+    validateWalletHistoryResponse(
+      withMethod("x".repeat(256)),
+      historyWallet,
+      "transactions",
+    ),
+  );
+  assert.throws(() =>
+    validateWalletHistoryResponse(
+      withMethod(""),
+      historyWallet,
+      "transactions",
+    ),
+  );
+  assert.throws(() =>
+    validateWalletHistoryResponse(
+      withMethod("x".repeat(257)),
+      historyWallet,
+      "transactions",
+    ),
+  );
+});
