@@ -41,6 +41,42 @@ test("rejects invalid parameters, duplicate parameters, cross-query and malforme
   assert.equal(searchPattern("a_%'"), "%a\\_\\%'%");
 });
 
+test("creators requests validate their own vocabulary", () => {
+  const parsed = parseRequest("/v1/creators");
+  assert.equal(parsed.route, "creators");
+  assert.deepEqual(parsed.creators, {
+    window: "All",
+    limit: 25,
+    offset: 0,
+    sort: "launches",
+    direction: "desc",
+  });
+  assert.equal(
+    parseRequest("/v1/creators?sort=median&direction=asc&window=7d&limit=100")
+      .creators.sort,
+    "median",
+  );
+  for (const [url, code] of [
+    ["/v1/creators?sort=launch", "invalid_sort"],
+    ["/v1/creators?sort=trades", "invalid_sort"],
+    ["/v1/creators?direction=up", "invalid_direction"],
+    ["/v1/creators?window=1d", "invalid_window"],
+    ["/v1/creators?limit=0", "invalid_limit"],
+    ["/v1/creators?limit=101", "invalid_limit"],
+    ["/v1/creators?offset=-1", "invalid_offset"],
+    ["/v1/creators?q=x", "invalid_parameter"],
+    ["/v1/creators?sort=volume&sort=volume", "invalid_parameter"],
+  ])
+    assert.throws(
+      () => parseRequest(url),
+      (error: unknown) =>
+        error instanceof RequestError &&
+        error.status === 400 &&
+        error.code === code,
+      url,
+    );
+});
+
 test("SQL text search is parameterized and wildcards are escaped", async () => {
   const calls: { sql: string; values?: unknown[] }[] = [];
   await readData(async (sql, values) => {

@@ -374,17 +374,6 @@ export function Candles(
           Fit loaded history
         </button>
       </div>
-      <p className="panel-footnote">
-        {observed
-          ? `${interval} candles in declared cutoff token units`
-          : `${interval} candles from observed post-swap prices`}{" "}
-        · volume in ETH · UTC. Gaps contain no invented trades.{" "}
-        {metric === "FDV" &&
-          "FDV uses contract total supply at the capture cutoff. "}
-        {observed &&
-          "Historical price states use the declared cutoff decimals; decimals were not independently observed at each swap. "}
-        Panning does not fetch older history yet.
-      </p>
       <p className="chart-credit">
         <a href="https://www.tradingview.com/" target="_blank" rel="noreferrer">
           TradingView Lightweight Charts™

@@ -3,6 +3,7 @@ import { parseFollowingWallets } from "@pools/core";
 import type {
   AnalyticsExploreOptions,
   AnalyticsLeaderboardOptions,
+  CreatorsOptions,
   LiveWindow,
   SearchGroup,
   WalletHistoryKind,
@@ -37,6 +38,7 @@ export type Route =
   | "wallet"
   | "explore"
   | "leaderboard"
+  | "creators"
   | "profile"
   | "search"
   | "feed"
@@ -61,6 +63,7 @@ export interface ReadRequest {
   cacheKey: string;
   explore: AnalyticsExploreOptions;
   leaderboard: AnalyticsLeaderboardOptions;
+  creators: CreatorsOptions;
   window: LiveWindow;
   group?: SearchGroup;
 }
@@ -102,6 +105,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/following") route = "following";
   else if (url.pathname === "/v1/explore") route = "explore";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
+  else if (url.pathname === "/v1/creators") route = "creators";
   else if (url.pathname === "/v1/search") route = "search";
   else if (sale) {
     route = "trade-share";
@@ -145,23 +149,25 @@ export function parseRequest(input: string): ReadRequest {
             ]
           : route === "leaderboard"
             ? ["window", "minTrades", "metric", "offset", "limit"]
-            : route === "profile" || route === "pool"
-              ? ["window"]
-              : route === "search"
-                ? ["q", "group"]
-                : route === "pools"
-                  ? ["q", "limit", "cursor"]
-                  : route === "live-trades"
-                    ? ["poolId"]
-                    : route === "trades"
-                      ? ["poolId", "limit", "cursor"]
-                      : route === "wallet"
-                        ? ["limit", "cursor"]
-                        : route === "history"
-                          ? ["kind", "cursor"]
-                          : route === "feed"
-                            ? ["pools"]
-                            : [];
+            : route === "creators"
+              ? ["window", "sort", "direction", "offset", "limit"]
+              : route === "profile" || route === "pool"
+                ? ["window"]
+                : route === "search"
+                  ? ["q", "group"]
+                  : route === "pools"
+                    ? ["q", "limit", "cursor"]
+                    : route === "live-trades"
+                      ? ["poolId"]
+                      : route === "trades"
+                        ? ["poolId", "limit", "cursor"]
+                        : route === "wallet"
+                          ? ["limit", "cursor"]
+                          : route === "history"
+                            ? ["kind", "cursor"]
+                            : route === "feed"
+                              ? ["pools"]
+                              : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");
@@ -198,7 +204,11 @@ export function parseRequest(input: string): ReadRequest {
   const window = choice(
     "window",
     ["1h", "6h", "24h", "7d", "30d", "All"] as const,
-    route === "leaderboard" ? "7d" : route === "profile" ? "All" : "24h",
+    route === "leaderboard"
+      ? "7d"
+      : route === "profile" || route === "creators"
+        ? "All"
+        : "24h",
   );
   const offsetRaw = url.searchParams.get("offset") ?? "0",
     minRaw = url.searchParams.get("minTrades") ?? "10";
@@ -218,11 +228,15 @@ export function parseRequest(input: string): ReadRequest {
     limit: +rawLimit,
     offset: +offsetRaw,
     ids,
-    sort: choice(
-      "sort",
-      ["volume", "trades", "change", "launch", "liquidity"] as const,
-      "launch",
-    ),
+    // Creators has its own sort vocabulary, validated below.
+    sort:
+      route === "creators"
+        ? "launch"
+        : choice(
+            "sort",
+            ["volume", "trades", "change", "launch", "liquidity"] as const,
+            "launch",
+          ),
     direction: choice("direction", ["asc", "desc"] as const, "desc"),
     view: choice(
       "view",
@@ -236,6 +250,16 @@ export function parseRequest(input: string): ReadRequest {
     offset: +offsetRaw,
     minTrades: +minRaw,
     metric: choice("metric", ["realized", "net"] as const, "realized"),
+  };
+  const creators: CreatorsOptions = {
+    window,
+    limit: +rawLimit,
+    offset: +offsetRaw,
+    sort:
+      route === "creators"
+        ? choice("sort", ["launches", "volume", "median"] as const, "launches")
+        : "launches",
+    direction: choice("direction", ["asc", "desc"] as const, "desc"),
   };
   const kind = choice("kind", historyKinds, "transactions");
   const group = url.searchParams.has("group")
@@ -277,6 +301,7 @@ export function parseRequest(input: string): ReadRequest {
         pools,
         explore,
         leaderboard,
+        creators,
         group,
       ]),
     )
@@ -342,6 +367,7 @@ export function parseRequest(input: string): ReadRequest {
     cacheKey: JSON.stringify([scope, +rawLimit, cursor, page]),
     explore,
     leaderboard,
+    creators,
     window,
     group,
   };

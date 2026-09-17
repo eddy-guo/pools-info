@@ -2,6 +2,7 @@
 import Link from "next/link";
 import styles from "./detail-design.module.css";
 import { useState } from "react";
+import { RefreshCw } from "lucide-react";
 import {
   poolWindow,
   shortAddress,
@@ -22,7 +23,7 @@ import {
   useMarket,
   utc,
 } from "./live-ui";
-import { SkeletonLine, RowsSkeleton } from "./skeletons";
+import { RowsSkeleton } from "./skeletons";
 import { TradeStream } from "./trade-stream";
 import { Candles } from "./candles";
 import { AuditLeaderboard } from "./traders";
@@ -36,7 +37,6 @@ export function PoolDetail({ id }: { id: string }) {
   const {
     market: loadedMarket,
     snapshot: loadedSnapshot,
-    error,
     loading,
     refresh,
     refreshing,
@@ -109,7 +109,6 @@ export function PoolDetail({ id }: { id: string }) {
         snapshot={m ? s : undefined}
         publication={publication ?? undefined}
         chart={expectChart}
-        published={!!saved.data || !saved.error}
         audit={publication?.audit ?? audits[id]}
         refresh={() => {
           refresh();
@@ -117,7 +116,6 @@ export function PoolDetail({ id }: { id: string }) {
         }}
         loading={loading || saved.loading || refreshing}
         pending={!saved.data && !m && saved.loading}
-        error={saved.error ?? (error || undefined)}
       />
     );
   }
@@ -134,7 +132,6 @@ export function PoolDetail({ id }: { id: string }) {
         market={saved.data.market}
         refresh={saved.refresh}
         loading={saved.loading}
-        error={saved.error}
       />
     );
   if (!m)
@@ -145,13 +142,6 @@ export function PoolDetail({ id }: { id: string }) {
             remembered?.name ??
             (loading ? "Loading saved pool…" : "Pool name unavailable")}
         </h1>
-        {(saved.data || loading) && (
-          <p>
-            {saved.data && !saved.data.analytics
-              ? "This verified launch is in the catalog. Its background analytics are still processing; no prices, holders or profit are estimated."
-              : "Loading saved market data. No blockchain scan is started by this page."}
-          </p>
-        )}
         <Link className="button" href="/">
           Explore pools
         </Link>
@@ -219,14 +209,6 @@ export function PoolDetail({ id }: { id: string }) {
               <h1>{m.name}</h1>
               <span className={styles.symbol}>{m.symbol}</span>
               <span className={styles.mode}>INSTANT</span>
-              {holders?.complete && a && (
-                <span
-                  className="evidence-badge"
-                  title="Birth-contiguous token Transfer history reconciles with contract supply at the saved cutoff. Individual wallet exclusions still apply."
-                >
-                  Verified history
-                </span>
-              )}
             </div>
             <AddressLabel address={m.token} full />
             <div className={styles.meta}>
@@ -239,6 +221,18 @@ export function PoolDetail({ id }: { id: string }) {
         </div>
         <div className={styles.actions}>
           <WatchButton id={m.id} />
+          <button
+            className="icon-button"
+            title="Refresh"
+            aria-label="Refresh"
+            onClick={() => {
+              refresh();
+              saved.refresh();
+            }}
+            disabled={refreshing}
+          >
+            <RefreshCw size={14} />
+          </button>
           <a
             className="button secondary"
             href={`${explorer}/token/${m.token}`}
@@ -257,37 +251,10 @@ export function PoolDetail({ id }: { id: string }) {
           </a>
         </div>
       </div>
-      <div className="live-controls">
-        <button
-          className="button secondary"
-          onClick={() => {
-            refresh();
-            saved.refresh();
-          }}
-          disabled={refreshing}
-        >
-          {refreshing ? "Refreshing pool…" : "Refresh pool data"}
-        </button>
-        {error && (
-          <p role="status">
-            Refresh unavailable. The captured pool data remains visible.
-          </p>
-        )}
-      </div>
-      <p className="page-intro-note">
-        This pool’s market data is through block{" "}
-        {s.toBlock.toLocaleString("en-US")} · {utc(s.toTimestamp)}. Audit
-        results below have their own cutoff.
-      </p>
       <div className="workspace-grid">
         <div>
           <section className="panel">
-            <div className={styles.context}>
-              <strong>Price context</strong>
-              <span>ETH · Robinhood Chain</span>
-            </div>
             <div className={styles.chartHeader}>
-              {" "}
               <div className="live-price-heading">
                 {m.priceWei ? (
                   <Price wei={m.priceWei} />
@@ -305,9 +272,6 @@ export function PoolDetail({ id }: { id: string }) {
                         ) : (
                           <Change value={v.change} />
                         )}
-                        <small>
-                          {v.sinceLaunch ? "since first swap" : "at cutoff"}
-                        </small>
                       </span>
                     );
                   })}
@@ -317,38 +281,26 @@ export function PoolDetail({ id }: { id: string }) {
             <Candles market={m} snapshot={s} />
           </section>
           <div className="stats-grid live-six-stats">
-            <Stat label="FDV" note="Spot price × contract total supply">
+            <Stat label="FDV">
               <Eth wei={fdv} />
             </Stat>
             <Stat label="Liquidity">
               <Unavailable />
             </Stat>
-            <Stat
-              label="Observed 24h volume"
-              note={
-                stats.sinceLaunch
-                  ? "Pool launched within this window"
-                  : "Within covered history"
-              }
-            >
+            <Stat label="Observed 24h volume">
               <Eth wei={stats.volumeWei} />
             </Stat>
-            <Stat label="Holders">
-              {saved.loading && !saved.data ? (
-                <SkeletonLine width={48} height={24} />
-              ) : holders?.complete ? (
+            <Stat label="Holders" pending={saved.loading && !saved.data}>
+              {holders?.complete ? (
                 holders.positiveHoldersExcludingInfrastructure
-              ) : (
+              ) : saved.loading && !saved.data ? null : (
                 <Unavailable />
               )}
             </Stat>
             <Stat label="Fees compounded">
               <Unavailable />
             </Stat>
-            <Stat
-              label="Creator fee option"
-              note="Derived from launch strategy"
-            >
+            <Stat label="Creator fee option">
               {m.creatorFees ? "Enabled" : "Disabled"}
             </Stat>
           </div>
@@ -371,78 +323,50 @@ export function PoolDetail({ id }: { id: string }) {
                 markets={[m]}
               />
             ) : tab === "Top traders" ? (
-              <>
-                <p className="panel-footnote">
-                  Published trader positions load automatically. Unsupported
-                  positions remain excluded.
-                </p>
-                {a ? (
-                  <AuditLeaderboard audit={a} />
-                ) : (
-                  <p className="panel-footnote">
-                    Run the audit to populate real trader positions for this
-                    pool.
-                  </p>
-                )}
-              </>
+              a ? (
+                <AuditLeaderboard audit={a} />
+              ) : (
+                <div className="empty-state">
+                  <h3>Trader PnL unavailable</h3>
+                </div>
+              )
             ) : saved.loading && !saved.data ? (
               <RowsSkeleton label="Loading holder balances" />
             ) : holders ? (
-              <>
-                <p className="panel-footnote">
-                  {holders.complete
-                    ? "Reconciled holder snapshot"
-                    : "Partial tracked balances"}{" "}
-                  · block {holders.coverage.toBlock.toLocaleString()} ·
-                  infrastructure shown separately. Balances do not establish
-                  cost basis or PnL.
-                </p>
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Holder</th>
-                        <th>Balance</th>
-                        <th>Classification</th>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Holder</th>
+                      <th>Balance</th>
+                      <th>Classification</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {holderRows.slice(0, 100).map((h) => (
+                      <tr key={h.address}>
+                        <td>
+                          <Link className="mono" href={`/wallet/${h.address}/`}>
+                            {shortAddress(h.address)}
+                          </Link>
+                        </td>
+                        <td>
+                          {(
+                            Number(h.balanceRaw) /
+                            10 ** m.decimals
+                          ).toLocaleString("en-US", {
+                            maximumSignificantDigits: 8,
+                          })}
+                        </td>
+                        <td>{h.infrastructureLabel ?? "Holder"}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {holderRows.slice(0, 100).map((h) => (
-                        <tr key={h.address}>
-                          <td>
-                            <Link
-                              className="mono"
-                              href={`/wallet/${h.address}/`}
-                            >
-                              {shortAddress(h.address)}
-                            </Link>
-                          </td>
-                          <td>
-                            {(
-                              Number(h.balanceRaw) /
-                              10 ** m.decimals
-                            ).toLocaleString("en-US", {
-                              maximumSignificantDigits: 8,
-                            })}
-                          </td>
-                          <td>{h.infrastructureLabel ?? "Holder"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="panel-footnote">
-                  Showing {Math.min(100, holderRows.length)} of{" "}
-                  {holderRows.length} positive tracked balances.
-                </p>
-              </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <div className="empty-state">
-                <h3>Holder snapshot is processing</h3>
-                <p>
-                  Holders are published by the background collector. This page
-                  does not scan transfers on demand.
-                </p>
+                <h3>Holder accounting unavailable</h3>
               </div>
             )}
           </section>
@@ -469,11 +393,6 @@ export function PoolDetail({ id }: { id: string }) {
                 </div>
               ))}
             </dl>
-            <p className="panel-footnote">
-              Adjusted concentration excludes labelled infrastructure balances,
-              including the v4 PoolManager. These figures need a reconciled
-              holder snapshot.
-            </p>
           </section>
           <section className="panel">
             <div className="panel-heading">
