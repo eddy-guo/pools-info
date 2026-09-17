@@ -127,14 +127,14 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
       api: `wallets/${topWallet}`,
       label: "Loading wallet analytics",
       skeleton: ".wallet-top-pools[aria-busy=true]",
-      loaded: "Positions by pool",
+      loadedCell: "Holding",
     },
     {
       url: "/traders/?window=All",
       api: "leaderboard",
       label: "Loading trader rankings",
       skeleton: ".leaderboard-panel [data-pending=true]",
-      loaded: null,
+      loadedCell: null,
     },
   ]) {
     const payload = await (
@@ -166,9 +166,9 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
     await expect.poll(() => started).toBe(true);
     release();
     await expect(skeleton).toHaveCount(0);
-    if (entry.loaded)
+    if (entry.loadedCell)
       await expect(
-        page.getByRole("heading", { name: entry.loaded }),
+        page.locator("thead th", { hasText: entry.loadedCell }),
       ).toBeVisible();
     else
       await expect(

@@ -47,15 +47,17 @@ export function TokenIcon({
 export function Avatar({
   address,
   small = false,
+  large = false,
 }: {
   address: string;
   small?: boolean;
+  large?: boolean;
 }) {
   const tint = identityTint(address);
   return (
     <span
       aria-hidden="true"
-      className={`avatar ${small ? "small" : ""}`}
+      className={`avatar ${small ? "small" : ""} ${large ? "large" : ""}`}
       data-initials={address.slice(2, 4).toUpperCase()}
       style={
         {
@@ -569,6 +571,16 @@ export function Chart({
     points[Math.floor((points.length * 2) / 3)],
     points.at(-1)!,
   ];
+  const known = dates.filter((p): p is PricePoint => !!p);
+  // A tick reads as a date so a viewer can place it in time; once every tick
+  // already falls on the same UTC day, the date says nothing new and the
+  // time is the informative part instead.
+  const oneDay =
+    known.length > 1 &&
+    known.every(
+      (p) =>
+        Math.floor(p.time / 86400) === Math.floor(known[0].time / 86400),
+    );
   return (
     <div className="chart" aria-busy={pending}>
       <div className="chart-readout">
@@ -698,11 +710,17 @@ export function Chart({
         {dates.map((p, i) => (
           <span key={i}>
             {p
-              ? new Date(p.time * 1000).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  timeZone: "UTC",
-                })
+              ? oneDay
+                ? new Date(p.time * 1000).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    timeZone: "UTC",
+                  })
+                : new Date(p.time * 1000).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    timeZone: "UTC",
+                  })
               : pending
                 ? "Pending"
                 : "N/A"}

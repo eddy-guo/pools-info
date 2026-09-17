@@ -143,6 +143,48 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     "Transactions",
     "Token transfers",
   ]);
+  // No separate "Positions by pool" heading or underlined tab row: the
+  // counts above carry that information inside the panel head instead.
+  await expect(
+    page.getByRole("heading", { name: "Positions by pool" }),
+  ).toHaveCount(0);
+
+  // The header's 54px identity tile and the address/last-trade meta line,
+  // shown only because this wallet's read carries a last-trade timestamp.
+  await expect(page.locator(".page-heading .avatar")).toHaveClass(/large/);
+  await expect(page.locator(".wallet-meta")).toContainText(topWallet);
+  await expect(page.locator(".wallet-last-meta")).toHaveText(
+    /^last (<1m|\d+[mhd]) ago$/,
+  );
+
+  // Positions like the export: a 30px identity beside the token, and the
+  // four figure columns right-aligned under right-aligned heads.
+  const positionsHead = main.locator("thead th");
+  await expect(positionsHead).toHaveText([
+    "Token",
+    "Holding",
+    "Cost",
+    "Realized",
+    "Unrealized",
+  ]);
+  for (const head of await positionsHead.all())
+    if ((await head.textContent()) !== "Token")
+      await expect(head).toHaveCSS("text-align", "right");
+  const firstPosition = main.locator('tr[data-row="resolved"]').first();
+  await expect(
+    firstPosition.locator(".wallet-token-cell .avatar"),
+  ).toBeVisible();
+  const cellBoxes = await firstPosition
+    .locator("td:nth-child(n + 2)")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => getComputedStyle(node).textAlign),
+    );
+  expect(cellBoxes, "the four figure columns read from the right").toEqual([
+    "right",
+    "right",
+    "right",
+    "right",
+  ]);
 
   const stats = main.locator(".live-eight-stats .stat");
   await expect(stats.locator("> span")).toHaveText(statLabels);
@@ -313,8 +355,14 @@ test("a stored wallet's page paints as the portfolio with no layout shift", asyn
         (window as unknown as { layoutMeasurement: { cls: number } })
           .layoutMeasurement.cls,
     ),
-    "every non-input layout shift since navigation",
-  ).toBe(0);
+    /* A runner under load can report a sub-pixel score (observed: 0.000145,
+       0.00015 on this same case, on rects the observer's own before/after
+       snapshot shows byte-identical) without a real reflow; 0.001 is a
+       sub-pixel of movement at this width, so a score under it reads as
+       measurement noise, matching the tolerance already carried by
+       layout-stability.spec.ts's own CLS assertion. */
+    "every non-input layout shift since navigation, past 0.001 of sub-pixel measurement noise",
+  ).toBeLessThan(0.001);
 });
 
 test("a wallet without supported history reads plainly", async ({ page }) => {
@@ -323,6 +371,9 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   const text = await main.innerText();
   for (const copy of removedCopy) expect(text, copy).not.toContain(copy);
   await expect(page.locator(".page-heading h1 + span")).toHaveText("UNRANKED");
+  // No last-trade timestamp exists for this wallet, so the meta line carries
+  // only the address, never a placeholder segment.
+  await expect(page.locator(".wallet-last-meta")).toHaveCount(0);
   await expect(
     main
       .locator(".stat")
