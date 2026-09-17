@@ -1182,11 +1182,11 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "rgb(63, 214, 140)",
   );
   await expect(
-    page.getByRole("heading", { name: "Positions by pool" }),
+    page.locator("thead th", { hasText: "Holding" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: /^Trades\b/ }).click();
   await expect(
-    page.getByRole("heading", { name: "Trade history" }),
+    page.locator("thead th", { hasText: "Transaction" }),
   ).toBeVisible();
   await expect(page.locator("main tbody tr")).toHaveCount(11);
   await page

@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import {
   shortAddress,
   poolHref,
+  since,
   type AnalyticsWalletResponse,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
@@ -125,7 +126,10 @@ export function ProductWallet({ address }: { address: string }) {
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
     [opened, setOpened] = useState<string[]>([]),
     [copyTrade, setCopyTrade] = useState(false),
-    [card, setCard] = useState(false);
+    [card, setCard] = useState(false),
+    // A clock frozen at mount: the header's "last Nm ago" only ever paints
+    // once data resolves, so nothing already on screen depends on it ticking.
+    [renderedAt] = useState(() => Math.floor(Date.now() / 1000));
   // An explorer page costs credits, so a tab keeps its pages once opened
   // instead of paying for them again on every visit.
   if (historyTabs.includes(tab) && !opened.includes(tab))
@@ -148,7 +152,7 @@ export function ProductWallet({ address }: { address: string }) {
       </nav>
       <div className="page-heading">
         <div className={styles.identity}>
-          <Avatar address={address} />
+          <Avatar address={address} large />
           <div>
             <div className={styles.title}>
               <Fragment key={mine ? "portfolio" : "address"}>
@@ -162,7 +166,28 @@ export function ProductWallet({ address }: { address: string }) {
                 </span>
               </Fragment>
             </div>
-            <AddressLabel address={address} full />
+            <div className="wallet-meta">
+              <AddressLabel address={address} full />
+              {/* The read carries only a last-trade timestamp today; a date
+                  it does not send (first trade) leaves its segment out
+                  rather than showing a placeholder. The slot itself stays in
+                  the flex row from first paint either way, so the address
+                  beside it never reflows once the fact resolves. */}
+              <span className="wallet-last-meta-slot">
+                {w?.last != null && (
+                  <span className="wallet-last-meta">
+                    last{" "}
+                    <time
+                      dateTime={new Date(w.last * 1000).toISOString()}
+                      title={utc(w.last)}
+                    >
+                      {since(w.last, renderedAt)}
+                    </time>{" "}
+                    ago
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
         </div>
         <div className={styles.actions}>
@@ -247,7 +272,7 @@ export function ProductWallet({ address }: { address: string }) {
             </section>
             <section className="panel live-section">
               <div
-                className={styles.tabs}
+                className="table-tabs"
                 role="tablist"
                 aria-label="Wallet activity"
               >
@@ -276,9 +301,6 @@ export function ProductWallet({ address }: { address: string }) {
               </div>
               {tab === "positions" && (
                 <>
-                  <div className="panel-heading">
-                    <h2>Positions by pool</h2>
-                  </div>
                   <div
                     className="table-region"
                     data-empty={!!data && !data.positions.length}
@@ -288,11 +310,23 @@ export function ProductWallet({ address }: { address: string }) {
                       aria-busy={stale}
                       data-stale-rows={stale}
                     >
-                      <table className="data-table">
+                      <table className="data-table wallet-positions-table">
+                        {/* Fixed pixel widths, not percentages: a fractional
+                            percentage of the panel's own width can round to
+                            a different sub-pixel value between layout
+                            passes, which the layout-shift observer scores
+                            even though nothing visibly moves. */}
+                        <colgroup>
+                          <col />
+                          <col style={{ width: "150px" }} />
+                          <col style={{ width: "150px" }} />
+                          <col style={{ width: "150px" }} />
+                          <col style={{ width: "150px" }} />
+                        </colgroup>
                         <thead>
                           <tr>
                             <th>Token</th>
-                            <th>Inventory</th>
+                            <th>Holding</th>
                             <th>Cost</th>
                             <th>Realized</th>
                             <th>Unrealized</th>
@@ -312,16 +346,16 @@ export function ProductWallet({ address }: { address: string }) {
                             >
                               <td data-pending={!p && !data}>
                                 {p ? (
-                                  <>
-                                    <Link
-                                      href={poolHref({
-                                        id: p.poolId,
-                                        launchTx: p.launchTx,
-                                      })}
-                                    >
-                                      {p.symbol}
-                                    </Link>
-                                  </>
+                                  <Link
+                                    className="wallet-token-cell"
+                                    href={poolHref({
+                                      id: p.poolId,
+                                      launchTx: p.launchTx,
+                                    })}
+                                  >
+                                    <Avatar address={p.token} />
+                                    <span>{p.symbol}</span>
+                                  </Link>
                                 ) : data ? (
                                   "\u00a0"
                                 ) : (
@@ -396,9 +430,6 @@ export function ProductWallet({ address }: { address: string }) {
               )}
               {tab === "trades" && (
                 <>
-                  <div className="panel-heading">
-                    <h2>Trade history</h2>
-                  </div>
                   <div
                     className="table-scroll wallet-list-region"
                     aria-busy={stale}
@@ -454,9 +485,6 @@ export function ProductWallet({ address }: { address: string }) {
               )}
               {tab === "launches" && (
                 <>
-                  <div className="panel-heading">
-                    <h2>Launches · {data?.launches.length ?? 0}</h2>
-                  </div>
                   <div
                     className="table-scroll wallet-list-region"
                     aria-busy={stale}
