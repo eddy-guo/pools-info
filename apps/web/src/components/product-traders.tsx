@@ -4,16 +4,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   shortAddress,
   type AnalyticsLeaderboardResponse,
+  type AnalyticsWalletResponse,
   type AnalyticsWalletSummary,
   type LiveWindow,
 } from "@pools/core";
-import { fetchProduct } from "@/lib/use-product";
+import { fetchProduct, useProduct } from "@/lib/use-product";
 import { useFollowedLeaderboard } from "@/lib/use-followed-leaderboard";
 import { useQuery } from "./state";
 import { useFollowing, FollowRowButton } from "./following";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
 import { AddressChip, Avatar, Change } from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
+import { useMyWallet } from "./my-wallet";
 
 /** The leaderboard never requests past its top 100, whatever the API allows. */
 const CAP = 100;
@@ -318,6 +320,75 @@ function MobileTraderCard({
   );
 }
 
+/**
+ * The export's "YOU · RANK N" row above the podium, for the wallet this
+ * browser marked as its own. Its rank is the wallet read's, never derived
+ * here; without a wallet the row is the quiet prompt at the same height.
+ */
+function MyRank({ window }: { window: LiveWindow }) {
+  const { address } = useMyWallet();
+  return address ? (
+    <MyRankRow address={address} window={window} />
+  ) : (
+    <Link className="my-rank" href="/wallet/">
+      <span className="my-rank-identity">
+        <span className="my-rank-empty" aria-hidden="true" />
+        <span className="my-rank-chip">YOU</span>
+      </span>
+      <span className="my-rank-summary">
+        Mark your wallet on its page to see your rank here
+      </span>
+      <span className="my-rank-link">
+        <span>Find your wallet</span> →
+      </span>
+    </Link>
+  );
+}
+function MyRankRow({
+  address,
+  window,
+}: {
+  address: string;
+  window: LiveWindow;
+}) {
+  const { data } = useProduct<AnalyticsWalletResponse>(
+    `wallets/${address}?window=${window}`,
+  );
+  const w = data?.wallet;
+  return (
+    <Link className="my-rank" href={`/wallet/${address}/?window=${window}`}>
+      <span className="my-rank-identity">
+        <Avatar address={address} small />
+        <span className="mono my-rank-address">{shortAddress(address)}</span>
+        <span className="my-rank-chip">
+          {w?.rank ? `YOU · RANK ${w.rank}` : "YOU"}
+        </span>
+      </span>
+      {/* Each state is its own node, so a resolved value never rewrites the
+          pending text in place. */}
+      {!w ? (
+        <span className="my-rank-summary" data-pending="true" key="pending">
+          Pending
+        </span>
+      ) : w.rank ? (
+        <span className="my-rank-summary" key="ranked">
+          realized <Eth wei={w.realizedWei} signed /> across{" "}
+          <span className="number">
+            {w.rankingTradeCount ?? w.supportedTradeCount}
+          </span>{" "}
+          trades
+        </span>
+      ) : (
+        <span className="my-rank-summary" key="unranked">
+          not ranked in this window
+        </span>
+      )}
+      <span className="my-rank-link">
+        <span>Your wallet</span> →
+      </span>
+    </Link>
+  );
+}
 export function ProductTraders() {
   const { params, set } = useQuery(),
     { window, setWindow } = useWindow("7d");
@@ -435,6 +506,7 @@ export function ProductTraders() {
           />
         </div>
       </div>
+      <MyRank window={window} />
       <section className="panel leaderboard-panel" ref={panelRef}>
         {view === "leaderboard" ? (
           <>

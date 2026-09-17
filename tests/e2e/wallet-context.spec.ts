@@ -58,6 +58,26 @@ async function settled(page: import("@playwright/test").Page, url: string) {
   });
   await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
 }
+/** The behaviour panel's five rows: label, value and the bar's filled share. */
+async function expectBehaviour(
+  page: import("@playwright/test").Page,
+  rows: [label: string, value: string, width: string][],
+) {
+  const region = page.locator(".wallet-behaviour-row");
+  await expect(region.locator("> span:first-child")).toHaveText(
+    rows.map((row) => row[0]),
+  );
+  await expect(region.locator("> .number")).toHaveText(
+    rows.map((row) => row[1]),
+  );
+  expect(
+    await region
+      .locator(".wallet-behaviour-bar > i")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => (node as HTMLElement).style.width),
+      ),
+  ).toEqual(rows.map((row) => row[2]));
+}
 
 test("a ranked wallet shows profile content without coverage or preview copy", async ({
   page,
@@ -71,20 +91,58 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   await expect(main.locator("dialog.feature-dialog")).toHaveCount(0);
 
+  // The right column as the export draws it: alerts, behaviour, most traded.
   const sidebar = page.locator(".market-sidebar");
-  await expect(sidebar.locator("h2").first()).toHaveText("Most traded pools");
+  await expect(sidebar.locator("h2")).toHaveText([
+    "Alerts",
+    "Behaviour",
+    "Most traded pools",
+  ]);
   await expect(sidebar.locator("> *").first()).toHaveClass(/panel/);
+  const alerts = sidebar.locator(".wallet-alerts button");
+  await expect(alerts).toHaveText([
+    /^Every trade/,
+    /^First launch/,
+    /^Large exit/,
+    /^Leaderboard move/,
+  ]);
+  for (const toggle of await alerts.all()) {
+    await expect(toggle).toBeDisabled();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  }
+  await expect(
+    sidebar.locator(".panel", { hasText: "Alerts" }).locator(".panel-footnote"),
+  ).toHaveText("Alerts are not available yet.");
+  await expectBehaviour(page, [
+    ["Win rate", "100%", "100%"],
+    ["Wins", "1", "100%"],
+    ["Losses", "0", "0%"],
+    ["Still held", "0 of 1", "0%"],
+    ["Volume in top pool", "100%", "100%"],
+  ]);
   await expect(sidebar.locator(".wallet-top-pool")).toHaveCount(1);
   await expect(sidebar.locator(".wallet-top-pool").first()).toHaveAttribute(
     "href",
     /^\/pool\//,
   );
+  await expect(
+    sidebar.locator(".wallet-top-pool").first().locator("> :first-child"),
+    "each pool row opens with its identity tile",
+  ).toHaveAttribute("data-pool-image", /^0x/);
   const comingSoon = sidebar.locator(".coming-soon-row");
   await expect(comingSoon).toHaveText(
-    "Coming soonCopy trading · Alerts · Profile editing",
+    "Coming soonCopy trading · Profile editing",
   );
   await expect(comingSoon.locator("button, a")).toHaveCount(0);
   await expect(comingSoon).toHaveCSS("color", "rgb(154, 154, 164)");
+  // The export's tab counts, from the rows the read sent.
+  await expect(main.getByRole("tab")).toHaveText([
+    /^Positions\s*1$/,
+    /^Trades\s*11$/,
+    /^Launches\s*0$/,
+    "Transactions",
+    "Token transfers",
+  ]);
 
   const stats = main.locator(".live-eight-stats .stat");
   await expect(stats.locator("> span")).toHaveText(statLabels);
@@ -117,6 +175,7 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     "Explorer ↗",
     "Share PnL card",
     "Follow wallet",
+    "This is my wallet",
     "Copy trade",
   ]);
   await expect(actions.last()).not.toHaveClass(/secondary/);
@@ -135,10 +194,16 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   if (testInfo.project.name === "mobile") {
     for (const box of boxes) expect(box.h, "44px tap targets").toBe(44);
-    expect(new Set(boxes.map((box) => box.w)).size, "equal widths").toBe(1);
+    expect(
+      new Set(boxes.slice(0, 4).map((box) => box.w)).size,
+      "equal widths",
+    ).toBe(1);
     expect(boxes[0].y).toBe(boxes[1].y);
     expect(boxes[2].y).toBe(boxes[3].y);
     expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
+    // The odd fifth action takes the whole row rather than leaving a hole.
+    expect(boxes[4].y).toBeGreaterThan(boxes[2].y);
+    expect(boxes[4].w).toBeGreaterThan(boxes[0].w * 2);
     for (const label of await actions.allInnerTexts())
       expect(label.split("\n").length).toBeLessThanOrEqual(2);
   } else {
@@ -165,6 +230,91 @@ test("most traded pools lists at most five pools by observed volume", async ({
     );
   for (let i = 1; i < volumes.length; i++)
     expect(volumes[i] <= volumes[i - 1]).toBe(true);
+  // Every bar is a share of a real denominator: one win in three closed
+  // cycles, five of eight positions still held, PEPE's share of the volume.
+  await expectBehaviour(page, [
+    ["Win rate", "33%", "33%"],
+    ["Wins", "1", "33%"],
+    ["Losses", "2", "67%"],
+    ["Still held", "5 of 8", "63%"],
+    ["Volume in top pool", "22%", "22%"],
+  ]);
+});
+
+test("marking a wallet as mine reframes its page as the portfolio", async ({
+  page,
+}) => {
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  const crumb = page.locator("nav[aria-label=Breadcrumb] > span").last();
+  const title = page.locator(".page-heading h1");
+  const mine = page.getByRole("button", { name: "This is my wallet" });
+  await expect(crumb).toHaveText("0x4745…bce1");
+  await expect(title).toHaveText("0x4745…bce1");
+  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  const width = (await mine.boundingBox())!.width;
+  await mine.click();
+  await expect(mine).toHaveAttribute("aria-pressed", "true");
+  expect((await mine.boundingBox())!.width, "the label holds its width").toBe(
+    width,
+  );
+  await expect(crumb).toHaveText("Portfolio");
+  await expect(title).toHaveText("Portfolio");
+  await expect(page.locator(".page-heading h1 + span")).toHaveText("RANK 1");
+  // Saved in this browser: the framing survives a reload and stays on this
+  // address alone.
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  await expect(title).toHaveText("Portfolio");
+  await settled(page, `/wallet/${activeWallet}/?window=All`);
+  await expect(title).toHaveText("0x9909…d1f8");
+  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  await expect(mine).toHaveAttribute("aria-pressed", "true");
+  await mine.click();
+  await expect(title).toHaveText("0x4745…bce1");
+  await expect(mine).toHaveAttribute("aria-pressed", "false");
+});
+
+// The server paints the public framing and hydration swaps in the portfolio
+// framing for the stored wallet: whole nodes, so nothing on screen moves.
+test("a stored wallet's page paints as the portfolio with no layout shift", async ({
+  page,
+}) => {
+  await page.addInitScript((address) => {
+    localStorage.setItem("poolsinfo.my-wallet.v1", address);
+    const state = { cls: 0 };
+    Object.assign(window, { layoutMeasurement: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  }, topWallet);
+  await settled(page, `/wallet/${topWallet}/?window=All`);
+  await expect(page.locator(".page-heading h1")).toHaveText("Portfolio");
+  await expect(
+    page.locator("nav[aria-label=Breadcrumb] > span").last(),
+  ).toHaveText("Portfolio");
+  await expect(
+    page.getByRole("button", { name: "This is my wallet" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { layoutMeasurement: { cls: number } })
+          .layoutMeasurement.cls,
+    ),
+    "every non-input layout shift since navigation",
+  ).toBe(0);
 });
 
 test("a wallet without supported history reads plainly", async ({ page }) => {
@@ -189,9 +339,19 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   await expect(page.locator(".market-sidebar .wallet-top-pools")).toHaveText(
     "No pool activity in this window.",
   );
-  await expect(page.locator(".market-sidebar h2").first()).toHaveText(
+  await expect(page.locator(".market-sidebar h2").last()).toHaveText(
     "Most traded pools",
   );
+  // A figure with no denominator leaves its value and bar empty.
+  await expectBehaviour(page, [
+    ["Win rate", "", "0%"],
+    ["Wins", "0", "0%"],
+    ["Losses", "0", "0%"],
+    ["Still held", "", "0%"],
+    ["Volume in top pool", "", "0%"],
+  ]);
+  await expect(page.locator(".wallet-behaviour .unavailable")).toHaveCount(0);
+  await expect(page.locator(".market-sidebar")).not.toContainText("N/A");
 });
 
 test("copy trade opens the designed card as a read-only preview", async ({
