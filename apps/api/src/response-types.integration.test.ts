@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import test from "node:test";
 import pg from "pg";
 import { createReader } from "./reader";
+import { applyTestMigrations } from "./test-migrations";
 import { parseRequest } from "./request";
 // The website proxies /api/product/pools/<id>/ through this exact module before
 // it renders a pool page. Importing it, rather than restating its rules here,
@@ -43,14 +43,7 @@ test(
     try {
       await db.query(`CREATE SCHEMA ${schema}`);
       await db.query(`SET search_path TO ${schema}`);
-      const migrationDir = new URL(
-        "../../../packages/db/migrations/",
-        import.meta.url,
-      );
-      for (const name of (await readdir(migrationDir))
-        .filter((n) => n.endsWith(".sql"))
-        .sort())
-        await db.query(await readFile(new URL(name, migrationDir), "utf8"));
+      await applyTestMigrations(db);
       await db.query(
         `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash)
         VALUES(4663,'discovery:v1','discovery',$1,$2,$3)`,
