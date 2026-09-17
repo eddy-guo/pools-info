@@ -23,6 +23,15 @@ import {
 } from "./index";
 
 const url = process.env.TEST_DATABASE_URL;
+/** The ledger writer lock is one per database; a sibling test file (the
+ * pass) may hold it for a moment, so acquisition waits instead of failing. */
+async function writer(db: Client) {
+  for (let i = 0; i < 600; i++) {
+    if (await acquireLedgerWriter(db)) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw Error("ledger writer lock unavailable");
+}
 if (!url)
   throw Error(
     "Set TEST_DATABASE_URL to a dedicated test Postgres instance; DATABASE_URL is never used by these tests",
@@ -219,7 +228,7 @@ test("applyLedgerBatch needs the writer lock, applies once per content hash, ref
   const db = await setup(t);
   const first = batch(base, base + 9, [trade(base + 5, "buy", E, 100n)]);
   await assert.rejects(applyLedgerBatch(db, first), /ledger_writer_required/);
-  assert.equal(await acquireLedgerWriter(db), true);
+  await writer(db);
   const applied = await applyLedgerBatch(db, first);
   assert.deepEqual(applied, {
     changed: true,
@@ -451,7 +460,7 @@ test("applyLedgerBatch needs the writer lock, applies once per content hash, ref
 
 test("the database refuses forged identities, wrong scales, other chains and an unproven lag", async (t) => {
   const db = await setup(t);
-  await acquireLedgerWriter(db);
+  await writer(db);
   await applyLedgerBatch(
     db,
     batch(base, base + 9, [
@@ -522,7 +531,7 @@ test("the database refuses forged identities, wrong scales, other chains and an 
  * recollected, and the ledger equals a fresh build of the same history. */
 test("walk-back restores every pre-image in reverse order and a replaced range rebuilds to a fresh build", async (t) => {
   const db = await setup(t);
-  await acquireLedgerWriter(db);
+  await writer(db);
   const fresh = createClient(url);
   await fresh.connect();
   const schema = "ledger_fresh_" + randomUUID().replaceAll("-", "");
@@ -688,7 +697,7 @@ test("walk-back restores every pre-image in reverse order and a replaced range r
   );
   // One writer per database: the fresh build takes the lock after this one.
   await releaseLedgerWriter(db);
-  assert.equal(await acquireLedgerWriter(fresh), true);
+  await writer(fresh);
   for (const b of [A, B, forkedRows]) await applyLedgerBatch(fresh, b);
   await releaseLedgerWriter(fresh);
   const rebuilt = await snapshot(db),
@@ -717,7 +726,7 @@ test("walk-back restores every pre-image in reverse order and a replaced range r
 
 test("the live ring keeps 24 hours of trades and a batch's rows leave with it", async (t) => {
   const db = await setup(t);
-  await acquireLedgerWriter(db);
+  await writer(db);
   await applyLedgerBatch(
     db,
     batch(base, base + 9, [trade(base + 5, "buy", E, 100n)]),

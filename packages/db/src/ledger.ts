@@ -19,7 +19,8 @@ import {
   type LedgerSwap,
   type LedgerTransfer,
 } from "@pools/core";
-import type { Client } from "./index";
+import { getStream, type Client, type Stream } from "./index";
+import { discoveryV2Identity } from "./discovery";
 
 export const ledgerStream = Object.freeze({
   key: "ledger:agg:v1",
@@ -32,6 +33,110 @@ export const ledgerStream = Object.freeze({
   liveTradeSeconds: 86400,
   liveTradeRows: 250000,
 } as const);
+/** The pass's catalog stream: launches re-discovered from HyperSync, written
+ * through the ordinary discovery commit so the catalog readers see exactly
+ * what they see today. It advances in lockstep with the ledger stream, one
+ * committed range each, and the pass rewinds it to the ledger cursor when a
+ * stop landed between the two commits. */
+export const ledgerLaunchStreamIdentity = Object.freeze({
+  key: "launches:agg:v1",
+  start: 23467030,
+  registryRevision: discoveryV2Identity.registryRevision,
+  registrySourceRevision: discoveryV2Identity.registrySourceRevision,
+});
+export async function ensureLedgerLaunchStream(db: Client): Promise<Stream> {
+  const identity = ledgerLaunchStreamIdentity;
+  await db.query(
+    `INSERT INTO indexer_streams
+      (chain_id, stream_key, kind, start_block, registry_revision, registry_source_revision)
+      VALUES (4663,$1,'discovery',$2,$3,$4)
+      ON CONFLICT (chain_id,stream_key) DO NOTHING`,
+    [
+      identity.key,
+      identity.start,
+      identity.registryRevision,
+      identity.registrySourceRevision,
+    ],
+  );
+  const saved = await db.query(
+    "SELECT registry_revision, registry_source_revision FROM indexer_streams WHERE chain_id=4663 AND stream_key=$1",
+    [identity.key],
+  );
+  const current = await getStream(db, identity.key);
+  if (
+    current.kind !== "discovery" ||
+    current.poolId !== null ||
+    current.start !== identity.start ||
+    saved.rows[0]?.registry_revision !== identity.registryRevision ||
+    saved.rows[0]?.registry_source_revision !== identity.registrySourceRevision
+  )
+    throw Error("ledger_launch_stream_identity");
+  return current;
+}
+/** Every registered pool launched at or before a block, in launch order:
+ * the registry that leads a range's swap and transfer filters. */
+export async function ledgerRegistry(
+  db: Client,
+  throughBlock: number,
+): Promise<{ poolId: string; token: string; launchBlock: number }[]> {
+  if (!integer(throughBlock)) throw Error("ledger_invalid_registry_block");
+  const r = await db.query(
+    "SELECT pool_id,token,launch_block FROM indexed_pools WHERE chain_id=4663 AND launch_block<=$1 ORDER BY launch_block,pool_id",
+    [throughBlock],
+  );
+  return r.rows.map((row) => ({
+    poolId: row.pool_id as string,
+    token: row.token as string,
+    launchBlock: Number(row.launch_block),
+  }));
+}
+/** Positions created by a committed batch: its journal rows without a
+ * pre-image. The pass sums them into pairs per swap. */
+export async function ledgerBatchCreatedRows(db: Client, toBlock: number) {
+  const r = await db.query(
+    `SELECT "table",count(*)::int AS created FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2 AND before IS NULL GROUP BY "table"`,
+    [ledgerStream.key, toBlock],
+  );
+  const created = { positions: 0, wallets: 0 };
+  for (const row of r.rows) {
+    if (row.table === "agg_positions") created.positions = row.created;
+    if (row.table === "agg_wallets") created.wallets = row.created;
+  }
+  return created;
+}
+/** Row totals of the ledger, read once when a pass starts or resumes. */
+export async function ledgerTotals(db: Client) {
+  const r = await db.query(
+    `SELECT (SELECT count(*) FROM agg_positions WHERE chain_id=4663)::text AS positions,
+            (SELECT count(*) FROM agg_wallets)::text AS wallets,
+            (SELECT count(*) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS batches,
+            (SELECT coalesce(sum(swaps),0) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS swaps,
+            (SELECT coalesce(sum(transfers),0) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS transfers,
+            (SELECT coalesce(sum(launches),0) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS launches,
+            (SELECT coalesce(sum(requests),0) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS requests,
+            (SELECT coalesce(sum(bytes),0) FROM agg_batches WHERE chain_id=4663 AND stream_key=$1)::text AS bytes`,
+    [ledgerStream.key],
+  );
+  const row = r.rows[0];
+  return {
+    positions: Number(row.positions),
+    wallets: Number(row.wallets),
+    batches: Number(row.batches),
+    swaps: Number(row.swaps),
+    transfers: Number(row.transfers),
+    launches: Number(row.launches),
+    requests: Number(row.requests),
+    bytes: Number(row.bytes),
+  };
+}
+/** Hand the stream to the tip loop once the pass reaches the confirmed cutoff. */
+export async function setLedgerMode(db: Client, mode: LedgerMode) {
+  if (mode !== "pass" && mode !== "tip") throw Error("ledger_invalid_mode");
+  await db.query(
+    "UPDATE agg_streams SET mode=$2,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
+    [ledgerStream.key, mode],
+  );
+}
 export const ledgerRules: LedgerRules = {
   manager: contracts.manager,
   router: contracts.router,
