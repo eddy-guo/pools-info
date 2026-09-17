@@ -24,40 +24,58 @@ export function PendingValue({
   );
 }
 
-export function ProductPagination({
-  offset,
+/** The running-total step every "Show more" list grows by. */
+export const SHOW_MORE_STEP = 25;
+
+/**
+ * Gmail-inbox style growth, not classic paging: a "Showing N of M" readout
+ * plus one button that loads the next `step` rows, disabled while a fetch is
+ * in flight and gone once `shown` reaches `total` or the caller's `cap` (a
+ * hard ceiling the list never requests past, independent of `total`).
+ *
+ * `total` is `null` before the first response names a real count; the button
+ * then stays reserved (optimistic, up to `cap`) rather than popping in once
+ * the count resolves, which would shift everything below the control.
+ */
+export function ShowMore({
+  shown,
   total,
-  nextOffset,
-  onPage,
+  step = SHOW_MORE_STEP,
+  cap,
   loading,
+  onMore,
 }: {
-  offset: number;
-  total: number;
-  nextOffset: number | null;
-  onPage: (offset: number) => void;
+  shown: number;
+  total: number | null;
+  step?: number;
+  cap?: number;
   loading: boolean;
+  onMore: () => void;
 }) {
+  const known = total !== null;
+  const ceiling = known
+    ? cap === undefined
+      ? total
+      : Math.min(total, cap)
+    : (cap ?? Infinity);
+  const remaining = Math.max(0, ceiling - shown);
   return (
     <div className="pagination">
-      <span>
-        {total
-          ? `${offset + 1}-${Math.min(offset + 25, total)} of ${total.toLocaleString()}`
+      <span className="pagination-count">
+        {known && total
+          ? `Showing ${Math.min(shown, total).toLocaleString()} of ${total.toLocaleString()}`
           : "0 results"}
       </span>
-      <button
-        className="button secondary"
-        disabled={!offset || loading}
-        onClick={() => onPage(Math.max(0, offset - 25))}
-      >
-        Previous
-      </button>
-      <button
-        className="button secondary"
-        disabled={nextOffset === null || loading}
-        onClick={() => nextOffset !== null && onPage(nextOffset)}
-      >
-        Next
-      </button>
+      {remaining > 0 && (
+        <button
+          type="button"
+          className="button secondary"
+          disabled={loading}
+          onClick={onMore}
+        >
+          Show {known ? Math.min(step, remaining) : step} more
+        </button>
+      )}
     </div>
   );
 }
