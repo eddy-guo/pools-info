@@ -6,6 +6,12 @@ import {
 } from "@pools/core";
 import { RequestError } from "./request";
 import type { ReadQuery } from "./catalog-read";
+import {
+  ledgerCut,
+  ledgerPool,
+  readLedgerMarket,
+  type MarketSource,
+} from "./ledger-market";
 
 const seconds = {
   "1h": 3600,
@@ -123,6 +129,7 @@ export async function readObservedMarket(
   pool: Record<string, any>,
   window: LiveWindow,
   verifiedUnits: { decimals: number; cutoff: MarketBoundary } | null,
+  source: MarketSource = "broad",
 ): Promise<ObservedMarket> {
   const id = pool.pool_id;
   const streams = await query(
@@ -196,6 +203,22 @@ export async function readObservedMarket(
       b.cutoff.block - a.cutoff.block ||
       Number(b.rollups !== null) - Number(a.rollups !== null),
   );
+  // With the ledger selected, a pool it covers is served from its pool hours
+  // when its cursor is at least as new as every other cut (the same newest-
+  // cutoff rule, the ledger winning a tie once the identities agree); any
+  // other pool, or a newer deep stream, is served exactly as with the switch
+  // off.
+  const ledger = source === "ledger" ? await ledgerCut(query) : null;
+  const covered = ledger ? await ledgerPool(query, ledger, id) : null;
+  if (ledger && covered && (!cuts.length || ledger.block >= cuts[0].cutoff.block)) {
+    for (const other of cuts)
+      if (
+        other.cutoff.block === ledger.block &&
+        (other.cutoff.hash !== ledger.hash || other.cutoff.asOf !== ledger.asOf)
+      )
+        throw new RequestError(503, "market_identity_conflict");
+    return readLedgerMarket(query, pool, window, verifiedUnits, ledger, covered);
+  }
   const cut = cuts[0];
   const empty: ObservedMarket = {
     poolId: id,

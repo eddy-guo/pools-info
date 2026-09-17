@@ -45,6 +45,15 @@ has no migration privileges or startup migration command.
 No deployment is implied by these files. The website must be explicitly wired
 to this service after deployment and data validation.
 
+`MARKET_SOURCE` picks the store behind explore's market figures and the pool
+page's `market`, once at startup: unset or `broad` serves the broad rollups and
+deep publications; `ledger` serves every pool the aggregate ledger covers from
+`agg_pool_hours` and `agg_pool_state`, and additionally needs SELECT on
+`agg_streams`, `agg_batches`, `agg_pool_hours`, `agg_pool_state`,
+`agg_live_trades` and `pool_launch_sources`. What changes in the responses
+(`aggregate_ledger` coverage and unit-basis sources, hourly candles,
+`market.fdvWei`, one price per pool) is in `docs/LEDGER-MARKET-SERVING.md`.
+
 ## HTTP contract
 
 Only GET and HEAD are supported. Unknown/duplicate query parameters are rejected.

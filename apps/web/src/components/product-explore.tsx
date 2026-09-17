@@ -647,8 +647,8 @@ export function ProductExplore() {
                               <td data-pending={skeleton}>
                                 {p ? (
                                   <>
-                                    {p.marketCoverage?.source !==
-                                      "canonical_broad" &&
+                                    {p.marketCoverage?.source ===
+                                      "deep_publication" &&
                                     p.market?.series.length ? (
                                       <Sparkline
                                         points={p.market.series}

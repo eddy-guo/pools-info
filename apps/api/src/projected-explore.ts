@@ -15,12 +15,22 @@ import {
   broadExploreCut,
   broadWindowStart,
   broadExploreCtes,
+  ledgerFlowCtes,
+  ledgerRankedCte,
   rankedFlowCtes,
 } from "./broad-explore";
+import {
+  ledgerAnswers,
+  ledgerCut,
+  ledgerLaunchSql,
+  ledgerWindowHour,
+  type MarketSource,
+} from "./ledger-market";
 import { searchPattern } from "./request";
 export async function readProjectedExplore(
   query: ReadQuery,
   options: AnalyticsExploreOptions,
+  source: MarketSource = "broad",
 ): Promise<AnalyticsExploreResponse> {
   // JIT never pays for these statements: per-row LATERAL lookups inflate their
   // cost estimates far past jit_optimize_above_cost while they execute in well
@@ -30,9 +40,15 @@ export async function readProjectedExplore(
   await query("SET LOCAL jit = off");
   await assertCatalogIdentity(query);
   const broadCut = await broadExploreCut(query);
+  // A ledger that has folded nothing yet leaves every row as with the switch
+  // off (`ledgerCut` returns null).
+  const ledger = source === "ledger" ? await ledgerCut(query) : null;
   const coverage = await accountingCoverage(query),
     window = options.window ?? "24h",
-    // $1-$6 feed the metric CTEs; catalog filters bind after them.
+    ledgerHour = ledger ? ledgerWindowHour(ledger, window) : null,
+    // $1-$6 feed the metric CTEs, and with the ledger $7-$9 (its cursor,
+    // the window's first hour and its start block); catalog filters bind
+    // after them.
     metricValues: unknown[] = [
       windowFrom(coverage, window),
       broadCut?.block ?? null,
@@ -40,6 +56,7 @@ export async function readProjectedExplore(
       broadCut?.startBlock ?? null,
       broadCut?.discoveryBatch ?? null,
       broadCut?.asOf ?? null,
+      ...(ledger ? [ledger.block, ledgerHour, ledger.startBlock] : []),
     ];
   // Catalog filters read launch rows only, so they can run before any metric.
   const catalogFilters: { value: unknown; sql: (p: string) => string }[] = [];
@@ -95,10 +112,13 @@ export async function readProjectedExplore(
   // liquidity is served, so the full metrics run over that bounded set; a
   // catalog-wide change or price order waits for a per-pool latest-state
   // rollup. Rank keys mirror the served expressions and the page is served
-  // in ranked order. An empty page is counted alone.
+  // in ranked order. An empty page is counted alone. The ledger serves change
+  // for every launch it covers, so with it a deep-ranked order ranks those
+  // launches on the ledger's columns beside the deep-published pools it does
+  // not serve, then binds the page's identities as the flow sorts do.
   const deepRanked =
     options.view === "gainers" || sort === "change" || sort === "liquidity";
-  const metricCtes = `, flow AS (
+  const deepCtes = (withLedger: boolean) => `, flow AS (
     SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 AND pool_id IN (SELECT pool_id FROM page) GROUP BY pool_id
   ), deep_metrics AS (
     SELECT a.*,coalesce(f.volume,0) AS volume,coalesce(f.trades,0) AS trades,
@@ -112,11 +132,56 @@ export async function readProjectedExplore(
     LEFT JOIN LATERAL(SELECT price_wei FROM analytics_accounting_prices WHERE chain_id=4663 AND pool_id=a.pool_id ORDER BY ordinal LIMIT 1)first ON true
     LEFT JOIN LATERAL(SELECT price_wei FROM analytics_accounting_prices WHERE chain_id=4663 AND pool_id=a.pool_id ORDER BY ordinal DESC LIMIT 1)last ON true
     WHERE a.chain_id=4663 AND a.pool_id IN (SELECT pool_id FROM page)
-  )${broadExploreCtes()}`;
+  )${broadExploreCtes({ ledger: withLedger ? window : null })}`;
+  const metricCtes = deepCtes(!!ledger);
+  const answers = ledgerAnswers(window);
   const columns = `p.*,m.market,m.volume,m.trades,m.price,m.change,m.liquidity_wei,m.holders_count,m.from_block,m.from_timestamp,m.asof_timestamp,m.through_block,m.generated_at,m.source_kind,
-    m.broad_selected,m.unit_block,m.unit_hash,m.unit_time,m.unit_source,m.decimals,m.units_conflict,m.sqrt_price_x96,m.price_block,m.price_hash,m.price_time,m.baseline_block,m.baseline_hash,m.baseline_time,m.window_start,m.deep_hash`;
+    m.broad_selected,m.unit_block,m.unit_hash,m.unit_time,m.unit_source,m.decimals,m.units_conflict,m.sqrt_price_x96,m.price_block,m.price_hash,m.price_time,m.baseline_block,m.baseline_hash,m.baseline_time,m.window_start,m.deep_hash${ledger ? ",m.ledger_selected,m.ledger_baseline" : ""}`;
   let rows: Record<string, any>[], total: number;
-  if (deepRanked) {
+  // The page's identities in served order, then its full metrics.
+  const pageRows = async (ids: Record<string, any>[]) => {
+    const idsParam = `$${metricValues.length + 1}::text[]`;
+    return ids.length
+      ? (
+          await query(
+            `${catalogCte}, page AS (SELECT * FROM catalog p WHERE p.pool_id=ANY(${idsParam}))${metricCtes}
+    SELECT ${columns} FROM page p LEFT JOIN metrics m USING(pool_id) ORDER BY array_position(${idsParam},p.pool_id)`,
+            [...metricValues, ids.map((row) => row.pool_id)],
+          )
+        ).rows
+      : [];
+  };
+  if (deepRanked && ledger) {
+    const catalogWhere = where(catalogConditions(metricValues.length));
+    // The deep-published pools the ledger does not serve keep today's full
+    // metrics; `ledger_ranked` holds the ones it does. That page is found
+    // from the deep publications and bound as an array, so the catalog is
+    // read by key for those few pools rather than built whole.
+    const rankCtes = `${catalogCte}${ledgerFlowCtes}${ledgerRankedCte(catalogWhere, options.view === "gainers" ? "gainers" : sort === "change" ? "change" : "liquidity", window)}, deep_unserved AS MATERIALIZED (
+    SELECT a.pool_id FROM analytics_accounting_pools a LEFT JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=a.pool_id
+    WHERE a.chain_id=4663 AND NOT (ip.pool_id IS NOT NULL AND ${ledgerLaunchSql("ip.", "$9", "$7")} AND $7>=a.through_block)
+  ), page AS (SELECT * FROM catalog p ${where([...catalogConditions(metricValues.length), "p.pool_id=ANY(ARRAY(SELECT pool_id FROM deep_unserved))"])})${deepCtes(false)}, ranked AS (
+    SELECT p.pool_id,p.launch_block,m.volume,m.trades,m.liquidity_wei,m.change FROM page p LEFT JOIN metrics m USING(pool_id)
+    UNION ALL SELECT pool_id,launch_block,volume,trades,liquidity_wei,change FROM ledger_ranked
+  )`;
+    const ids = (
+      await query(
+        `${rankCtes} SELECT pool_id,count(*) OVER () AS total FROM ranked m ${where(metricConditions)} ORDER BY ${order} ${limitClause}`,
+        page,
+      )
+    ).rows;
+    total = ids.length
+      ? Number(ids[0].total)
+      : Number(
+          (
+            await query(
+              `${rankCtes} SELECT count(*)::text AS count FROM ranked m ${where(metricConditions)}`,
+              values,
+            )
+          ).rows[0].count,
+        );
+    rows = await pageRows(ids);
+  } else if (deepRanked) {
     const deepPage = `${catalogCte}, page AS (SELECT * FROM catalog p ${where([...catalogConditions(metricValues.length), "EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=4663 AND a.pool_id=p.pool_id)"])})${metricCtes}`;
     rows = (
       await query(
@@ -136,9 +201,11 @@ export async function readProjectedExplore(
         );
   } else {
     // The served trades and volume: broad flow where the canonical broad
-    // cutoff covers the launch and no deep publication is newer, else deep.
+    // cutoff covers the launch and no deep publication is newer, else deep;
+    // with the ledger, its flow first for every launch it serves.
     const rankedCtes = rankedFlowCtes(
       where(catalogConditions(metricValues.length)),
+      { ledger: ledger ? window : null },
     );
     const [ranked, rankValues, countAlone, countValues] =
       sort === "launch"
@@ -158,17 +225,20 @@ export async function readProjectedExplore(
     total = ids.length
       ? Number(ids[0].total)
       : Number((await query(countAlone, countValues)).rows[0].count);
-    const idsParam = `$${metricValues.length + 1}::text[]`;
-    rows = ids.length
-      ? (
-          await query(
-            `${catalogCte}, page AS (SELECT * FROM catalog p WHERE p.pool_id=ANY(${idsParam}))${metricCtes}
-    SELECT ${columns} FROM page p LEFT JOIN metrics m USING(pool_id) ORDER BY array_position(${idsParam},p.pool_id)`,
-            [...metricValues, ids.map((row) => row.pool_id)],
-          )
-        ).rows
-      : [];
+    rows = await pageRows(ids);
   }
+  // A row the ledger serves shows one price, the ledger's: the deep
+  // publication it outdates (its snapshot market, series and dates) is not
+  // served beside it.
+  for (const r of rows)
+    if (r.ledger_selected)
+      Object.assign(r, {
+        market: null,
+        asof_timestamp: null,
+        through_block: null,
+        generated_at: null,
+        source_kind: null,
+      });
   // Fetch chart samples only for this page, not for every pool in the corpus.
   const prices = (
     await query(
@@ -183,6 +253,10 @@ export async function readProjectedExplore(
     list.push({ time: Number(p.timestamp), wei: String(p.price_wei) });
     series.set(p.pool_id, list);
   }
+  // A ledger row's window is the whole hours ending with the ledger's newest
+  // hour; its cutoff is the ledger's cursor, inside that hour.
+  const ledgerWindowStart = (r: Record<string, any>) =>
+    ledgerHour === null ? Number(r.launched_at) : ledgerHour * 3600;
   const items: AnalyticsPoolRow[] = rows.map((r) => ({
     ...catalogPool(r),
     processed: !!r.market,
@@ -196,7 +270,13 @@ export async function readProjectedExplore(
       change: r.change === null ? null : Number(r.change),
       trades: r.trades === null ? null : Number(r.trades),
       holders: r.holders_count ?? null,
-      completeWindow: r.broad_selected
+      completeWindow: r.ledger_selected
+        ? answers &&
+          r.price !== null &&
+          !r.units_conflict &&
+          r.volume !== null &&
+          (Number(r.launched_at) >= ledgerWindowStart(r) || r.ledger_baseline)
+        : r.broad_selected
         ? r.price !== null &&
           !r.units_conflict &&
           r.volume !== null &&
@@ -216,8 +296,33 @@ export async function readProjectedExplore(
     generatedAt: r.generated_at ? new Date(r.generated_at).toISOString() : null,
     sourceKind: r.source_kind,
     marketCoverage:
-      r.broad_selected && broadCut
+      r.ledger_selected && ledger
         ? {
+            source: "aggregate_ledger",
+            startBlock: Math.max(ledger.startBlock, Number(r.launch_block)),
+            cutoff: {
+              block: ledger.block,
+              hash: ledger.hash,
+              asOf: ledger.asOf,
+            },
+            windowStart: ledgerWindowStart(r),
+            indexedAt: ledger.indexedAt,
+            unitsConflict: !!r.units_conflict,
+            unitBasis:
+              r.decimals === null || r.units_conflict
+                ? null
+                : {
+                    block: ledger.block,
+                    hash: ledger.hash,
+                    asOf: ledger.asOf,
+                    decimals: Number(r.decimals),
+                    source: "aggregate_ledger",
+                  },
+            rawPrice: null,
+            priceBaseline: null,
+          }
+        : r.broad_selected && broadCut
+          ? {
             source: "canonical_broad",
             startBlock: Math.max(broadCut.startBlock, Number(r.launch_block)),
             cutoff: {
@@ -285,7 +390,11 @@ export async function readProjectedExplore(
           : null,
   }));
   return {
-    coverage,
+    // The newest data the response serves: the ledger's cutoff once it
+    // serves rows, never an older deep publication's time.
+    coverage: ledger
+      ? { ...coverage, asOf: Math.max(coverage.asOf, ledger.asOf) }
+      : coverage,
     window,
     items,
     total,

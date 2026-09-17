@@ -280,7 +280,7 @@ export function ObservedPoolDetail({
           (BigInt(accountedMarket.priceWei) * BigInt(accountedMarket.supply)) /
           10n ** BigInt(accountedMarket.decimals)
         ).toString()
-      : undefined;
+      : (market?.fdvWei ?? undefined);
   const holderRows = publication?.holders?.balances;
   const observedTrades = market?.observations;
   const capturedTrades = snapshot?.trades.filter(

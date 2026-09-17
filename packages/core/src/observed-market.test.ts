@@ -110,3 +110,43 @@ test("observed market boundary validates exact amounts and rejects fabricated co
   }
   assert.throws(() => assertObservedMarket(fixture(), id, token, "All"));
 });
+test("the aggregate ledger's market: hourly candles, its own unit basis and an FDV that needs a price", () => {
+  const ledger = () => {
+    const v = fixture();
+    v.coverage.unitBasis!.source = "aggregate_ledger";
+    v.history.intervalSeconds = 3600;
+    v.history.fromTimestamp = 198000;
+    v.history.candles[0].time = 198000;
+    v.fdvWei = "900719925474099300001000000000";
+    return v;
+  };
+  assert.doesNotThrow(() => assertObservedMarket(ledger(), id, token, "24h"));
+  const changes: ((v: ObservedMarket) => void)[] = [
+    // An hourly series whose candle is not on an hour.
+    (v) => {
+      v.history.candles[0].time = 199980;
+      v.history.fromTimestamp = 199980;
+    },
+    (v) => {
+      (v.history as { intervalSeconds: number }).intervalSeconds = 300;
+    },
+    (v) => {
+      v.fdvWei = "-1";
+    },
+    // No FDV without the price it multiplies.
+    (v) => {
+      v.priceWei = null;
+    },
+    (v) => {
+      (v.coverage.unitBasis as { source: string }).source = "ledger";
+    },
+  ];
+  for (const change of changes) {
+    const v = ledger();
+    change(v);
+    assert.throws(() => assertObservedMarket(v, id, token, "24h"));
+  }
+  const unpriced = ledger();
+  unpriced.fdvWei = null;
+  assert.doesNotThrow(() => assertObservedMarket(unpriced, id, token, "24h"));
+});

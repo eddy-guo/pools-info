@@ -14,6 +14,7 @@ import { readTradeShare } from "./trade-share-read";
 import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
 import { readObservedMarket } from "./observed-market-read";
+import { servedByLedger, type MarketSource } from "./ledger-market";
 import {
   encodeCursor,
   isAddress,
@@ -131,10 +132,12 @@ function paginate(rows: Row[], request: ReadRequest, type: "pools" | "events") {
 }
 
 /** Queries read one repeatable DB snapshot per response. There are no migrations
- * or write statements on this service's execution path. */
+ * or write statements on this service's execution path. `marketSource` picks
+ * the store behind explore's market figures and the pool page's market. */
 export async function readData(
   query: Query,
   request: ReadRequest,
+  marketSource: MarketSource = "broad",
 ): Promise<unknown> {
   if (request.route === "ready") {
     // Zero-row reads check table access too, unlike SELECT 1 alone.
@@ -153,6 +156,16 @@ export async function readData(
     await query("SELECT 1 FROM analytics_accounting_trades WHERE false");
     await query("SELECT 1 FROM analytics_accounting_prices WHERE false");
     await query("SELECT 1 FROM token_images WHERE false");
+    if (marketSource === "ledger") {
+      await query("SELECT 1 FROM agg_streams WHERE false");
+      await query("SELECT 1 FROM agg_batches WHERE false");
+      await query("SELECT 1 FROM agg_pool_hours WHERE false");
+      await query("SELECT 1 FROM agg_pool_state WHERE false");
+      await query("SELECT 1 FROM agg_live_trades WHERE false");
+      await query(
+        "SELECT token_total_supply_raw,token_supply_block FROM indexed_pools WHERE false",
+      );
+    }
     await accountingCoverage(query);
     return { ready: true };
   }
@@ -169,7 +182,7 @@ export async function readData(
     });
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
   if (request.route === "explore")
-    return readProjectedExplore(query, request.explore);
+    return readProjectedExplore(query, request.explore, marketSource);
   if (request.route === "leaderboard")
     return readLeaderboard(query, request.leaderboard);
   if (request.route === "creators")
@@ -342,25 +355,30 @@ export async function readData(
       WHERE e.chain_id=4663 AND e.pool_id=$1 AND e.kind='swap' ORDER BY ${eventOrder} LIMIT 1`,
       [request.poolId],
     );
+    const market = await readObservedMarket(
+      query,
+      result.rows[0],
+      request.window,
+      analytics
+        ? {
+            decimals: analytics.snapshot.markets[0].decimals,
+            cutoff: {
+              block: analytics.snapshot.toBlock,
+              hash: analytics.snapshot.blockHash,
+              asOf: analytics.snapshot.toTimestamp,
+            },
+          }
+        : null,
+      marketSource,
+    );
     return {
       ...base,
       pool: poolItem(result.rows[0]),
-      analytics,
-      market: await readObservedMarket(
-        query,
-        result.rows[0],
-        request.window,
-        analytics
-          ? {
-              decimals: analytics.snapshot.markets[0].decimals,
-              cutoff: {
-                block: analytics.snapshot.toBlock,
-                hash: analytics.snapshot.blockHash,
-                asOf: analytics.snapshot.toTimestamp,
-              },
-            }
-          : null,
-      ),
+      // A market the ledger serves outdates any deep publication (the ledger
+      // wins only at or past its cutoff), so the page gets one price, one
+      // candle series and one trade list: the ledger's.
+      analytics: servedByLedger(market) ? null : analytics,
+      market,
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
   }
@@ -407,6 +425,7 @@ export async function readData(
 export function createReader(
   url = process.env.DATABASE_URL,
   testSchema?: string,
+  { marketSource = "broad" as MarketSource } = {},
 ): Reader {
   if (!url) throw Error("DATABASE_URL is required");
   if (testSchema && !/^api_test_[a-z0-9_]+$/.test(testSchema))
@@ -437,6 +456,7 @@ export function createReader(
         const result = await readData(
           (sql, values) => client.query(sql, values),
           request,
+          marketSource,
         );
         await client.query("COMMIT");
         return result;

@@ -73,18 +73,31 @@ export function ChartRangeControl({
 }
 /* The candle follows the range, as on the token pages the site is modelled on:
    about sixty to three hundred bars across the panel. A market observed from
-   its swap history carries minute candles and nothing finer. */
+   its swap history carries candles of its served interval (a minute, or an
+   hour from the aggregate ledger) and nothing finer. */
 function intervalFor(
   range: ChartRange,
   span: number,
-  observed: boolean,
+  observedSeconds: number | null,
 ): keyof typeof candleIntervals {
   const seconds = range === "All" ? span : chartRanges[range];
-  if (seconds <= 600) return observed ? "1m" : "1s";
-  if (seconds <= 7200) return "1m";
-  if (seconds <= 86400) return "5m";
-  if (seconds <= 14 * 86400) return "1h";
-  return "4h";
+  const interval: keyof typeof candleIntervals =
+    seconds <= 600
+      ? observedSeconds === null
+        ? "1s"
+        : "1m"
+      : seconds <= 7200
+        ? "1m"
+        : seconds <= 86400
+          ? "5m"
+          : seconds <= 14 * 86400
+            ? "1h"
+            : "4h";
+  return observedSeconds !== null && candleIntervals[interval] < observedSeconds
+    ? (Object.keys(candleIntervals) as (keyof typeof candleIntervals)[]).find(
+        (name) => candleIntervals[name] >= observedSeconds,
+      )!
+    : interval;
 }
 function axisPrice(value: number) {
   if (!Number.isFinite(value)) return "N/A";
@@ -164,7 +177,11 @@ export function Candles(
       : observed?.history.fromTimestamp != null
         ? toTimestamp - observed.history.fromTimestamp
         : 0) || 0;
-  const interval = intervalFor(range, span, !!observed);
+  const interval = intervalFor(
+    range,
+    span,
+    observed ? observed.history.intervalSeconds : null,
+  );
   const bars = useMemo(
     () =>
       market && snapshot

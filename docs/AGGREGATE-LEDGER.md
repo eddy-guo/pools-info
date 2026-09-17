@@ -249,7 +249,11 @@ three wallets against report 4.4.
   throttle stop, 24 hours unattended on Railway.
 - **Phase 4, readers and the API deltas** (report section 8): every response
   shape is untouched in phase 1; phase 4 changes the readers and the web
-  validators in one PR.
+  validators in one PR. Its first part, explore's and the pool page's market
+  figures served from `agg_pool_hours` and `agg_pool_state` behind
+  `MARKET_SOURCE=ledger` (off by default), is in
+  `docs/LEDGER-MARKET-SERVING.md`; the leaderboard, wallet and creators
+  readers still read the deep and broad tables.
 - **Phase 5, cutover and retirement** (report section 9): no production write,
   Railway or Envio change happens before it. The indexer stays down and the
   Envio switch stays off.
