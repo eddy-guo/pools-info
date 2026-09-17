@@ -1173,14 +1173,27 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "color",
     "rgb(63, 214, 140)",
   );
+  // A phone shows the positions and trades as rows rather than tables.
   await expect(
-    page.locator("thead th", { hasText: "Holding" }),
+    page
+      .locator("thead th", { hasText: "Holding" })
+      .or(page.locator('.mobile-position[data-row="resolved"]'))
+      .filter({ visible: true })
+      .first(),
   ).toBeVisible();
   await page.getByRole("tab", { name: /^Trades\b/ }).click();
   await expect(
-    page.locator("thead th", { hasText: "Transaction" }),
+    page
+      .locator("thead th", { hasText: "Transaction" })
+      .or(page.locator(".mobile-wallet-row"))
+      .filter({ visible: true })
+      .first(),
   ).toBeVisible();
-  await expect(page.locator("main tbody tr")).toHaveCount(11);
+  await expect(
+    page.locator("main :is(tbody tr, .mobile-wallet-row)").filter({
+      visible: true,
+    }),
+  ).toHaveCount(11);
   await page
     .getByRole("button", { name: "Share PnL card", exact: true })
     .click();
@@ -1463,7 +1476,9 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   await expect(stat).toContainText("+0.01147 ETH");
   await page.getByRole("tab", { name: /^Trades\b/ }).click();
   await expect(
-    page.locator("main tbody tr").filter({ visible: true }),
+    page
+      .locator("main :is(tbody tr, .mobile-wallet-row)")
+      .filter({ visible: true }),
   ).toHaveCount(profile.trades.length);
   await page
     .getByRole("button", { name: "Share PnL card", exact: true })

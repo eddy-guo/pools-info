@@ -169,8 +169,12 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     if ((await head.textContent()) !== "Token")
       await expect(head).toHaveCSS("text-align", "right");
   const firstPosition = main.locator('tr[data-row="resolved"]').first();
+  // A phone shows the positions as rows, each with the same identity tile.
   await expect(
-    firstPosition.locator(".wallet-token-cell .avatar"),
+    (testInfo.project.name === "mobile"
+      ? main.locator('.mobile-position[data-row="resolved"]').first()
+      : firstPosition
+    ).locator(".wallet-token-cell .avatar"),
   ).toBeVisible();
   const cellBoxes = await firstPosition
     .locator("td:nth-child(n + 2)")
@@ -327,7 +331,9 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   await control.click();
   await page.getByLabel("Your wallet address").fill(topWallet);
   await page.getByRole("button", { name: "Use this wallet" }).click();
-  await expect(page.getByRole("dialog", { name: "Set my wallet" })).toBeHidden();
+  await expect(
+    page.getByRole("dialog", { name: "Set my wallet" }),
+  ).toBeHidden();
   await expect(mine).toHaveAttribute("aria-pressed", "true");
   await expect(title).toHaveText("Portfolio");
 

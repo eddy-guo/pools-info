@@ -1,5 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { poolHref, shortAddress, type CreatorRow, type CreatorsResponse } from "@pools/core";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import {
+  poolHref,
+  shortAddress,
+  type CreatorRow,
+  type CreatorsResponse,
+} from "@pools/core";
 
 const coverage: CreatorsResponse["coverage"] = {
   catalogPools: 130,
@@ -92,6 +97,11 @@ function creatorsPage(
   };
 }
 
+/** The board draws its table where the table fits and its rows where it does
+    not: the desktop project's 1440px shows the table, the Pixel 7's rows. */
+const boardRows = (panel: Locator, isMobile: boolean) =>
+  panel.locator(isMobile ? ".mobile-creator" : "tbody tr");
+
 async function serveCreators(page: Page) {
   await page.route("**/api/product/creators**", async (route) => {
     const params = new URL(route.request().url()).searchParams;
@@ -119,6 +129,7 @@ const removedCopy = [
 
 test("creators reveal 25 more at a click, up to a top-100 leaderboard, with the bought-own chip", async ({
   page,
+  isMobile,
 }) => {
   await serveCreators(page);
   await page.goto("/creators/");
@@ -126,7 +137,7 @@ test("creators reveal 25 more at a click, up to a top-100 leaderboard, with the 
   const footer = panel.locator(".pagination");
   const count = footer.locator(".pagination-count");
   const showMore = footer.getByRole("button", { name: "Show 25 more" });
-  const rowsLocator = panel.locator("tbody tr");
+  const rowsLocator = boardRows(panel, isMobile);
 
   for (const copy of removedCopy)
     await expect(page.getByText(copy), copy).toHaveCount(0);
@@ -142,7 +153,7 @@ test("creators reveal 25 more at a click, up to a top-100 leaderboard, with the 
   await expect(rowsLocator).toHaveCount(25);
   await expect(showMore).toBeEnabled();
   // Only the fixture's one true row (index 1) carries the chip.
-  await expect(panel.getByText("BOUGHT OWN")).toHaveCount(1);
+  await expect(rowsLocator.getByText("BOUGHT OWN")).toHaveCount(1);
 
   await showMore.click();
   await expect(page).toHaveURL(/[?&]limit=50(?:&|$)/);
@@ -172,6 +183,7 @@ test("creators reveal 25 more at a click, up to a top-100 leaderboard, with the 
 
 test("Show more moves focus to the first newly revealed row", async ({
   page,
+  isMobile,
 }) => {
   await serveCreators(page);
   await page.goto("/creators/");
@@ -179,7 +191,7 @@ test("Show more moves focus to the first newly revealed row", async ({
   const showMore = panel.locator(".pagination").getByRole("button", {
     name: "Show 25 more",
   });
-  const rowsLocator = panel.locator("tbody tr");
+  const rowsLocator = boardRows(panel, isMobile);
 
   await expect(rowsLocator).toHaveCount(25);
   await showMore.click();
@@ -243,14 +255,14 @@ test("creators sort and window map onto the read API's keys and reset the reveal
   await expect(count).toHaveText("Showing 25 of 100");
 });
 
-test("reload and Back restore the shown count", async ({ page }) => {
+test("reload and Back restore the shown count", async ({ page, isMobile }) => {
   await serveCreators(page);
   await page.goto("/creators/");
   const panel = page.locator(".creators-panel");
   const footer = panel.locator(".pagination");
   const count = footer.locator(".pagination-count");
   const showMore = footer.getByRole("button", { name: "Show 25 more" });
-  const rowsLocator = panel.locator("tbody tr");
+  const rowsLocator = boardRows(panel, isMobile);
 
   await showMore.click();
   await showMore.click();
@@ -275,6 +287,7 @@ test("reload and Back restore the shown count", async ({ page }) => {
 
 test("creators rows match the export's cell shapes: rank colour, chip, still-trading bar and right-aligned figures", async ({
   page,
+  isMobile,
 }) => {
   const goldAddress = "0x00000000000000000000000000000000000aa1";
   const silverAddress = "0x00000000000000000000000000000000000bb2";
@@ -374,6 +387,58 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   });
   await page.goto("/creators/");
   const panel = page.locator(".creators-panel");
+  const goldShort = shortAddress(goldAddress);
+  if (isMobile) {
+    // The screener's phone row: rank, chip and badge with the launch count at
+    // the right, then Vol and the still-trading bar on one line beneath.
+    const cards = panel.locator('.mobile-creator[data-row="resolved"]');
+    await expect(cards).toHaveCount(5);
+    await expect(panel.locator(".desktop-creators")).toBeHidden();
+    const rank = (n: number) => cards.nth(n).locator(".rank-number");
+    await expect(rank(0)).toHaveCSS("color", "rgb(224, 180, 92)");
+    await expect(rank(1)).toHaveCSS("color", "rgb(201, 203, 212)");
+    await expect(rank(2)).toHaveCSS("color", "rgb(201, 138, 92)");
+    await expect(rank(3)).toHaveCSS("color", "rgb(154, 154, 164)");
+    const first = cards.first();
+    await expect(first.locator(".address-chip .mono")).toHaveText(goldShort);
+    await expect(first.getByText("BOUGHT OWN")).toBeVisible();
+    await expect(cards.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
+    await expect(first.locator(".mobile-creator-launches strong")).toHaveText(
+      "14",
+    );
+    const stats = first.locator(".mobile-creator-stats");
+    await expect(stats).toContainText("Vol 412.8 ETH");
+    await expect(stats.locator(".still-trading-label")).toHaveText(
+      "9 of 14 · 64%",
+    );
+    const unmeasured = cards.nth(4).locator(".mobile-creator-stats");
+    await expect(unmeasured).not.toContainText("Vol");
+    await expect(unmeasured.locator(".unavailable")).toHaveAttribute(
+      "aria-label",
+      "Unavailable: No measured launch",
+    );
+    await expect(page.getByText("N/A")).toHaveCount(0);
+    for (const card of await cards.all()) {
+      const box = await card.evaluate((node) => {
+        const top = node.querySelector(".mobile-creator-top")!;
+        const launches = node.querySelector(".mobile-creator-launches")!;
+        return {
+          height: node.getBoundingClientRect().height,
+          fits:
+            node.scrollHeight <= node.clientHeight &&
+            top.scrollWidth <= top.clientWidth,
+          launchesRight: launches.getBoundingClientRect().right,
+          topRight: top.getBoundingClientRect().right,
+        };
+      });
+      expect(box.height).toBe(104);
+      expect(box.fits, "the row's content fits its box").toBe(true);
+      expect(box.launchesRight, "the launch count sits at the right").toBe(
+        box.topRight,
+      );
+    }
+    return;
+  }
   // The panel reserves its default 25-row shape; only the first five carry
   // this fixture's data, the rest render as empty reserved rows.
   const rowsLocator = panel.locator('tbody tr[data-row="resolved"]');
@@ -400,7 +465,6 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   const firstChip = rowsLocator.first().locator(".address-chip");
   await expect(firstChip.locator(".avatar")).toHaveCSS("width", "28px");
   await expect(firstChip.locator(".avatar")).toHaveCSS("height", "28px");
-  const goldShort = shortAddress(goldAddress);
   await expect(firstChip.locator(".address-chip-name")).toHaveText(goldShort);
   await expect(firstChip.locator(".address-chip-lines .mono")).toHaveText(
     goldShort,

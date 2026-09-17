@@ -4396,11 +4396,17 @@ main {
   font-size: 11.5px;
   color: var(--color-text-3);
 }
+/* The secondary line and its badge side by side, as the export sets them. */
+.address-chip-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 @container site (max-width: 767px) {
   /* Touch targets: the chip's link and actions reach 44px inside the 44px
      trader heading, and inside the launch card's 16px sender line by the
-     negative margin its link already carries. The creators table is the
-     same table on a phone, so its link keeps the 44px the bare link had. */
+     negative margin its link already carries. The creators board's chip, in
+     its rows or its table, keeps the 44px the bare link had. */
   .mobile-trader-heading .address-chip-link,
   .mobile-trader-heading .address-chip .icon-button,
   .creators-page .address-chip-link,
@@ -4633,27 +4639,15 @@ main {
     padding: 6px 8px;
     font-size: 12px;
   }
-  .desktop-pools,
-  .desktop-traders {
+  .desktop-pools {
     display: none;
   }
-  .mobile-pools,
-  .mobile-traders {
+  .mobile-pools {
     display: block;
   }
   .mobile-pool {
     padding: 13px 14px;
     border-bottom: 1px solid #17171c;
-  }
-  .mobile-trader {
-    padding: 15px 14px;
-    border-bottom: 1px solid #17171c;
-  }
-  .mobile-trader-heading {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
   }
   /* Identity takes the remaining width; price stacks over its signed change
      at the right, as the export's row sets it, with the star past both. */
@@ -4822,64 +4816,6 @@ main {
     font-size: 11px;
     padding: 11px 12px;
   }
-  .mobile-trader-heading > svg {
-    color: #555560;
-  }
-  .mobile-trader-value {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  .mobile-trader-value > .number {
-    font-size: 22px;
-    font-weight: 600;
-  }
-  /* The caption follows the number; a pending row holds the number alone and
-     must keep the number's size so the card below it never moves on resolve. */
-  .mobile-trader-value > .number + span {
-    font-size: 11px;
-    color: var(--muted);
-  }
-  /* Same hierarchy as the desktop rows: ROI and W/L lead, the rest support. */
-  .mobile-trader-key,
-  .mobile-trader-stats {
-    display: grid;
-    gap: 12px;
-    margin-top: 12px;
-  }
-  .mobile-trader-key {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mobile-trader-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .mobile-trader-key > span,
-  .mobile-trader-stats > span {
-    display: block;
-    font-size: 12px;
-    color: var(--muted);
-  }
-  .mobile-trader-key strong,
-  .mobile-trader-stats strong {
-    display: block;
-    margin-top: 4px;
-    font-variant-numeric: tabular-nums;
-  }
-  .mobile-trader-key strong {
-    font-size: var(--text-lg);
-    font-weight: 600;
-    color: var(--text);
-  }
-  .mobile-trader-stats strong,
-  .mobile-trader-stats .number {
-    font-size: var(--text-base);
-    font-weight: 400;
-    color: var(--color-text-2);
-  }
-  .mobile-trader > .record-cell {
-    margin-top: 14px;
-  }
   .footer {
     padding: 20px 14px;
     display: flex;
@@ -5018,7 +4954,7 @@ main {
    first and leave it the remainder: nothing in a panel under 1094px, and the
    address chip drew over the PnL. The table's floor is those fixed widths plus
    168px for Trader (the 134px chip, its cell padding and slack for Linux's
-   wider glyphs); a narrower panel scrolls the table within .table-scroll. */
+   wider glyphs); a narrower panel drops columns, below. */
 .leaderboard-panel .data-table {
   min-width: calc(
     58px + 168px + 150px + 104px + 2 * 92px + 124px + 110px + 134px + 186px +
@@ -5189,6 +5125,37 @@ main {
 }
 .explore-page .col-trend {
   width: 100px;
+}
+/* The table fits the list's own width rather than scrolling sideways: under
+   its 842px it drops Trend, and under 742px Launch sender as well. The token
+   and every figure stay; a phone shows the rows. The dropped columns keep
+   their place at no width, so a launch row's five-column span still reaches
+   the table's edge, and only the last cells of a row are hidden, so no cell
+   shifts into another's column. */
+.explore-page .table-region {
+  container: pool-list / inline-size;
+}
+@container pool-list (width < 842px) {
+  .explore-page .pool-table {
+    min-width: 742px;
+  }
+  .explore-page .col-trend {
+    width: 0;
+  }
+  .explore-page .pool-table :is(th, td):nth-child(7) {
+    display: none;
+  }
+}
+@container pool-list (width < 742px) {
+  .explore-page .pool-table {
+    min-width: 620px;
+  }
+  .explore-page .col-sender {
+    width: 0;
+  }
+  .explore-page .pool-table :is(th, td):nth-child(6) {
+    display: none;
+  }
 }
 /* The figures and their heads read from the right, as the export's and the
    references' do, so the columns line up on the decimal; the token and the
@@ -5663,6 +5630,120 @@ main {
 .wallet-list-region .data-table td {
   height: auto;
 }
+/* The wallet's lists fit the panel's own width rather than scrolling
+   sideways. Positions give the token at least 180px beside four 150px figures
+   (780px) and drop Cost under that; trades hold a 140px pool beside their
+   fixed columns (672px) and launches a 200px token (570px). Under 672px, where
+   trades no longer fit, every tab shows rows instead of its table. */
+.wallet-activity {
+  container: wallet-activity / inline-size;
+}
+.wallet-positions-table {
+  min-width: 780px;
+}
+.wallet-trades-table {
+  min-width: 672px;
+}
+.wallet-trades-table th:nth-child(1) {
+  width: 190px;
+}
+.wallet-trades-table th:nth-child(3) {
+  width: 72px;
+}
+.wallet-trades-table th:nth-child(4) {
+  width: 130px;
+}
+.wallet-trades-table th:nth-child(5) {
+  width: 140px;
+}
+.wallet-launches-table {
+  min-width: 570px;
+}
+.wallet-launches-table th:nth-child(2) {
+  width: 190px;
+}
+.wallet-launches-table th:nth-child(3) {
+  width: 180px;
+}
+.wallet-trades-table td:nth-child(2),
+.wallet-launches-table td:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container wallet-activity (width < 780px) {
+  .wallet-positions-table {
+    min-width: 630px;
+  }
+  .wallet-positions-table col:nth-child(3),
+  .wallet-positions-table :is(th, td):nth-child(3) {
+    display: none;
+  }
+}
+.mobile-wallet-rows {
+  display: none;
+}
+@container wallet-activity (width < 672px) {
+  .wallet-activity .wallet-list-region {
+    display: none;
+  }
+  .wallet-activity .mobile-wallet-rows {
+    display: block;
+  }
+}
+/* The screener's phone row shape: the identity with its headline figure at
+   the right on the 44px line, then one 24px line: 13 + 44 + 10 + 24 + 12 +
+   1px of border. */
+.mobile-position,
+.mobile-wallet-row {
+  height: 104px;
+  padding: 13px 14px 12px;
+  border-bottom: 1px solid #17171c;
+}
+.mobile-wallet-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 13px;
+}
+.mobile-wallet-row-top > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-wallet-row-top > :last-child {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-position-pnl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.mobile-position-pnl > .number {
+  font-size: 14px;
+  font-weight: 600;
+}
+.mobile-position-pnl > span:last-child:not(.number),
+.mobile-position-pnl > span:last-child .number {
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.mobile-wallet-row-stats {
+  margin-top: 10px;
+  line-height: 24px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-wallet-row-stats .number {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
 /* Positions like the export: a 30px identity in the token cell, the four
    figure columns right-aligned under right-aligned heads. */
 .wallet-positions-table th:nth-child(n + 2),
@@ -5755,6 +5836,124 @@ a.wallet-top-pool:hover {
 .leaderboard-panel .data-table tbody td {
   height: 62px;
 }
+/* The board fits its own width rather than scrolling sideways: under the full
+   table's 1262px it drops Last, under 1076px Positions as well, under 966px
+   Best sale, and under the 832px the remaining columns need it shows the rows,
+   which carry every figure. A phone is always under 832px. */
+.leaderboard-panel {
+  container: traders-board / inline-size;
+}
+@container traders-board (width < 1262px) {
+  .leaderboard-panel .data-table {
+    min-width: 1076px;
+  }
+  .leaderboard-panel .data-table :is(th, td):nth-child(10) {
+    display: none;
+  }
+}
+@container traders-board (width < 1076px) {
+  .leaderboard-panel .data-table {
+    min-width: 966px;
+  }
+  .leaderboard-panel .data-table :is(th, td):nth-child(8) {
+    display: none;
+  }
+}
+@container traders-board (width < 966px) {
+  .leaderboard-panel .data-table {
+    min-width: 832px;
+  }
+  .leaderboard-panel .data-table :is(th, td):nth-child(9) {
+    display: none;
+  }
+}
+@container traders-board (width < 832px) {
+  .leaderboard-panel .desktop-traders {
+    display: none;
+  }
+  .leaderboard-panel .mobile-traders {
+    display: block;
+  }
+  .mobile-trader {
+    padding: 15px 14px;
+    border-bottom: 1px solid #17171c;
+  }
+  .mobile-trader-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .mobile-trader-heading > svg {
+    color: #555560;
+  }
+  .mobile-trader-value {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .mobile-trader-value > .number {
+    font-size: 22px;
+    font-weight: 600;
+  }
+  /* The caption follows the number; a pending row holds the number alone and
+     must keep the number's size so the card below it never moves on resolve. */
+  .mobile-trader-value > .number + span {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  /* Same hierarchy as the desktop rows: ROI and W/L lead, the rest support. */
+  .mobile-trader-key,
+  .mobile-trader-stats {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .mobile-trader-key {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mobile-trader-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .mobile-trader-key > span,
+  .mobile-trader-stats > span {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .mobile-trader-key strong,
+  .mobile-trader-stats strong {
+    display: block;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .mobile-trader-key strong {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mobile-trader-stats strong,
+  .mobile-trader-stats .number {
+    font-size: var(--text-base);
+    font-weight: 400;
+    color: var(--color-text-2);
+  }
+  .mobile-trader > .record-cell {
+    margin-top: 14px;
+  }
+  .leaderboard-panel .mobile-traders:not(.following-traders) {
+    min-height: calc(25 * 224px);
+  }
+  .leaderboard-panel .mobile-trader {
+    height: 224px;
+    overflow: auto;
+  }
+  /* The identity follows its rank now that no badge holds the right edge. */
+  .leaderboard-panel .mobile-trader-heading {
+    justify-content: flex-start;
+  }
+}
 .leaderboard-panel .live-podium {
   height: 215px;
   padding-top: 16px;
@@ -5772,11 +5971,118 @@ a.wallet-top-pool:hover {
   min-height: calc(25 * 62px + 44px);
 }
 /* Column widths follow the export's grid, which keeps the creator column at its
-   width (about 600px at 1440) and at least the export's 180px on a phone: 192px
-   there, so the address chip with its two actions never ellipsises. */
+   width (about 600px at 1440) and never under 190px: the chip with both its
+   actions, its cell padding and slack for Linux's wider glyphs. A BOUGHT OWN
+   badge stacks beneath the address in a column too narrow to hold it beside. */
 .creators-page .data-table {
   table-layout: fixed;
-  min-width: 1000px;
+  min-width: 998px;
+}
+/* The chip spans its cell and measures it. Under the 240px a badge needs
+   beside the address (with slack for Linux's wider glyphs) the badge stacks
+   beneath the address, a grid so the line is only as wide as its widest item
+   and the chip's actions still follow the address. */
+.creators-page .data-table .address-chip {
+  container: creator-chip / inline-size;
+  width: 100%;
+}
+@container creator-chip (width < 240px) {
+  .address-chip-meta {
+    display: grid;
+    justify-items: start;
+    gap: 2px;
+  }
+}
+/* The board fits its own width rather than scrolling sideways: under the full
+   table's 998px it drops Median, under 854px Best as well, and under the 686px
+   those five columns need it shows the rows instead of the table. */
+.creators-panel {
+  container: creators-board / inline-size;
+}
+.mobile-creators {
+  display: none;
+}
+@container creators-board (width < 998px) {
+  .creators-page .data-table {
+    min-width: 854px;
+  }
+  .creators-page .data-table :is(th, td):nth-child(6) {
+    display: none;
+  }
+}
+@container creators-board (width < 854px) {
+  .creators-page .data-table {
+    min-width: 686px;
+  }
+  .creators-page .data-table :is(th, td):nth-child(7) {
+    display: none;
+  }
+}
+@container creators-board (width < 686px) {
+  .creators-page .desktop-creators {
+    display: none;
+  }
+  .mobile-creators {
+    display: block;
+    min-height: calc(25 * 104px);
+  }
+}
+/* The screener's phone row: identity with the launch count at the right on
+   the 44px line, then the volume and the still-trading bar on a 24px line:
+   13 + 44 + 10 + 24 + 12 + 1px of border. */
+.mobile-creator {
+  height: 104px;
+  padding: 13px 14px 12px;
+  border-bottom: 1px solid #17171c;
+}
+.mobile-creator-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.mobile-creator-top .rank-number {
+  flex: 0 0 20px;
+  font-size: 12.5px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.mobile-creator-top .address-chip,
+.mobile-creator-identity {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-creator-launches {
+  flex-shrink: 0;
+  min-width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.mobile-creator-launches strong {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-creator-launches span {
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.mobile-creator-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mobile-creator-stats .number {
+  font-size: 12px;
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
 }
 .creators-page .data-table th:nth-child(1) {
   width: 64px;
@@ -5818,13 +6124,16 @@ a.wallet-top-pool:hover {
 }
 /* Gold, silver and bronze for the top three ranks, the captain's own
    addition on top of the export (which leaves every rank the same colour). */
-.creators-page tr[data-row-index="0"] td.rank-number {
+.creators-page tr[data-row-index="0"] td.rank-number,
+.mobile-creator[data-row-index="0"] .rank-number {
   color: #e0b45c;
 }
-.creators-page tr[data-row-index="1"] td.rank-number {
+.creators-page tr[data-row-index="1"] td.rank-number,
+.mobile-creator[data-row-index="1"] .rank-number {
   color: #c9cbd4;
 }
-.creators-page tr[data-row-index="2"] td.rank-number {
+.creators-page tr[data-row-index="2"] td.rank-number,
+.mobile-creator[data-row-index="2"] .rank-number {
   color: #c98a5c;
 }
 .creators-page .data-table td:nth-child(3) {
@@ -5869,10 +6178,70 @@ a.wallet-top-pool:hover {
   align-items: center;
   min-height: 44px;
 }
-/* Creator detail's launches table: the token column takes what's left. */
+/* Creator detail's launches table: the token column takes what's left, never
+   under 200px, and ellipsises a longer name. Under the full table's 850px the
+   panel drops Creator fees rather than scrolling; under 768px it shows rows. */
+.creator-launches {
+  container: creator-launches / inline-size;
+}
 .creator-launches-table {
   table-layout: fixed;
-  min-width: 1000px;
+  min-width: 850px;
+}
+.creator-launches-table td:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container creator-launches (width < 850px) {
+  .creator-launches-table {
+    min-width: 710px;
+  }
+  .creator-launches-table .col-fees,
+  .creator-launches-table :is(th, td):nth-child(5) {
+    display: none;
+  }
+}
+.mobile-launches {
+  display: none;
+}
+@container site (max-width: 767px) {
+  .desktop-creator-launches {
+    display: none;
+  }
+  .mobile-launches {
+    display: block;
+  }
+}
+.mobile-launch {
+  padding: 12px 14px;
+  border-bottom: 1px solid #17171c;
+}
+.mobile-launch:last-child {
+  border-bottom: 0;
+}
+.mobile-launch-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 13px;
+}
+.mobile-launch-top > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 44px;
+}
+.mobile-launch-top > .number {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.mobile-launch-stats {
+  font-size: 12px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
 }
 .creator-launches-table .col-launch {
   width: 210px;
@@ -5952,17 +6321,6 @@ a.wallet-top-pool:hover {
   }
   .leaderboard-panel .live-podium a > .number {
     grid-area: value;
-  }
-  .leaderboard-panel .mobile-traders:not(.following-traders) {
-    min-height: calc(25 * 224px);
-  }
-  .leaderboard-panel .mobile-trader {
-    height: 224px;
-    overflow: auto;
-  }
-  /* The identity follows its rank now that no badge holds the right edge. */
-  .leaderboard-panel .mobile-trader-heading {
-    justify-content: flex-start;
   }
   /* Mobile pools are cards with no header row, so the message starts flush. */
   .explore-page .table-region > .empty-state {

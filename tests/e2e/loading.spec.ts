@@ -167,8 +167,13 @@ test("wallet and leaderboard show structured loading instead of empty analytics"
     release();
     await expect(skeleton).toHaveCount(0);
     if (entry.loadedCell)
+      // A phone shows the positions as rows rather than under a table head.
       await expect(
-        page.locator("thead th", { hasText: entry.loadedCell }),
+        page
+          .locator("thead th", { hasText: entry.loadedCell })
+          .or(page.locator('.mobile-position[data-row="resolved"]'))
+          .filter({ visible: true })
+          .first(),
       ).toBeVisible();
     else
       await expect(

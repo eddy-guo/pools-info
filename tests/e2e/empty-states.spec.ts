@@ -119,7 +119,10 @@ test("the wallet's empty positions use the same designed empty state", async ({
   await expect(empty.locator(".empty-symbol svg")).toBeVisible();
 
   const region = (await page
-    .locator(".wallet-page .wallet-list-region")
+    .locator(
+      ".wallet-page .wallet-list-region, .wallet-page .mobile-wallet-rows",
+    )
+    .filter({ visible: true })
     .boundingBox())!;
   const block = (await empty.boundingBox())!;
   expect(
