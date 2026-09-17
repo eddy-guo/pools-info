@@ -3872,7 +3872,7 @@ main {
   line-height: 18px;
   font-weight: 500;
 }
-/* The token column is at its 162px floor up to a 1440px viewport, so a long
+/* The token column is at its 150px floor up to a 1440px viewport, so a long
    symbol and its launch date end in an ellipsis like the name above rather
    than running under the price. */
 .desktop-pools .token-cell small {
@@ -4947,9 +4947,12 @@ main {
    value plus the cell padding and a volume never runs under the liquidity
    beside it. The narrower gutter is what lets them all fit; the token column
    takes the remainder, and the table scrolls rather than clip below the
-   868px of fixed columns plus a readable token column. The 11.5px head sizes
+   880px of fixed columns plus a readable token column. The 11.5px head sizes
    three of them: trades holds its label and sort arrow, and holders and
-   launch sender hold their labels without reaching into the next column. */
+   launch sender hold their labels without reaching into the next column,
+   with half a pixel per glyph to spare for a renderer that rounds glyph
+   advances to whole pixels: Linux Chromium, where CI runs the browser
+   suite, sets "Launch sender" 2px wider than macOS. */
 .explore-page .pool-table {
   min-width: 1030px;
 }
@@ -4975,10 +4978,10 @@ main {
   width: 76px;
 }
 .explore-page .col-holders {
-  width: 65px;
+  width: 69px;
 }
 .explore-page .col-sender {
-  width: 110px;
+  width: 118px;
 }
 .explore-page .col-trend {
   width: 100px;
