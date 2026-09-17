@@ -14,6 +14,15 @@ export interface ObservedMarket {
    * supply. Served only with the aggregate ledger's market, null there until
    * the supply has been read; absent on the broad and raw paths. */
   fdvWei?: string | null;
+  /** Whether the pool's launching deployment takes creator fees. It is a
+   * property of that deployment rather than of the pool, so it comes from the
+   * pinned registry in `packages/chain/src/deployments.ts`. Served with the
+   * ledger's market, where the deep publication the page used to read is not
+   * served. It is ABSENT whenever it is not known - never false - because a
+   * fabricated "Disabled" would be a misleading claim about someone's money;
+   * it is absent on the broad and raw paths too, which carry the publication
+   * itself. */
+  creatorFees?: boolean;
   window: LiveWindow;
   volumeWei: string | null;
   trades: number | null;
@@ -99,6 +108,7 @@ export function assertObservedMarket(
     !(v.priceWei === null || uint(v.priceWei)) ||
     !(v.fdvWei === undefined || v.fdvWei === null || uint(v.fdvWei)) ||
     (v.fdvWei != null && v.priceWei === null) ||
+    !(v.creatorFees === undefined || typeof v.creatorFees === "boolean") ||
     !(v.volumeWei === null || uint(v.volumeWei)) ||
     !(v.trades === null || integer(v.trades)) ||
     !(

@@ -378,7 +378,18 @@ export async function readData(
       // wins only at or past its cutoff), so the page gets one price, one
       // candle series and one trade list: the ledger's.
       analytics: servedByLedger(market) ? null : analytics,
-      market,
+      // The creator-fee flag is the one field of that publication the page has
+      // no other source for, and withholding it renders an empty stat. It is
+      // carried on the market instead of the publication, because serving the
+      // publication would put the page's price and candles back on it.
+      // Absent, never false, when the publication that holds it is missing:
+      // an invented "Disabled" would misstate whether a pool charges its
+      // creator a fee, which is a claim about someone's money.
+      market:
+        servedByLedger(market) &&
+        typeof analytics?.snapshot.markets[0]?.creatorFees === "boolean"
+          ? { ...market, creatorFees: analytics.snapshot.markets[0].creatorFees }
+          : market,
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
   }

@@ -277,6 +277,7 @@ test(
               launchedAt: pools.K.launchedAt,
               launchTx: word(pools.K.launchBlock + 7),
               launchSender: address(98),
+              creatorFees: true,
               priceWei: kaijuDeepPriceWei,
               volumeWei: "0",
             },
@@ -643,6 +644,13 @@ test(
       assert.equal(response.data.analytics, null);
       return response.data.market;
     };
+    // A ledger-served pool with no deep publication has no creator-fee flag to
+    // serve, and the key is ABSENT rather than false: an invented "Disabled"
+    // would misstate whether a pool charges its creator a fee. (The published
+    // case belongs to a pool that is both ledger-served and published, which
+    // this fixture has none of: K carries a publication that outranks the
+    // ledger, so the page reads the publication directly there.)
+    assert.equal("creatorFees" in (await poolPage(pools.N.id, "24h")), false);
     for (const window of ["24h", "7d", "All"]) {
       const market = await poolPage(pools.N.id, window);
       const r = row(launchOrder(window), pools.N.id);

@@ -150,3 +150,18 @@ test("the aggregate ledger's market: hourly candles, its own unit basis and an F
   unpriced.fdvWei = null;
   assert.doesNotThrow(() => assertObservedMarket(unpriced, id, token, "24h"));
 });
+
+test("the creator-fee flag is a boolean or absent, never null", () => {
+  // Enabled and Disabled may only come from a real boolean: a null would be
+  // read as "Disabled" by any loose client, which would misstate a fee.
+  const market = fixture();
+  market.creatorFees = true;
+  assertObservedMarket(market, market.poolId, market.token, market.window);
+  delete market.creatorFees;
+  assertObservedMarket(market, market.poolId, market.token, market.window);
+  (market as unknown as Record<string, unknown>).creatorFees = null;
+  assert.throws(
+    () => assertObservedMarket(market, market.poolId, market.token, market.window),
+    /Invalid observed market/,
+  );
+});
