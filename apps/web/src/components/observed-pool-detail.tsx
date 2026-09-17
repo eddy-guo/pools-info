@@ -170,7 +170,14 @@ export function ObservedPoolDetail({
             </div>
             <div className="pool-address-slot">
               {pool?.token ? (
-                <AddressLabel address={pool.token} full />
+                <>
+                  <span className="pool-address-full">
+                    <AddressLabel address={pool.token} full />
+                  </span>
+                  <span className="pool-address-short">
+                    <AddressLabel address={pool.token} />
+                  </span>
+                </>
               ) : (
                 <span className="address-label mono" data-pending={pending}>
                   {pending

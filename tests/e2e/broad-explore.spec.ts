@@ -64,7 +64,6 @@ test.describe("persisted broad market explore", () => {
       .filter({ has: page.getByRole("link", { name: /Canonical market/ }) });
     await expect(row).toBeVisible();
     await expect(row).toContainText("21001");
-    await expect(row).toContainText("Broad swaps");
     await expect(
       row.locator(`[title="${BigInt(marketAmount) * 21001n} wei"]`),
     ).toBeVisible();

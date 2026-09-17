@@ -37,10 +37,40 @@
   line-height: 1.6;
   border-top: 1px solid var(--line);
 }
-.status {
-  height: 76px;
-  overflow: auto;
-  font-variant-numeric: tabular-nums;
+/* The export's head state: a 5px dot and one word at the right edge. The box
+   is as wide as "streaming" so a change of word never moves the dot. */
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 68px;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--color-text-3);
+}
+.state > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-faint);
+}
+.state[data-state="streaming"] > i {
+  background: var(--color-up);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.state[data-state="delayed"] > i {
+  background: var(--color-warn);
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
 }
 @keyframes arrive {
   from {
@@ -56,7 +86,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .row[data-new="true"] {
+  .row[data-new="true"],
+  .state[data-state] > i {
     animation: none;
   }
 }

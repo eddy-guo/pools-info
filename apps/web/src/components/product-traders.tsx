@@ -4,7 +4,7 @@ import { shortAddress, type AnalyticsLeaderboardResponse } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useQuery } from "./state";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { Avatar, Change } from "./ui";
+import { AddressChip, Avatar, Change } from "./ui";
 import { ProductPagination } from "./product-common";
 import { AccountingBadge } from "./accounting-badge";
 export function ProductTraders() {
@@ -158,12 +158,10 @@ export function ProductTraders() {
                     <td data-pending={!w && !data}>
                       {w ? (
                         <>
-                          <Link
-                            className="mono"
+                          <AddressChip
+                            address={w.address}
                             href={`/wallet/${w.address}/?window=${window}`}
-                          >
-                            {shortAddress(w.address)}
-                          </Link>
+                          />
                           <div className="cell-sub">
                             <AccountingBadge wallet={w} />
                           </div>
@@ -265,13 +263,10 @@ export function ProductTraders() {
                   <>
                     <div className="mobile-trader-heading">
                       <span className="rank-number">#{w.rank}</span>
-                      <Link
-                        className="trader-identity"
+                      <AddressChip
+                        address={w.address}
                         href={`/wallet/${w.address}/?window=${window}`}
-                      >
-                        <Avatar address={w.address} small />
-                        <span className="mono">{shortAddress(w.address)}</span>
-                      </Link>
+                      />
                       <AccountingBadge wallet={w} />
                     </div>
                     <div className="mobile-trader-value">

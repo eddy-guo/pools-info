@@ -9,7 +9,7 @@ import {
 } from "react";
 import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
-import { Eth, explorer, utc } from "./live-ui";
+import { Eth, Unavailable, explorer, utc } from "./live-ui";
 import styles from "./trade-stream.module.css";
 const subscribeClock = (notify: () => void) => {
   const timer = setInterval(notify, 15000);
@@ -43,8 +43,7 @@ function age(timestamp: number, now: number) {
 export function TradeStream({ poolId }: { poolId?: string }) {
   const scope = poolId?.toLowerCase() ?? "all";
   const now = useSyncExternalStore(subscribeClock, nowSeconds, serverSeconds);
-  const [enabled, setEnabled] = useState(true),
-    [attempt, setAttempt] = useState(0);
+  const [enabled, setEnabled] = useState(true);
   const [state, setState] = useState<{
     scope: string;
     data?: LiveTradeFeedResponse;
@@ -136,7 +135,7 @@ export function TradeStream({ poolId }: { poolId?: string }) {
       active?.abort();
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [scope, enabled, attempt]);
+  }, [scope, enabled]);
   const data = current?.data,
     coverage = data?.coverage;
   useLayoutEffect(() => {
@@ -173,17 +172,9 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     current?.error ||
     coverage?.state === "stale" ||
     (coverage?.asOf && now && now - coverage.asOf > coverage.staleAfterSeconds);
-  const status = !enabled
-    ? "Paused"
-    : stale
-      ? data
-        ? "Updates delayed · showing last received trades"
-        : "Recent trades are temporarily unavailable"
-      : coverage?.state === "uninitialized"
-        ? "Waiting for the first live capture"
-        : data
-          ? "Checking every 15s"
-          : "Loading recent trades…";
+  // One word in the head: the feed polls on its own every 15s, so a delayed
+  // window recovers without a control.
+  const feed = !enabled ? "paused" : stale ? "delayed" : "streaming";
   return (
     <section
       className={`panel trade-stream ${styles.rail}`}
@@ -191,23 +182,16 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     >
       <div className="panel-heading">
         <h2>Live trades</h2>
+        <span className={styles.state} data-state={feed} role="status">
+          <i aria-hidden="true" />
+          {feed}
+        </span>
         <button
           className="text-button"
           onClick={() => setEnabled((value) => !value)}
         >
           {enabled ? "Pause feed" : "Resume feed"}
         </button>
-      </div>
-      <div className={`feed-status ${styles.status}`} role="status">
-        <span>{status}</span>
-        {current?.error && enabled && (
-          <button
-            className="text-button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
-            Retry feed
-          </button>
-        )}
       </div>
       <div className={`activity-list ${styles.events}`} ref={list}>
         {!data &&
@@ -226,17 +210,13 @@ export function TradeStream({ poolId }: { poolId?: string }) {
                 </span>
               </div>
               <div className={styles.meta}>
-                <span data-pending="true">Tx initiator pending</span>
+                <span data-pending="true">Address pending</span>
                 <time data-pending="true">Time pending</time>
               </div>
             </div>
           ))}
         {data && !data.events.length && (
-          <p className={styles.note}>
-            {coverage?.state === "uninitialized"
-              ? "The collector is starting. Trades appear after the first saved capture."
-              : "No swaps in the saved recent window. Checking continues while this page is visible."}
-          </p>
+          <p className={styles.note}>No recent trades</p>
         )}
         {data?.events.map((event) => (
           <div
@@ -259,7 +239,6 @@ export function TradeStream({ poolId }: { poolId?: string }) {
             </div>
             <div className={styles.meta}>
               <span>
-                Tx initiator{" "}
                 {event.transactionInitiator ? (
                   <Link
                     className="mono"
@@ -268,7 +247,7 @@ export function TradeStream({ poolId }: { poolId?: string }) {
                     {shortAddress(event.transactionInitiator)}
                   </Link>
                 ) : (
-                  "unavailable"
+                  <Unavailable />
                 )}
               </span>
               <a

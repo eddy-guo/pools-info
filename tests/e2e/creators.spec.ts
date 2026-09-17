@@ -103,7 +103,7 @@ test("creators stream one bounded batch into a virtualised, layout-stable table"
   const panel = page.locator(".creators-panel");
   await expect(panel).toHaveCSS("border-top-left-radius", "16px");
   const before = await documentBox(page, ".creators-panel");
-  const status = panel.getByRole("status");
+  const status = panel.locator(".creators-progress").getByRole("status");
   await expect(status).toHaveText(
     `2,000 of 2,500 pools · ${creators(2000).toLocaleString()} creators`,
     streaming,
@@ -155,10 +155,9 @@ test("creators sort from the URL and restore their scroll position after a detou
   await serveCatalog(page);
   await page.goto("/creators/");
   const panel = page.locator(".creators-panel");
-  await expect(panel.getByRole("status")).toHaveText(
-    /2,000 of 2,500 pools/,
-    streaming,
-  );
+  await expect(
+    panel.locator(".creators-progress").getByRole("status"),
+  ).toHaveText(/2,000 of 2,500 pools/, streaming);
   await page.getByRole("button", { name: "Launches" }).click();
   await expect(page).toHaveURL(/\?sort=launches$/);
   await expect(page.getByRole("button", { name: "Launches" })).toHaveAttribute(
@@ -183,7 +182,9 @@ test("creators sort from the URL and restore their scroll position after a detou
     )
     .not.toBe("0");
   // Row 52 sits fully inside the scrollport at this offset, so clicking it does not scroll.
-  const link = page.locator('.creators-page tbody tr[data-index="52"] a');
+  const link = page.locator(
+    '.creators-page tbody tr[data-index="52"] .address-chip-link',
+  );
   const href = (await link.getAttribute("href"))!;
   await link.click();
   await expect(page).toHaveURL(new RegExp(href));
@@ -191,10 +192,9 @@ test("creators sort from the URL and restore their scroll position after a detou
     "Launches",
   );
   await page.goBack();
-  await expect(panel.getByRole("status")).toHaveText(
-    /2,000 of 2,500 pools/,
-    streaming,
-  );
+  await expect(
+    panel.locator(".creators-progress").getByRole("status"),
+  ).toHaveText(/2,000 of 2,500 pools/, streaming);
   await expect
     .poll(() => surface.evaluate((node) => node.scrollTop))
     .toBe(3100);

@@ -557,13 +557,13 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
       .getByText("Sell", { exact: true }),
   ).toHaveCSS("color", "rgb(255, 97, 105)");
   await page.clock.fastForward(16000);
-  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("delayed");
   await expect(feed).not.toContainText(coverageStamp);
   await expect(feed.locator(".stream-event")).toHaveCount(2);
   await feed.getByRole("button", { name: "Pause feed" }).click();
   await page.clock.fastForward(45000);
   expect(calls).toBe(3);
-  await expect(feed.getByText("Paused", { exact: true })).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("paused");
   await feed.getByRole("button", { name: "Resume feed" }).click();
   await expect.poll(() => calls).toBe(4);
   await expect(feed.locator(".stream-event")).toHaveCount(1);
@@ -576,9 +576,7 @@ test("live feed highlights new identities, retains stale trades, pauses, and rep
   await page.clock.fastForward(16000);
   await expect.poll(() => calls).toBe(5);
   await expect(feed.locator(".stream-event")).toHaveCount(0);
-  await expect(
-    feed.getByText(/No swaps in the saved recent window/),
-  ).toBeVisible();
+  await expect(feed.getByText("No recent trades")).toBeVisible();
 });
 
 test("pool live feed has bounded rows, no overlapping polls, stops when hidden, and rejects another pool", async ({
@@ -609,7 +607,7 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
   await page.goto(poolHref(market), { waitUntil: "domcontentloaded" });
   const feed = page.getByRole("region", { name: "Recent trades" });
   await expect.poll(() => calls).toBe(1);
-  await expect(feed.getByText("Loading recent trades…")).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("streaming");
   await expect(feed).not.toContainText(coverageStamp);
   await page.clock.fastForward(9000);
   expect(calls).toBe(1);
@@ -632,15 +630,17 @@ test("pool live feed has bounded rows, no overlapping polls, stops when hidden, 
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await expect.poll(() => calls).toBe(2);
-  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("delayed");
   await expect(feed).not.toContainText(coverageStamp);
   await expect(feed.locator(".stream-event")).toHaveCount(50);
-  await feed.getByRole("button", { name: "Retry feed" }).click();
+  // A delayed window recovers on the next poll; there is no retry control.
+  await page.clock.fastForward(16000);
   await expect.poll(() => calls).toBe(3);
+  await expect(feed.getByRole("status")).toHaveText("streaming");
   await expect(feed.locator(".stream-event")).toHaveCount(1);
   expect(filters).toEqual([market.id, market.id, market.id]);
   await page.clock.fastForward(181000);
-  await expect(feed.getByText(/Updates delayed/)).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("delayed");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -698,7 +698,7 @@ test("live feed slides arriving trades into place with transform and opacity onl
   const feed = page.getByRole("region", { name: "Recent trades" });
   const rows = feed.locator(".stream-event");
   await expect(rows).toHaveCount(1);
-  await expect(feed.getByText("Checking every 15s")).toBeVisible();
+  await expect(feed.getByRole("status")).toHaveText("streaming");
   // Document-relative layout geometry of the feed and its surroundings,
   // unaffected by scrolling or by the transforms the entrance applies.
   const geometry = (retained: string) =>
@@ -809,8 +809,10 @@ test("live feed slides arriving trades into place with transform and opacity onl
     Array.from({ length: 4 }, () => ({ transform: "none", opacity: "1" })),
   );
   await feed.evaluate((node) => {
-    for (const animation of node.getAnimations({ subtree: true }))
-      animation.finish();
+    // The head's streaming dot pulses without end; only the row slides settle.
+    for (const row of node.querySelectorAll(".stream-event"))
+      for (const animation of row.getAnimations({ subtree: true }))
+        animation.finish();
   });
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
   await page.emulateMedia({ reducedMotion: "reduce" });
