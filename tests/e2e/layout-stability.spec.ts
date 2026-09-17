@@ -85,6 +85,11 @@ const routes = [
   },
   { name: "creators", url: "/creators/", sentinel: ".creators-panel" },
   {
+    name: "creator-detail",
+    url: `/creators/${chain.markets[0].launchSender}/`,
+    sentinel: ".live-section",
+  },
+  {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
     sentinel: ".nullable-pool-page .workspace-grid",
