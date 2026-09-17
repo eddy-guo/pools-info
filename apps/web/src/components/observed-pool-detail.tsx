@@ -6,16 +6,14 @@ import {
   poolWindow,
   shortAddress,
   since,
-  type AnalyticsPoolDetail,
   type ChainMarket,
   type ChainSnapshot,
   type LiveWindow,
   type ObservedMarket,
-  type PoolAudit,
 } from "@pools/core";
 import styles from "./detail-design.module.css";
 import { AddressLabel, Change, Price, WatchButton } from "./ui";
-import { Eth, Stat, Trades, Unavailable, explorer, utc } from "./live-ui";
+import { Eth, Stat, Unavailable, explorer, utc } from "./live-ui";
 import { PendingValue } from "./product-common";
 import { PoolImage } from "./pool-image";
 import {
@@ -24,8 +22,6 @@ import {
   useHydrated,
   type ChartRange,
 } from "./candles";
-import { TradeStream } from "./trade-stream";
-import { AuditLeaderboard } from "./traders";
 
 export interface ObservedPoolIdentity {
   poolId: string;
@@ -238,8 +234,6 @@ export function ObservedPoolDetail({
   market,
   accountedMarket,
   snapshot,
-  publication,
-  audit,
   refresh,
   loading,
   pending = false,
@@ -251,8 +245,6 @@ export function ObservedPoolDetail({
   market?: ObservedMarket;
   accountedMarket?: ChainMarket;
   snapshot?: ChainSnapshot;
-  publication?: AnalyticsPoolDetail;
-  audit?: PoolAudit | null;
   refresh: () => void;
   loading: boolean;
   pending?: boolean;
@@ -260,7 +252,6 @@ export function ObservedPoolDetail({
   chart?: boolean;
   renderedAt: number;
 }) {
-  const [tab, setTab] = useState("Top traders");
   const [range, setRange] = useState<ChartRange>("All");
   const candles =
     !!(accountedMarket && snapshot) || !!market?.history.candles.length;
@@ -281,30 +272,6 @@ export function ObservedPoolDetail({
           10n ** BigInt(accountedMarket.decimals)
         ).toString()
       : (market?.fdvWei ?? undefined);
-  const holderRows = publication?.holders?.balances;
-  const observedTrades = market?.observations;
-  const capturedTrades = snapshot?.trades.filter(
-    (trade) => trade.poolId === id,
-  );
-  const rows = accountedMarket ? capturedTrades : observedTrades;
-  const holders = publication?.holders;
-  const sum = (balances: NonNullable<typeof holderRows>) =>
-    balances.reduce((total, holder) => total + BigInt(holder.balanceRaw), 0n);
-  const ratio = (numerator: bigint, denominator: bigint) =>
-    denominator > 0n
-      ? `${(Number((numerator * 10000n) / denominator) / 100).toFixed(2)}%`
-      : null;
-  const users = holderRows?.filter(
-    (holder) => holder.kind !== "infrastructure",
-  );
-  const rawTop10 =
-    holders?.complete && holderRows
-      ? ratio(sum(holderRows.slice(0, 10)), BigInt(holders.totalSupplyRaw))
-      : null;
-  const adjustedTop10 =
-    holders?.complete && users
-      ? ratio(sum(users.slice(0, 10)), sum(users))
-      : null;
   const showChart = candles || (chart && pending);
   return (
     <div
@@ -357,297 +324,68 @@ export function ObservedPoolDetail({
           Trade on Pools ↗
         </a>
       </PoolHeading>
-      <div className="workspace-grid">
-        <div>
-          <section className="panel pool-chart-panel">
-            {/* A row with no market evidence has no price to head the panel
-                with; its panel is the empty state alone. */}
-            {(candles || chart) && (
-              <PoolChartHead
-                price={price}
-                change={change}
-                windows={windowChanges(accountedMarket, snapshot, market)}
-                pending={pending}
-                range={range}
-                onRange={showChart ? setRange : undefined}
-              />
-            )}
-            {/* The height is settled at first paint and never moves after it:
-                a chart that can still arrive holds its full region, and a row
-                with no market evidence opens on the empty state. */}
-            <div
-              className="pool-chart-region"
-              data-chart={candles || chart ? "reserved" : "empty"}
-            >
-              {showChart ? (
-                <Candles
-                  range={range}
-                  {...(accountedMarket && snapshot
-                    ? { market: accountedMarket, snapshot }
-                    : market
-                      ? { observed: market }
-                      : { poolId: id, pending })}
-                />
-              ) : (
-                <div className="empty-state">
-                  <h3>Price chart unavailable</h3>
-                </div>
-              )}
+      <section className="panel pool-chart-panel">
+        {/* A row with no market evidence has no price to head the panel
+            with; its panel is the empty state alone. */}
+        {(candles || chart) && (
+          <PoolChartHead
+            price={price}
+            change={change}
+            windows={windowChanges(accountedMarket, snapshot, market)}
+            pending={pending}
+            range={range}
+            onRange={showChart ? setRange : undefined}
+          />
+        )}
+        {/* The height is settled at first paint and never moves after it:
+            a chart that can still arrive holds its full region, and a row
+            with no market evidence opens on the empty state. */}
+        <div
+          className="pool-chart-region"
+          data-chart={candles || chart ? "reserved" : "empty"}
+        >
+          {showChart ? (
+            <Candles
+              range={range}
+              {...(accountedMarket && snapshot
+                ? { market: accountedMarket, snapshot }
+                : market
+                  ? { observed: market }
+                  : { poolId: id, pending })}
+            />
+          ) : (
+            <div className="empty-state">
+              <h3>Price chart unavailable</h3>
             </div>
-          </section>
-          <div className="stats-grid live-six-stats">
-            <Stat label="FDV" pending={pending}>
-              <Eth wei={fdv} pending={pending} digits={5} />
-            </Stat>
-            <Stat label="Liquidity" pending={pending}>
-              <Eth
-                wei={publication?.liquidityWei}
-                pending={pending}
-                digits={5}
-              />
-            </Stat>
-            <Stat
-              label={`Volume ${market?.window ?? "24h"}`}
-              pending={pending}
-              note={
-                trades == null
-                  ? undefined
-                  : `${trades.toLocaleString("en-US")} trades`
-              }
-            >
-              <Eth wei={volume} pending={pending} digits={5} />
-            </Stat>
-            <Stat label="Holders" pending={pending}>
-              {publication?.holders?.complete ? (
-                publication.holders.positiveHoldersExcludingInfrastructure.toLocaleString(
-                  "en-US",
-                )
-              ) : (
-                <Unavailable />
-              )}
-            </Stat>
-            <Stat label="Fees compounded" pending={pending}>
-              <Unavailable />
-            </Stat>
-            <Stat label="Creator fee" pending={pending}>
-              {accountedMarket ? (
-                accountedMarket.creatorFees ? (
-                  "Enabled"
-                ) : (
-                  "Disabled"
-                )
-              ) : (
-                <Unavailable />
-              )}
-            </Stat>
-          </div>
-          <section className="panel live-section">
-            <div className="table-tabs live-controls">
-              {["Top traders", "Holders", "Trades"].map((value) => (
-                <button
-                  key={value}
-                  className={value === tab ? "active" : ""}
-                  onClick={() => setTab(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-            <div className="pool-activity-region">
-              {tab === "Top traders" &&
-                (audit ? (
-                  <AuditLeaderboard audit={audit} />
-                ) : (
-                  <div className="empty-state">
-                    <h3
-                      key={pending ? "pending" : "resolved"}
-                      data-pending={pending}
-                    >
-                      {pending
-                        ? "Trader accounting pending"
-                        : "Trader PnL unavailable"}
-                    </h3>
-                  </div>
-                ))}
-              {tab === "Holders" &&
-                (holderRows ? (
-                  <div className="table-scroll">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Holder</th>
-                          <th>Balance (raw token units)</th>
-                          <th>Classification</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {holderRows.slice(0, 100).map((holder) => (
-                          <tr key={holder.address}>
-                            <td>
-                              <Link href={`/wallet/${holder.address}/`}>
-                                {shortAddress(holder.address)}
-                              </Link>
-                            </td>
-                            <td className="number">{holder.balanceRaw}</td>
-                            <td>{holder.kind}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <h3
-                      key={pending ? "pending" : "resolved"}
-                      data-pending={pending}
-                    >
-                      {pending
-                        ? "Holder accounting pending"
-                        : "Holder accounting unavailable"}
-                    </h3>
-                  </div>
-                ))}
-              {tab === "Trades" &&
-                (accountedMarket && snapshot ? (
-                  <Trades
-                    trades={capturedTrades ?? []}
-                    markets={snapshot.markets}
-                  />
-                ) : (
-                  <div className="table-scroll">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Side</th>
-                          <th>ETH</th>
-                          <th>Transaction</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows?.slice(0, 50).map((trade, index) => {
-                          const observed = "transactionHash" in trade;
-                          const tx = observed
-                            ? trade.transactionHash
-                            : trade.txHash;
-                          return (
-                            <tr key={index}>
-                              <td>{utc(trade.timestamp)}</td>
-                              <td>{trade.side ?? "Unsupported"}</td>
-                              <td>
-                                <Eth wei={trade.ethWei} />
-                              </td>
-                              <td>
-                                <a
-                                  className="mono"
-                                  href={`${explorer}/tx/${tx}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {shortAddress(tx)} ↗
-                                </a>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-            </div>
-          </section>
+          )}
         </div>
-        <aside className="market-sidebar">
-          <TradeStream poolId={id} />
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Concentration</h2>
-            </div>
-            <dl className="live-facts">
-              {["Raw top 10", "Adjusted top 10", "Gini"].map((label) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>
-                    <span className="number" data-pending={pending}>
-                      {label === "Raw top 10" ? (
-                        (rawTop10 ?? <Unavailable />)
-                      ) : label === "Adjusted top 10" ? (
-                        (adjustedTop10 ?? <Unavailable />)
-                      ) : (
-                        <Unavailable />
-                      )}
-                    </span>
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Launch facts</h2>
-            </div>
-            <dl className="live-facts">
-              <div>
-                <dt>Pool ID</dt>
-                <dd className="mono">{id}</dd>
-              </div>
-              <div>
-                <dt>Decimals</dt>
-                <dd>
-                  <PendingValue pending={pending}>
-                    {accountedMarket?.decimals ?? market?.decimals ?? (
-                      <Unavailable />
-                    )}
-                  </PendingValue>
-                </dd>
-              </div>
-              {["Supply", "LP fee", "Position recipient", "Permanent lock"].map(
-                (label) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>
-                      <PendingValue pending={pending}>
-                        {accountedMarket && label === "Supply" ? (
-                          (
-                            Number(accountedMarket.supply) /
-                            10 ** accountedMarket.decimals
-                          ).toLocaleString("en-US")
-                        ) : accountedMarket && label === "LP fee" ? (
-                          `${accountedMarket.fee / 10000}%`
-                        ) : accountedMarket &&
-                          label === "Position recipient" ? (
-                          <a
-                            href={`${explorer}/address/${accountedMarket.positionRecipient}`}
-                            className="mono"
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {shortAddress(accountedMarket.positionRecipient)} ↗
-                          </a>
-                        ) : (
-                          <Unavailable />
-                        )}
-                      </PendingValue>
-                    </dd>
-                  </div>
-                ),
-              )}
-            </dl>
-            <a
-              className="leader-link"
-              href={
-                pool?.launch?.transactionHash
-                  ? `${explorer}/tx/${pool.launch.transactionHash}`
-                  : undefined
-              }
-              aria-disabled={!pool?.launch?.transactionHash}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Launch transaction ↗
-            </a>
-          </section>
-        </aside>
+      </section>
+      <div className="stats-grid live-six-stats">
+        <Stat label="FDV" pending={pending}>
+          <Eth wei={fdv} pending={pending} digits={5} />
+        </Stat>
+        <Stat
+          label={`Volume ${market?.window ?? "24h"}`}
+          pending={pending}
+          note={
+            trades == null
+              ? undefined
+              : `${trades.toLocaleString("en-US")} trades`
+          }
+        >
+          <Eth wei={volume} pending={pending} digits={5} />
+        </Stat>
+        <Stat label="Creator fee" pending={pending}>
+          {accountedMarket ? (
+            accountedMarket.creatorFees ? (
+              "Enabled"
+            ) : (
+              "Disabled"
+            )
+          ) : (
+            <Unavailable />
+          )}
+        </Stat>
       </div>
     </div>
   );

@@ -23,17 +23,13 @@ import { FollowButton } from "./following";
 import { MyWalletButton, useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
 import { useQuery } from "./state";
-import { WalletTokenTransfers, WalletTransactions } from "./wallet-history";
 import { PnlCardModal } from "./pnl-card-modal";
 import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
-/** Saved profile tabs first, then the wallet's own on-demand explorer history. */
 const tabs = [
   { id: "positions", label: "Positions" },
   { id: "trades", label: "Trades" },
   { id: "launches", label: "Launches" },
-  { id: "transactions", label: "Transactions" },
-  { id: "token-transfers", label: "Token transfers" },
 ];
 /**
  * The export's tab counts, from the rows the read sent: a bounded list has
@@ -49,7 +45,6 @@ function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
     return data.launchesTruncated ? null : data.launches.length;
   return null;
 }
-const historyTabs = ["transactions", "token-transfers"];
 /** The export's four alert toggles, drawn off until alerts exist. */
 const alerts = (creator: boolean) => [
   ["Every trade", "Buy or sell, within the block"],
@@ -124,16 +119,11 @@ export function ProductWallet({ address }: { address: string }) {
   // public framing and hydration swaps whole nodes, never text in place.
   const mine = useMyWallet().isMine(address);
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
-    [opened, setOpened] = useState<string[]>([]),
     [copyTrade, setCopyTrade] = useState(false),
     [card, setCard] = useState(false),
     // A clock frozen at mount: the header's "last Nm ago" only ever paints
     // once data resolves, so nothing already on screen depends on it ticking.
     [renderedAt] = useState(() => Math.floor(Date.now() / 1000));
-  // An explorer page costs credits, so a tab keeps its pages once opened
-  // instead of paying for them again on every visit.
-  if (historyTabs.includes(tab) && !opened.includes(tab))
-    setOpened([...opened, tab]);
   const w = data?.wallet;
   const topPools = (data?.positions ?? [])
     .slice()
@@ -286,15 +276,13 @@ export function ProductWallet({ address }: { address: string }) {
                       onClick={() => set({ tab: t.id })}
                     >
                       {t.label}
-                      {!historyTabs.includes(t.id) && (
-                        <span className="tab-count">
-                          {/* Keyed so a count replaces its node rather than
-                              rewriting text in place. */}
-                          {count !== null && (
-                            <Fragment key={count}>{count}</Fragment>
-                          )}
-                        </span>
-                      )}
+                      <span className="tab-count">
+                        {/* Keyed so a count replaces its node rather than
+                            rewriting text in place. */}
+                        {count !== null && (
+                          <Fragment key={count}>{count}</Fragment>
+                        )}
+                      </span>
                     </button>
                   );
                 })}
@@ -527,18 +515,6 @@ export function ProductWallet({ address }: { address: string }) {
                     </p>
                   )}
                 </>
-              )}
-              {opened.includes("transactions") && (
-                <WalletTransactions
-                  wallet={address.toLowerCase()}
-                  active={tab === "transactions"}
-                />
-              )}
-              {opened.includes("token-transfers") && (
-                <WalletTokenTransfers
-                  wallet={address.toLowerCase()}
-                  active={tab === "token-transfers"}
-                />
               )}
             </section>
           </div>

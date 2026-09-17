@@ -71,7 +71,7 @@ const routes = [
   {
     name: "pool",
     url: poolHref(chain.markets[0]),
-    sentinel: ".page .workspace-grid",
+    sentinel: ".pool-page .live-six-stats",
   },
   {
     name: "traders",
@@ -92,12 +92,12 @@ const routes = [
   {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
-    sentinel: ".nullable-pool-page .workspace-grid",
+    sentinel: ".nullable-pool-page .live-six-stats",
   },
   {
     name: "unknown-pool",
     url: `/pool/${unknownPool}/`,
-    sentinel: ".nullable-pool-page .workspace-grid",
+    sentinel: ".nullable-pool-page .live-six-stats",
   },
 ];
 
@@ -187,9 +187,12 @@ for (const entry of routes) {
         fullPage: false,
       });
       releaseScripts();
-      await expect
-        .poll(() => page.locator('[data-pending="true"]:visible').count())
-        .toBeGreaterThan(0);
+      /* A preloaded pool paints whole from its snapshot, so it has no
+         pending state to show while the saved read is held. */
+      if (entry.name !== "pool")
+        await expect
+          .poll(() => page.locator('[data-pending="true"]:visible').count())
+          .toBeGreaterThan(0);
       if (entry.name === "screener") {
         const pending = page
           .locator('[data-pending="true"]')

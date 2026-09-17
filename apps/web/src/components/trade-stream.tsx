@@ -176,17 +176,31 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     current?.error ||
     coverage?.state === "stale" ||
     (coverage?.asOf && now && now - coverage.asOf > coverage.staleAfterSeconds);
+  // A feed that has never started has no cutoff to stream from: it reads as
+  // offline, never as streaming over an empty window.
+  const offline =
+    coverage !== undefined &&
+    (coverage.state === "uninitialized" || coverage.asOf == null);
   // One word in the head: the feed polls on its own every 15s, so a delayed
   // window recovers without a control.
-  const feed = !enabled ? "paused" : stale ? "delayed" : "streaming";
+  const feed = !enabled
+    ? "paused"
+    : offline
+      ? "offline"
+      : stale
+        ? "delayed"
+        : "streaming";
   // The header strip's dot mirrors this poll rather than starting its own:
   // "unknown" until this scope's first response lands, then streaming only
-  // when this feed itself reads as streaming (delayed and paused both read
-  // as the strip's single "not streaming" state).
-  const resolved = current !== undefined && (current.data !== undefined || current.error);
+  // when this feed itself reads as streaming (offline, delayed and paused all
+  // read as the strip's single "not streaming" state).
+  const resolved =
+    current !== undefined && (current.data !== undefined || current.error);
   useEffect(() => registerLiveFeedSource(), []);
   useEffect(() => {
-    reportLiveFeedState(!resolved ? "unknown" : feed === "streaming" ? "streaming" : "paused");
+    reportLiveFeedState(
+      !resolved ? "unknown" : feed === "streaming" ? "streaming" : "paused",
+    );
   }, [resolved, feed]);
   return (
     <section
@@ -228,7 +242,8 @@ export function TradeStream({ poolId }: { poolId?: string }) {
               </div>
             </div>
           ))}
-        {data && !data.events.length && (
+        {data && offline && <p className={styles.note}>Feed not running</p>}
+        {data && !offline && !data.events.length && (
           <p className={styles.note}>No recent trades</p>
         )}
         {data?.events.map((event) => (

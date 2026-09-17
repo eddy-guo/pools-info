@@ -109,8 +109,5 @@ test.describe("persisted broad market explore", () => {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await expect(
-      page.getByText(/Deep holders and verified PnL use separate evidence/),
-    ).toBeVisible();
   });
 });
