@@ -1,4 +1,4 @@
-import { Overview } from "@/components/overview";
+import { ProductExplore } from "@/components/product-explore";
 export default function HomePage() {
-  return <Overview />;
+  return <ProductExplore />;
 }

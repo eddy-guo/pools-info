@@ -541,39 +541,6 @@ function geometry(
       .join(" "),
   };
 }
-export function Sparkline({
-  points,
-  positive = true,
-}: {
-  points: PricePoint[];
-  positive?: boolean;
-}) {
-  const limited = points.filter(
-    (_, i) => i % Math.max(1, Math.floor(points.length / 24)) === 0,
-  );
-  const g = geometry(limited, 100, 32, 2);
-  const neutral = limited.length < 2 || limited[0].wei === limited.at(-1)?.wei;
-  return (
-    <svg
-      className={`sparkline ${neutral ? "muted" : positive ? "positive" : "negative"}`}
-      viewBox="0 0 100 32"
-      role="img"
-      aria-label={
-        neutral
-          ? "No price movement observed"
-          : `${positive ? "Rising" : "Falling"} price trend`
-      }
-    >
-      <path
-        d={g.path}
-        stroke="currentColor"
-        strokeWidth="1.7"
-        fill="none"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
 export function Chart({
   points,
   label = "Price",
