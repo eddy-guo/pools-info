@@ -58,7 +58,10 @@ test("HTTP rejects mutations, coalesces/caches reads, limits traffic and hides D
     {
       async read(r) {
         calls++;
-        if (r.route === "ready") throw Error("postgres://user:secret@host");
+        if (r.route === "ready")
+          throw Object.assign(Error("postgres://user:secret@host"), {
+            code: "57014",
+          });
         return { items: [] };
       },
       async close() {},
@@ -80,11 +83,21 @@ test("HTTP rejects mutations, coalesces/caches reads, limits traffic and hides D
   const head = await fetch(url + "/v1/pools", { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
-  const error = await fetch(url + "/ready");
+  const lines: string[] = [];
+  const write = process.stderr.write;
+  process.stderr.write = ((chunk: string) => {
+    lines.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  const error = await fetch(url + "/ready").finally(() => {
+    process.stderr.write = write;
+  });
   assert.equal(error.status, 503);
   assert.deepEqual(await error.json(), {
     error: "data_temporarily_unavailable",
   });
+  // The log names the failure class by SQLSTATE and never the message.
+  assert.deepEqual(lines, ['{"event":"read_failed","code":"57014"}\n']);
   assert.equal((await fetch(url + "/v1/pools")).status, 429);
   assert.equal((await fetch(url + "/health")).status, 200);
   now = 61000;
