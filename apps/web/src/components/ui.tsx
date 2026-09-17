@@ -156,23 +156,39 @@ export function AddressLabel({
     `href`, then copy and explorer, at the row's own height. `stacked` puts
     the two actions under the address for a column too narrow to hold them
     beside it. `badge` sits inline after the address, inside the same
-    single-line row height, rather than adding a second line. */
+    single-line row height, rather than adding a second line. `size="large"`
+    is the export's 28px identity tile: no name field exists anywhere in this
+    app, so the short address fills both the primary and secondary line, the
+    same fallback the export itself uses for an address without an ENS name. */
 export function AddressChip({
   address,
   href,
   stacked = false,
+  size = "small",
   badge,
 }: {
   address: string;
   href: string;
   stacked?: boolean;
+  size?: "small" | "large";
   badge?: React.ReactNode;
 }) {
   return (
-    <span className="address-chip" data-stacked={stacked || undefined}>
+    <span
+      className="address-chip"
+      data-stacked={stacked || undefined}
+      data-size={size === "large" ? "large" : undefined}
+    >
       <Link className="address-chip-link" href={href} title={address}>
         <Avatar address={address} />
-        <span className="mono">{shortAddress(address)}</span>
+        {size === "large" ? (
+          <span className="address-chip-lines">
+            <span className="address-chip-name">{shortAddress(address)}</span>
+            <span className="mono">{shortAddress(address)}</span>
+          </span>
+        ) : (
+          <span className="mono">{shortAddress(address)}</span>
+        )}
       </Link>
       {badge}
       <span className="address-chip-actions">

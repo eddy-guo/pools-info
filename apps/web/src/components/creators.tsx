@@ -39,6 +39,29 @@ type CreatorSort = (typeof CREATOR_SORTS)[number][0];
 /** The leaderboard never requests past its top 100, whatever the API allows. */
 const CAP = 100;
 
+/** The export's still-trading cell: a 132x5 fill under the fraction and
+    percentage it represents. Left-aligned text never moves its start when
+    the digits change, so this needs no shift-avoidance keying. */
+function StillTrading({
+  traded,
+  measured,
+}: {
+  traded: number;
+  measured: number;
+}) {
+  const pct = Math.round((traded / measured) * 100);
+  return (
+    <span className="still-trading">
+      <span className="still-trading-bar" aria-hidden="true">
+        <span style={{ width: `${pct}%` }} />
+      </span>
+      <span className="still-trading-label">
+        {traded} of {measured} · {pct}%
+      </span>
+    </span>
+  );
+}
+
 type Catalog = {
   items: AnalyticsPoolRow[];
   total: number | null;
@@ -311,6 +334,7 @@ function CreatorDirectory() {
                           <AddressChip
                             address={r.address}
                             href={`/creators/${r.address}/`}
+                            size="large"
                             badge={
                               r.boughtOwnLaunch === true ? (
                                 <span className="badge lavender">
@@ -340,7 +364,10 @@ function CreatorDirectory() {
                       <td data-pending={pending}>
                         {r ? (
                           r.measured ? (
-                            `${r.traded}/${r.measured}`
+                            <StillTrading
+                              traded={r.traded}
+                              measured={r.measured}
+                            />
                           ) : (
                             <Unavailable reason="No measured launch" />
                           )
@@ -359,7 +386,7 @@ function CreatorDirectory() {
                       <td data-pending={pending}>
                         {r ? (
                           r.bestLaunch ? (
-                            <Link href={poolHref(r.bestLaunch)}>
+                            <Link className="mono" href={poolHref(r.bestLaunch)}>
                               {r.bestLaunch.symbol}
                             </Link>
                           ) : (
@@ -396,6 +423,16 @@ function CreatorDirectory() {
   );
 }
 
+/**
+ * The header cells are fixed by `.creator-launches-table`'s colgroup, and
+ * each row keeps its DOM node across the pending-to-resolved swap (keyed by
+ * position, not pool id) rather than remounting under a shift-scoring swap.
+ * A creator with more than one matching launch still grows the panel as
+ * later pages of the scan resolve, since nothing here knows the eventual
+ * row count before first paint; closing that fully needs the same
+ * shown-count-plus-reserved-height pattern the leaderboards use, which is
+ * follow-up work, not part of this pass.
+ */
 function CreatorProfile({ address }: { address: string }) {
   const catalog = useCatalog(address);
   const pools = useMemo(
@@ -433,7 +470,17 @@ function CreatorProfile({ address }: { address: string }) {
         </div>
         {pools.length || pending ? (
           <div className="table-scroll">
-            <table className="data-table">
+            <table className="data-table creator-launches-table">
+              {/* Fixed widths so a row streamed in later, with a longer
+                  token name or a resolved date, cannot reflow the columns
+                  already on screen. */}
+              <colgroup>
+                <col />
+                <col className="col-launch" />
+                <col className="col-activity" />
+                <col className="col-volume" />
+                <col className="col-fees" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Token</th>
@@ -444,8 +491,13 @@ function CreatorProfile({ address }: { address: string }) {
                 </tr>
               </thead>
               <tbody>
+                {/* Keyed by position, not pool id: `pools` only ever grows by
+                    appending later pages, so the row already on screen keeps
+                    its node (and the single pending row becomes the first
+                    real one) instead of remounting under a shift-scoring
+                    swap. */}
                 {(pools.length ? pools : [undefined]).map((p, index) => (
-                  <tr key={p?.id ?? index} aria-hidden={!p}>
+                  <tr key={index} aria-hidden={!p}>
                     <td data-pending={!p}>
                       {p ? (
                         <Link href={poolHref(p)}>

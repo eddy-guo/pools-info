@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import type { CreatorRow, CreatorsResponse } from "@pools/core";
+import { poolHref, shortAddress, type CreatorRow, type CreatorsResponse } from "@pools/core";
 
 const coverage: CreatorsResponse["coverage"] = {
   catalogPools: 130,
@@ -271,4 +271,196 @@ test("reload and Back restore the shown count", async ({ page }) => {
   await page.goBack();
   await expect(page).toHaveURL(/[?&]limit=75(?:&|$)/);
   await expect(rowsLocator).toHaveCount(75);
+});
+
+test("creators rows match the export's cell shapes: rank colour, chip, still-trading bar and right-aligned figures", async ({
+  page,
+}) => {
+  const goldAddress = "0x00000000000000000000000000000000000aa1";
+  const silverAddress = "0x00000000000000000000000000000000000bb2";
+  const bronzeAddress = "0x00000000000000000000000000000000000cc3";
+  const plainAddress = "0x00000000000000000000000000000000000dd4";
+  const unmeasuredAddress = "0x00000000000000000000000000000000000ee5";
+  const bestLaunch = (
+    address: string,
+    symbol: string,
+    volumeWei: string,
+  ): NonNullable<CreatorRow["bestLaunch"]> => ({
+    id: `0x${symbol.toLowerCase()}`.padEnd(66, "0"),
+    token: `0x${symbol.toLowerCase()}t`.padEnd(42, "0"),
+    name: symbol,
+    symbol,
+    launchTx: `0x${symbol.toLowerCase()}x`.padEnd(66, "0"),
+    launchSender: address,
+    launchBlock: 1,
+    launchedAt: 1_700_000_000,
+    volumeWei,
+  });
+  const items: CreatorRow[] = [
+    {
+      address: goldAddress,
+      launches: 14,
+      measured: 14,
+      traded: 9,
+      volumeWei: "412800000000000000000",
+      medianVolumeWei: "18400000000000000000",
+      bestLaunch: bestLaunch(goldAddress, "ORBIT", "412800000000000000000"),
+      boughtOwnLaunch: true,
+    },
+    {
+      address: silverAddress,
+      launches: 11,
+      measured: 11,
+      traded: 7,
+      volumeWei: "388100000000000000000",
+      medianVolumeWei: "22000000000000000000",
+      bestLaunch: bestLaunch(silverAddress, "KITE", "388100000000000000000"),
+      boughtOwnLaunch: false,
+    },
+    {
+      address: bronzeAddress,
+      launches: 9,
+      measured: 9,
+      traded: 6,
+      volumeWei: "301400000000000000000",
+      medianVolumeWei: "26700000000000000000",
+      bestLaunch: bestLaunch(bronzeAddress, "LILY", "301400000000000000000"),
+      boughtOwnLaunch: false,
+    },
+    {
+      address: plainAddress,
+      launches: 21,
+      measured: 4,
+      traded: 4,
+      volumeWei: "266900000000000000000",
+      medianVolumeWei: "6200000000000000000",
+      bestLaunch: bestLaunch(plainAddress, "SUND", "266900000000000000000"),
+      boughtOwnLaunch: false,
+    },
+    {
+      address: unmeasuredAddress,
+      launches: 3,
+      measured: 0,
+      traded: 0,
+      volumeWei: null,
+      medianVolumeWei: null,
+      bestLaunch: null,
+      boughtOwnLaunch: null,
+    },
+  ];
+  await page.route("**/api/product/creators**", async (route) => {
+    await route.fulfill({
+      json: {
+        coverage,
+        broadMarketCutoff: null,
+        window: "All",
+        sort: "launches",
+        direction: "desc",
+        attribution: "launch_transaction_initiator",
+        measuredFigures: [
+          "measured",
+          "traded",
+          "volumeWei",
+          "medianVolumeWei",
+          "bestLaunch",
+          "boughtOwnLaunch",
+        ],
+        note: "",
+        items,
+        total: items.length,
+        nextOffset: null,
+      } satisfies CreatorsResponse,
+    });
+  });
+  await page.goto("/creators/");
+  const panel = page.locator(".creators-panel");
+  // The panel reserves its default 25-row shape; only the first five carry
+  // this fixture's data, the rest render as empty reserved rows.
+  const rowsLocator = panel.locator('tbody tr[data-row="resolved"]');
+  await expect(rowsLocator).toHaveCount(5);
+
+  // Head labels: 11.5/400, and no FEES column until phase 4 has the data.
+  const head = panel.locator(".data-table th");
+  await expect(head).toHaveCount(7);
+  await expect(head.first()).toHaveCSS("font-size", "11.5px");
+  await expect(head.first()).toHaveCSS("font-weight", "400");
+
+  // Row height, and rank mono 12.5/400 in gold, silver and bronze for 1-3.
+  await expect(rowsLocator.first()).toHaveCSS("height", "62px");
+  const rank = (n: number) => rowsLocator.nth(n).locator(".rank-number");
+  await expect(rank(0)).toHaveCSS("font-size", "12.5px");
+  await expect(rank(0)).toHaveCSS("color", "rgb(224, 180, 92)");
+  await expect(rank(1)).toHaveCSS("color", "rgb(201, 203, 212)");
+  await expect(rank(2)).toHaveCSS("color", "rgb(201, 138, 92)");
+  await expect(rank(3)).toHaveCSS("color", "rgb(154, 154, 164)");
+
+  // The creator cell: a 28px monogram, the short address as both the name
+  // and the mono address line beneath it (no ENS-style name source exists
+  // anywhere in this app), and the BOUGHT OWN chip only where the API says so.
+  const firstChip = rowsLocator.first().locator(".address-chip");
+  await expect(firstChip.locator(".avatar")).toHaveCSS("width", "28px");
+  await expect(firstChip.locator(".avatar")).toHaveCSS("height", "28px");
+  const goldShort = shortAddress(goldAddress);
+  await expect(firstChip.locator(".address-chip-name")).toHaveText(goldShort);
+  await expect(firstChip.locator(".address-chip-lines .mono")).toHaveText(
+    goldShort,
+  );
+  await expect(firstChip.locator(".address-chip-name")).toHaveCSS(
+    "font-size",
+    "14px",
+  );
+  await expect(firstChip.locator(".address-chip-name")).toHaveCSS(
+    "font-weight",
+    "500",
+  );
+  await expect(rowsLocator.first().getByText("BOUGHT OWN")).toBeVisible();
+  await expect(rowsLocator.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
+
+  // Launches right-aligned at 14/400.
+  const launchesCell = rowsLocator.first().locator("td").nth(2);
+  await expect(launchesCell).toHaveText("14");
+  await expect(launchesCell).toHaveCSS("text-align", "right");
+  await expect(launchesCell).toHaveCSS("font-size", "14px");
+
+  // Still trading: the 132x5 bar plus "traded of measured · pct%" beneath it.
+  const stillCell = rowsLocator.first().locator("td").nth(3);
+  await expect(stillCell.locator(".still-trading-bar")).toHaveCSS(
+    "width",
+    "132px",
+  );
+  await expect(stillCell.locator(".still-trading-bar")).toHaveCSS(
+    "height",
+    "5px",
+  );
+  await expect(stillCell.locator(".still-trading-bar > span")).toHaveAttribute(
+    "style",
+    /width:\s*64%/,
+  );
+  await expect(stillCell.locator(".still-trading-label")).toHaveText(
+    "9 of 14 · 64%",
+  );
+  // A creator with no measured launch renders the cell empty, never "N/A".
+  const unmeasuredCell = rowsLocator.nth(4).locator("td").nth(3);
+  await expect(unmeasuredCell).toHaveText("");
+  await expect(unmeasuredCell.locator(".unavailable")).toHaveAttribute(
+    "aria-label",
+    "Unavailable: No measured launch",
+  );
+  await expect(page.getByText("N/A")).toHaveCount(0);
+
+  // Volume and median: 14/400 in the secondary numeric colour, right-aligned.
+  const volumeCell = rowsLocator.first().locator("td").nth(4);
+  await expect(volumeCell).toHaveCSS("font-size", "14px");
+  await expect(volumeCell).toHaveCSS("color", "rgb(180, 180, 190)");
+  await expect(volumeCell).toHaveCSS("text-align", "right");
+
+  // Best: the token symbol, mono 12.5/400 muted, linking to the pool.
+  const bestLink = rowsLocator.first().locator("td").nth(6).locator("a");
+  await expect(bestLink).toHaveText("ORBIT");
+  await expect(bestLink).toHaveCSS("font-size", "12.5px");
+  await expect(bestLink).toHaveCSS("color", "rgb(138, 138, 148)");
+  await expect(bestLink).toHaveAttribute(
+    "href",
+    poolHref(items[0].bestLaunch!),
+  );
 });
