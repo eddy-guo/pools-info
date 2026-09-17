@@ -9,6 +9,7 @@ import {
   createBlockscoutClient,
   createCreditBudget,
   createRateLimiter,
+  defaultBlockscoutTimeoutMs,
   normalizeTokenTransfer,
   normalizeTransaction,
   pageParams,
@@ -288,6 +289,13 @@ test("client maps upstream failures, bounds time and size, and never logs the ke
   assert(!stderr.join("").includes(baseUrl));
   assert(stderr.some((l) => l.includes('"status":402')));
   assert(stderr.some((l) => l.includes("TimeoutError")));
+  // The timeout failure logs how long the attempt actually ran, so a real
+  // outage is distinguishable from a slow-but-live explorer.
+  assert(
+    stderr.some(
+      (l) => l.includes("blockscout_request_failed") && /"ms":\d+/.test(l),
+    ),
+  );
   assert.throws(
     () => createBlockscoutClient({ key: "", dailyCreditCap: 1 }),
     /BLOCKSCOUT_API_KEY/,
@@ -297,8 +305,23 @@ test("client maps upstream failures, bounds time and size, and never logs the ke
       createBlockscoutClient({ key, baseUrl: "ftp://x", dailyCreditCap: 1 }),
     /BLOCKSCOUT_API_URL/,
   );
+  // The construction guard's cap sits at the same value as the default, so
+  // an override can raise it no further.
+  assert.equal(defaultBlockscoutTimeoutMs, 12000);
+  assert.doesNotThrow(() =>
+    createBlockscoutClient({
+      key,
+      dailyCreditCap: 1,
+      timeoutMs: defaultBlockscoutTimeoutMs,
+    }),
+  );
   assert.throws(
-    () => createBlockscoutClient({ key, dailyCreditCap: 1, timeoutMs: 9000 }),
+    () =>
+      createBlockscoutClient({
+        key,
+        dailyCreditCap: 1,
+        timeoutMs: defaultBlockscoutTimeoutMs + 1,
+      }),
     /timeout/,
   );
 });

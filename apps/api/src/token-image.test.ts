@@ -68,12 +68,16 @@ test("settings come from bounded integer variables", () => {
       TOKEN_IMAGE_CONCURRENCY: "2",
       TOKEN_IMAGE_RETRY_SECONDS: "30",
       TOKEN_IMAGE_REJECTED_SECONDS: "3600",
+      TOKEN_IMAGE_REQUEST_CAP_MS: "4000",
+      TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS: "900",
     }),
     {
       deadlineMs: 2500,
       concurrency: 2,
       retrySeconds: 30,
       rejectedSeconds: 3600,
+      requestCapMs: 4000,
+      timeoutRejectedSeconds: 900,
     },
   );
   for (const [name, value] of [
@@ -82,6 +86,8 @@ test("settings come from bounded integer variables", () => {
     ["TOKEN_IMAGE_CONCURRENCY", "33"],
     ["TOKEN_IMAGE_RETRY_SECONDS", "-1"],
     ["TOKEN_IMAGE_REJECTED_SECONDS", "1.5"],
+    ["TOKEN_IMAGE_REQUEST_CAP_MS", "100"],
+    ["TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS", "0"],
   ])
     assert.throws(() => tokenImageSettings({ [name]: value }), RegExp(name));
 });
@@ -266,6 +272,82 @@ test("the deadline turns a stalled upstream into a short negative entry", async 
   });
   assert.ok(Date.now() - started < 1000);
   assert.equal(store.rows.get(poolId)!.rejection, "timeout");
+});
+
+test("a deadline expiry backs off like any transient failure but caps far below a full day", async () => {
+  let clock = 1_000_000_000_000;
+  const store = memoryStore({ [poolId]: source });
+  const service = createTokenImageService(store, {
+    now: () => clock,
+    settings: { ...defaultTokenImageSettings, deadlineMs: 20 },
+    transform: (_source, signal) =>
+      new Promise((_, reject) =>
+        signal.addEventListener("abort", () =>
+          reject(new TokenImageError("timeout")),
+        ),
+      ),
+  });
+  const missing = (maxAge: number) => ({
+    kind: "missing",
+    error: "image_unavailable",
+    reason: "timeout",
+    maxAge,
+  });
+  // 300, 600, 1200, 2400, then capped at timeoutRejectedSeconds (3600) well
+  // short of rejectedSeconds (86400), unlike a definitive source rejection.
+  for (const maxAge of [300, 600, 1200, 2400, 3600, 3600]) {
+    assert.deepEqual(await service.resolve(poolId), missing(maxAge));
+    clock += maxAge * 1000;
+  }
+});
+
+test("a per-request cap bounds one request's slot and queue time tighter than the deadline alone", async () => {
+  const store = memoryStore({ [poolId]: source });
+  const service = createTokenImageService(store, {
+    settings: { ...defaultTokenImageSettings, deadlineMs: 10000, requestCapMs: 40 },
+    transform: (_source, signal) =>
+      new Promise((_, reject) =>
+        signal.addEventListener("abort", () =>
+          reject(new TokenImageError("timeout")),
+        ),
+      ),
+  });
+  const started = Date.now();
+  assert.deepEqual(await service.resolve(poolId), {
+    kind: "missing",
+    error: "image_unavailable",
+    reason: "timeout",
+    maxAge: 300,
+  });
+  assert.ok(
+    Date.now() - started < 1000,
+    "the 40 ms cap fires long before the 10 s deadline",
+  );
+});
+
+test("the per-request cap also bounds how long a request waits for a free slot", async () => {
+  const otherId = `0x${"b".repeat(64)}`;
+  const store = memoryStore({ [poolId]: source, [otherId]: source });
+  let releaseHeld: ((bytes: Buffer) => void) | undefined;
+  const service = createTokenImageService(store, {
+    settings: {
+      ...defaultTokenImageSettings,
+      deadlineMs: 10000,
+      requestCapMs: 40,
+      concurrency: 1,
+    },
+    transform: () => new Promise((resolve) => (releaseHeld = resolve)),
+  });
+  const held = service.resolve(poolId);
+  await new Promise((resolve) => setImmediate(resolve));
+  const started = Date.now();
+  assert.deepEqual(await service.resolve(otherId), { kind: "busy" });
+  assert.ok(
+    Date.now() - started < 1000,
+    "queueing gives up at the 40 ms cap, not the 10 s deadline",
+  );
+  releaseHeld!(webp);
+  assert.equal((await held).kind, "image");
 });
 
 test("fetch slots run in arrival order, the waiting line is bounded and waiters leave after their budget", async () => {

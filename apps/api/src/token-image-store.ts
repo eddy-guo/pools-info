@@ -110,8 +110,8 @@ export function createTokenImageStore(
 }
 
 export interface TokenImageSettings {
-  /** Upstream budget per attempt (DNS, download, decode, encode) and the
-   * longest a request waits for a fetch slot. */
+  /** Upstream budget per attempt (DNS, download, decode, encode) once a fetch
+   * slot is held. */
   deadlineMs: number;
   /** Process-wide bound on concurrent upstream fetches. */
   concurrency: number;
@@ -119,12 +119,22 @@ export interface TokenImageSettings {
   retrySeconds: number;
   /** Negative lifetime for source policy rejections and the backoff ceiling. */
   rejectedSeconds: number;
+  /** Ceiling on one request's total time, queueing for a slot plus the fetch
+   * once it holds one, so a slow queue never lets a request run past this
+   * regardless of deadlineMs. */
+  requestCapMs: number;
+  /** Backoff ceiling for a bare deadline expiry: shorter than
+   * rejectedSeconds because a timeout only proves this one fetch was slow,
+   * not that the source is broken. */
+  timeoutRejectedSeconds: number;
 }
 export const defaultTokenImageSettings: TokenImageSettings = {
-  deadlineMs: 4000,
+  deadlineMs: 10000,
   concurrency: 8,
   retrySeconds: 300,
   rejectedSeconds: 86400,
+  requestCapMs: 12000,
+  timeoutRejectedSeconds: 3600,
 };
 export function tokenImageSettings(
   env: Record<string, string | undefined> = process.env,
@@ -147,6 +157,18 @@ export function tokenImageSettings(
       d.rejectedSeconds,
       60,
       2592000,
+    ),
+    requestCapMs: read(
+      "TOKEN_IMAGE_REQUEST_CAP_MS",
+      d.requestCapMs,
+      500,
+      30000,
+    ),
+    timeoutRejectedSeconds: read(
+      "TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS",
+      d.timeoutRejectedSeconds,
+      60,
+      86400,
     ),
   };
 }
@@ -227,13 +249,20 @@ export function createTokenImageService(
       return false;
     }
   };
-  const negativeSeconds = (reason: TokenImageReason, attempts: number) =>
-    reason === "source_rejected"
-      ? settings.rejectedSeconds
-      : Math.min(
-          settings.retrySeconds * 2 ** Math.min(attempts - 1, 30),
-          settings.rejectedSeconds,
-        );
+  const negativeSeconds = (reason: TokenImageReason, attempts: number) => {
+    if (reason === "source_rejected") return settings.rejectedSeconds;
+    // A deadline expiry is not stored as if the source rejected it: its
+    // backoff still doubles per consecutive failure, but the ceiling stays
+    // far short of a definitive rejection's full day.
+    const ceiling =
+      reason === "timeout"
+        ? settings.timeoutRejectedSeconds
+        : settings.rejectedSeconds;
+    return Math.min(
+      settings.retrySeconds * 2 ** Math.min(attempts - 1, 30),
+      ceiling,
+    );
+  };
   async function persist(poolId: string, entry: StoredTokenImage) {
     try {
       await store.save(poolId, entry);
@@ -274,10 +303,21 @@ export function createTokenImageService(
     const attempts = previous?.rejection ? previous.attempts + 1 : 1;
     if (!accepted(source))
       return reject(poolId, source, "source_rejected", attempts);
-    const release = await acquire(settings.deadlineMs);
+    const started = now();
+    const release = await acquire(
+      Math.min(settings.deadlineMs, settings.requestCapMs),
+    );
     if (!release) return { kind: "busy" };
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), settings.deadlineMs);
+    // A request that spent part of its budget waiting for a slot gets the
+    // rest for the fetch/decode/encode, so the two together never hold a
+    // slot longer than requestCapMs even though each is separately bounded
+    // by deadlineMs.
+    const remaining = settings.requestCapMs - (now() - started);
+    const timer = setTimeout(
+      () => controller.abort(),
+      Math.max(0, Math.min(settings.deadlineMs, remaining)),
+    );
     let bytes: Buffer;
     try {
       bytes = await transform(source, controller.signal);

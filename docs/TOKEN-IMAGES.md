@@ -122,17 +122,25 @@ takes a process-cache slot but carries the same day-long negative
 "Token icon store" in its README) serves the same 128 x 128 WebP from the
 `token_images` table in the read database. The first view of a pool runs the
 policy above, moved verbatim into the shared `@pools/token-image` package,
-with a 4-second upstream budget and eight concurrent fetches per process; the
-bytes, their SHA-256 (the `ETag`) and the catalog `image_url` they came from
-are stored, so every later view anywhere is one primary-key read with a
-day-long browser lifetime and a month-long edge lifetime plus
+with a 10-second upstream budget (the Pinata public gateway measured 3.9 s on
+a production success and up to the old 4 s deadline on two timeouts, so 10 s
+gives real fetches room to finish) and eight concurrent fetches per process. A
+separate 12-second per-request cap bounds one request's combined time
+queueing for a fetch slot and running the fetch, so a slow queue can never
+let a single request hold the pipeline past that regardless of the upstream
+budget. The bytes, their SHA-256 (the `ETag`) and the catalog `image_url` they
+came from are stored, so every later view anywhere is one primary-key read
+with a day-long browser lifetime and a month-long edge lifetime plus
 `stale-while-revalidate`. Rejections store a reason and a retry time instead
 of bytes: policy rejections for a day, transient fetch or decode failures for
-five minutes doubling per repeat, both answered as cacheable 404s so the
-generated icon stays the client's behaviour. A replaced catalog `image_url`
-re-encodes on the next view. Nothing prefetches: a request is the only trigger
-across the 62k-pool catalog. The store is cosmetic, carries no evidence
-linkage, and a lost row only costs one more encode.
+five minutes doubling per repeat up to a day, and a bare deadline expiry on
+the same doubling schedule but capped at an hour, since a timeout only proves
+that one fetch was slow rather than that the source is broken. All are
+answered as cacheable 404s so the generated icon stays the client's
+behaviour. A replaced catalog `image_url` re-encodes on the next view.
+Nothing prefetches: a request is the only trigger across the 62k-pool
+catalog. The store is cosmetic, carries no evidence linkage, and a lost row
+only costs one more encode.
 
 The website proxy's `resolveStoredImage` seam above is where it will read
 this endpoint; until that switch it still runs its own copy of the policy.

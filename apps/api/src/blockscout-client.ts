@@ -14,6 +14,10 @@ export const creditCost: Record<WalletHistoryKind, number> = {
   "token-transfers": 30,
 };
 export const freeTierRequestsPerSecond = 5;
+/** Blockscout PRO answers wallet address pages in 2.0-4.6 s from Railway
+ * (scout measurement, 2026-09-16); this leaves headroom for a slow page
+ * without the route falsely declaring the explorer unavailable. */
+export const defaultBlockscoutTimeoutMs = 12000;
 const userAgent = "pools-info-api/0.1.0";
 
 export type BlockscoutFailure =
@@ -265,7 +269,7 @@ export function createBlockscoutClient({
   key,
   baseUrl = blockscoutBaseUrl,
   dailyCreditCap,
-  timeoutMs = 5000,
+  timeoutMs = defaultBlockscoutTimeoutMs,
   maxBytes = 4 * 1024 * 1024,
   now = Date.now,
   fetchImpl = fetch,
@@ -283,7 +287,8 @@ export function createBlockscoutClient({
   if (!key || /\s/.test(key)) throw Error("Invalid BLOCKSCOUT_API_KEY");
   if (!/^https?:\/\/[^\s?#]+$/.test(baseUrl))
     throw Error("Invalid BLOCKSCOUT_API_URL");
-  if (!(timeoutMs > 0 && timeoutMs <= 5000)) throw Error("Invalid timeout");
+  if (!(timeoutMs > 0 && timeoutMs <= defaultBlockscoutTimeoutMs))
+    throw Error("Invalid timeout");
   const budget = createCreditBudget({ dailyCap: dailyCreditCap, now });
   function fail(event: string, detail: Record<string, unknown> = {}) {
     process.stderr.write(JSON.stringify({ event, ...detail }) + "\n");
@@ -314,6 +319,7 @@ export function createBlockscoutClient({
       for (const [k, v] of Object.entries(page ?? {}))
         url.searchParams.set(k, v);
       let response: Response;
+      const started = now();
       try {
         response = await fetchImpl(url, {
           headers: {
@@ -328,6 +334,7 @@ export function createBlockscoutClient({
         fail("blockscout_request_failed", {
           kind,
           cause: error instanceof Error ? error.name : "unknown",
+          ms: now() - started,
         });
         throw new BlockscoutError("upstream_unavailable", 30);
       }

@@ -239,11 +239,13 @@ Responses:
 - `404` JSON, cacheable for as long as the store itself will not retry:
   `{error:"pool_not_indexed"}` (300 s); `{error:"image_unavailable",reason}`
   with reason `no_source` or `source_rejected` (host or URL outside the policy,
-  86400 s) or `dns_rejected`, `fetch_rejected`, `decode_rejected`, `timeout`
-  (transient: 300 s, doubling per consecutive failure of the same source up to
-  86400 s). A stored `source_rejected` row is re-checked by the pure URL
-  policy on each view, so widening the allowlist takes effect without a sweep.
-  The website keeps its generated icon on any 404.
+  86400 s) or `dns_rejected`, `fetch_rejected`, `decode_rejected` (transient:
+  300 s, doubling per consecutive failure of the same source up to 86400 s) or
+  `timeout` (same doubling, capped far short of a day since a deadline expiry
+  only proves this one fetch was slow, not that the source is broken). A
+  stored `source_rejected` row is re-checked by the pure URL policy on each
+  view, so widening the allowlist takes effect without a sweep. The website
+  keeps its generated icon on any 404.
 - `503 {error:"busy"}` with `Retry-After: 5` and `no-store` when the process's
   fetch slots and their waiting line are full, or when more than 64 image
   requests are in flight; `429` with `Retry-After` from the route's own
@@ -253,10 +255,12 @@ Variables, all optional:
 
 | Variable                       | Default | Meaning                                                                                                                   |
 | ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_IMAGE_DEADLINE_MS`      | `4000`  | Upstream budget per attempt (DNS, download, decode, encode), and the longest a request waits for a fetch slot. 500-10000. |
+| `TOKEN_IMAGE_DEADLINE_MS`      | `10000` | Upstream budget per attempt (DNS, download, decode, encode) once a fetch slot is held. 500-10000.                         |
 | `TOKEN_IMAGE_CONCURRENCY`      | `8`     | Concurrent upstream fetches per process; four times as many may wait in line. 1-32.                                       |
 | `TOKEN_IMAGE_RETRY_SECONDS`    | `300`   | First negative lifetime after a transient failure. 5-86400.                                                               |
 | `TOKEN_IMAGE_REJECTED_SECONDS` | `86400` | Negative lifetime for policy rejections and the ceiling of the transient backoff. 60-2592000.                             |
+| `TOKEN_IMAGE_REQUEST_CAP_MS`   | `12000` | Ceiling on one request's total time (queueing for a slot plus the fetch), regardless of the deadline above. 500-30000.    |
+| `TOKEN_IMAGE_TIMEOUT_REJECTED_SECONDS` | `3600` | Backoff ceiling for a bare deadline expiry, shorter than `TOKEN_IMAGE_REJECTED_SECONDS`. 60-86400.                |
 
 The store is a `bytea` column rather than a volume or object store: it needs no
 deployment change, survives rolling deploys, and the whole catalog is about
@@ -361,8 +365,9 @@ Railway rolling deploy the old and new instance each keep their own, so the
 day's real spend can briefly count from zero again; the default cap of 30,000
 keeps three process lifetimes in one day (two such deploys) inside the 100,000
 daily allowance, and the header backstop covers anything beyond. Upstream
-calls time out after five seconds and bodies above 4 MiB are rejected. There is
-no retry. Pages are cached in process by wallet, kind, and cursor (2,000 entries,
+calls time out after 12 seconds (Blockscout PRO answers a wallet page in
+2.0-4.6 s from Railway; the timeout leaves headroom above that observed range)
+and bodies above 4 MiB are rejected. There is no retry. Pages are cached in process by wallet, kind, and cursor (2,000 entries,
 32 MiB); a page past its TTL is still served with `stale:true` for up to a day
 whenever the explorer or the budget cannot answer, otherwise the route returns
 503 `{error:"wallet_history_unavailable", reason}` with `Retry-After`, where
