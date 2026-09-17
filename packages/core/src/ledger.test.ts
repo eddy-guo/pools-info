@@ -323,6 +323,15 @@ function assertSnapshotFolds(snapshot: ChainSnapshot, label: string) {
         closures ? count((h) => h.holdSeconds) / closures : null,
         metrics.avgHold,
       );
+      // Held under 60 s, folded at closure: the share walletMetrics derives.
+      assert.equal(
+        closures ? (count((h) => h.flashClosures!) / closures) * 100 : null,
+        metrics.fastHoldShare,
+      );
+      const position = [...state.positions.values()].find(
+        (p) => p.wallet === trader,
+      )!;
+      assert.equal(position.closedCycles, closures);
       const best = hours.reduce<bigint | null>(
         (n, h) => (h.best !== null && (n === null || h.best > n) ? h.best : n),
         null,
@@ -341,6 +350,111 @@ test("every position of the chain snapshot and the pepe capture folds identicall
     positions: 342,
     complete: 341,
   });
+});
+
+test("a closure folds its hold time: flash cycles under 60 s, the shortest, and nothing on a position or hour that predates the fold", () => {
+  // Cycle 1: bought at 1,000, closed at 1,030 (30 s, flash). Cycle 2: bought
+  // at 2,000, closed at 2,060 (60 s, not flash). Cycle 3: bought at 3,000,
+  // partly sold at 3,010, closed at 3,045 (45 s, flash).
+  const trades = [
+    { ...trade(1, "buy", E, 100n), timestamp: 1000 },
+    { ...trade(2, "sell", E, 100n), timestamp: 1030 },
+    { ...trade(3, "buy", E, 50n), timestamp: 2000 },
+    { ...trade(4, "sell", E, 50n), timestamp: 2060 },
+    { ...trade(5, "buy", E, 80n), timestamp: 3000 },
+    { ...trade(6, "sell", E / 2n, 40n), timestamp: 3010 },
+    { ...trade(7, "sell", E / 2n, 40n), timestamp: 3045 },
+  ];
+  const state = createLedgerState();
+  const { sales } = applyLedgerEvents(state, swapEvents(trades));
+  stateHolds(state);
+  const p = state.positions.get(positionKey(pool, wallet))!;
+  assert.deepEqual(
+    [p.closedCycles, p.flashCycles, p.shortestCycleSeconds],
+    [3, 2, 30],
+  );
+  assert.deepEqual(
+    sales.map((s) => s.closedHoldSeconds),
+    [30, 60, null, 45],
+  );
+  const hours = [...state.walletHours.values()];
+  assert.deepEqual(
+    hours.map((h) => [h.hour, h.closures, h.flashClosures]),
+    [[0, 3, 2]],
+  );
+  // A position and an hour row loaded from before the fold keep null: their
+  // earlier closures carry no hold time, so a count from here on would read as
+  // the whole history. Their other figures fold as always.
+  const old = createLedgerState();
+  applyLedgerEvents(old, swapEvents(trades.slice(0, 5)));
+  const loaded = old.positions.get(positionKey(pool, wallet))!;
+  loaded.closedCycles = null;
+  loaded.flashCycles = null;
+  loaded.shortestCycleSeconds = null;
+  for (const h of old.walletHours.values()) h.flashClosures = null;
+  applyLedgerEvents(old, swapEvents(trades.slice(5)));
+  stateHolds(old);
+  assert.deepEqual(
+    [
+      loaded.closedCycles,
+      loaded.flashCycles,
+      loaded.shortestCycleSeconds,
+      loaded.sells,
+    ],
+    [null, null, null, 4],
+  );
+  assert.deepEqual(
+    [...old.walletHours.values()].map((h) => [h.closures, h.flashClosures]),
+    [[3, null]],
+  );
+  // A new hour row started after the fold counts its own flash closures.
+  const later = createLedgerState();
+  applyLedgerEvents(later, swapEvents(trades.slice(0, 5)));
+  for (const h of later.walletHours.values()) h.flashClosures = null;
+  applyLedgerEvents(
+    later,
+    swapEvents([
+      { ...trade(6, "sell", E, 80n), timestamp: 3610 },
+      { ...trade(8, "buy", E, 10n), timestamp: 3620 },
+      { ...trade(9, "sell", E, 10n), timestamp: 3650 },
+    ]),
+  );
+  assert.deepEqual(
+    [...later.walletHours.values()].map((h) => [
+      h.hour,
+      h.closures,
+      h.flashClosures,
+    ]),
+    [
+      [0, 2, null],
+      [1, 2, 1],
+    ],
+  );
+  // An exclusion zeroes an hour's closures, so its flash count is a known zero.
+  const oversold = createLedgerState();
+  applyLedgerEvents(
+    oversold,
+    swapEvents([
+      { ...trade(1, "buy", E, 100n), timestamp: 1000 },
+      { ...trade(2, "sell", E, 100n), timestamp: 1010 },
+      { ...trade(3, "sell", E, 5n), timestamp: 1020 },
+    ]),
+  );
+  stateHolds(oversold);
+  assert.deepEqual(
+    [...oversold.walletHours.values()].map((h) => [
+      h.closures,
+      h.flashClosures,
+    ]),
+    [[0, 0]],
+  );
+  assert.deepEqual(
+    [
+      oversold.positions.get(positionKey(pool, wallet))!.closedCycles,
+      oversold.positions.get(positionKey(pool, wallet))!.flashCycles,
+    ],
+    [1, 1],
+  );
 });
 
 test("hour rows carry the closure metrics walletMetrics computes for a window", () => {

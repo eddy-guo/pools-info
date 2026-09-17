@@ -15,6 +15,8 @@ import {
   ledgerRules,
   ledgerStream,
   migrate,
+  observeLedgerHead,
+  pruneLedgerLiveTrades,
   readLedgerStream,
   releaseLedgerWriter,
   walkBackLedger,
@@ -492,6 +494,11 @@ test("the database refuses forged identities, wrong scales, other chains and an 
   await refused("UPDATE agg_positions SET inflow_raw=5");
   await refused("UPDATE agg_positions SET flags=ARRAY['wrapper_route']");
   await refused("UPDATE agg_positions SET cycle_opened_at=NULL");
+  await refused("UPDATE agg_positions SET closed_cycles=NULL");
+  await refused("UPDATE agg_positions SET flash_cycles=closed_cycles+1");
+  await refused("UPDATE agg_positions SET shortest_cycle_seconds=5");
+  await refused("UPDATE agg_wallet_hours SET flash_closures=closures+1");
+  await refused("UPDATE agg_batches SET journal_rows=-1");
   await refused("UPDATE agg_positions SET chain_id=1");
   await refused("UPDATE agg_wallet_hours SET realized_wei=realized_wei+1");
   await refused(
@@ -749,4 +756,353 @@ test("the live ring keeps 24 hours of trades and a batch's rows leave with it", 
   assert.equal(await count(db, "agg_journal"), 5);
   const s = await getStream(db, "discovery:v1");
   assert.equal(s.cursor, 19, "the catalog streams are untouched by the ledger");
+});
+
+test("the live ring's bound: the 24 hours ending at the cursor, then the newest rows up to a cap sized from the measured peak day", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  // The cap sits above the busiest rolling 24 hours the history pass measured
+  // (1,026,761 swaps on 5 to 6 Aug 2026), so a whole day stays in the ring.
+  assert.equal(ledgerStream.liveTradeSeconds, 86400);
+  assert.ok(ledgerStream.liveTradeRows >= 1_026_761);
+  assert.ok(ledgerStream.liveTradeRows <= 1_300_000);
+  // Six trades across three batches, 400 seconds per block.
+  const trades = [
+    trade(base + 1, "buy", E, 100n),
+    trade(base + 2, "buy", E, 100n, V),
+    trade(base + 3, "sell", E / 2n, 10n),
+  ];
+  await applyLedgerBatch(db, batch(base, base + 9, trades));
+  await applyLedgerBatch(
+    db,
+    batch(base + 10, base + 19, [
+      trade(base + 12, "sell", E / 2n, 10n, V),
+      trade(base + 15, "buy", E, 5n),
+    ]),
+  );
+  await applyLedgerBatch(
+    db,
+    batch(base + 20, base + 29, [trade(base + 25, "sell", E, 20n)]),
+  );
+  const ring = async () =>
+    (
+      await db.query(
+        "SELECT block_number::int AS block,batch_end::int AS batch_end FROM agg_live_trades ORDER BY block_number,log_index",
+      )
+    ).rows.map((r) => r.block);
+  assert.deepEqual(await ring(), [
+    base + 1,
+    base + 2,
+    base + 3,
+    base + 12,
+    base + 15,
+    base + 25,
+  ]);
+  // The count bound keeps the newest rows.
+  assert.deepEqual(
+    await pruneLedgerLiveTrades(db, { through: ts(base + 29), maxRows: 4 }),
+    { aged: 0, counted: 2 },
+  );
+  assert.deepEqual(await ring(), [base + 3, base + 12, base + 15, base + 25]);
+  // The age bound keeps the window ending at the cursor, its start included.
+  assert.deepEqual(
+    await pruneLedgerLiveTrades(db, {
+      through: ts(base + 29),
+      seconds: ts(base + 29) - ts(base + 12),
+    }),
+    { aged: 1, counted: 0 },
+  );
+  assert.deepEqual(await ring(), [base + 12, base + 15, base + 25]);
+  await assert.rejects(
+    pruneLedgerLiveTrades(db, { through: ts(base + 29), maxRows: 0 }),
+    /ledger_invalid_ring_bound/,
+  );
+  // Every batch prunes: a batch a day later leaves only its own day.
+  const dayLater = base + 30 + Math.ceil(86400 / 400);
+  await applyLedgerBatch(
+    db,
+    batch(base + 30, dayLater, [trade(dayLater - 1, "buy", E, 1n, V)]),
+  );
+  const bounds = (
+    await db.query(
+      "SELECT count(*)::int AS rows,min(timestamp)::int AS oldest FROM agg_live_trades",
+    )
+  ).rows[0];
+  assert.ok(bounds.oldest >= ts(dayLater) - ledgerStream.liveTradeSeconds);
+  assert.equal(bounds.rows, 1);
+});
+
+test("walk-back refuses a batch whose journal is not whole and leaves the ledger as it was", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  const A = batch(base, base + 9, [trade(base + 5, "buy", E, 100n)]);
+  const B = batch(base + 10, base + 19, [
+    trade(base + 12, "sell", E / 2n, 40n),
+    trade(base + 14, "buy", E, 30n, V),
+  ]);
+  await applyLedgerBatch(db, A);
+  await applyLedgerBatch(db, B);
+  const journal = await db.query(
+    "SELECT to_block::int AS to_block,journal_rows FROM agg_batches ORDER BY to_block",
+  );
+  assert.deepEqual(
+    journal.rows,
+    [
+      { to_block: base + 9, journal_rows: 5 },
+      { to_block: base + 19, journal_rows: 7 },
+    ],
+    "each batch records the journal rows it wrote",
+  );
+  const before = await snapshot(db);
+  // A dump restored without agg_journal: the batch's pre-images are gone.
+  await db.query("BEGIN");
+  await db.query("DELETE FROM agg_journal WHERE batch_end=$1", [base + 19]);
+  await db.query("COMMIT");
+  const kept = await snapshot(db);
+  await assert.rejects(
+    walkBackLedger(db, base + 9),
+    /ledger_walkback_unavailable/,
+  );
+  assert.deepEqual(await snapshot(db), kept);
+  assert.deepEqual(kept.positions, before.positions);
+  // A batch committed before journal sizes were kept is refused as well.
+  await db.query("UPDATE agg_batches SET journal_rows=NULL WHERE to_block=$1", [
+    base + 9,
+  ]);
+  await assert.rejects(walkBackLedger(db, null), /ledger_walkback_unavailable/);
+  assert.equal((await readLedgerStream(db)).cursor, base + 19);
+});
+
+test("closed-cycle hold time persists, stays null on rows from before the fold, and walks back to exactly that", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  // W buys and sells in one block (held 0 s: a flash cycle); V buys, and
+  // closes a block later (400 s).
+  const flash = (block: number, wallet: string, tokens: bigint, n: number) => {
+    const buy = hash(block * 1000 + n),
+      sell = hash(block * 1000 + n + 1);
+    return {
+      swaps: [
+        swap(block, n, {
+          side: "buy",
+          eth: E,
+          tokens,
+          initiator: wallet,
+          txHash: buy,
+        }),
+        swap(block, n + 2, {
+          side: "sell",
+          eth: E * 2n,
+          tokens,
+          initiator: wallet,
+          txHash: sell,
+        }),
+      ],
+      transfers: [
+        transfer(block, n + 1, ledgerRules.manager, wallet, tokens, buy),
+        transfer(block, n + 3, wallet, ledgerRules.manager, tokens, sell),
+      ],
+    };
+  };
+  await applyLedgerBatch(
+    db,
+    batch(base, base + 9, [
+      flash(base + 3, W, 100n, 10),
+      trade(base + 4, "buy", E, 50n, V),
+      trade(base + 5, "sell", E, 50n, V),
+    ]),
+  );
+  const cycles = async () =>
+    (
+      await db.query(
+        `SELECT encode(w.address,'hex') AS wallet,closed_cycles,flash_cycles,shortest_cycle_seconds::int AS shortest
+         FROM agg_positions p JOIN agg_wallets w USING (wallet_ref) ORDER BY w.address`,
+      )
+    ).rows.map((r) => [
+      "0x" + r.wallet,
+      r.closed_cycles,
+      r.flash_cycles,
+      r.shortest,
+    ]);
+  const hours = async () =>
+    (
+      await db.query(
+        `SELECT encode(w.address,'hex') AS wallet,hour,closures,flash_closures FROM agg_wallet_hours h JOIN agg_wallets w USING (wallet_ref) ORDER BY w.address,hour`,
+      )
+    ).rows.map((r) => ["0x" + r.wallet, r.hour, r.closures, r.flash_closures]);
+  assert.deepEqual(await cycles(), [
+    [W, 1, 1, 0],
+    [V, 1, 0, 400],
+  ]);
+  const hourOf = (block: number) => Math.floor(ts(block) / 3600);
+  const first = hourOf(base + 3);
+  assert.equal(hourOf(base + 5), first);
+  assert.deepEqual(await hours(), [
+    [W, first, 1, 1],
+    [V, first, 1, 0],
+  ]);
+  // The rows a dump taken before migration 020 restores: nothing folded.
+  await db.query(
+    "UPDATE agg_positions SET closed_cycles=NULL,flash_cycles=NULL,shortest_cycle_seconds=NULL",
+  );
+  await db.query("UPDATE agg_wallet_hours SET flash_closures=NULL");
+  const legacy = await snapshot(db);
+  // W closes another flash cycle in the same hour; a new hour row counts.
+  const later = base + 20;
+  await applyLedgerBatch(
+    db,
+    batch(base + 10, later + 9, [
+      flash(base + 10, W, 70n, 20),
+      flash(later, V, 30n, 30),
+    ]),
+  );
+  assert.deepEqual(await cycles(), [
+    [W, null, null, null],
+    [V, null, null, null],
+  ]);
+  // base + 10 shares the first hour; base + 20 is two hours on.
+  assert.deepEqual([hourOf(base + 10), hourOf(later)], [first, first + 2]);
+  assert.deepEqual(await hours(), [
+    [W, first, 2, null],
+    [V, first, 1, null],
+    [V, first + 2, 1, 1],
+  ]);
+  // Walking back restores the nulls, including from a pre-image journaled
+  // before the columns existed.
+  await db.query(
+    "UPDATE agg_journal SET before=before-'closed_cycles'-'flash_cycles'-'shortest_cycle_seconds'-'flash_closures' WHERE before IS NOT NULL",
+  );
+  await walkBackLedger(db, base + 9);
+  assert.deepEqual(await snapshot(db), legacy);
+});
+
+test("the tip loop's head observation needs the writer lock and keeps block and timestamp together", async (t) => {
+  const db = await setup(t);
+  await assert.rejects(
+    observeLedgerHead(db, base + 500, ts(base + 500)),
+    /ledger_writer_required/,
+  );
+  await writer(db);
+  await observeLedgerHead(db, base + 500, ts(base + 500));
+  const row = (
+    await db.query(
+      "SELECT head_block::int AS head,head_timestamp::int AS at,checked_at IS NOT NULL AS checked FROM agg_streams",
+    )
+  ).rows[0];
+  assert.deepEqual(row, {
+    head: base + 500,
+    at: ts(base + 500),
+    checked: true,
+  });
+  await assert.rejects(observeLedgerHead(db, -1, 0), /ledger_invalid_head/);
+});
+
+test("a launch's total supply is stored with the block it was read at, and a later reading replaces an earlier one, never the reverse", async (t) => {
+  const db = await setup(t);
+  const launched = {
+    ...pool,
+    id: hash(0x120),
+    token: addr(0x220),
+    launchTx: hash(121),
+    launchBlock: 25,
+    totalSupplyRaw: (10n ** 27n).toString(),
+    supplyBlock: 900,
+  };
+  const observe = async (
+    key: string,
+    fields: { totalSupplyRaw: string | null; supplyBlock: number | null },
+  ) => {
+    await db.query(
+      "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block) VALUES (4663,$1,'discovery',20) ON CONFLICT DO NOTHING",
+      [key],
+    );
+    await commitBatch(db, await getStream(db, key), {
+      from: 20,
+      to: 29,
+      hash: hash(29),
+      evidence: { key },
+      pools: [{ ...launched, ...fields }],
+    });
+  };
+  const supply = async () =>
+    (
+      await db.query(
+        "SELECT token_total_supply_raw::text AS raw,token_supply_block::int AS block FROM indexed_pools WHERE pool_id=$1",
+        [launched.id],
+      )
+    ).rows[0];
+  await observe("discovery:supply-first", launched);
+  assert.deepEqual(await supply(), {
+    raw: (10n ** 27n).toString(),
+    block: 900,
+  });
+  await observe("discovery:supply-earlier", {
+    totalSupplyRaw: "5",
+    supplyBlock: 800,
+  });
+  await observe("discovery:supply-unread", {
+    totalSupplyRaw: null,
+    supplyBlock: null,
+  });
+  assert.deepEqual(await supply(), {
+    raw: (10n ** 27n).toString(),
+    block: 900,
+  });
+  await observe("discovery:supply-later", {
+    totalSupplyRaw: (10n ** 27n - 1n).toString(),
+    supplyBlock: 1000,
+  });
+  assert.deepEqual(await supply(), {
+    raw: (10n ** 27n - 1n).toString(),
+    block: 1000,
+  });
+  for (const forged of [
+    { totalSupplyRaw: "1", supplyBlock: null },
+    { totalSupplyRaw: null, supplyBlock: 5 },
+    { totalSupplyRaw: "-1", supplyBlock: 5 },
+    { totalSupplyRaw: (1n << 256n).toString(), supplyBlock: 5 },
+  ])
+    await assert.rejects(
+      observe("discovery:supply-forged", forged),
+      /Invalid launch supply/,
+    );
+});
+
+test("walk-back restores amounts beyond double precision to the wei", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  // 1 ETH and 3 wei, 7 tokens and a remainder: none of it survives a float.
+  const odd = E + 3n;
+  await applyLedgerBatch(
+    db,
+    batch(base, base + 9, [trade(base + 5, "buy", odd, 10n ** 21n + 7n)]),
+  );
+  const exact = async () =>
+    (
+      await db.query(
+        `SELECT p.cost_wei::text AS cost,p.quantity_raw::text AS quantity,h.volume_wei::text AS volume,
+           s.volume_wei::text AS pool_volume,h.spent_wei::text AS spent
+         FROM agg_positions p JOIN agg_wallet_hours h USING (wallet_ref,pool_ref) JOIN agg_pool_state s USING (pool_ref)`,
+      )
+    ).rows;
+  const before = await exact();
+  assert.deepEqual(before, [
+    {
+      cost: odd.toString(),
+      quantity: (10n ** 21n + 7n).toString(),
+      volume: odd.toString(),
+      pool_volume: odd.toString(),
+      spent: odd.toString(),
+    },
+  ]);
+  await applyLedgerBatch(
+    db,
+    batch(base + 10, base + 19, [
+      trade(base + 12, "sell", E + 11n, 3n),
+      trade(base + 13, "buy", E + 13n, 5n),
+    ]),
+  );
+  assert.notDeepEqual(await exact(), before);
+  await walkBackLedger(db, base + 9);
+  assert.deepEqual(await exact(), before);
 });

@@ -164,6 +164,7 @@ export {
 } from "./hypersync-transfers";
 export {
   collectLedgerRange,
+  ledgerChunks,
   ledgerLaunchQuery,
   ledgerLaunchStream,
   ledgerPassPolicy,

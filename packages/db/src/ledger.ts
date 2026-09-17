@@ -30,8 +30,17 @@ export const ledgerStream = Object.freeze({
   confirmations: 128,
   /** Batches whose journal is kept for walk-back. */
   journalDepth: 256,
+  /** The live ring is the 24 hours ending at the cursor. */
   liveTradeSeconds: 86400,
-  liveTradeRows: 250000,
+  /** A disk bound under that window, sized from measured rows: the busiest
+   * rolling 24 hours of the registered history held 1,026,761 swaps (5 to 6
+   * Aug 2026, summed from agg_pool_hours after the history pass; 17 Sep's
+   * held 382,835), and a ring row costs 459 bytes with its indexes freshly
+   * written and 661 under the writer's insert-and-prune churn. 1,250,000 rows
+   * keep the whole 24 hours on every day measured, with a fifth to spare, and
+   * hold the table near 0.6 to 0.8 GB when a day that busy recurs. The old
+   * recent tables had no bound and would have filled the volume. */
+  liveTradeRows: 1250000,
 } as const);
 /** The pass's catalog stream: launches re-discovered from HyperSync, written
  * through the ordinary discovery commit so the catalog readers see exactly
@@ -128,6 +137,48 @@ export async function ledgerTotals(db: Client) {
     requests: Number(row.requests),
     bytes: Number(row.bytes),
   };
+}
+/** The provider's head as the tip loop last read it: the block, its
+ * timestamp and when it was checked, beside the cursor. */
+export async function observeLedgerHead(
+  db: Client,
+  head: number,
+  timestamp: number,
+) {
+  if (!integer(head) || !integer(timestamp)) throw Error("ledger_invalid_head");
+  await assertLedgerWriter(db);
+  const r = await db.query(
+    "UPDATE agg_streams SET head_block=$2,head_timestamp=$3,checked_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
+    [ledgerStream.key, head, timestamp],
+  );
+  if (!r.rowCount) throw Error("ledger_stream_missing");
+}
+/** Prune the live ring to the window ending at `through` (a cursor
+ * timestamp) and to the newest `maxRows` rows. Runs inside the batch's
+ * transaction; returns the rows removed by age and by count. */
+export async function pruneLedgerLiveTrades(
+  db: Client,
+  bound: { through: number; seconds?: number; maxRows?: number },
+) {
+  const seconds = bound.seconds ?? ledgerStream.liveTradeSeconds,
+    maxRows = bound.maxRows ?? ledgerStream.liveTradeRows;
+  if (
+    !integer(bound.through) ||
+    !integer(seconds) ||
+    !integer(maxRows) ||
+    maxRows < 1
+  )
+    throw Error("ledger_invalid_ring_bound");
+  const aged = await db.query(
+    "DELETE FROM agg_live_trades WHERE chain_id=4663 AND timestamp<$1",
+    [bound.through - seconds],
+  );
+  const counted = await db.query(
+    `DELETE FROM agg_live_trades t USING (SELECT block_number,log_index FROM agg_live_trades WHERE chain_id=4663 ORDER BY block_number DESC,log_index DESC OFFSET $1 LIMIT 1) AS edge
+     WHERE t.chain_id=4663 AND (t.block_number,t.log_index)<=(edge.block_number,edge.log_index)`,
+    [maxRows],
+  );
+  return { aged: aged.rowCount ?? 0, counted: counted.rowCount ?? 0 };
 }
 /** Hand the stream to the tip loop once the pass reaches the confirmed cutoff. */
 export async function setLedgerMode(db: Client, mode: LedgerMode) {
@@ -309,7 +360,8 @@ export async function acquireLedgerWriter(db: Client) {
 export async function releaseLedgerWriter(db: Client) {
   await db.query("SELECT pg_advisory_unlock(4663, 19005)");
 }
-async function assertLedgerWriter(db: Client) {
+/** Inside the ledger's own writers only; not exported from the package. */
+export async function assertLedgerWriter(db: Client) {
   const r = await db.query(
     "SELECT 1 FROM pg_locks WHERE locktype='advisory' AND classid=4663 AND objid=19005 AND objsubid=2 AND granted AND pid=pg_backend_pid()",
   );
@@ -566,6 +618,9 @@ export async function applyLedgerBatch(
           counterpartySwaps: num(r.counterparty_swaps),
           cycleOpenedAt: nullable(r.cycle_opened_at, num),
           cycleGain: nullable(r.cycle_gain_wei, big),
+          closedCycles: nullable(r.closed_cycles, num),
+          flashCycles: nullable(r.flash_cycles, num),
+          shortestCycleSeconds: nullable(r.shortest_cycle_seconds, num),
           firstBlock: num(r.first_block),
           lastBlock: num(r.last_block),
           lastTimestamp: num(r.last_timestamp),
@@ -608,6 +663,7 @@ export async function applyLedgerBatch(
           losses: num(r.losses),
           closures: num(r.closures),
           holdSeconds: num(r.hold_seconds),
+          flashClosures: nullable(r.flash_closures, num),
           best: nullable(r.best_wei, big),
         });
       }
@@ -704,9 +760,9 @@ export async function applyLedgerBatch(
       [...applied.changed.positions].map((k) => state.positions.get(k)!),
     ))
       await db.query(
-        `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,cycle_opened_at,cycle_gain_wei,first_block,last_block,last_timestamp,supported,flags)
-         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,quantity_raw numeric,cost_wei numeric,invested_wei numeric,proceeds_wei numeric,disposed_cost_wei numeric,realized_wei numeric,inflow_raw numeric,outflow_raw numeric,outflow_cost_wei numeric,buys int,sells int,wrapper_swaps int,counterparty_swaps int,cycle_opened_at bigint,cycle_gain_wei numeric,first_block bigint,last_block bigint,last_timestamp bigint,supported boolean,flags text[])
-         ON CONFLICT (chain_id,pool_ref,wallet_ref) DO UPDATE SET quantity_raw=EXCLUDED.quantity_raw,cost_wei=EXCLUDED.cost_wei,invested_wei=EXCLUDED.invested_wei,proceeds_wei=EXCLUDED.proceeds_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,realized_wei=EXCLUDED.realized_wei,inflow_raw=EXCLUDED.inflow_raw,outflow_raw=EXCLUDED.outflow_raw,outflow_cost_wei=EXCLUDED.outflow_cost_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,wrapper_swaps=EXCLUDED.wrapper_swaps,counterparty_swaps=EXCLUDED.counterparty_swaps,cycle_opened_at=EXCLUDED.cycle_opened_at,cycle_gain_wei=EXCLUDED.cycle_gain_wei,first_block=EXCLUDED.first_block,last_block=EXCLUDED.last_block,last_timestamp=EXCLUDED.last_timestamp,supported=EXCLUDED.supported,flags=EXCLUDED.flags`,
+        `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,cycle_opened_at,cycle_gain_wei,closed_cycles,flash_cycles,shortest_cycle_seconds,first_block,last_block,last_timestamp,supported,flags)
+         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,quantity_raw numeric,cost_wei numeric,invested_wei numeric,proceeds_wei numeric,disposed_cost_wei numeric,realized_wei numeric,inflow_raw numeric,outflow_raw numeric,outflow_cost_wei numeric,buys int,sells int,wrapper_swaps int,counterparty_swaps int,cycle_opened_at bigint,cycle_gain_wei numeric,closed_cycles int,flash_cycles int,shortest_cycle_seconds bigint,first_block bigint,last_block bigint,last_timestamp bigint,supported boolean,flags text[])
+         ON CONFLICT (chain_id,pool_ref,wallet_ref) DO UPDATE SET quantity_raw=EXCLUDED.quantity_raw,cost_wei=EXCLUDED.cost_wei,invested_wei=EXCLUDED.invested_wei,proceeds_wei=EXCLUDED.proceeds_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,realized_wei=EXCLUDED.realized_wei,inflow_raw=EXCLUDED.inflow_raw,outflow_raw=EXCLUDED.outflow_raw,outflow_cost_wei=EXCLUDED.outflow_cost_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,wrapper_swaps=EXCLUDED.wrapper_swaps,counterparty_swaps=EXCLUDED.counterparty_swaps,cycle_opened_at=EXCLUDED.cycle_opened_at,cycle_gain_wei=EXCLUDED.cycle_gain_wei,closed_cycles=EXCLUDED.closed_cycles,flash_cycles=EXCLUDED.flash_cycles,shortest_cycle_seconds=EXCLUDED.shortest_cycle_seconds,first_block=EXCLUDED.first_block,last_block=EXCLUDED.last_block,last_timestamp=EXCLUDED.last_timestamp,supported=EXCLUDED.supported,flags=EXCLUDED.flags`,
         [
           JSON.stringify(
             chunk.map((p) => ({
@@ -728,6 +784,9 @@ export async function applyLedgerBatch(
               cycle_opened_at: p.cycleOpenedAt,
               cycle_gain_wei:
                 p.cycleGain === null ? null : p.cycleGain.toString(),
+              closed_cycles: p.closedCycles,
+              flash_cycles: p.flashCycles,
+              shortest_cycle_seconds: p.shortestCycleSeconds,
               first_block: p.firstBlock,
               last_block: p.lastBlock,
               last_timestamp: p.lastTimestamp,
@@ -741,9 +800,9 @@ export async function applyLedgerBatch(
       [...applied.changed.walletHours].map((k) => state.walletHours.get(k)!),
     ))
       await db.query(
-        `INSERT INTO agg_wallet_hours(chain_id,wallet_ref,pool_ref,hour,realized_wei,disposed_cost_wei,proceeds_wei,spent_wei,volume_wei,buys,sells,supported_trades,wins,losses,closures,hold_seconds,best_wei)
-         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(wallet_ref int,pool_ref int,hour int,realized_wei numeric,disposed_cost_wei numeric,proceeds_wei numeric,spent_wei numeric,volume_wei numeric,buys int,sells int,supported_trades int,wins int,losses int,closures int,hold_seconds bigint,best_wei numeric)
-         ON CONFLICT (chain_id,wallet_ref,pool_ref,hour) DO UPDATE SET realized_wei=EXCLUDED.realized_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,proceeds_wei=EXCLUDED.proceeds_wei,spent_wei=EXCLUDED.spent_wei,volume_wei=EXCLUDED.volume_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,supported_trades=EXCLUDED.supported_trades,wins=EXCLUDED.wins,losses=EXCLUDED.losses,closures=EXCLUDED.closures,hold_seconds=EXCLUDED.hold_seconds,best_wei=EXCLUDED.best_wei`,
+        `INSERT INTO agg_wallet_hours(chain_id,wallet_ref,pool_ref,hour,realized_wei,disposed_cost_wei,proceeds_wei,spent_wei,volume_wei,buys,sells,supported_trades,wins,losses,closures,hold_seconds,flash_closures,best_wei)
+         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(wallet_ref int,pool_ref int,hour int,realized_wei numeric,disposed_cost_wei numeric,proceeds_wei numeric,spent_wei numeric,volume_wei numeric,buys int,sells int,supported_trades int,wins int,losses int,closures int,hold_seconds bigint,flash_closures int,best_wei numeric)
+         ON CONFLICT (chain_id,wallet_ref,pool_ref,hour) DO UPDATE SET realized_wei=EXCLUDED.realized_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,proceeds_wei=EXCLUDED.proceeds_wei,spent_wei=EXCLUDED.spent_wei,volume_wei=EXCLUDED.volume_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,supported_trades=EXCLUDED.supported_trades,wins=EXCLUDED.wins,losses=EXCLUDED.losses,closures=EXCLUDED.closures,hold_seconds=EXCLUDED.hold_seconds,flash_closures=EXCLUDED.flash_closures,best_wei=EXCLUDED.best_wei`,
         [
           JSON.stringify(
             chunk.map((h) => ({
@@ -762,6 +821,7 @@ export async function applyLedgerBatch(
               losses: h.losses,
               closures: h.closures,
               hold_seconds: h.holdSeconds,
+              flash_closures: h.flashClosures,
               best_wei: h.best === null ? null : h.best.toString(),
             })),
           ),
@@ -769,7 +829,7 @@ export async function applyLedgerBatch(
       );
     if (excludedPairs.length)
       await db.query(
-        `UPDATE agg_wallet_hours h SET realized_wei=0,disposed_cost_wei=0,proceeds_wei=0,spent_wei=0,supported_trades=0,wins=0,losses=0,closures=0,hold_seconds=0,best_wei=NULL
+        `UPDATE agg_wallet_hours h SET realized_wei=0,disposed_cost_wei=0,proceeds_wei=0,spent_wei=0,supported_trades=0,wins=0,losses=0,closures=0,hold_seconds=0,flash_closures=0,best_wei=NULL
          FROM unnest($1::int[],$2::int[]) AS k(wallet_ref,pool_ref) WHERE h.chain_id=4663 AND h.wallet_ref=k.wallet_ref AND h.pool_ref=k.pool_ref`,
         [excludedPairs.map((k) => k[0]), excludedPairs.map((k) => k[1])],
       );
@@ -870,19 +930,17 @@ export async function applyLedgerBatch(
         ],
       );
     // Prune: the live ring by age and size, the journal beyond the newest batches.
-    await db.query(
-      "DELETE FROM agg_live_trades WHERE chain_id=4663 AND timestamp<$1",
-      [batch.timestamp - ledgerStream.liveTradeSeconds],
-    );
-    await db.query(
-      `DELETE FROM agg_live_trades t USING (SELECT block_number,log_index FROM agg_live_trades WHERE chain_id=4663 ORDER BY block_number DESC,log_index DESC OFFSET $1 LIMIT 1) AS edge
-       WHERE t.chain_id=4663 AND (t.block_number,t.log_index)<=(edge.block_number,edge.log_index)`,
-      [ledgerStream.liveTradeRows],
-    );
+    await pruneLedgerLiveTrades(db, { through: batch.timestamp });
     await db.query(
       `DELETE FROM agg_journal j USING (SELECT to_block FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC OFFSET $2 LIMIT 1) AS edge
        WHERE j.chain_id=4663 AND j.stream_key=$1 AND j.batch_end<=edge.to_block`,
       [ledgerStream.key, ledgerStream.journalDepth],
+    );
+    // The batch's journal size, which walk-back checks before undoing it.
+    await db.query(
+      `UPDATE agg_batches SET journal_rows=(SELECT count(*) FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2)
+       WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2`,
+      [ledgerStream.key, batch.to],
     );
     await db.query(
       "UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
@@ -917,9 +975,11 @@ const journalTables = [
 
 /** Undo every batch newer than `ancestor` (null: everything), newest first:
  * each batch's pre-images are restored (a null pre-image deletes the row),
- * the batch row goes with its live trades and journal, and the cursor
- * returns to the ancestor. Refused when a batch to undo is older than the
- * journal keeps (`ledger_walkback_unavailable`). */
+ * the batch row goes with its live trades, journal and any window refresh
+ * that reflected it, and the cursor returns to the ancestor. Refused when a
+ * batch to undo is older than the journal keeps, or its journal is not whole
+ * (`ledger_walkback_unavailable`): written before journal sizes were kept,
+ * pruned, or left out of a restored dump. */
 export async function walkBackLedger(db: Client, ancestor: number | null) {
   if (ancestor !== null && !integer(ancestor))
     throw Error("ledger_invalid_ancestor");
@@ -932,13 +992,16 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
     if (!locked.rowCount) throw Error("ledger_stream_missing");
     const stream = streamState(locked.rows[0]);
     const newest = await db.query(
-      "SELECT to_block,encode(block_hash,'hex') AS hash,to_timestamp FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC LIMIT $2",
+      `SELECT to_block,encode(block_hash,'hex') AS hash,to_timestamp,journal_rows,
+         (SELECT count(*) FROM agg_journal j WHERE j.chain_id=4663 AND j.stream_key=b.stream_key AND j.batch_end=b.to_block)::int AS journaled
+       FROM agg_batches b WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC LIMIT $2`,
       [ledgerStream.key, ledgerStream.journalDepth + 1],
     );
     const known = newest.rows.map((r) => ({
       to: Number(r.to_block),
       hash: r.hash as string,
       timestamp: Number(r.to_timestamp),
+      whole: r.journal_rows !== null && r.journal_rows === r.journaled,
     }));
     if (
       ancestor !== null &&
@@ -959,11 +1022,13 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
       );
     }
     const undo = known.filter((b) => ancestor === null || b.to > ancestor);
-    if (undo.length > ledgerStream.journalDepth)
+    if (undo.length > ledgerStream.journalDepth || undo.some((b) => !b.whole))
       throw Error("ledger_walkback_unavailable");
     for (const b of undo) {
       const entries = await db.query(
-        'SELECT "table",key,before FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2',
+        // The pre-image travels as jsonb text: parsed in JavaScript, a wei
+        // amount beyond 2^53 would come back rounded.
+        'SELECT "table",key,before::text AS before FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2',
         [ledgerStream.key, b.to],
       );
       await db.query(
@@ -977,11 +1042,17 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
         ].join(" AND ");
         for (const entry of entries.rows.filter((e) => e.table === table)) {
           const values = keys.map((k) => entry.key[k]);
+          // A wallet the batch created may already stand in a window.
+          if (table === "agg_wallets")
+            await db.query(
+              "DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND wallet_ref=$1",
+              values,
+            );
           await db.query(`DELETE FROM ${table} WHERE ${where}`, values);
           if (entry.before !== null)
             await db.query(
               `INSERT INTO ${table} ${table === "agg_wallets" ? "OVERRIDING SYSTEM VALUE " : ""}SELECT * FROM jsonb_populate_record(NULL::${table},$1::jsonb)`,
-              [JSON.stringify(entry.before)],
+              [entry.before],
             );
         }
       }

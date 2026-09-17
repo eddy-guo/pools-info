@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   decodeFunctionData,
+  decodeFunctionResult,
   encodeFunctionResult,
   erc20Abi,
+  multicall3Abi,
   toEventSelector,
   type Hex,
 } from "viem";
@@ -19,6 +21,7 @@ import {
 } from "./hypersync";
 import {
   collectLedgerRange,
+  ledgerChunks,
   ledgerLaunchQuery,
   ledgerPassPolicy,
   ledgerQueryRecord,
@@ -32,7 +35,11 @@ import {
   fakeTransfer,
   word,
 } from "./hypersync-fake";
-import { decodeAggregateRequest, encodeAggregateReply } from "./multicall";
+import {
+  aggregateRequestData,
+  decodeAggregateRequest,
+  encodeAggregateReply,
+} from "./multicall";
 import { Rpc } from "./rpc";
 import { contracts, launchEvent, transferEvent } from "./events";
 import { tokenMetadataFactory } from "./token-metadata";
@@ -49,13 +56,13 @@ const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const start = ledgerPassPolicy.startBlock;
 /** The swap lane's queries as `collectLedgerRange` itself builds them: sort
  * and dedup the registry's ids the way its `Map` keys already are, then one
- * query per `chunkValues` chunk. Test-only composition of the collector's own
+ * query per `ledgerChunks` chunk. Test-only composition of the collector's own
  * exported primitives, not a second production implementation. */
 const testSwapQueries = (
   range: { fromBlock: number; toBlock: number },
   poolIds: readonly string[],
 ) =>
-  chunkValues(
+  ledgerChunks(
     [...new Set(poolIds.map((id) => id.toLowerCase()))].sort(),
     ledgerPassPolicy.poolIdsPerQuery,
   ).map((chunk) => swapLogQuery(range, chunk, ledgerPassPolicy.poolIdsPerQuery));
@@ -63,17 +70,18 @@ const testTransferQueries = (
   range: { fromBlock: number; toBlock: number },
   tokens: readonly string[],
 ) =>
-  chunkValues(
+  ledgerChunks(
     [...new Set(tokens.map((t) => t.toLowerCase()))].sort(),
     ledgerPassPolicy.tokensPerQuery,
   ).map((chunk) =>
     transferLogQuery(range, chunk, ledgerPassPolicy.tokensPerQuery),
   );
 
-/** A JSON-RPC provider answering name(), symbol() and decimals() through
- * Multicall3 at a fixed head, counting every call. */
+/** A JSON-RPC provider answering name(), symbol(), decimals() and
+ * totalSupply() through Multicall3 at a fixed head, counting every call. A
+ * token's supply is 1e27 raw unless the test gives one. */
 function metadataRpc(
-  tokens: Record<string, [string, string, number]> = {},
+  tokens: Record<string, [string, string, number, bigint?]> = {},
   head = 64798181,
 ) {
   const rpc = new Rpc();
@@ -99,8 +107,8 @@ function metadataRpc(
           const fn = decodeFunctionData({
             abi: erc20Abi,
             data: member.callData,
-          }).functionName as "name" | "symbol" | "decimals";
-          const [name, symbol, decimals] = tokens[
+          }).functionName as "name" | "symbol" | "decimals" | "totalSupply";
+          const [name, symbol, decimals, supply = 10n ** 27n] = tokens[
             member.target.toLowerCase()
           ] ?? ["Token", "TKN", 18];
           return {
@@ -109,8 +117,14 @@ function metadataRpc(
               abi: erc20Abi,
               functionName: fn,
               result:
-                fn === "name" ? name : fn === "symbol" ? symbol : decimals,
-            }),
+                fn === "name"
+                  ? name
+                  : fn === "symbol"
+                    ? symbol
+                    : fn === "decimals"
+                      ? decimals
+                      : supply,
+            } as Parameters<typeof encodeFunctionResult>[0]),
           };
         }),
       );
@@ -131,21 +145,44 @@ const silentRpc = () => {
 const fakeClient = (fake: FakeHyperSync) =>
   new HyperSyncClient({ token: apiToken, minIntervalMs: 0, fetch: fake.fetch });
 
-test("the pass selects 20,000 pool ids and 31,000 token addresses per query, every body under the 2 MiB limit", () => {
-  const n = 62393;
+test("the lanes split the registry evenly over the fewest queries, every body under the 2 MiB limit", () => {
+  // The 17 Sep 2026 catalogue: three swap queries and two transfer queries,
+  // where fixed 20,000 and 31,000 chunks took four and three.
+  const n = 62858;
   const range = { fromBlock: start, toBlock: start + 99999 };
   const ids = Array.from({ length: n }, (_, i) => word(i + 1));
   const swaps = testSwapQueries(range, ids);
   assert.deepEqual(
     swaps.map((q) => q.logs![0].topics![1].length),
-    [20000, 20000, 20000, 2393],
+    [20953, 20953, 20952],
   );
   const tokens = Array.from({ length: n }, (_, i) => addr(i + 1));
   const transfers = testTransferQueries(range, tokens);
   assert.deepEqual(
     transfers.map((q) => q.logs![0].address!.length),
-    [31000, 31000, 393],
+    [31429, 31429],
   );
+  // The caps: a fourth swap query past 75,000 pools, a third transfer query
+  // past 80,000, and the largest bodies about 1.8 MB, a seventh under the limit.
+  assert.deepEqual(
+    [
+      ledgerChunks(ids.concat(ids.slice(0, 75000 - n)), 25000).length,
+      ledgerChunks(ids.concat(ids.slice(0, 75001 - n)), 25000).length,
+      ledgerChunks(tokens.concat(tokens.slice(0, 80001 - n)), 40000).length,
+    ],
+    [3, 4, 3],
+  );
+  const widest = [
+    swapLogQuery(range, ids.slice(0, 25000), ledgerPassPolicy.poolIdsPerQuery),
+    transferLogQuery(
+      range,
+      tokens.slice(0, 40000),
+      ledgerPassPolicy.tokensPerQuery,
+    ),
+  ].map((q) => Buffer.byteLength(JSON.stringify(q)));
+  for (const bytes of widest) assert.ok(bytes < 1_810_000, `${bytes}`);
+  assert.deepEqual(ledgerChunks([], 5), []);
+  assert.throws(() => ledgerChunks([1], 0), /Invalid HyperSync chunk size/);
   for (const q of [...swaps, ...transfers]) {
     assert.equal(q.logs!.length, 1);
     assert.equal(q.from_block, start);
@@ -170,12 +207,12 @@ test("the pass selects 20,000 pool ids and 31,000 token addresses per query, eve
       from_block: start,
       to_block: start + 100000,
       selection: "pool_ids",
-      count: 20000,
+      count: 20953,
       sha256: 66,
     },
   );
-  assert.equal(ledgerQueryRecord(transfers[2]).selection, "tokens");
-  assert.equal(ledgerQueryRecord(transfers[2]).count, 393);
+  assert.equal(ledgerQueryRecord(transfers[1]).selection, "tokens");
+  assert.equal(ledgerQueryRecord(transfers[1]).count, 31429);
   assert.ok(JSON.stringify(record).length < 300);
   assert.throws(
     () => testSwapQueries(range, ["0x12"]),
@@ -474,9 +511,10 @@ test("the recorded tip page yields one verified launch with name, symbol and dec
   assert.equal(pool.launchBlock, 64413754);
   assert.equal(pool.token, token);
   assert.deepEqual(
-    [pool.name, pool.symbol, pool.decimals],
-    ["Tip Token", "TIP", 18],
+    [pool.name, pool.symbol, pool.decimals, pool.totalSupplyRaw, pool.supplyBlock],
+    ["Tip Token", "TIP", 18, (10n ** 27n).toString(), 64798181],
   );
+  assert.equal(c.launch.evidence.schemaVersion, 2);
   assert.ok(pool.description !== undefined || pool.imageUrl !== undefined);
   assert.equal(pool.launchTx, launchLog.transaction_hash);
   assert.equal(pool.launchLogIndex, Number(launchLog.log_index));
@@ -495,6 +533,44 @@ test("the recorded tip page yields one verified launch with name, symbol and dec
     () => verifyLedgerLaunchBatch(tampered),
     /HyperSync ledger rows disagree with retained evidence/,
   );
+  const inflated = structuredClone(c.launch);
+  inflated.pools[0].totalSupplyRaw = (10n ** 28n).toString();
+  assert.throws(
+    () => verifyLedgerLaunchBatch(inflated),
+    /HyperSync ledger rows disagree with retained evidence/,
+  );
+  // A batch collected before supply joined the reads still verifies as the
+  // schema it was written with: three reads per launch and no supply.
+  const v1 = structuredClone(c.launch);
+  v1.evidence.schemaVersion = 1;
+  assert.throws(
+    () => verifyLedgerLaunchBatch(v1),
+    /HyperSync ledger evidence retains unrelated rows/,
+  );
+  const [aggregate] = c.launch.evidence.calls;
+  assert.equal(aggregate.kind, "multicall3");
+  if (aggregate.kind === "multicall3") {
+    const decoded = decodeAggregateRequest(aggregateRequestData(aggregate));
+    const reply = decodeFunctionResult({
+      abi: multicall3Abi,
+      functionName: "aggregate3",
+      data: aggregate.result,
+    });
+    const legacy = structuredClone(v1);
+    legacy.evidence.calls = [
+      {
+        ...aggregate,
+        calls: decoded.slice(0, 3).map((m) => ({
+          target: m.target,
+          callData: m.callData,
+        })),
+        result: encodeAggregateReply(reply.slice(0, 3)),
+      },
+    ];
+    const { totalSupplyRaw: _s, supplyBlock: _b, ...rest } = legacy.pools[0];
+    legacy.pools = [rest];
+    assert.doesNotThrow(() => verifyLedgerLaunchBatch(legacy));
+  }
   const withoutProof = structuredClone(c.launch);
   withoutProof.evidence.launcherLogs = [];
   assert.throws(
@@ -624,7 +700,7 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
   const client = fakeClient(fake);
   const { rpc, calls } = metadataRpc({
     [TA]: ["Alpha", "A", 18],
-    [TB]: ["Beta", "B", 6],
+    [TB]: ["Beta", "B", 6, 123456789n],
   });
   const c = await collectLedgerRange(client, rpc, {
     fromBlock: start,
@@ -635,10 +711,17 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
   });
   assert.equal(c.toBlock, start + 199);
   assert.deepEqual(
-    c.launch.pools.map((p) => [p.id, p.name, p.symbol, p.decimals]),
+    c.launch.pools.map((p) => [
+      p.id,
+      p.name,
+      p.symbol,
+      p.decimals,
+      p.totalSupplyRaw,
+      p.supplyBlock,
+    ]),
     [
-      [poolA, "Alpha", "A", 18],
-      [poolB, "Beta", "B", 6],
+      [poolA, "Alpha", "A", 18, (10n ** 27n).toString(), 64798181],
+      [poolB, "Beta", "B", 6, "123456789", 64798181],
     ],
   );
   assert.equal(c.launch.pools[0].description, "Token A");

@@ -8,6 +8,7 @@ import {
   RPC_RATE_LIMIT_EXIT_CODE,
   BROAD_CAPACITY_EXIT_CODE,
   HYPERSYNC_UNAUTHORIZED_EXIT_CODE,
+  LEDGER_INSPECTION_EXIT_CODE,
   type WorkerSpec,
 } from "./supervisor";
 
@@ -117,6 +118,37 @@ test("a rejected HyperSync token exit drains siblings with its own distinct clea
   );
   t.mock.timers.tick(20000);
   assert.deepEqual(f.children[1].signals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("the ledger tip loop's inspection exit pauses its one-worker service without a restart", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const logs: unknown[] = [];
+  let exitCode: number | undefined;
+  const children: EventEmitter[] = [];
+  superviseWorkers(
+    [{ name: "ledger-tip", file: "ledger-tip-main.ts", args: ["run"] }],
+    {
+      spawn: () => {
+        const child = new EventEmitter() as ChildProcess;
+        child.kill = () => true;
+        children.push(child);
+        return child;
+      },
+      exitCode: (code) => {
+        exitCode = code;
+      },
+      log: (event) => {
+        logs.push(event);
+      },
+    },
+  );
+  children[0].emit("exit", LEDGER_INSPECTION_EXIT_CODE, null);
+  assert.equal(LEDGER_INSPECTION_EXIT_CODE, 78);
+  assert.equal(exitCode, 0);
+  assert.deepEqual(logs, [
+    { event: "service_paused_ledger_inspection", worker: "ledger-tip" },
+  ]);
+  assert.equal(children.length, 1);
 });
 
 test("external shutdown drains all three workers successfully and cancels the escalation timer", (t) => {

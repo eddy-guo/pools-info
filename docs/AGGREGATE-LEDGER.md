@@ -1,4 +1,4 @@
-# The aggregate ledger: phases 1 and 2
+# The aggregate ledger: phases 1 to 3
 
 The aggregate architecture replaces the per-pool evidence tiers with one
 ledger built from HyperSync: every registered PoolManager `Swap` and every
@@ -8,8 +8,8 @@ its measurements and its decisions are the scout report
 `data/pools-aggregate-design-s5/report.md` in the firstmate home (sections 4,
 6, 7.2 and 11 are the ones this phase implements); the captain approved it on
 16 Sep 2026 with the report's recommended answers to D1 to D5 as defaults.
-This document records what phases 1 and 2 deliver, where they deviate from
-the report and why, and what phases 3 to 5 still owe.
+This document records what phases 1 to 3 deliver, where they deviate from
+the report and why, and what phases 4 and 5 still owe.
 
 ## What phase 1 delivers
 
@@ -159,19 +159,24 @@ requested per page, 16 pages, 24 MiB per lane query):
    transactions and blocks. Each launch is verified as in PR 35 (`decodeLaunch`
    recomputes the pool id from the PoolKey, the transaction succeeded, a
    launcher log sits in the same transaction, factory metadata is matched to
-   the token), and its name, symbol and decimals are read through one
-   Multicall3 `aggregate3` per 66 launches over `ROBINHOOD_RPC_URL`, which
-   must be the public RPC: an Alchemy host is refused.
+   the token), and its name, symbol, decimals and (since phase 3) total
+   supply are read through one Multicall3 `aggregate3` per 50 launches over
+   `ROBINHOOD_RPC_URL`, which must be the public RPC: an Alchemy URL is
+   refused.
 2. The swap lane, with the registry as of the range end leading the filter
    (report 3.4): every pool registered before the range plus the range's own
-   launches, sorted, in selections of 20,000 pool ids, one selection per
-   query (a 1.38 MB body against the 2 MiB limit; 62,642 pools are four
-   queries). Every returned log is validated, joined to a successful
+   launches, sorted, split evenly over the fewest queries of at most 25,000
+   pool ids, one selection per query (`ledgerChunks`; the 62,858 pools of
+   17 Sep 2026 are three queries of about 21,000 ids, 1.45 MB against the
+   2 MiB limit, where the pass's fixed 20,000-id chunks took four). Every
+   returned log is validated, joined to a successful
    transaction (the initiator, `to` for the route label) and its block, and
    decoded; a swap whose amounts share a sign is not a trade and is counted
    as `unsupportedSwaps`.
-3. The transfer lane: every registered token's `Transfer` logs in selections
-   of 31,000 addresses (1.40 MB), validated and joined the same way.
+3. The transfer lane: every registered token's `Transfer` logs split the same
+   way over queries of at most 40,000 addresses (two of about 31,400, 1.41
+   MB, where fixed 31,000-address chunks took three), validated and joined
+   the same way.
 
 A lane query that hits a cap ends the range on its last whole page, every
 later query is asked only up to that block, rows beyond it are dropped, and
@@ -241,12 +246,145 @@ test server (port 5418): see the pull request for the run's wall-clock,
 requests, bytes, 429 count, the calibration ranges against report 3.3 and the
 three wallets against report 4.4.
 
-## What phases 3 to 5 still owe
+## Phase 3: the tip loop
 
-- **Phase 3, the tip loop** (report 7.3): PR 35's cycle with `applyLedgerBatch`
-  as the commit, reconcile-then-extend over `ledgerCheckpoints` and
-  `walkBackLedger`, the `agg_wallet_windows` refresh with ranks, the sticky
-  throttle stop, 24 hours unattended on Railway.
+`pnpm ledger:tip run` (`apps/indexer/src/ledger-tip-main.ts`, the loop in
+`apps/indexer/src/ledger-tip.ts`) keeps the ledger the pass built current. It
+extends a ledger and never starts one: it refuses a database whose
+`agg_streams` holds no cursor, and it asks before migrating, so a loop
+pointed at any other database (the old production one) exits without
+altering it (exit code 78). It also refuses a ledger whose batches folded
+trades but whose `agg_positions` or `agg_wallet_hours` are empty, as a restore
+that leaves them for later would be: folding into empty positions would book
+sales without their buys. It is off unless `LEDGER_TIP_ENABLED=1` and
+`ENVIO_API_TOKEN` are set; the variables are in `.env.example`. On Railway it
+is its own service, `apps/indexer/railway.ledger-tip.json`, whose start
+command `src/ledger-tip-service.ts` supervises this one worker; the indexer
+service's `src/service.ts` starts discovery, analytics and the recent worker
+over Alchemy and is never its start command.
+
+**One cycle** is PR 35's order over the pass's lanes, and every write in it
+is a committed batch or nothing, so the loop can stop at any point:
+
+1. `GET /height`, then the head block's header: `agg_streams.head_block`,
+   `head_timestamp` and `checked_at` record the head beside the cursor.
+2. Reconcile: the saved cursor's hash is read back from HyperSync; on a
+   mismatch the newest still-canonical checkpoint is found and
+   `walkBackLedger` restores the journal's pre-images, then the launch stream
+   is rewound into lockstep (`reconcileLedgerPass`, the pass's own code).
+3. One range from the cursor to at most `height - 128`, collected and
+   committed exactly as the pass commits one (`runLedgerRange`): launches
+   first through `launches:agg:v1`, then the swaps and transfers through
+   `applyLedgerBatch` under the writer lock. A range that completes its whole
+   size doubles the next one up to `LEDGER_TIP_MAX_RANGE_BLOCKS` while the
+   loop is behind; a range a lane cut short sets the next to what it covered.
+4. The leaderboard windows are refreshed when due (below).
+5. At the confirmed tip the loop waits `LEDGER_TIP_POLL_MS` (60 s); behind
+   it, the next cycle starts at once. A quiet tip cycle is three HyperSync
+   requests (height, head, cursor) and a cycle with new blocks adds the launch
+   query, one query per swap and transfer selection (three and two at the 17
+   Sep catalogue), the cutoff header and any extra pages, all paced at one
+   request per 2 s or slower.
+
+**The launch lane arrives complete.** Each launch's name, symbol, decimals
+and `totalSupply()` are read in the same Multicall3 aggregate over the public
+RPC and stored with the pool: `indexed_pools.token_total_supply_raw` and
+`token_supply_block` (migration 019) are written by the discovery commit, and
+a later reading replaces an earlier one, never the reverse. The launch
+stream's evidence carries the new reads as schema version 2; version 1
+batches (name, symbol and decimals) still verify.
+
+**The live ring holds the 24 hours ending at the cursor**
+(`pruneLedgerLiveTrades`, run inside every batch), with a disk bound under it
+sized from measured rows: the busiest rolling 24 hours of the registered
+history held 1,026,761 swaps (5 to 6 Aug 2026, summed from `agg_pool_hours`
+in the pass database; 17 Sep's held 382,835), and a ring row costs 459 bytes
+with its indexes freshly written and 661 under the writer's churn, so the cap
+of 1,250,000 rows keeps a whole day on every day measured and holds the table
+near 0.6 to 0.8 GB when a day that busy recurs. Phase 2's cap of 250,000 rows
+covered 15.2 hours of 17 Sep.
+
+**The windows** (`packages/db/src/ledger-windows.ts`). `agg_wallet_windows`
+holds one row per wallet per window (`1h`, `6h`, `24h`, `7d`, `30d`, `All`),
+summed from the whole UTC hours ending with the cursor's hour, with the
+wallet's position counts and last activity. `rank` is the wallet's place
+among the eligible (at least 10 supported trades on a supported position) by
+realized, the address breaking ties, and is kept for the top 100 only.
+`agg_window_refreshes` (migration 020) records the cursor each window
+reflects. The first refresh rebuilds every window from the hour rows; after
+that a refresh recomputes only the wallets the journal names for the batches
+since, with their position figures read once for all six windows. When a
+window's start moves, a wallet the batches did not touch has the leaving
+hours' sums subtracted from its row, exact since those hours did not change;
+it is summed again only when its best sale or its last unfolded closure sat in
+them, and leaves the window when no hour is left. It runs
+at most once per `LEDGER_TIP_WINDOW_REFRESH_MS` (60 s) and whenever the
+cursor's hour moves, in one transaction, so all six windows reflect the same
+cursor. A walk-back removes the refresh state with its batch (and the window
+rows of any wallet it deletes), which forces a rebuild; so does a batch whose
+journal is not whole.
+
+**Closed-cycle hold time** (decided 17 Sep 2026). A sale that closes an
+inventory cycle folds its hold time into the position (`closed_cycles`,
+`flash_cycles` held under 60 seconds, `shortest_cycle_seconds`) and into the
+wallet's hour row (`flash_closures`), and a window sums the latter. Rows
+written before migration 020 hold closures whose hold time was never folded:
+their columns are null and stay null when a later closure lands (a count
+from then on would read as the whole history), and a window holding such an
+hour serves null. A position or hour row created from then on starts at
+zero. The history backfill fills the rest.
+
+**Stops.** A sustained throttle (four throttled attempts on one HyperSync or
+RPC request) ends the loop with exit code 75, a rejected token 77, a page
+over HyperSync's own caps 76, and a ledger that refuses to change (a walk-back
+its journal cannot serve, a conflicting batch, no ledger) 78; the service's
+supervisor turns each into a clean exit that Railway's `ON_FAILURE` policy
+does not restart. Any other failure is retried after 2, 4, 8 and 16 seconds;
+five failed cycles in a row exit 1 for a restart from the cursor. SIGTERM
+ends the loop on a committed batch.
+
+### Changes to phases 1 and 2, and why
+
+- **Walk-back restored amounts through JavaScript numbers.** The journal's
+  pre-images were parsed into objects and serialised again, so any amount
+  past 2^53 (almost every wei figure) came back rounded: a real reorg would
+  have failed an identity check or silently changed a volume. Pre-images now
+  travel as jsonb text (`packages/db/src/ledger.test.ts`, "walk-back restores
+  amounts beyond double precision to the wei").
+- **Walk-back checks that a batch's journal is whole.** `agg_batches` records
+  the journal rows each batch wrote (`journal_rows`), and a batch written
+  before that, or whose journal was pruned or left out of a restored dump (the
+  production restore of 17 Sep leaves `agg_journal` out), is refused instead
+  of being removed with its changes left in place.
+- **Value lists split evenly over the fewest queries**, two requests fewer
+  per range at the 17 Sep catalogue (see the lanes above).
+- **Ranks are row numbers kept for the top 100**, not the report's dense rank
+  over every eligible wallet: the leaderboard today ranks by position with
+  the address breaking ties, and serves no rank past 100 (captain, 17 Sep
+  2026), so the rows past it would churn on every refresh for no reader.
+
+### Acceptance evidence
+
+The tests: `apps/indexer/src/ledger-tip.test.ts` in `test:db` (the loop takes
+the stream over from the pass and folds to exactly the pass's ledger and
+catalogue, a fresh launch arrives with decimals and supply, the exact request
+count of a quiet and a small tip cycle, PR 35's reorg replay on the journal:
+walked back to exactly the checkpoint's ledger and recollected to a fresh
+build of the fork, a stop after every request of a cycle resuming to the
+same ledger and windows with both streams in lockstep, a stop between the two
+commits, the throttle stop, backoff, the refusal of a database without a
+ledger), `packages/db/src/ledger-windows.test.ts` (the build, top-100 ranks
+with the address tie-break, incremental refreshes equal to a rebuild as
+batches land, hours leave and positions are excluded, the interval, walk-back,
+unknown flash counts), `packages/db/src/ledger.test.ts` (the ring's bound,
+the journal guard, hold times persisted and walked back) and
+`packages/core/src/ledger.test.ts` (the hold-time fold, and the flash share
+equal to `walletMetrics`' `fastHoldShare` on every accounting fixture). The
+local run at the real tip against a copy of `pools_agg_pass` is in the pull
+request.
+
+## What phases 4 and 5 still owe
+
 - **Phase 4, readers and the API deltas** (report section 8): every response
   shape is untouched in phase 1; phase 4 changes the readers and the web
   validators in one PR. Its first part, explore's and the pool page's market
@@ -254,9 +392,10 @@ three wallets against report 4.4.
   `MARKET_SOURCE=ledger` (off by default), is in
   `docs/LEDGER-MARKET-SERVING.md`; the leaderboard, wallet and creators
   readers still read the deep and broad tables.
-- **Phase 5, cutover and retirement** (report section 9): no production write,
-  Railway or Envio change happens before it. The indexer stays down and the
-  Envio switch stays off.
+- **Phase 5, cutover and retirement** (report section 9): the tip loop's
+  Railway service against the ledger database, and 24 hours of it unattended
+  with its lag under two batches, belong to it. The old indexer service stays
+  down.
 
 Decisions D1 (wrapper-routed wallets on the board) and D2 (zero-cost inflows
 in ranking) are query predicates on `flags`; D3's flip adds a per-sale table
@@ -265,4 +404,5 @@ stream in mode `tip` once a fresh archive height leaves a gap under
 `ledgerPassPolicy.catchUpMargin` (2,000 blocks) past the 128-block safety lag,
 not on an exact zero gap: a chain that never stops producing blocks never
 closes that gap to zero, so the cursor can sit up to about 2,128 blocks below
-the archive height when mode flips to `tip`. Phase 3 takes it from there.
+the archive height when mode flips to `tip`. Phase 3 takes it from there, and
+takes over a stream a stopped pass left in mode `pass` as well.

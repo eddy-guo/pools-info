@@ -22,7 +22,7 @@
     "indexer:once": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts once",
     "indexer:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts run",
     "indexer:status": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/main.ts status",
-    "test:db": "node --env-file-if-exists=.env.local --import tsx --test packages/db/src/*.test.ts 'apps/api/src/!(observed-market|ledger-market).integration.test.ts' apps/indexer/src/analytics.test.ts apps/indexer/src/recent-worker.test.ts apps/indexer/src/pool-group-worker.test.ts apps/indexer/src/discovery-worker.test.ts apps/indexer/src/broad-worker.test.ts apps/indexer/src/hypersync-backfill.test.ts apps/indexer/src/ledger-pass.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/broad-explore.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market-rollups.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/ledger-market.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/ledger-market.integration.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market.integration.test.ts",
+    "test:db": "node --env-file-if-exists=.env.local --import tsx --test packages/db/src/*.test.ts 'apps/api/src/!(observed-market|ledger-market).integration.test.ts' apps/indexer/src/analytics.test.ts apps/indexer/src/recent-worker.test.ts apps/indexer/src/pool-group-worker.test.ts apps/indexer/src/discovery-worker.test.ts apps/indexer/src/broad-worker.test.ts apps/indexer/src/hypersync-backfill.test.ts apps/indexer/src/ledger-pass.test.ts apps/indexer/src/ledger-tip.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/broad-explore.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market-rollups.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/ledger-market.scale.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/ledger-market.integration.test.ts && node --env-file-if-exists=.env.local --import tsx --test apps/api/src/observed-market.integration.test.ts",
     "api:run": "node --env-file-if-exists=.env.local --import tsx apps/api/src/main.ts",
     "analytics:once": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/analytics-main.ts once",
     "analytics:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/analytics-main.ts run",
@@ -32,7 +32,9 @@
     "hypersync:plan": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts plan",
     "hypersync:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts run",
     "ledger:pass": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-pass-main.ts",
-    "supply:read": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/token-supply-main.ts"
+    "supply:read": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/token-supply-main.ts",
+    "ledger:tip": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-tip-main.ts",
+    "ledger:tip:service": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-tip-service.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
