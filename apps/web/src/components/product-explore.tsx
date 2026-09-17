@@ -94,25 +94,6 @@ function LaunchLine({
       >
         {shortAddress(pool.launchSender)}
       </Link>
-      <span aria-hidden="true"> · </span>
-      Launch only
-    </span>
-  );
-}
-function MarketBasis({ pool }: { pool: AnalyticsPoolRow }) {
-  const basis = pool.marketCoverage;
-  return (
-    <span
-      className="cell-sub"
-      title={
-        basis?.unitBasis
-          ? `Price units: ${basis.unitBasis.decimals} decimals at block ${basis.unitBasis.block}, ${utc(basis.unitBasis.asOf)} (${basis.unitBasis.source}).`
-          : "Normalized price units unavailable."
-      }
-    >
-      {basis
-        ? `${basis.source === "canonical_broad" ? "Broad swaps" : "Deep market"} · ${pool.stats.completeWindow ? "Covered window" : "Partial metrics"} · ${utc(basis.cutoff.asOf)}`
-        : "Market unavailable"}
     </span>
   );
 }
@@ -210,7 +191,7 @@ export function ProductExplore() {
           <button
             onClick={() => set({ view: LAUNCH_VIEW, sort: null, offset: null })}
           >
-            All discovered launches →
+            All launches →
           </button>
         </div>
         <div className="launch-rail">
@@ -273,12 +254,9 @@ export function ProductExplore() {
               </div>
               <div className="launch-card-values">
                 {p && launchOnly(p) ? (
-                  <>
-                    <span className="launch-card-note">Launch only</span>
-                    <span className="mono launch-card-sender">
-                      {shortAddress(p.launchSender)}
-                    </span>
-                  </>
+                  <span className="mono launch-card-sender">
+                    {shortAddress(p.launchSender)}
+                  </span>
                 ) : p ? (
                   <>
                     <Price wei={p.stats.priceWei} />
@@ -286,11 +264,8 @@ export function ProductExplore() {
                   </>
                 ) : (
                   <>
-                    <span
-                      className="launch-card-note"
-                      data-pending={!launches.data}
-                    >
-                      {launches.data ? "\u00a0" : "Launch only"}
+                    <span data-pending={!launches.data}>
+                      {launches.data ? "\u00a0" : "Price"}
                     </span>
                     <span
                       className="mono launch-card-sender"
@@ -387,18 +362,6 @@ export function ProductExplore() {
             {error && (
               <p className="panel-footnote" role="alert">
                 {error}
-              </p>
-            )}
-            <p className="panel-footnote">
-              Observed windows end at each row&apos;s dated market cutoff.
-              Coverage is partial across the catalog. Deep holders and verified
-              PnL use separate evidence. Missing metrics remain N/A; sorting by
-              a metric lists only pools with that metric.
-            </p>
-            {data?.broadMarketCutoff?.rebuildPending && (
-              <p className="panel-footnote">
-                Historical market rebuild is incomplete. The broad cutoff stops
-                before the first missing batch.
               </p>
             )}
             {/* The reserved row geometry stays put when a filter matches
@@ -630,41 +593,34 @@ export function ProductExplore() {
                                 />
                               </strong>
                             </span>
-                            <span>
-                              Status
-                              <strong>Launch only</strong>
-                            </span>
                           </div>
                         ) : (
-                          <>
-                            <MarketBasis pool={p} />
-                            <div className="mobile-pool-stats">
-                              <span>
-                                Price
-                                <strong>
-                                  <Price wei={p.stats.priceWei} />
-                                </strong>
-                              </span>
-                              <span>
-                                {window} volume
-                                <strong>
-                                  <Eth wei={p.stats.volumeWei} />
-                                </strong>
-                              </span>
-                              <span>
-                                Trades
-                                <strong>
-                                  {p.stats.trades ?? <Unavailable />}
-                                </strong>
-                              </span>
-                              <span>
-                                Change
-                                <strong>
-                                  <Change value={p.stats.change} />
-                                </strong>
-                              </span>
-                            </div>
-                          </>
+                          <div className="mobile-pool-stats">
+                            <span>
+                              Price
+                              <strong>
+                                <Price wei={p.stats.priceWei} />
+                              </strong>
+                            </span>
+                            <span>
+                              {window} volume
+                              <strong>
+                                <Eth wei={p.stats.volumeWei} />
+                              </strong>
+                            </span>
+                            <span>
+                              Trades
+                              <strong>
+                                {p.stats.trades ?? <Unavailable />}
+                              </strong>
+                            </span>
+                            <span>
+                              Change
+                              <strong>
+                                <Change value={p.stats.change} />
+                              </strong>
+                            </span>
+                          </div>
                         )}
                       </>
                     ) : !data ? (

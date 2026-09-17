@@ -3180,15 +3180,6 @@ main {
     padding: 6px 8px;
   }
 }
-.feed-status {
-  padding: 0 18px 12px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .stream-event {
   padding: 14px 18px;
   border-top: 1px solid var(--line);
@@ -3621,10 +3612,7 @@ main {
   font-size: 11px;
   font-weight: 500;
 }
-/* A card with no observed price carries the launch mark and its sender. */
-.launch-card-note {
-  color: var(--color-text-3);
-}
+/* A card with no observed price carries its sender. */
 .launch-card-sender {
   color: var(--color-text-2);
 }
@@ -3988,11 +3976,6 @@ main {
 .activity-item small {
   font-size: 10px;
   color: var(--muted);
-}
-.feed-status {
-  padding: 10px 14px;
-  font-size: 10px;
-  line-height: 1.6;
 }
 .scope-note {
   display: flex;
@@ -4674,9 +4657,6 @@ main {
   }
   .mobile-pool .token-cell strong {
     max-width: 240px;
-  }
-  .mobile-pool .cell-sub {
-    font-size: 10px;
   }
   .mobile-pool-stats {
     display: grid;
@@ -5593,11 +5573,12 @@ a.wallet-top-pool:hover {
   .explore-page .table-region > .empty-state {
     inset: 0 0 auto;
   }
+  /* Identity row, then the two stat rows: 15 + 44 + 14 + 86 + 15. */
   .explore-page .mobile-pools {
-    min-height: calc(25 * 192px);
+    min-height: calc(25 * 174px);
   }
   .explore-page .mobile-pool {
-    height: 192px;
+    height: 174px;
     overflow: auto;
   }
   /* The stacked heading: a two-row title (name and symbol, then the launch
