@@ -61,12 +61,22 @@ const liveFeed = (poolId: string | null): LiveTradeFeedResponse => {
     },
   };
 };
+/* The screener's rows are windowed against the document scroll, so the list
+   takes the catalog's full height once its first page names the total; that
+   growth is below the fold and moves nothing on screen, so the sentinel keeps
+   its position and width and may only grow. */
 const routes = [
-  { name: "screener", url: "/", sentinel: ".explore-page .workspace-grid" },
+  {
+    name: "screener",
+    url: "/",
+    sentinel: ".explore-page .workspace-grid",
+    grows: true,
+  },
   {
     name: "launches",
     url: "/?view=new",
     sentinel: ".explore-page .workspace-grid",
+    grows: true,
   },
   {
     name: "pool",
@@ -333,10 +343,21 @@ for (const entry of routes) {
         ),
         contentType: "application/json",
       });
-      expect(
-        after,
-        "sentinel retains its complete first-paint geometry",
-      ).toEqual(before);
+      if ("grows" in entry) {
+        const { height, ...position } = after!;
+        expect(
+          position,
+          "sentinel retains its first-paint position and width",
+        ).toEqual({ x: before!.x, y: before!.y, width: before!.width });
+        expect(
+          height,
+          "sentinel keeps at least its reserved height",
+        ).toBeGreaterThanOrEqual(before!.height);
+      } else
+        expect(
+          after,
+          "sentinel retains its complete first-paint geometry",
+        ).toEqual(before);
       expect(
         measurement.cls,
         "every non-input layout shift since navigation",
