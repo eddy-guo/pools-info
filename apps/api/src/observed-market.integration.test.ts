@@ -10,6 +10,11 @@ import { readObservedMarket } from "./observed-market-read";
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 const address = (n: number) => "0x" + n.toString(16).padStart(40, "0");
 const first = 22754669;
+// This file is its own serial phase of `pnpm test:db`: the concurrent phase's
+// glob excludes it and it runs after the scale phases. Its deepest fixture
+// reads 21,001 swaps through the API under the reader's 3,000 ms statement
+// budget, and three files at once on CI's 4-vCPU runner have pushed that read
+// to a 503 on unchanged code; alone on the container it keeps its margin.
 test(
   "Postgres HTTP: broad market coverage, canonical overlaps/conflicts, boundaries, unsupported signs and rewind",
   { skip: !process.env.TEST_DATABASE_URL },
