@@ -4,7 +4,6 @@ export default function NotFound() {
     <div className="not-found">
       <div className="eyebrow">PAGE NOT FOUND</div>
       <h1>This page isn’t available.</h1>
-      <p>Explore the currently covered markets and their on-chain evidence.</p>
       <Link className="button" href="/">
         Back to markets
       </Link>

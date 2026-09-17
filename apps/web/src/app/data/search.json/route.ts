@@ -5,8 +5,6 @@ export const dynamic = "force-static";
 export function GET() {
   return Response.json({
     capturedAt: catalog.generatedAt,
-    scope:
-      "Verified launch catalog and captured market sample; not full protocol history",
     ranges: catalog.ranges,
     tokens: [
       ...new Map(

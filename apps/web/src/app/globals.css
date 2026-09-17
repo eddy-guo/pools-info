@@ -1055,8 +1055,7 @@ main {
 .search-results section {
   margin: 3px 0 14px;
 }
-.search-results h2,
-.search-hint {
+.search-results h2 {
   color: var(--faint);
   font-size: 12px;
   text-transform: uppercase;
@@ -1605,6 +1604,9 @@ main {
 .not-found h1 {
   font-size: 34px;
   margin-bottom: 14px;
+}
+.not-found h1 + .button {
+  margin-top: 10px;
 }
 .not-found p {
   color: var(--muted);
@@ -3042,12 +3044,6 @@ main {
   background: #f2a4ce13;
   border-color: #f2a4ce40;
   color: var(--accent);
-}
-.search-hint {
-  font-size: 11px;
-  text-transform: none;
-  letter-spacing: 0;
-  line-height: 1.5;
 }
 .search-help,
 .search-explainer {

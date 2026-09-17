@@ -254,14 +254,10 @@ test("search keeps local matches while the saved index is pending and skeletons 
   await expect(
     dialog.getByRole("status", { name: "Searching tokens and wallets" }),
   ).toBeVisible();
-  await expect(dialog.getByText("No matches in current coverage")).toHaveCount(
-    0,
-  );
+  await expect(dialog.getByText("No matches")).toHaveCount(0);
   await expect.poll(() => started).toBe(true);
   release();
-  await expect(
-    dialog.getByText("No matches in current coverage"),
-  ).toBeVisible();
+  await expect(dialog.getByText("No matches")).toBeVisible();
   started = false;
   await input.fill(chain.markets[0].symbol);
   await expect(
@@ -274,7 +270,9 @@ test("search keeps local matches while the saved index is pending and skeletons 
     dialog.getByRole("status", { name: "Searching tokens and wallets" }),
   ).toHaveCount(0);
   release();
-  await expect(dialog.getByText(/Saved search is unavailable/)).toBeVisible();
+  await expect(
+    dialog.getByText("Some results are unavailable. Try again shortly."),
+  ).toBeVisible();
   await page.route("**/api/ens/?**", (route) =>
     route.fulfill({ json: { name: "invalid.eth", address: "invalid" } }),
   );
