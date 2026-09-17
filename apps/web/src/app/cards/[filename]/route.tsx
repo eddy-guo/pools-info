@@ -5,11 +5,13 @@ import sharp from "sharp";
 import {
   cardCurve,
   cardEth,
+  cardExportTrio,
   cardHero,
   cardStats,
   cardTopPosition,
   identiconCells,
   readCardWallet,
+  type CardExportTrio,
   type CardStat,
 } from "@/lib/product-card";
 import {
@@ -18,7 +20,12 @@ import {
   parseCardOptions,
 } from "@/lib/card-options";
 import { tokenImageResponse } from "@/lib/token-image-server";
-import { shortAddress, visualTheme } from "@pools/core";
+import {
+  identityTint,
+  shortAddress,
+  visualTheme,
+  type LiveWindow,
+} from "@pools/core";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -175,6 +182,247 @@ function Identicon({
   );
 }
 
+/**
+ * The export design's identity tile: a plain per-identity tinted box with no
+ * letters and no grid, unlike the Liquid design's dotted {@link Identicon}.
+ */
+function Monogram({
+  address,
+  size,
+  anonymous,
+}: {
+  address: string;
+  size: number;
+  anonymous: boolean;
+}) {
+  if (anonymous)
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: size,
+          height: size,
+          borderRadius: 16,
+          background: visualTheme.surface4,
+          border: `1px solid ${visualTheme.lineRaised}`,
+          flexShrink: 0,
+        }}
+      >
+        <svg
+          width={Math.round(size * 0.46)}
+          height={Math.round(size * 0.46)}
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <circle
+            cx="12"
+            cy="8"
+            r="4.2"
+            stroke={visualTheme.muted}
+            strokeWidth="1.8"
+          />
+          <path
+            d="M4.5 20.5c1.2-4 4.1-6 7.5-6s6.3 2 7.5 6"
+            stroke={visualTheme.muted}
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+        </svg>
+      </div>
+    );
+  const tint = identityTint(address);
+  return (
+    <div
+      style={{
+        display: "flex",
+        width: size,
+        height: size,
+        borderRadius: 16,
+        background: tint.background,
+        border: `2px solid ${tint.foreground}`,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+const rankFormat = new Intl.NumberFormat("en-US");
+
+/**
+ * The captain's export layout: wordmark, window chip, monogram + name + rank,
+ * the PnL headline, the fixed ROI / Record / Best trade trio and the profile
+ * URL - exactly those eight elements, nothing else.
+ */
+function ExportCard({
+  address,
+  anonymous,
+  preset,
+  window,
+  rank,
+  heroValue,
+  heroColor,
+  trio,
+}: {
+  address: string;
+  anonymous: boolean;
+  preset: string;
+  window: LiveWindow;
+  rank: number | null;
+  heroValue: string;
+  heroColor: string;
+  trio: CardExportTrio;
+}) {
+  const stats: { label: string; value: string | null }[] = [
+    { label: "ROI", value: trio.roi },
+    { label: "Record", value: trio.record },
+    { label: "Best trade", value: trio.bestTrade },
+  ];
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        padding: "64px 72px",
+        color: visualTheme.text,
+        fontFamily: "Geist",
+        backgroundColor: visualTheme.panelInset,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Mark size={34} color={preset} />
+          <div
+            style={{
+              display: "flex",
+              fontSize: 53,
+              fontWeight: 600,
+              lineHeight: 1,
+              letterSpacing: -1.6,
+            }}
+          >
+            pools
+            <span style={{ color: visualTheme.muted, fontWeight: 400 }}>
+              info
+            </span>
+            <span style={{ color: preset }}>.</span>
+          </div>
+        </div>
+        <span
+          style={{
+            display: "flex",
+            fontFamily: mono,
+            fontSize: 33,
+            fontWeight: 400,
+            lineHeight: 1,
+            letterSpacing: 3,
+            color: visualTheme.muted,
+            border: `1px solid ${visualTheme.lineActive}`,
+            borderRadius: 10,
+            padding: "10px 18px",
+          }}
+        >
+          {cardWindowLabel(window)} REALIZED
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          justifyContent: "space-between",
+          marginTop: 40,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <Monogram address={address} size={56} anonymous={anonymous} />
+            <span style={{ fontSize: 57, fontWeight: 500, lineHeight: 1 }}>
+              {anonymous ? "Anonymous" : shortAddress(address)}
+            </span>
+            {!anonymous && rank !== null && (
+              <span
+                style={{
+                  display: "flex",
+                  fontSize: 37,
+                  fontWeight: 600,
+                  lineHeight: 1,
+                  color: preset,
+                  background: "rgba(255, 255, 255, 0.07)",
+                  borderRadius: 10,
+                  padding: "8px 16px",
+                }}
+              >
+                {`RANK ${rankFormat.format(rank)}`}
+              </span>
+            )}
+          </div>
+          <span
+            style={{
+              marginTop: 12,
+              fontSize: 207,
+              fontWeight: 600,
+              letterSpacing: -9.3,
+              lineHeight: 1,
+              color: heroColor,
+            }}
+          >
+            {heroValue}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", gap: 56 }}>
+            {stats.map((s) => (
+              <div
+                key={s.label}
+                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+              >
+                <span
+                  style={{
+                    fontSize: 33,
+                    fontWeight: 400,
+                    lineHeight: 1,
+                    color: visualTheme.muted,
+                  }}
+                >
+                  {s.label}
+                </span>
+                <span style={{ fontSize: 57, fontWeight: 600, lineHeight: 1 }}>
+                  {s.value ?? ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <span
+            style={{
+              display: "flex",
+              alignSelf: "flex-end",
+              fontFamily: mono,
+              fontSize: 24,
+              fontWeight: 400,
+              lineHeight: 1,
+              color: visualTheme.muted,
+            }}
+          >
+            {anonymous
+              ? "poolsinfo.com"
+              : `poolsinfo.com/wallet/${shortAddress(address)}`}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ filename: string }> },
@@ -205,8 +453,12 @@ export async function GET(
       return new Response("No saved PnL for this wallet", { status: 404 });
     const preset = cardPresets[options.preset].color,
       top = cardTopPosition(result.positions),
-      image = top ? await tokenImage(top.poolId) : null,
+      image =
+        top && options.design === "liquid"
+          ? await tokenImage(top.poolId)
+          : null,
       stats = cardStats(w, options.notional),
+      trio = cardExportTrio(w, top?.symbol ?? null),
       heroColor = tone(hero.tone),
       curveColor = tone(
         w.realizedWei === null
@@ -227,345 +479,368 @@ export async function GET(
     const start = curve?.points[0],
       end = curve?.points[curve.points.length - 1];
     const card = new ImageResponse(
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          width: "100%",
-          height: "100%",
-          padding: "44px 64px 40px",
-          color: visualTheme.text,
-          fontFamily: "Geist",
-          backgroundColor: visualTheme.panelInset,
-          backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.16)} 0%, ${alpha(preset, 0)} 42%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.07)} 0%, ${alpha(preset, 0)} 38%)`,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Mark size={30} color={preset} />
-          <div
-            style={{
-              display: "flex",
-              fontSize: 30,
-              fontWeight: 600,
-              letterSpacing: -1,
-            }}
-          >
-            pools
-            <span style={{ color: visualTheme.muted, fontWeight: 400 }}>
-              info
-            </span>
-            <span style={{ color: preset }}>.</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", flex: 1, marginTop: 26, gap: 40 }}>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              width: 562,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              {options.anonymous ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 52,
-                    height: 52,
-                    borderRadius: 14,
-                    background: visualTheme.surface4,
-                    border: `1px solid ${visualTheme.lineRaised}`,
-                  }}
-                >
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <circle
-                      cx="12"
-                      cy="8"
-                      r="4.2"
-                      stroke={visualTheme.muted}
-                      strokeWidth="1.8"
-                    />
-                    <path
-                      d="M4.5 20.5c1.2-4 4.1-6 7.5-6s6.3 2 7.5 6"
-                      stroke={visualTheme.muted}
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </div>
-              ) : (
-                <Identicon
-                  address={address}
-                  size={52}
-                  color={preset}
-                  radius={14}
-                />
-              )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span
-                  style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.1 }}
-                >
-                  {options.anonymous ? "Anonymous" : shortAddress(address)}
-                </span>
-                {!options.anonymous && w.rank !== null && (
-                  <span
-                    style={{
-                      fontSize: 18,
-                      color: visualTheme.muted,
-                      lineHeight: 1.1,
-                    }}
-                  >
-                    {`Rank ${new Intl.NumberFormat("en-US").format(w.rank)}`}
-                  </span>
-                )}
-              </div>
+      options.design === "export" ? (
+        <ExportCard
+          address={address}
+          anonymous={options.anonymous}
+          preset={preset}
+          window={options.window}
+          rank={w.rank}
+          heroValue={hero.value}
+          heroColor={heroColor}
+          trio={trio}
+        />
+      ) : (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            width: "100%",
+            height: "100%",
+            padding: "44px 64px 40px",
+            color: visualTheme.text,
+            fontFamily: "Geist",
+            backgroundColor: visualTheme.panelInset,
+            backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.16)} 0%, ${alpha(preset, 0)} 42%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.07)} 0%, ${alpha(preset, 0)} 38%)`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <Mark size={30} color={preset} />
+            <div
+              style={{
+                display: "flex",
+                fontSize: 30,
+                fontWeight: 600,
+                letterSpacing: -1,
+              }}
+            >
+              pools
+              <span style={{ color: visualTheme.muted, fontWeight: 400 }}>
+                info
+              </span>
+              <span style={{ color: preset }}>.</span>
             </div>
-            {top && (
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                {image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={image}
-                    width={40}
-                    height={40}
-                    alt=""
-                    style={{
-                      borderRadius: 20,
-                      border: `1px solid ${visualTheme.lineRaised}`,
-                    }}
-                  />
-                ) : (
-                  <Identicon
-                    address={top.token}
-                    size={40}
-                    color={preset}
-                    radius={20}
-                  />
-                )}
-                <span style={{ fontSize: 34, fontWeight: 600, lineHeight: 1 }}>
-                  {top.symbol}
-                </span>
-                <span
-                  style={{
-                    display: "flex",
-                    padding: "6px 12px",
-                    border: `1px solid ${alpha(preset, 0.5)}`,
-                    borderRadius: 9,
-                    fontFamily: mono,
-                    fontSize: 17,
-                    fontWeight: 500,
-                    letterSpacing: 2,
-                    lineHeight: 1,
-                    color: preset,
-                  }}
-                >
-                  {cardWindowLabel(options.window)}
-                </span>
-              </div>
-            )}
+          </div>
+          <div style={{ display: "flex", flex: 1, marginTop: 26, gap: 40 }}>
             <div
               style={{
                 display: "flex",
                 flexDirection: "column",
-                gap: 12,
-                marginTop: 8,
+                justifyContent: "space-between",
+                width: 562,
               }}
             >
-              <span
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                {options.anonymous ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 52,
+                      height: 52,
+                      borderRadius: 14,
+                      background: visualTheme.surface4,
+                      border: `1px solid ${visualTheme.lineRaised}`,
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      <circle
+                        cx="12"
+                        cy="8"
+                        r="4.2"
+                        stroke={visualTheme.muted}
+                        strokeWidth="1.8"
+                      />
+                      <path
+                        d="M4.5 20.5c1.2-4 4.1-6 7.5-6s6.3 2 7.5 6"
+                        stroke={visualTheme.muted}
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                ) : (
+                  <Identicon
+                    address={address}
+                    size={52}
+                    color={preset}
+                    radius={14}
+                  />
+                )}
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                >
+                  <span
+                    style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.1 }}
+                  >
+                    {options.anonymous ? "Anonymous" : shortAddress(address)}
+                  </span>
+                  {!options.anonymous && w.rank !== null && (
+                    <span
+                      style={{
+                        fontSize: 18,
+                        color: visualTheme.muted,
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {`Rank ${new Intl.NumberFormat("en-US").format(w.rank)}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {top && (
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  {image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={image}
+                      width={40}
+                      height={40}
+                      alt=""
+                      style={{
+                        borderRadius: 20,
+                        border: `1px solid ${visualTheme.lineRaised}`,
+                      }}
+                    />
+                  ) : (
+                    <Identicon
+                      address={top.token}
+                      size={40}
+                      color={preset}
+                      radius={20}
+                    />
+                  )}
+                  <span
+                    style={{ fontSize: 34, fontWeight: 600, lineHeight: 1 }}
+                  >
+                    {top.symbol}
+                  </span>
+                  <span
+                    style={{
+                      display: "flex",
+                      padding: "6px 12px",
+                      border: `1px solid ${alpha(preset, 0.5)}`,
+                      borderRadius: 9,
+                      fontFamily: mono,
+                      fontSize: 17,
+                      fontWeight: 500,
+                      letterSpacing: 2,
+                      lineHeight: 1,
+                      color: preset,
+                    }}
+                  >
+                    {cardWindowLabel(options.window)}
+                  </span>
+                </div>
+              )}
+              <div
                 style={{
-                  fontSize: hero.value.length > 9 ? 84 : 104,
-                  fontWeight: 600,
-                  letterSpacing: -4,
-                  lineHeight: 1,
-                  color: heroColor,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  marginTop: 8,
                 }}
               >
-                {hero.value}
-              </span>
-              {options.notional && w.realizedWei !== null && (
+                <span
+                  style={{
+                    fontSize: hero.value.length > 9 ? 84 : 104,
+                    fontWeight: 600,
+                    letterSpacing: -4,
+                    lineHeight: 1,
+                    color: heroColor,
+                  }}
+                >
+                  {hero.value}
+                </span>
+                {options.notional && w.realizedWei !== null && (
+                  <span
+                    style={{
+                      fontSize: 30,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      color: heroColor,
+                    }}
+                  >
+                    {cardEth(w.realizedWei, true)}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flex: 1,
+                alignItems: "center",
+                justifyContent: "flex-end",
+              }}
+            >
+              <svg
+                width={chart.width}
+                height={chart.height + 24}
+                viewBox={`-12 -12 ${chart.width + 24} ${chart.height + 24}`}
+              >
+                <defs>
+                  <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="0"
+                      stopColor={curveColor}
+                      stopOpacity="0.28"
+                    />
+                    <stop offset="1" stopColor={curveColor} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                {[0.25, 0.5, 0.75].map((f) => (
+                  <line
+                    key={f}
+                    x1="0"
+                    x2={chart.width}
+                    y1={chart.height * f}
+                    y2={chart.height * f}
+                    stroke={visualTheme.lineRaised}
+                    strokeWidth="1"
+                    strokeDasharray="2 6"
+                  />
+                ))}
+                {curve && start && end
+                  ? [
+                      curve.zeroY !== null && (
+                        <line
+                          key="zero"
+                          x1="0"
+                          x2={chart.width}
+                          y1={curve.zeroY}
+                          y2={curve.zeroY}
+                          stroke={visualTheme.lineBright}
+                          strokeWidth="1"
+                        />
+                      ),
+                      <path
+                        key="area"
+                        d={`${path} L${end[0].toFixed(1)} ${chart.height} L${start[0].toFixed(1)} ${chart.height} Z`}
+                        fill="url(#fill)"
+                      />,
+                      <path
+                        key="line"
+                        d={path}
+                        fill="none"
+                        stroke={curveColor}
+                        strokeWidth="3"
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />,
+                      <circle
+                        key="start"
+                        cx={start[0]}
+                        cy={start[1]}
+                        r="7"
+                        fill={visualTheme.panelInset}
+                        stroke={visualTheme.text2}
+                        strokeWidth="3"
+                      />,
+                      <circle
+                        key="halo"
+                        cx={end[0]}
+                        cy={end[1]}
+                        r="13"
+                        fill={curveColor}
+                        fillOpacity="0.25"
+                      />,
+                      <circle
+                        key="end"
+                        cx={end[0]}
+                        cy={end[1]}
+                        r="7"
+                        fill={curveColor}
+                        stroke={visualTheme.panelInset}
+                        strokeWidth="3"
+                      />,
+                    ]
+                  : [
+                      <line
+                        key="baseline"
+                        x1="0"
+                        x2={chart.width}
+                        y1={chart.height / 2}
+                        y2={chart.height / 2}
+                        stroke={visualTheme.lineBright}
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                      />,
+                    ]}
+              </svg>
+            </div>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              marginTop: 26,
+              padding: "18px 0",
+              borderRadius: 18,
+              background: alpha(visualTheme.surface4, 0.85),
+              border: `1px solid ${visualTheme.lineRaised}`,
+            }}
+          >
+            {stats.map((s, i) => (
+              <div
+                key={s.label}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  flex: 1,
+                  gap: 10,
+                  padding: "0 32px",
+                  borderLeft: i
+                    ? `1px solid ${visualTheme.lineRaised}`
+                    : "none",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: mono,
+                    fontSize: 15,
+                    fontWeight: 500,
+                    letterSpacing: 2,
+                    lineHeight: 1,
+                    color: visualTheme.muted,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {s.label}
+                </span>
                 <span
                   style={{
                     fontSize: 30,
                     fontWeight: 600,
                     lineHeight: 1,
-                    color: heroColor,
+                    color: tone(s.tone),
                   }}
                 >
-                  {cardEth(w.realizedWei, true)}
+                  {s.value}
                 </span>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
           <div
             style={{
               display: "flex",
-              flex: 1,
               alignItems: "center",
-              justifyContent: "flex-end",
+              justifyContent: "space-between",
+              marginTop: 20,
             }}
           >
-            <svg
-              width={chart.width}
-              height={chart.height + 24}
-              viewBox={`-12 -12 ${chart.width + 24} ${chart.height + 24}`}
-            >
-              <defs>
-                <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor={curveColor} stopOpacity="0.28" />
-                  <stop offset="1" stopColor={curveColor} stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              {[0.25, 0.5, 0.75].map((f) => (
-                <line
-                  key={f}
-                  x1="0"
-                  x2={chart.width}
-                  y1={chart.height * f}
-                  y2={chart.height * f}
-                  stroke={visualTheme.lineRaised}
-                  strokeWidth="1"
-                  strokeDasharray="2 6"
-                />
-              ))}
-              {curve && start && end
-                ? [
-                    curve.zeroY !== null && (
-                      <line
-                        key="zero"
-                        x1="0"
-                        x2={chart.width}
-                        y1={curve.zeroY}
-                        y2={curve.zeroY}
-                        stroke={visualTheme.lineBright}
-                        strokeWidth="1"
-                      />
-                    ),
-                    <path
-                      key="area"
-                      d={`${path} L${end[0].toFixed(1)} ${chart.height} L${start[0].toFixed(1)} ${chart.height} Z`}
-                      fill="url(#fill)"
-                    />,
-                    <path
-                      key="line"
-                      d={path}
-                      fill="none"
-                      stroke={curveColor}
-                      strokeWidth="3"
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                    />,
-                    <circle
-                      key="start"
-                      cx={start[0]}
-                      cy={start[1]}
-                      r="7"
-                      fill={visualTheme.panelInset}
-                      stroke={visualTheme.text2}
-                      strokeWidth="3"
-                    />,
-                    <circle
-                      key="halo"
-                      cx={end[0]}
-                      cy={end[1]}
-                      r="13"
-                      fill={curveColor}
-                      fillOpacity="0.25"
-                    />,
-                    <circle
-                      key="end"
-                      cx={end[0]}
-                      cy={end[1]}
-                      r="7"
-                      fill={curveColor}
-                      stroke={visualTheme.panelInset}
-                      strokeWidth="3"
-                    />,
-                  ]
-                : [
-                    <line
-                      key="baseline"
-                      x1="0"
-                      x2={chart.width}
-                      y1={chart.height / 2}
-                      y2={chart.height / 2}
-                      stroke={visualTheme.lineBright}
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                    />,
-                  ]}
-            </svg>
-          </div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 26,
-            padding: "18px 0",
-            borderRadius: 18,
-            background: alpha(visualTheme.surface4, 0.85),
-            border: `1px solid ${visualTheme.lineRaised}`,
-          }}
-        >
-          {stats.map((s, i) => (
-            <div
-              key={s.label}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                flex: 1,
-                gap: 10,
-                padding: "0 32px",
-                borderLeft: i ? `1px solid ${visualTheme.lineRaised}` : "none",
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: mono,
-                  fontSize: 15,
-                  fontWeight: 500,
-                  letterSpacing: 2,
-                  lineHeight: 1,
-                  color: visualTheme.muted,
-                  textTransform: "uppercase",
-                }}
-              >
-                {s.label}
-              </span>
-              <span
-                style={{
-                  fontSize: 30,
-                  fontWeight: 600,
-                  lineHeight: 1,
-                  color: tone(s.tone),
-                }}
-              >
-                {s.value}
+            <span style={{ fontSize: 19, color: visualTheme.text3 }}>
+              Explore pools on Robinhood Chain
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <Mark size={17} color={preset} />
+              <span style={{ fontSize: 19, color: visualTheme.text3 }}>
+                poolsinfo.com
               </span>
             </div>
-          ))}
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: 20,
-          }}
-        >
-          <span style={{ fontSize: 19, color: visualTheme.text3 }}>
-            Explore pools on Robinhood Chain
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <Mark size={17} color={preset} />
-            <span style={{ fontSize: 19, color: visualTheme.text3 }}>
-              poolsinfo.com
-            </span>
           </div>
         </div>
-      </div>,
+      ),
       {
         width: 1200,
         height: 630,

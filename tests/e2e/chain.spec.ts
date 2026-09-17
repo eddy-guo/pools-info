@@ -1229,11 +1229,36 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
   );
   await expect(preview).toHaveAttribute("data-state", "ready");
+  // The design toggle is a segmented control beside the presets, defaults to
+  // Liquid so it stays out of the query, and never moves the reserved slot.
+  const designToggle = dialog.getByRole("group", { name: "Design" });
+  await expect(
+    designToggle.getByRole("button", { name: "Liquid" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await designToggle.getByRole("button", { name: "Export" }).click();
+  await expect(card).toHaveAttribute(
+    "src",
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+  );
+  expect(await preview.boundingBox()).toEqual(reserved);
+  await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "href",
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+  );
+  await designToggle.getByRole("button", { name: "Liquid" }).click();
+  await expect(card).toHaveAttribute(
+    "src",
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
+  );
+  expect(await preview.boundingBox()).toEqual(reserved);
+  // Back to Liquid is a URL already fetched once, so the browser serves it
+  // from cache rather than repeating the request.
   expect(cardRequests).toEqual([
     "?window=All",
     "?window=All&theme=mint",
     "?window=All&theme=mint&anon=1",
     "?window=All&theme=mint&anon=1&notional=1",
+    "?window=All&theme=mint&anon=1&notional=1&design=export",
   ]);
   expect(await dialog.innerText()).not.toMatch(
     /reconcil|coverage|captur|excluded|methodolog|before gas|processed pools/i,
@@ -1537,6 +1562,31 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   const png = await response.body();
   expect(png.readUInt32BE(16)).toBe(1200);
   expect(png.readUInt32BE(20)).toBe(630);
+  expect(png.length).toBeLessThan(100_000);
+  // The export design is the same route, one query parameter away, and
+  // renders the real wallet at the same size within the same budget.
+  await dialog
+    .getByRole("group", { name: "Design" })
+    .getByRole("button", { name: "Export" })
+    .click();
+  await expect(card).toHaveAttribute(
+    "src",
+    `/cards/${top.address}.png?window=All&design=export`,
+  );
+  await expect
+    .poll(() => card.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBe(1200);
+  expect(
+    await card.evaluate((image: HTMLImageElement) => image.naturalHeight),
+  ).toBe(630);
+  const exportResponse = await request.get(
+    `/cards/${top.address}.png?window=All&design=export`,
+  );
+  expect(exportResponse.status()).toBe(200);
+  const exportPng = await exportResponse.body();
+  expect(exportPng.readUInt32BE(16)).toBe(1200);
+  expect(exportPng.readUInt32BE(20)).toBe(630);
+  expect(exportPng.length).toBeLessThan(100_000);
   await page.screenshot({
     path: testInfo.outputPath("real-positive-wallet-card.png"),
     fullPage: true,

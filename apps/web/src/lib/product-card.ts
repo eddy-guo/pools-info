@@ -156,6 +156,11 @@ export function cardStats(
   return candidates.filter((s): s is CardStat => s !== null).slice(0, 3);
 }
 
+const formatPercent = (value: number) => {
+  const shown = Number(value.toFixed(2));
+  return `${shown > 0 ? "+" : ""}${shown.toFixed(2)}%`;
+};
+
 /** The hero figure: the window's ROI, or its realized amount when no cost was disposed. */
 export function cardHero(
   wallet: AnalyticsWalletSummary,
@@ -163,7 +168,7 @@ export function cardHero(
   if (wallet.roi !== null) {
     const shown = Number(wallet.roi.toFixed(2));
     return {
-      value: `${shown > 0 ? "+" : ""}${shown.toFixed(2)}%`,
+      value: formatPercent(shown),
       tone: shown > 0 ? "up" : shown < 0 ? "down" : "text",
     };
   }
@@ -173,6 +178,27 @@ export function cardHero(
       tone: weiTone(wallet.realizedWei),
     };
   return null;
+}
+
+/**
+ * The export design's fixed ROI / Record / Best trade trio: unlike
+ * {@link cardStats}'s dynamic top-3, these three slots are always drawn, each
+ * left empty (not dashed or estimated) when the window has no such figure.
+ */
+export interface CardExportTrio {
+  roi: string | null;
+  record: string;
+  bestTrade: string | null;
+}
+export function cardExportTrio(
+  wallet: AnalyticsWalletSummary,
+  topSymbol: string | null,
+): CardExportTrio {
+  return {
+    roi: wallet.roi === null ? null : formatPercent(wallet.roi),
+    record: `${wallet.wins}W · ${wallet.losses}L`,
+    bestTrade: topSymbol,
+  };
 }
 
 /** The identicon the site draws for an address, as the card's SVG cells. */

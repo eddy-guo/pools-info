@@ -1,15 +1,48 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { shortAddress, type LiveWindow } from "@pools/core";
 import {
+  cardDesigns,
   cardPresets,
   cardQuery,
   cardUrl,
   defaultCardOptions,
+  type CardDesign,
   type CardOptions,
   type CardPreset,
 } from "@/lib/card-options";
 import styles from "./pnl-card-modal.module.css";
+
+/**
+ * The design toggle's own choice, independent of the wallet or window and
+ * shared with every open card modal the way `useFollowing`'s store is: read
+ * through `useSyncExternalStore` so a value that differs from the server's
+ * default never shows as a hydration mismatch.
+ */
+const designStorageKey = "poolsinfo.card-design.v1";
+const designChanged = "poolsinfo-card-design-changed";
+function readDesign(): CardDesign {
+  try {
+    const saved = localStorage.getItem(designStorageKey);
+    return saved && Object.hasOwn(cardDesigns, saved)
+      ? (saved as CardDesign)
+      : defaultCardOptions.design;
+  } catch {
+    return defaultCardOptions.design;
+  }
+}
+function subscribeDesign(notify: () => void) {
+  const storage = (event: StorageEvent) => {
+    if (event.key === designStorageKey || event.key === null) notify();
+  };
+  window.addEventListener("storage", storage);
+  window.addEventListener(designChanged, notify);
+  return () => {
+    window.removeEventListener("storage", storage);
+    window.removeEventListener(designChanged, notify);
+  };
+}
+const defaultDesignSnapshot = () => defaultCardOptions.design;
 
 /** The card's geometry, as fractions of 1200 x 630, drawn while the PNG renders. */
 const bones: [number, number, number, number][] = [
@@ -42,13 +75,32 @@ export function PnlCardModal({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [preset, setPreset] = useState<CardPreset>(defaultCardOptions.preset);
+  const design = useSyncExternalStore(
+    subscribeDesign,
+    readDesign,
+    defaultDesignSnapshot,
+  );
   const [anonymous, setAnonymous] = useState(false);
   const [notional, setNotional] = useState(false);
   const [ready, setReady] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const options: CardOptions = { window: period, preset, anonymous, notional };
+  function chooseDesign(next: CardDesign) {
+    try {
+      localStorage.setItem(designStorageKey, next);
+      window.dispatchEvent(new Event(designChanged));
+    } catch {
+      // Best effort: the toggle just won't persist in this browser.
+    }
+  }
+  const options: CardOptions = {
+    window: period,
+    preset,
+    design,
+    anonymous,
+    notional,
+  };
   const url = cardUrl(address, options);
   const state =
     failed === url
@@ -160,6 +212,28 @@ export function PnlCardModal({
           <div>
             <h3>Customize</h3>
             <p>Choose a colour preset and what the card shows.</p>
+          </div>
+          <div className={styles.group}>
+            <span className={styles.groupLabel} id="pnl-card-design">
+              Design
+            </span>
+            <div
+              className="segmented"
+              role="group"
+              aria-labelledby="pnl-card-design"
+            >
+              {(Object.keys(cardDesigns) as CardDesign[]).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={design === id}
+                  className={design === id ? "selected" : ""}
+                  onClick={() => chooseDesign(id)}
+                >
+                  {cardDesigns[id].label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className={styles.group}>
             <span className={styles.groupLabel} id="pnl-card-presets">

@@ -15,9 +15,23 @@ export const cardPresets = {
 export type CardPreset = keyof typeof cardPresets;
 export const defaultCardPreset: CardPreset = "pink";
 
+/**
+ * `liquid` is the card shipped first (PR 56) and stays the default so every
+ * existing card URL keeps rendering the same PNG; `export` is the captain's
+ * own export's layout (wordmark, window chip, monogram, PnL, ROI / Record /
+ * Best trade, profile URL), added beside it.
+ */
+export const cardDesigns = {
+  liquid: { label: "Liquid" },
+  export: { label: "Export" },
+} as const;
+export type CardDesign = keyof typeof cardDesigns;
+export const defaultCardDesign: CardDesign = "liquid";
+
 export interface CardOptions {
   window: LiveWindow;
   preset: CardPreset;
+  design: CardDesign;
   /** Hides the address, its identicon and the rank. */
   anonymous: boolean;
   /** Shows the realized amount beside the percentage and the traded volume. */
@@ -26,6 +40,7 @@ export interface CardOptions {
 export const defaultCardOptions: CardOptions = {
   window: "All",
   preset: defaultCardPreset,
+  design: defaultCardDesign,
   anonymous: false,
   notional: false,
 };
@@ -33,7 +48,8 @@ export const defaultCardOptions: CardOptions = {
 /** Unknown or missing values fall back to the defaults, so a stale link still renders. */
 export function parseCardOptions(params: URLSearchParams): CardOptions {
   const window = params.get("window"),
-    preset = params.get("theme");
+    preset = params.get("theme"),
+    design = params.get("design");
   return {
     window:
       window && Object.hasOwn(windows, window)
@@ -43,6 +59,10 @@ export function parseCardOptions(params: URLSearchParams): CardOptions {
       preset && Object.hasOwn(cardPresets, preset)
         ? (preset as CardPreset)
         : defaultCardOptions.preset,
+    design:
+      design && Object.hasOwn(cardDesigns, design)
+        ? (design as CardDesign)
+        : defaultCardOptions.design,
     anonymous: params.get("anon") === "1",
     notional: params.get("notional") === "1",
   };
@@ -62,6 +82,8 @@ export function cardQuery(
   if (options.preset !== defaultCardPreset) params.set("theme", options.preset);
   if (options.anonymous) params.set("anon", "1");
   if (options.notional) params.set("notional", "1");
+  if (options.design !== defaultCardDesign)
+    params.set("design", options.design);
   return params;
 }
 
