@@ -684,11 +684,6 @@ main {
   color: var(--purple);
   background: #28222f;
 }
-.sparkline {
-  width: 86px;
-  height: 28px;
-  display: block;
-}
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -703,15 +698,6 @@ main {
   background: #302b33;
 }
 .watch.active {
-  color: var(--accent);
-}
-.row-open {
-  color: var(--faint);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.row-open:hover {
   color: var(--accent);
 }
 .pagination {
@@ -3219,14 +3205,6 @@ main {
   color: var(--color-text-3);
   font-size: 12px;
 }
-.network-indicator {
-  display: inline-block;
-  height: 6px;
-  width: 6px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--green);
-}
 .subnav-live {
   display: inline-flex;
   align-items: center;
@@ -3740,30 +3718,6 @@ main {
 .data-table th .sort-active {
   color: var(--text);
 }
-.screener-table {
-  min-width: 1050px;
-}
-.screener-table th:first-child,
-.screener-table td:first-child {
-  width: 38px;
-  padding-left: 10px;
-  padding-right: 0;
-}
-.screener-table th:nth-child(2) {
-  min-width: 200px;
-}
-.screener-table th:not(:nth-child(2)):not(:nth-child(8)),
-.screener-table td:not(:nth-child(2)):not(:nth-child(8)) {
-  text-align: right;
-}
-.screener-table th:nth-child(8),
-.screener-table td:nth-child(8) {
-  text-align: left;
-}
-.screener-table td:last-child {
-  padding-left: 0;
-  padding-right: 10px;
-}
 .token-cell {
   gap: 10px;
 }
@@ -3783,22 +3737,6 @@ main {
   margin-top: 3px;
   font-size: 12px;
   color: var(--color-text-3);
-}
-.creator-link {
-  color: var(--muted);
-}
-.creator-link:hover {
-  color: var(--ac);
-}
-.row-open {
-  min-height: 32px;
-  display: grid;
-  place-items: center;
-  color: #45454f;
-}
-.sparkline {
-  width: 82px;
-  height: 26px;
 }
 .watch {
   color: var(--color-faint);
@@ -3897,28 +3835,6 @@ main {
 .corpus-footer a {
   color: var(--color-text-2);
 }
-.coverage-disclosure {
-  padding: 0 16px 12px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.coverage-disclosure summary {
-  cursor: pointer;
-  min-height: var(--ctl-min);
-  display: flex;
-  align-items: center;
-}
-.coverage-disclosure summary::before {
-  content: "+";
-  margin-right: 7px;
-}
-.coverage-disclosure[open] summary::before {
-  content: "−";
-}
-.coverage-disclosure p {
-  max-width: 800px;
-  line-height: 1.7;
-}
 .market-sidebar {
   display: flex;
   flex-direction: column;
@@ -3945,32 +3861,6 @@ main {
   font-size: 11.5px;
   color: var(--muted);
 }
-.scope-note {
-  display: flex;
-  gap: 8px;
-  padding: 3px 8px;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.7;
-}
-.scope-note .network-indicator {
-  margin-top: 6px;
-  background: var(--ac);
-}
-.rail-empty {
-  padding: 20px 16px 22px;
-}
-.rail-empty h3 {
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  margin: 7px 0;
-}
-.rail-empty p {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--muted);
-}
 .leader-link {
   display: flex;
   align-items: center;
@@ -3981,32 +3871,6 @@ main {
   color: var(--ac);
   font-size: 12px;
   border-top: 1px solid #17171c;
-}
-.rail-leaders > a {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
-  border-bottom: 1px solid #131317;
-}
-.rail-leaders > a > span:last-child {
-  margin-left: auto;
-  font-size: 11px;
-}
-.rail-leaders strong {
-  display: block;
-  font-weight: 500;
-  font-size: 11px;
-}
-.rail-leaders small {
-  display: block;
-  color: var(--muted);
-  font-size: 11.5px;
-  margin-top: 3px;
-}
-.rail-rank {
-  color: var(--color-text-3);
-  font-size: 11.5px;
 }
 .subtle-badge,
 .badge {
@@ -4508,9 +4372,6 @@ main {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .scope-note {
-    grid-column: 1 / -1;
-  }
 }
 @container site (max-width: 767px) {
   .site-header,
@@ -4767,26 +4628,6 @@ main {
   }
   .mobile-pool-stats[data-launch-row] time {
     font-variant-numeric: tabular-nums;
-  }
-  .mobile-pool-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 10px;
-  }
-  .mobile-pool-footer a {
-    min-height: 44px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    font-size: 11.5px;
-    color: var(--muted);
-  }
-  .mobile-pool-footer .mono {
-    font-size: 11.5px;
-    color: var(--color-text-2);
   }
   .corpus-footer {
     padding: 11px 14px;
