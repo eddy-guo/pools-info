@@ -33,8 +33,15 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  /* The stylesheet scrolls smoothly; the attribute lets the router jump
+     instead of animating when a route changes, so a scroll the screener
+     restores on Back never races that animation. */
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      className={`${geist.variable} ${geistMono.variable}`}
+      data-scroll-behavior="smooth"
+    >
       <body>
         <LiveProvider initial={initial as ChainSnapshot}>
           <Shell>{children}</Shell>
