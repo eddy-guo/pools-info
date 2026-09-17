@@ -55,6 +55,7 @@ const THIN_WINDOW_TOTAL = 12;
 function creatorsPage(
   window: string,
   sort: string,
+  offset: number,
   limit: number,
 ): CreatorsResponse {
   const universe = window === "24h" ? rows.slice(0, THIN_WINDOW_TOTAL) : rows;
@@ -68,7 +69,7 @@ function creatorsPage(
       bv = BigInt(b[metric] ?? "0");
     return av === bv ? a.address.localeCompare(b.address) : bv > av ? 1 : -1;
   });
-  const items = sorted.slice(0, limit);
+  const items = sorted.slice(offset, offset + limit);
   return {
     coverage,
     broadMarketCutoff: null,
@@ -87,7 +88,7 @@ function creatorsPage(
     note: "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei, bestLaunch and boughtOwnLaunch come from measured launches only.",
     items,
     total: sorted.length,
-    nextOffset: limit < sorted.length ? limit : null,
+    nextOffset: offset + limit < sorted.length ? offset + limit : null,
   };
 }
 
@@ -98,6 +99,7 @@ async function serveCreators(page: Page) {
       json: creatorsPage(
         params.get("window") ?? "All",
         params.get("sort") ?? "launches",
+        Number(params.get("offset") ?? 0),
         Number(params.get("limit") ?? 25),
       ),
     });
@@ -182,7 +184,7 @@ test("Show more moves focus to the first newly revealed row", async ({
   await expect(rowsLocator).toHaveCount(25);
   await showMore.click();
   await expect(rowsLocator).toHaveCount(50);
-  await expect(rowsLocator.nth(25)).toBeFocused();
+  await expect(rowsLocator.nth(25).locator(".address-chip-link")).toBeFocused();
 });
 
 test("creators sort and window map onto the read API's keys and reset the reveal to 25", async ({

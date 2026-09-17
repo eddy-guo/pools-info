@@ -1,12 +1,20 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   AnalyticsExploreResponse,
   AnalyticsPoolRow,
+  CreatorRow,
   CreatorsResponse,
 } from "@pools/core";
-import { useProduct, type Delivered } from "@/lib/use-product";
+import { fetchProduct, type Delivered } from "@/lib/use-product";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
@@ -14,6 +22,7 @@ import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
 import { AddressChip, AddressLabel } from "./ui";
+import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 
 /** The explore API pages at most 100 rows; one batch streams 20 pages before pausing on Load more. */
 const PAGE_SIZE = 100;
@@ -27,11 +36,8 @@ const CREATOR_SORTS = [
 ] as const;
 type CreatorSort = (typeof CREATOR_SORTS)[number][0];
 
-/** A top-100 leaderboard revealed 25 rows at a click, like the trader leaderboard's own list control. */
-const SHOW_STEP = 25;
-const SHOW_CAP = 100;
-const SHOW_STEPS = [25, 50, 75, 100] as const;
-type ShowCount = (typeof SHOW_STEPS)[number];
+/** The leaderboard never requests past its top 100, whatever the API allows. */
+const CAP = 100;
 
 type Catalog = {
   items: AnalyticsPoolRow[];
@@ -108,6 +114,84 @@ export function Creators({ address }: { address?: string }) {
   );
 }
 
+type CreatorsState = {
+  key: string;
+  items: CreatorRow[];
+  total: number;
+  loadedShown: number;
+  loading: boolean;
+  settled: boolean;
+  error?: string;
+};
+
+/**
+ * Grows a creators leaderboard window/sort pair page by page: a window or
+ * sort change (a new `key`) replaces the list from scratch, while a growing
+ * `shown` target on the same key fetches only the rows not already held and
+ * appends them, so an already-loaded row is never requested twice.
+ */
+function useCreatorsBoard(
+  key: string,
+  window: string,
+  sort: string,
+  shown: number,
+) {
+  const [state, setState] = useState<CreatorsState>({
+    key: "",
+    items: [],
+    total: 0,
+    loadedShown: 0,
+    loading: true,
+    settled: false,
+  });
+  useEffect(() => {
+    const isReset = state.key !== key;
+    if (!isReset && shown <= state.loadedShown) return;
+    const baseItems = isReset ? [] : state.items;
+    const baseLoaded = isReset ? 0 : state.loadedShown;
+    const fetchLimit = shown - baseLoaded;
+    const controller = new AbortController();
+    setState((s) => ({ ...s, loading: true }));
+    const query = new URLSearchParams({
+      window,
+      sort,
+      offset: String(baseLoaded),
+      limit: String(fetchLimit),
+    });
+    void (async () => {
+      try {
+        const data = await fetchProduct<CreatorsResponse>(
+          `creators?${query}`,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        setState({
+          key,
+          items: [...baseItems, ...data.items],
+          total: data.total,
+          loadedShown: baseLoaded + data.items.length,
+          loading: false,
+          settled: true,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setState((s) => ({
+          ...s,
+          key,
+          loading: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Saved data is unavailable.",
+        }));
+      }
+    })();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, window, sort, shown]);
+  return state;
+}
+
 function CreatorDirectory() {
   const { params, set } = useQuery();
   const { window, setWindow } = useWindow("All");
@@ -116,38 +200,40 @@ function CreatorDirectory() {
     ? (rawSort as CreatorSort)
     : "launches";
   const rawShown = Number(params.get("limit"));
-  const shown: ShowCount = SHOW_STEPS.includes(rawShown as ShowCount)
-    ? (rawShown as ShowCount)
-    : SHOW_STEP;
-  const query = new URLSearchParams({ window, sort, limit: String(shown) });
-  const { data, loading, stale, error } = useProduct<CreatorsResponse>(
-    `creators?${query}`,
-  );
-  const rows = data?.items ?? [];
-  const total = Math.min(data?.total ?? 0, SHOW_CAP);
-  const canShowMore = shown < SHOW_CAP && data?.nextOffset !== null;
+  const shown =
+    Number.isInteger(rawShown) && rawShown > 0 && rawShown <= CAP
+      ? rawShown
+      : 25;
+  const key = `${window}:${sort}`;
+  const state = useCreatorsBoard(key, window, sort, shown);
+  const forKey = state.key === key;
+  const settled = forKey && state.settled;
+  const items = forKey ? state.items.slice(0, shown) : [];
+  // Read off the capped total, not the read API's uncapped one: this stays a
+  // top-100 leaderboard even before the data side caps the read itself.
+  const total = settled ? Math.min(state.total, CAP) : null;
+  const knownAbsent = (index: number) => settled && index >= state.total;
 
-  // Set by a "Show more" click to the first newly revealed row's index; a
-  // sort or window reset clears it so a stale click never steals focus later.
-  const focusRow = useRef<number | null>(null);
-  const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
+  const focusFromRef = useRef<number | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const handleMore = useCallback(() => {
+    focusFromRef.current = shown;
+    const ceiling = total === null ? CAP : Math.min(CAP, total);
+    set({ limit: String(Math.min(shown + SHOW_MORE_STEP, ceiling)) });
+  }, [shown, set, total]);
   useEffect(() => {
-    const index = focusRow.current;
-    if (index === null || loading) return;
-    focusRow.current = null;
-    rowRefs.current[index]?.focus();
-  }, [loading]);
-
-  function resort(updates: Record<string, string | null>) {
-    focusRow.current = null;
-    set({ ...updates, limit: null });
-  }
-  function showMore() {
-    focusRow.current = shown;
-    set({
-      limit: String(Math.min(shown + SHOW_STEP, SHOW_CAP)),
-    });
-  }
+    const index = focusFromRef.current;
+    if (index === null || state.loading) return;
+    if (state.items.length <= index) return;
+    focusFromRef.current = null;
+    const container = panelRef.current;
+    if (!container) return;
+    const row = container.querySelector<HTMLElement>(
+      `[data-row-index="${index}"]`,
+    );
+    const target = row?.querySelector<HTMLElement>(".address-chip-link") ?? row;
+    target?.focus();
+  }, [state.items.length, state.loading]);
 
   return (
     <div className="page creators-page">
@@ -165,7 +251,7 @@ function CreatorDirectory() {
                 key={key}
                 aria-pressed={sort === key}
                 onClick={() =>
-                  resort({ sort: key === "launches" ? null : key })
+                  set({ sort: key === "launches" ? null : key, limit: null })
                 }
               >
                 {label}
@@ -176,22 +262,23 @@ function CreatorDirectory() {
             value={window}
             onChange={(value) => {
               setWindow(value);
-              resort({});
+              set({ limit: null });
             }}
           />
         </div>
       </div>
-      <section className="panel creators-panel">
-        {error && (
+      <section className="panel creators-panel" ref={panelRef}>
+        {state.loading && items.length > 0 && (
+          <span className="sr-only" role="status">
+            Updating saved creators
+          </span>
+        )}
+        {state.error && (
           <p role="alert" className="panel-footnote">
-            {error}
+            {state.error}
           </p>
         )}
-        <div
-          className="table-scroll"
-          aria-busy={stale}
-          data-stale-rows={stale}
-        >
+        <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -205,103 +292,105 @@ function CreatorDirectory() {
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: shown }, (_, index) => rows[index]).map(
-                (r, index) => (
-                  <tr
-                    key={index}
-                    ref={(node) => {
-                      rowRefs.current[index] = node;
-                    }}
-                    tabIndex={-1}
-                    aria-hidden={!r}
-                    data-row={r ? "resolved" : "reserved"}
-                  >
-                    <td className="rank-number" data-pending={!r && !data}>
-                      {r ? index + 1 : data ? " " : "Pending"}
-                    </td>
-                    <td data-pending={!r && !data}>
-                      {r ? (
-                        <AddressChip
-                          address={r.address}
-                          href={`/creators/${r.address}/`}
-                          badge={
-                            r.boughtOwnLaunch === true ? (
-                              <span className="badge lavender">BOUGHT OWN</span>
-                            ) : undefined
-                          }
-                        />
-                      ) : data ? (
-                        " "
-                      ) : (
-                        "Creator pending"
-                      )}
-                    </td>
-                    <td data-pending={!r && !data}>
-                      {r ? r.launches : data ? " " : "Pending"}
-                    </td>
-                    <td data-pending={!r && !data}>
-                      {r ? (
-                        r.measured ? (
-                          `${r.traded}/${r.measured}`
+              {Array.from({ length: shown }, (_, index) => items[index]).map(
+                (r, index) => {
+                  const absent = knownAbsent(index);
+                  const pending = !r && !absent;
+                  return (
+                    <tr
+                      key={index}
+                      data-row-index={index}
+                      aria-hidden={!r}
+                      data-row={r ? "resolved" : "reserved"}
+                    >
+                      <td className="rank-number" data-pending={pending}>
+                        {r ? index + 1 : pending ? "Pending" : "\u00a0"}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          <AddressChip
+                            address={r.address}
+                            href={`/creators/${r.address}/`}
+                            badge={
+                              r.boughtOwnLaunch === true ? (
+                                <span className="badge lavender">
+                                  BOUGHT OWN
+                                </span>
+                              ) : undefined
+                            }
+                          />
+                        ) : pending ? (
+                          "Creator pending"
                         ) : (
-                          <Unavailable reason="No measured launch" />
-                        )
-                      ) : data ? (
-                        " "
-                      ) : (
-                        "Pending"
-                      )}
-                    </td>
-                    <td data-pending={!r && !data}>
-                      <Eth wei={r?.volumeWei} pending={!data} />
-                    </td>
-                    <td data-pending={!r && !data}>
-                      <Eth wei={r?.medianVolumeWei} pending={!data} />
-                    </td>
-                    <td data-pending={!r && !data}>
-                      {r ? (
-                        r.bestLaunch ? (
-                          <Link href={poolHref(r.bestLaunch)}>
-                            {r.bestLaunch.symbol}
-                          </Link>
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          // Keyed so a new count replaces its text node: rewriting
+                          // right-aligned text in place moves its start, which
+                          // Chrome scores as a layout shift.
+                          <Fragment key={r.launches}>{r.launches}</Fragment>
+                        ) : pending ? (
+                          "Pending"
                         ) : (
-                          <Unavailable />
-                        )
-                      ) : data ? (
-                        " "
-                      ) : (
-                        "Pending"
-                      )}
-                    </td>
-                  </tr>
-                ),
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          r.measured ? (
+                            `${r.traded}/${r.measured}`
+                          ) : (
+                            <Unavailable reason="No measured launch" />
+                          )
+                        ) : pending ? (
+                          "Pending"
+                        ) : (
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        <Eth wei={r?.volumeWei} pending={pending} />
+                      </td>
+                      <td data-pending={pending}>
+                        <Eth wei={r?.medianVolumeWei} pending={pending} />
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          r.bestLaunch ? (
+                            <Link href={poolHref(r.bestLaunch)}>
+                              {r.bestLaunch.symbol}
+                            </Link>
+                          ) : (
+                            <Unavailable />
+                          )
+                        ) : pending ? (
+                          "Pending"
+                        ) : (
+                          "\u00a0"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                },
               )}
             </tbody>
           </table>
         </div>
-        {data && !rows.length && (
+        {settled && total === 0 && (
           <div className="empty-state">
             <h3>No creators in this window</h3>
             <p>Switch the window or sort to find launches to group.</p>
           </div>
         )}
-        <div className="pagination">
-          <span className="pagination-count">
-            {data && total
-              ? `Showing ${rows.length} of ${total.toLocaleString()}`
-              : "0 results"}
-          </span>
-          {(!data || canShowMore) && (
-            <button
-              type="button"
-              className="button secondary"
-              disabled={!data || loading}
-              onClick={showMore}
-            >
-              Show {SHOW_STEP} more
-            </button>
-          )}
-        </div>
+        <ShowMore
+          shown={shown}
+          total={total}
+          cap={CAP}
+          loading={state.loading}
+          onMore={handleMore}
+        />
       </section>
     </div>
   );
@@ -310,8 +399,7 @@ function CreatorDirectory() {
 function CreatorProfile({ address }: { address: string }) {
   const catalog = useCatalog(address);
   const pools = useMemo(
-    () =>
-      catalog.items.filter((p) => p.launchSender.toLowerCase() === address),
+    () => catalog.items.filter((p) => p.launchSender.toLowerCase() === address),
     [catalog.items, address],
   );
   const pending = !pools.length && catalog.streaming;
