@@ -7,6 +7,9 @@
 // walletMetrics (live-analytics.ts) computes from a folded position.
 
 export const ledgerHour = (timestamp: number) => Math.floor(timestamp / 3600);
+/** A closed inventory cycle held for less than this many seconds is a flash
+ * cycle: the "held under 60 s" share walletMetrics calls fastHoldShare. */
+export const ledgerFlashHoldSeconds = 60;
 export const ledgerZeroAddress = "0x0000000000000000000000000000000000000000";
 export type LedgerFlag =
   | "zero_cost_inflow"
@@ -135,6 +138,13 @@ export interface LedgerPosition {
   counterpartySwaps: number;
   cycleOpenedAt: number | null;
   cycleGain: bigint | null;
+  /** Cycles closed by a sale since hold times are folded, those held under
+   * ledgerFlashHoldSeconds, and the shortest. Null together on a position
+   * that predates the fold, whose earlier closures carry no hold time; a
+   * closure then leaves them null. */
+  closedCycles: number | null;
+  flashCycles: number | null;
+  shortestCycleSeconds: number | null;
   firstBlock: number;
   lastBlock: number;
   lastTimestamp: number;
@@ -157,6 +167,9 @@ export interface LedgerWalletHour {
   losses: number;
   closures: number;
   holdSeconds: number;
+  /** Of closures, those held under ledgerFlashHoldSeconds; null on a row that
+   * predates the fold, and a closure then leaves it null. */
+  flashClosures: number | null;
   best: bigint | null;
 }
 export interface LedgerPoolHour {
@@ -582,6 +595,9 @@ function newPosition(
     counterpartySwaps: 0,
     cycleOpenedAt: null,
     cycleGain: null,
+    closedCycles: 0,
+    flashCycles: 0,
+    shortestCycleSeconds: null,
     firstBlock: at.block,
     lastBlock: at.block,
     lastTimestamp: at.timestamp,
@@ -610,6 +626,7 @@ function newWalletHour(
     losses: 0,
     closures: 0,
     holdSeconds: 0,
+    flashClosures: 0,
     best: null,
   };
 }
@@ -624,6 +641,7 @@ export function zeroWalletHourFinances(row: LedgerWalletHour) {
   row.losses = 0;
   row.closures = 0;
   row.holdSeconds = 0;
+  row.flashClosures = 0;
   row.best = null;
 }
 /** Flags follow the counters; excluding flags are sticky. */
@@ -881,11 +899,21 @@ export function applyLedgerEvents(
       sale.realized = gain;
       if (p.cycleGain !== null) p.cycleGain += gain;
       const closed = p.quantity === 0n && p.cycleOpenedAt !== null;
+      const flash =
+        closed && e.timestamp - p.cycleOpenedAt! < ledgerFlashHoldSeconds;
       if (closed) {
         sale.closedGain = p.cycleGain;
         sale.closedHoldSeconds = e.timestamp - p.cycleOpenedAt!;
         p.cycleOpenedAt = null;
         p.cycleGain = null;
+        if (p.closedCycles !== null && p.flashCycles !== null) {
+          p.closedCycles++;
+          if (flash) p.flashCycles++;
+          p.shortestCycleSeconds = Math.min(
+            p.shortestCycleSeconds ?? sale.closedHoldSeconds,
+            sale.closedHoldSeconds,
+          );
+        }
       }
       refreshFlags(p);
       sale.supported = p.supported;
@@ -899,6 +927,7 @@ export function applyLedgerEvents(
       if (closed) {
         row.closures++;
         row.holdSeconds += sale.closedHoldSeconds!;
+        if (flash && row.flashClosures !== null) row.flashClosures++;
         if (sale.closedGain! > 0n) row.wins++;
         else if (sale.closedGain! < 0n) row.losses++;
       }
@@ -948,6 +977,11 @@ export function ledgerIdentitiesHold(p: LedgerPosition) {
     p.inflow > 0n === p.flags.includes("zero_cost_inflow") &&
     (p.cycleOpenedAt === null) === (p.cycleGain === null) &&
     p.quantity > 0n === (p.cycleOpenedAt !== null) &&
+    (p.closedCycles === null) === (p.flashCycles === null) &&
+    (p.shortestCycleSeconds === null) ===
+      (p.closedCycles === null || p.closedCycles === 0) &&
+    (p.flashCycles ?? 0) <= (p.closedCycles ?? 0) &&
+    (!p.flashCycles || p.shortestCycleSeconds! < ledgerFlashHoldSeconds) &&
     p.supported === !p.flags.some((f) => ledgerExcludingFlags.includes(f))
   );
 }

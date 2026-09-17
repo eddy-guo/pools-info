@@ -282,6 +282,10 @@ export interface PoolRecord {
   /** ERC-20 decimals read by the ledger pass; null when the read did not
    * decode. Immutable: a later observation must agree. */
   decimals?: number | null;
+  /** totalSupply() in raw units with the block it was read at (migration
+   * 019), both null when unread. A reading never replaces a later one. */
+  totalSupplyRaw?: string | null;
+  supplyBlock?: number | null;
 }
 export interface EventRecord {
   txHash: string;
@@ -535,8 +539,19 @@ async function commitBatchInTransaction(
       (!Number.isInteger(p.decimals) || p.decimals < 0 || p.decimals > 36)
     )
       throw Error("Invalid launch decimals");
+    const supplyRaw = p.totalSupplyRaw ?? null,
+      supplyBlock = p.supplyBlock ?? null;
+    if (
+      (supplyRaw === null) !== (supplyBlock === null) ||
+      (supplyRaw !== null &&
+        (!/^\d{1,78}$/.test(supplyRaw) ||
+          BigInt(supplyRaw) >= 1n << 256n ||
+          !Number.isSafeInteger(supplyBlock) ||
+          supplyBlock! < 0))
+    )
+      throw Error("Invalid launch supply");
     const inserted = await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -552,6 +567,8 @@ async function commitBatchInTransaction(
         p.description ?? null,
         p.externalUrl ?? null,
         p.decimals ?? null,
+        supplyRaw,
+        supplyBlock,
       ],
     );
     if (inserted.rowCount) {
@@ -595,6 +612,11 @@ async function commitBatchInTransaction(
             [p.id.toLowerCase(), p.decimals],
           );
       }
+      if (supplyRaw !== null)
+        await db.query(
+          "UPDATE indexed_pools SET token_total_supply_raw=$2,token_supply_block=$3 WHERE chain_id=4663 AND pool_id=$1 AND (token_supply_block IS NULL OR token_supply_block<=$3)",
+          [p.id.toLowerCase(), supplyRaw, supplyBlock],
+        );
       // Matching observations add provenance, never restart a pool's history.
       const history = await getStream(db, "pool:" + p.id.toLowerCase());
       if (
@@ -764,9 +786,18 @@ export {
   ledgerBatchCreatedRows,
   ledgerTotals,
   setLedgerMode,
+  observeLedgerHead,
+  pruneLedgerLiveTrades,
   type LedgerMode,
   type LedgerStreamState,
   type LedgerLaunch,
   type LedgerBatch,
   type LedgerApplied,
 } from "./ledger";
+export {
+  refreshLedgerWindows,
+  ledgerWindowPolicy,
+  ledgerWindowStart,
+  type LedgerWindowRefresh,
+  type LedgerWindowsRefreshed,
+} from "./ledger-windows";

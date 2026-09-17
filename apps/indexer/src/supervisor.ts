@@ -6,8 +6,11 @@ export const RPC_RATE_LIMIT_EXIT_CODE = 75;
 export const BROAD_CAPACITY_EXIT_CODE = 76;
 /** A HyperSync token Envio rejected cannot recover by restarting either. */
 export const HYPERSYNC_UNAUTHORIZED_EXIT_CODE = 77;
+/** The aggregate ledger refused to change (a walk-back its journal cannot
+ * serve, a conflicting batch, no ledger to extend): an operator inspects it. */
+export const LEDGER_INSPECTION_EXIT_CODE = 78;
 export interface WorkerSpec {
-  name: "recent" | "indexer" | "analytics";
+  name: "recent" | "indexer" | "analytics" | "ledger-tip";
   file: string;
   args: string[];
 }
@@ -18,7 +21,8 @@ interface SupervisorRuntime {
     event:
       | "service_paused_rpc_rate_limit"
       | "service_paused_broad_capacity"
-      | "service_paused_hypersync_unauthorized";
+      | "service_paused_hypersync_unauthorized"
+      | "service_paused_ledger_inspection";
     worker: WorkerSpec["name"];
   }) => void;
 }
@@ -70,7 +74,8 @@ export function superviseWorkers(
       if (
         code === RPC_RATE_LIMIT_EXIT_CODE ||
         code === BROAD_CAPACITY_EXIT_CODE ||
-        code === HYPERSYNC_UNAUTHORIZED_EXIT_CODE
+        code === HYPERSYNC_UNAUTHORIZED_EXIT_CODE ||
+        code === LEDGER_INSPECTION_EXIT_CODE
       ) {
         if (!paused) {
           paused = true;
@@ -80,7 +85,9 @@ export function superviseWorkers(
                 ? "service_paused_rpc_rate_limit"
                 : code === BROAD_CAPACITY_EXIT_CODE
                   ? "service_paused_broad_capacity"
-                  : "service_paused_hypersync_unauthorized",
+                  : code === HYPERSYNC_UNAUTHORIZED_EXIT_CODE
+                    ? "service_paused_hypersync_unauthorized"
+                    : "service_paused_ledger_inspection",
             worker: worker.name,
           });
           // A sibling may have failed while another was already reporting 429s.
