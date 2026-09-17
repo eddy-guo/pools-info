@@ -1630,7 +1630,7 @@ test("an empty saved analytics publication shows processing instead of the Unix 
     page.getByRole("heading", { name: "No pools match these filters" }),
   ).toBeVisible();
   await expect(page.locator("main")).not.toContainText("1970");
-  await expect(page.locator(".network-subnav")).toHaveText(
+  await expect(page.locator(".network-context")).toHaveText(
     "v4 · Robinhood Chain",
   );
 });

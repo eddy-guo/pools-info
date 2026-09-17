@@ -21,7 +21,22 @@ for (const route of routes) {
     await page.goto(route);
     const strip = page.locator(".network-subnav");
     await expect(strip).toBeVisible();
-    await expect(strip).toHaveText("v4 · Robinhood Chain");
+    await expect(page.locator(".network-context")).toHaveText(
+      "v4 · Robinhood Chain",
+    );
+    // CHAIN_REFRESH_DISABLED=1 makes /api/live-trades/ 503 in this suite, so
+    // the strip's dot settles on the feed's real, unstreaming state.
+    await expect(page.locator(".subnav-live")).toHaveAttribute(
+      "data-state",
+      "paused",
+    );
+    await expect(page.locator(".subnav-live")).toHaveText("Paused");
+    await expect(strip).not.toContainText("block");
+    await expect(strip).not.toContainText("indexed");
+    await expect(page.getByRole("link", { name: "Methodology" })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("link", { name: "API" })).toHaveCount(0);
     await expect(page.locator('a[href="/methodology/"]')).toHaveCount(0);
     const nav = page.getByRole("navigation", { name: "Main navigation" });
     await expect(nav.getByRole("link")).toHaveText([
@@ -71,6 +86,91 @@ for (const route of routes) {
     ).toBe(true);
   });
 }
+
+test("the H1 row carries a Trader leaderboard call to action at the right", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const cta = page.locator(".page-heading .leaderboard-cta");
+  await expect(cta).toHaveText("Trader leaderboard →");
+  await expect(cta).toHaveAttribute("href", "/traders/");
+  const heading = await page.locator(".page-heading h1").boundingBox();
+  const button = await cta.boundingBox();
+  expect(button!.x, "the button sits right of the H1").toBeGreaterThan(
+    heading!.x + heading!.width,
+  );
+  await cta.click();
+  await expect(page).toHaveURL(/\/traders\/$/);
+});
+
+const liveFeedFixture = {
+  source: "indexed_recent_chain_events",
+  replacement: true,
+  generatedAt: "2026-09-17T00:00:00.000Z",
+  truncated: false,
+  poolId: null,
+  events: [],
+  coverage: {
+    state: "current",
+    scope: "verified_pools_launches_only",
+    registryExhaustive: false,
+    pnlAvailable: false,
+    knownPools: 10,
+    staleAfterSeconds: 60,
+    startBlock: 1,
+    headBlock: 100,
+    throughBlock: 100,
+    asOf: 1758067200,
+    lagBlocks: 0,
+    discoveryThroughBlock: 100,
+    discoveryLagBlocks: 0,
+    throughHash: `0x${"a".repeat(64)}`,
+    checkedAt: "2026-09-17T00:00:00.000Z",
+  },
+};
+
+test("the strip's Live dot turns green once the trade feed reports streaming", async ({
+  page,
+}) => {
+  // Pinned to the fixture's own asOf: TradeStream's own staleness check
+  // compares against the real clock, so an unpinned run reads this fixture
+  // as stale once staleAfterSeconds has elapsed since the fixture was written.
+  await page.clock.install({
+    time: new Date(liveFeedFixture.coverage.asOf * 1000),
+  });
+  await page.route("**/api/live-trades/", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ json: liveFeedFixture });
+  });
+  await page.goto("/");
+  const dot = page.locator(".subnav-live");
+  // Before the delayed read resolves, the dot claims neither state: no
+  // "Live" label, a neutral dot, and the reserved width already in place.
+  await expect(dot).toHaveAttribute("data-state", "unknown");
+  await expect(dot).toHaveText("");
+  const before = await dot.boundingBox();
+  await expect(dot).toHaveAttribute("data-state", "streaming");
+  await expect(dot).toHaveText("Live");
+  const after = await dot.boundingBox();
+  expect(after!.width, "the label's reserved width never shifts").toBe(
+    before!.width,
+  );
+});
+
+test("the strip's Live dot shows Paused, never Live, when the feed read fails", async ({
+  page,
+}) => {
+  await page.route("**/api/live-trades/", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ status: 503, json: { error: "unavailable" } });
+  });
+  await page.goto("/");
+  const dot = page.locator(".subnav-live");
+  await expect(dot).toHaveAttribute("data-state", "unknown");
+  await expect(dot).toHaveText("");
+  await expect(dot).toHaveAttribute("data-state", "paused");
+  await expect(dot).toHaveText("Paused");
+});
 
 const ethPriceFixture = {
   usdPerEth: 4218.44,

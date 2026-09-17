@@ -315,6 +315,9 @@ export function ProductExplore() {
         <h1>
           Pools<span className="title-dot">.</span>
         </h1>
+        <Link href="/traders/" className="leaderboard-cta">
+          Trader leaderboard →
+        </Link>
       </div>
       <section className="launch-section" aria-label="Just launched">
         <div className="section-caption">

@@ -9,6 +9,10 @@ import {
 } from "react";
 import { shortAddress, type LiveTradeFeedResponse } from "@pools/core";
 import { validateLiveFeed } from "@/lib/live-feed";
+import {
+  registerLiveFeedSource,
+  reportLiveFeedState,
+} from "@/lib/live-feed-state";
 import { Eth, Unavailable, explorer, utc } from "./live-ui";
 import styles from "./trade-stream.module.css";
 const subscribeClock = (notify: () => void) => {
@@ -175,6 +179,15 @@ export function TradeStream({ poolId }: { poolId?: string }) {
   // One word in the head: the feed polls on its own every 15s, so a delayed
   // window recovers without a control.
   const feed = !enabled ? "paused" : stale ? "delayed" : "streaming";
+  // The header strip's dot mirrors this poll rather than starting its own:
+  // "unknown" until this scope's first response lands, then streaming only
+  // when this feed itself reads as streaming (delayed and paused both read
+  // as the strip's single "not streaming" state).
+  const resolved = current !== undefined && (current.data !== undefined || current.error);
+  useEffect(() => registerLiveFeedSource(), []);
+  useEffect(() => {
+    reportLiveFeedState(!resolved ? "unknown" : feed === "streaming" ? "streaming" : "paused");
+  }, [resolved, feed]);
   return (
     <section
       className={`panel trade-stream ${styles.rail}`}

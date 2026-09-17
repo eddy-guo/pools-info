@@ -92,7 +92,7 @@ function measure(page: Page) {
             .filter(
               (el) =>
                 !el.closest(
-                  ".avatar, .positive, .negative, .button, .skip-link, .podium-rank",
+                  ".avatar, .positive, .negative, .button, .skip-link, .podium-rank, .leaderboard-cta",
                 ),
             )
             .map((el) => getComputedStyle(el).color),
