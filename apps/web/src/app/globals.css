@@ -3875,9 +3875,9 @@ main {
   line-height: 18px;
   font-weight: 500;
 }
-/* The token column is at its 150px floor up to a 1440px viewport, so a long
-   symbol and its launch date end in an ellipsis like the name above rather
-   than running under the price. */
+/* The subtitle is the export's `SYMBOL · age · N trades` on one line; the
+   column is sized to hold page one's longest, and a symbol past that ends in
+   an ellipsis like the name above rather than running under the price. */
 .desktop-pools .token-cell small {
   display: block;
   margin-top: 0;
@@ -3891,6 +3891,10 @@ main {
 .desktop-pools .token-cell small .mono {
   font-size: inherit;
 }
+/* One face for the figures: sans 14/400 right-aligned, price in mono 13/400
+   with its muted subscript, and the signed change the only bold, coloured
+   number. Volume carries the row in the text colour; liquidity and holders
+   support it one step down; the sender sits in the muted tone at 12.5px. */
 .desktop-pools .price {
   font-size: 13px;
 }
@@ -3912,7 +3916,7 @@ main {
   color: var(--color-muted);
   font-size: 12.5px;
 }
-.desktop-pools .data-table td:nth-child(8) a:hover {
+.desktop-pools .data-table td:nth-child(8) a:hover .mono {
   color: var(--color-accent);
 }
 .corpus-footer {
@@ -5026,7 +5030,14 @@ main {
   table-layout: fixed;
 }
 .explore-page .pool-table th button {
+  position: relative;
   min-height: 0;
+}
+.explore-page .pool-table .sort-arrow {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 4px;
 }
 .explore-page .pool-table tbody tr,
 .explore-page .pool-table tbody td {
@@ -5051,16 +5062,18 @@ main {
 .explore-page .spacer {
   visibility: hidden;
 }
-/* Ten columns share the panel, so each is measured against its widest real
-   value plus the cell padding and a volume never runs under the liquidity
-   beside it. The narrower gutter is what lets them all fit; the token column
-   takes the remainder, and the table scrolls rather than clip below the
-   880px of fixed columns plus a readable token column. The 11.5px head sizes
-   three of them: trades holds its label and sort arrow, and holders and
-   launch sender hold their labels without reaching into the next column,
-   with half a pixel per glyph to spare for a renderer that rounds glyph
-   advances to whole pixels: Linux Chromium, where CI runs the browser
-   suite, sets "Launch sender" 2px wider than macOS. */
+/* Nine columns share the panel on the export's grid, each measured against
+   its widest real value plus the cell padding: a six-significant-digit
+   volume, a four-digit signed change, a mono price with its subscript, the
+   sender chip. The narrower gutter is what lets them all fit; the token
+   column takes the remainder, 250px at the 1030px the panel gives a 1440px
+   viewport, which holds page one's longest `SYMBOL · age · N trades`
+   subtitle with room to spare, and the table scrolls rather than clip below
+   that. The 11.5px head sizes two of them: holders and launch sender hold
+   their labels without reaching into the next column, with half a pixel per
+   glyph to spare for a renderer that rounds glyph advances to whole pixels:
+   Linux Chromium, where CI runs the browser suite, sets "Launch sender" 2px
+   wider than macOS. */
 .explore-page .pool-table {
   min-width: 1030px;
 }
@@ -5073,26 +5086,42 @@ main {
   width: 44px;
 }
 .explore-page .col-price {
-  width: 112px;
+  width: 116px;
 }
 .explore-page .col-change {
-  width: 95px;
+  width: 98px;
 }
 .explore-page .col-volume,
 .explore-page .col-liquidity {
-  width: 133px;
-}
-.explore-page .col-trades {
-  width: 76px;
+  width: 112px;
 }
 .explore-page .col-holders {
-  width: 69px;
+  width: 76px;
 }
 .explore-page .col-sender {
-  width: 118px;
+  width: 122px;
 }
 .explore-page .col-trend {
   width: 100px;
+}
+/* The figures and their heads read from the right, as the export's and the
+   references' do, so the columns line up on the decimal; the token and the
+   sender stay left, as does the launch line that spans the figures. A value
+   fills its cell so the pending-to-value swap changes only the text, never
+   the box (a resized inline-block would move its edge, which Chrome scores
+   as a shift). */
+.explore-page .pool-table th:nth-child(n + 3):nth-child(-n + 7):not([colspan]),
+.explore-page
+  .pool-table
+  td:nth-child(n + 3):nth-child(-n + 7):not(.launch-cell),
+.explore-page .pool-table th:nth-child(9) {
+  text-align: right;
+}
+.explore-page .pool-table td > .number,
+.explore-page .pool-table td > .price,
+.explore-page .pool-table td > .change {
+  display: block;
+  min-width: 0;
 }
 /* A pool with no market evidence reads as one quiet launch line rather than
    seven unavailable cells; it spans the metric columns the row cannot fill. */

@@ -1,16 +1,22 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const px = (value: string) => Number.parseFloat(value);
-/* The read API orders by these; every other column stays a plain header. */
+/* The read API orders by these; every other column stays a plain header. The
+   change column's head names the window it is measured over, as the export's
+   does, so the default page reads it as "24h". */
 const sortable = [
-  { label: "Change", key: "change", column: 4 },
+  { label: "24h", key: "change", column: 4 },
   { label: "Volume", key: "volume", column: 5 },
-  { label: "Trades", key: "trades", column: 6 },
-  { label: "Liquidity", key: "liquidity", column: 7 },
+  { label: "Liquidity", key: "liquidity", column: 6 },
 ];
 const plain = ["Token", "Price", "Holders", "Launch sender", "Trend"];
 /* With no sort in the URL the screener reads by volume, highest first. */
 const defaultColumn = 5;
+/* The export's grid at the 1030px the panel gives a 1440px viewport: watch,
+   token, price, 24h, volume, liquidity, holders, launch sender, trend. */
+const columns = [44, 250, 116, 98, 112, 112, 76, 122, 100];
+/* Price through holders read from the right, as do their heads. */
+const rightAligned = [3, 4, 5, 6, 7];
 
 const head = (page: Page) => page.locator(".explore-page .desktop-pools thead");
 const header = (page: Page, column: number) =>
@@ -95,11 +101,9 @@ test.describe("screener column sorting", () => {
     await expect(firstRow(page)).toBeAttached();
 
     const request = exploreRequest(page);
-    await header(page, 6)
-      .getByRole("button", { name: /trades/i })
-      .click();
+    await header(page, 4).getByRole("button", { name: /24h/i }).click();
     const sent = new URL((await request).url()).searchParams;
-    expect(sent.get("sort")).toBe("trades");
+    expect(sent.get("sort")).toBe("change");
     expect(sent.get("direction")).toBe("desc");
     await expect(firstRow(page)).toBeAttached();
 
@@ -123,7 +127,7 @@ test.describe("screener column sorting", () => {
     await expect(firstRow(page)).toBeAttached();
 
     const cell = header(page, 4);
-    const button = cell.getByRole("button", { name: /change/i });
+    const button = cell.getByRole("button", { name: /24h/i });
     await button.focus();
     await expect(button).toBeFocused();
 
@@ -168,17 +172,41 @@ test.describe("screener column sorting", () => {
     await page.goto("/");
     await expect(firstRow(page)).toBeAttached();
     /* A non-default column walks through all three looks. */
-    const button = header(page, 4).getByRole("button", { name: /change/i });
+    const button = header(page, 4).getByRole("button", { name: /24h/i });
     const measure = () =>
       head(page).evaluate((node) => {
         const table = node.closest("table")!;
         const scroll = table.parentElement!;
         const cells = [...node.querySelectorAll("th")];
+        /* A figure's own glyphs against its cell's content box (a value fills
+           its cell as a block, so the text nodes are what is measured): the
+           export right-aligns every number under a right-aligned head. */
+        const edges = (row: Element | null) =>
+          [...(row?.querySelectorAll("td") ?? [])].map((cell) => {
+            const walker = document.createTreeWalker(
+              cell,
+              NodeFilter.SHOW_TEXT,
+            );
+            let right = -Infinity;
+            for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+              if (!text.textContent?.trim()) continue;
+              const range = document.createRange();
+              range.selectNodeContents(text);
+              right = Math.max(right, range.getBoundingClientRect().right);
+            }
+            const box = cell.getBoundingClientRect();
+            const padding = parseFloat(getComputedStyle(cell).paddingRight);
+            return right === -Infinity
+              ? null
+              : Number((box.right - padding - right).toFixed(1));
+          });
         return {
           rowHeight: node.getBoundingClientRect().height,
           columns: cells.map((cell) =>
             Number(cell.getBoundingClientRect().width.toFixed(1)),
           ),
+          aligned: cells.map((cell) => getComputedStyle(cell).textAlign),
+          rightEdges: edges(table.querySelector("[data-row='resolved']")),
           /* A label wider than its column spills over the next header and
              swallows its clicks, so no header may exceed its own cell. */
           clipped: cells
@@ -217,13 +245,27 @@ test.describe("screener column sorting", () => {
       /* The export sets this row at 34px and never reflows it while sorting. */
       expect(state.rowHeight, `${state.state} row height`).toBe(34);
       expect(state.clipped, `${state.state} headers fit`).toEqual([]);
-      expect(state.columns, `${state.state} columns`).toEqual(
-        states[0].columns,
-      );
+      expect(state.columns, `${state.state} columns`).toEqual(columns);
       expect(
         state.overflow,
         `${state.state} table fits its panel`,
       ).toBeLessThanOrEqual(0);
+      for (const column of rightAligned) {
+        expect(state.aligned[column - 1], `${state.state} head ${column}`).toBe(
+          "right",
+        );
+        const edge = state.rightEdges[column - 1];
+        if (edge !== null)
+          expect(
+            Math.abs(edge),
+            `${state.state} column ${column} figure sits on the right edge`,
+          ).toBeLessThanOrEqual(1);
+      }
+      expect(
+        rightAligned.filter((column) => state.rightEdges[column - 1] !== null)
+          .length,
+        `${state.state} first row carries figures`,
+      ).toBeGreaterThan(0);
     }
   });
 });

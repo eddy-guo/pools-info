@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useSyncExternalStore,
+  type ReactNode,
   type RefObject,
 } from "react";
 import {
@@ -226,7 +228,49 @@ function useScrollMemory(
   }, [table, cards]);
   return reserved;
 }
-function PoolCell({ pool }: { pool: AnalyticsPoolRow }) {
+/** Whole counts with the export's thousands separators: `1,284 trades`. */
+const integers = new Intl.NumberFormat("en-US");
+/**
+ * The table row's subtitle, as the export sets it: the symbol in mono, the
+ * pool's age and its trade count in the window, separated by middle dots. A
+ * launch without market evidence keeps its symbol alone (its launch line
+ * carries the age), and a figure the read API does not send is left out
+ * rather than marked.
+ */
+function RowSubtitle({
+  pool,
+  now,
+}: {
+  pool: AnalyticsPoolRow;
+  now: number | null;
+}) {
+  const facts = launchOnly(pool)
+    ? []
+    : [
+        now === null ? null : since(pool.launchedAt, now),
+        pool.stats.trades === null
+          ? null
+          : `${integers.format(pool.stats.trades)} trades`,
+      ].filter((fact) => fact !== null);
+  return (
+    <>
+      <span className="mono">{pool.symbol}</span>
+      {facts.map((fact) => (
+        <Fragment key={fact}>
+          {" · "}
+          {fact}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+function PoolCell({
+  pool,
+  subtitle,
+}: {
+  pool: AnalyticsPoolRow;
+  subtitle?: ReactNode;
+}) {
   /* The read API does not publish every pool's detail; the page this row opens
      reads back what the row already showed rather than dropping its identity. */
   useEffect(() => rememberPoolRow(pool), [pool]);
@@ -240,11 +284,12 @@ function PoolCell({ pool }: { pool: AnalyticsPoolRow }) {
       <span>
         <strong>{pool.name}</strong>
         <small>
-          {launchOnly(pool)
-            ? pool.symbol
-            : `${pool.symbol} · ${new Date(
-                pool.launchedAt * 1000,
-              ).toLocaleDateString("en-US", { timeZone: "UTC" })}`}
+          {subtitle ??
+            (launchOnly(pool)
+              ? pool.symbol
+              : `${pool.symbol} · ${new Date(
+                  pool.launchedAt * 1000,
+                ).toLocaleDateString("en-US", { timeZone: "UTC" })}`)}
         </small>
       </span>
     </Link>
@@ -329,7 +374,11 @@ export function ProductExplore() {
     else if (!ascending) set({ sort: key, dir: "asc" });
     else set({ sort: null, dir: null });
   };
-  /* Three states per column: descending, ascending, then back to the default. */
+  /* Three states per column: descending, ascending, then back to the default.
+     The arrow sits before the label, out of the flow, as the explore
+     reference's does: the label keeps its right edge on the column's figures
+     and the head's box never changes with the order, so a sorted or launches
+     URL hydrating over the static default head moves nothing. */
   const sortable = (label: string, key: ExploreSort) => (
     <th
       aria-sort={
@@ -340,12 +389,12 @@ export function ProductExplore() {
         className={activeSort === key ? "sort-active" : ""}
         onClick={() => sortBy(key)}
       >
-        {label}
         {activeSort === key && (
           <span className="sort-arrow" aria-hidden="true">
             {ascending ? "↑" : "↓"}
           </span>
         )}
+        {label}
       </button>
     </th>
   );
@@ -591,7 +640,6 @@ export function ProductExplore() {
                     <col className="col-price" />
                     <col className="col-change" />
                     <col className="col-volume" />
-                    <col className="col-trades" />
                     <col className="col-liquidity" />
                     <col className="col-holders" />
                     <col className="col-sender" />
@@ -602,13 +650,14 @@ export function ProductExplore() {
                       <th aria-label="Watchlist" />
                       <th>Token</th>
                       {launchPage ? (
-                        <th colSpan={8}>Launch</th>
+                        <th colSpan={7}>Launch</th>
                       ) : (
                         <>
                           <th>Price</th>
-                          {sortable("Change", "change")}
+                          {/* The change is measured over the selected window,
+                              so its head names the window as the export's does. */}
+                          {sortable(window, "change")}
                           {sortable("Volume", "volume")}
-                          {sortable("Trades", "trades")}
                           {sortable("Liquidity", "liquidity")}
                           <th>Holders</th>
                           <th>Launch sender</th>
@@ -620,7 +669,7 @@ export function ProductExplore() {
                   <tbody ref={tableRef}>
                     {table.leading > 0 && (
                       <tr className="spacer" aria-hidden="true">
-                        <td colSpan={10} style={{ height: table.leading }} />
+                        <td colSpan={9} style={{ height: table.leading }} />
                       </tr>
                     )}
                     {tableRows.map(({ index, pool: p }) => {
@@ -647,7 +696,10 @@ export function ProductExplore() {
                           </td>
                           <td data-pending={skeleton}>
                             {p ? (
-                              <PoolCell pool={p} />
+                              <PoolCell
+                                pool={p}
+                                subtitle={<RowSubtitle pool={p} now={now} />}
+                              />
                             ) : skeleton ? (
                               "Pending"
                             ) : (
@@ -655,7 +707,7 @@ export function ProductExplore() {
                             )}
                           </td>
                           {p && launchOnly(p) ? (
-                            <td className="launch-cell" colSpan={8}>
+                            <td className="launch-cell" colSpan={7}>
                               <LaunchLine pool={p} now={now} />
                             </td>
                           ) : (
@@ -691,15 +743,6 @@ export function ProductExplore() {
                                 )}
                               </td>
                               <td data-pending={skeleton}>
-                                {p ? (
-                                  <>{p.stats.trades ?? <Unavailable />}</>
-                                ) : skeleton ? (
-                                  "Pending"
-                                ) : (
-                                  "\u00a0"
-                                )}
-                              </td>
-                              <td data-pending={skeleton}>
                                 {p || skeleton ? (
                                   <Eth
                                     pending={skeleton}
@@ -711,7 +754,13 @@ export function ProductExplore() {
                               </td>
                               <td data-pending={skeleton}>
                                 {p ? (
-                                  <>{p.stats.holders ?? <Unavailable />}</>
+                                  <>
+                                    {p.stats.holders === null ? (
+                                      <Unavailable />
+                                    ) : (
+                                      integers.format(p.stats.holders)
+                                    )}
+                                  </>
                                 ) : skeleton ? (
                                   "Pending"
                                 ) : (
@@ -758,7 +807,7 @@ export function ProductExplore() {
                     })}
                     {table.trailing > 0 && (
                       <tr className="spacer" aria-hidden="true">
-                        <td colSpan={10} style={{ height: table.trailing }} />
+                        <td colSpan={9} style={{ height: table.trailing }} />
                       </tr>
                     )}
                   </tbody>

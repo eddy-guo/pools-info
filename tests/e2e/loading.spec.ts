@@ -80,12 +80,13 @@ test("Explore swaps to skeleton rows, never a dimmed redraw, while a sort change
       .getByText(byVolume.items[0].name, { exact: true })
       .filter({ visible: true });
   await expect(previousFirst).toBeVisible();
-  // Sorting lives on the desktop column headers; the phone layout renders
+  // Sorting lives on the desktop column headers, where the change column's
+  // head names the window it is measured over; the phone layout renders
   // cards with no header row, so drive its re-query the way the app does.
   if (await page.locator(".desktop-pools").isVisible())
     await page
       .locator(".desktop-pools thead")
-      .getByRole("button", { name: /change/i })
+      .getByRole("button", { name: /24h/i })
       .click();
   else
     await page.evaluate(() => {

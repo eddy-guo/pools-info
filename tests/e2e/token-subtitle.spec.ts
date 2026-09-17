@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 
-/* A token's subtitle (symbol and launch date) stays inside its own cell: the
-   desktop token column sits at its floor up to 1440px, so the longest symbols
-   on page one would otherwise run under the price beside them. The mobile card
-   is checked against its price slot too. */
+/* A token's subtitle stays inside its own cell. On the desktop the export's
+   `SYMBOL · age · N trades` line has a 250px column at both widths (the table
+   holds its 1030px and scrolls below it), so page one reads whole, with no
+   ellipsis; the mobile card keeps its symbol and launch date and is checked
+   against its price slot too. */
 
 const widths = { desktop: [1200, 1440], mobile: [390] };
 
@@ -65,11 +66,14 @@ test("a token subtitle never reaches the price on page one", async ({
         [...new Set(rows.map((row) => row.height))],
         "rows keep 62px",
       ).toEqual([62]);
-      if (width === 1200)
-        expect(
-          rows.some((row) => row.truncated),
-          "page one carries a subtitle longer than its cell",
-        ).toBe(true);
+      for (const row of rows) {
+        expect(row.subtitle, `${row.subtitle} at ${width}px`).toMatch(
+          /^.+ · (<1m|\d+[mhd]) · [\d,]+ trades$/,
+        );
+        expect(row.truncated, `${row.subtitle} reads whole at ${width}px`).toBe(
+          false,
+        );
+      }
     }
   }
 });
