@@ -185,8 +185,11 @@ export async function readWalletHistory(
   try {
     const url = new URL(`/v1/${checked.endpoint}`, origin);
     url.search = checked.params.toString();
+    // Exceeds the read API's own Blockscout upstream timeout (12 s) so a
+    // slow-but-honest answer from the API reaches the page instead of the
+    // proxy giving up first.
     response = await fetch(url, {
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
       cache: "no-store",
       redirect: "error",
     });
