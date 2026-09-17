@@ -23,6 +23,22 @@ const n = (v: unknown) => {
 };
 const hash = (v: unknown) =>
   typeof v === "string" && /^0x[0-9a-f]{64}$/.test(v);
+/** SQL predicates for the canonical literals the adapter accepts: decimal
+ * integers of at most 96 digits and 32-byte hex hashes. Each matches the shape
+ * with an unbounded repetition and bounds the length separately, because a
+ * bounded repetition such as `[0-9]{0,95}` unrolls into that many regex states
+ * and costs about 12 µs per evaluation: at seven per swap, a 21,000-swap pool
+ * spent 1.5 s of its 3 s statement budget on these alone. */
+export const literal = {
+  unsigned: (column: string) =>
+    `${column} ~ '^(0|[1-9][0-9]*)$' AND length(${column})<=96`,
+  positive: (column: string) =>
+    `${column} ~ '^[1-9][0-9]*$' AND length(${column})<=96`,
+  signed: (column: string) =>
+    `${column} ~ '^(0|-?[1-9][0-9]*)$' AND length(ltrim(${column},'-'))<=96`,
+  hash: (column: string) =>
+    `${column} ~ '^0x[0-9a-f]*$' AND length(${column})=66`,
+};
 /** Pool-scoped evidence adapter. Recent copies may corroborate history, but do
  * not move the historical cutoff or imply transfer/accounting completeness. */
 export async function readObservedMarket(
@@ -212,12 +228,12 @@ export async function readObservedMarket(
       count(DISTINCT sqrt_price_x96) AS price_variants
     FROM copies GROUP BY tx_hash,log_index
   ), canonical AS MATERIALIZED (
-    SELECT *,CASE WHEN $5::integer IS NOT NULL AND side IS NOT NULL AND sqrt_price_x96 ~ '^[1-9][0-9]{0,95}$'
+    SELECT *,CASE WHEN $5::integer IS NOT NULL AND side IS NOT NULL AND ${literal.positive("sqrt_price_x96")}
       THEN trunc(6277101735386680763835789423207666416102355444464034512896::numeric * power(10::numeric,$5::integer)
         / (sqrt_price_x96::numeric*sqrt_price_x96::numeric)) END AS price,
-      CASE WHEN eth_wei ~ '^(0|[1-9][0-9]{0,95})$' THEN eth_wei::numeric END AS volume,
-      CASE WHEN amount0 ~ '^(0|-?[1-9][0-9]{0,95})$' THEN amount0::numeric END AS a0,
-      CASE WHEN amount1 ~ '^(0|-?[1-9][0-9]{0,95})$' THEN amount1::numeric END AS a1
+      CASE WHEN ${literal.unsigned("eth_wei")} THEN eth_wei::numeric END AS volume,
+      CASE WHEN ${literal.signed("amount0")} THEN amount0::numeric END AS a0,
+      CASE WHEN ${literal.signed("amount1")} THEN amount1::numeric END AS a1
     FROM grouped
   ), validated AS (
     SELECT *, (amount0 IS NULL AND amount1 IS NULL AND side IS NULL AND eth_wei IS NULL AND sqrt_price_x96 IS NULL) OR a0 IS NOT NULL AND a1 IS NOT NULL AND
@@ -230,8 +246,8 @@ export async function readObservedMarket(
       CASE WHEN count(*) FILTER(WHERE timestamp >= $4 AND side IS NULL)=0
         THEN coalesce(sum(volume) FILTER(WHERE timestamp >= $4),0)::text END AS volume,
       coalesce(bool_or(valid IS NOT TRUE OR block_number<$2 OR block_number>$3 OR timestamp>$6 OR timestamp<$9 OR token<>$7
-        OR block_hash !~ '^0x[0-9a-f]{64}$' OR tx_hash !~ '^0x[0-9a-f]{64}$' OR
-        block_number=$3 AND block_hash<>$8 OR sqrt_price_x96 IS NOT NULL AND sqrt_price_x96 !~ '^(0|[1-9][0-9]{0,95})$'),false) AS invalid,
+        OR NOT (${literal.hash("block_hash")}) OR NOT (${literal.hash("tx_hash")}) OR
+        block_number=$3 AND block_hash<>$8 OR sqrt_price_x96 IS NOT NULL AND NOT (${literal.unsigned("sqrt_price_x96")})),false) AS invalid,
       coalesce(bool_or(variants>1 OR amount_variants>1 OR price_variants>1),false) AS conflict
     FROM validated
   ), ordered AS (
