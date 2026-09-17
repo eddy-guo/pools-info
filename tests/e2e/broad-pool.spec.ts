@@ -97,16 +97,11 @@ test("broad-only pool uses the real chart and exact market stats while accountin
   await expect(
     page.getByRole("img", { name: /Price candle chart/ }),
   ).toBeVisible();
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ has: page.getByText("Observed trades", { exact: true }) }),
-  ).toContainText("21001");
-  await expect(
-    page
-      .locator(".stat")
-      .filter({ has: page.getByText("Observed 24h volume", { exact: true }) }),
-  ).toContainText("123");
+  const volume = page
+    .locator(".stat")
+    .filter({ has: page.getByText("Volume 24h", { exact: true }) });
+  await expect(volume.locator("strong")).toContainText("123");
+  await expect(volume.locator("small")).toHaveText("21,001 trades");
   await page.screenshot({
     path: testInfo.outputPath("broad-pool.png"),
     fullPage: true,
@@ -118,9 +113,7 @@ test("broad-only pool uses the real chart and exact market stats while accountin
   await page.getByRole("button", { name: "Trades", exact: true }).click();
   await expect(page.locator("main tbody tr")).toHaveCount(1);
   await expect(page.locator("body")).not.toContainText(methodologyCopy);
-  await expect(
-    page.getByRole("option", { name: "FDV", exact: true }),
-  ).toHaveCount(0);
+  await expect(page.locator(".pool-chart-panel select")).toHaveCount(0);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -255,14 +248,17 @@ test("discovered-only pool shows no invented zero totals", async ({ page }) => {
   );
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
-  for (const label of ["Observed trades", "Observed 24h volume"])
-    await expect(
-      page
-        .locator(".stat")
-        .filter({ has: page.getByText(label, { exact: true }) })
-        .locator("strong .unavailable"),
-      `${label} carries the quiet mark, never an invented zero`,
-    ).toHaveText("\u2013");
+  const volume = page
+    .locator(".stat")
+    .filter({ has: page.getByText("Volume 24h", { exact: true }) });
+  await expect(
+    volume.locator("strong .unavailable"),
+    "Volume 24h carries the quiet mark, never an invented zero",
+  ).toHaveText("\u2013");
+  await expect(
+    volume.locator("small"),
+    "no trade count is invented under it",
+  ).toHaveCount(0);
 });
 test("a pool whose saved launch arrives as decimal strings still renders its identity", async ({
   page,
@@ -290,12 +286,17 @@ test("a pool whose saved launch arrives as decimal strings still renders its ide
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
   await expect(page.getByText("Pool outside current coverage")).toHaveCount(0);
-  await expect(
-    page.getByText(/Launched 1970-01-02 03:46:40 UTC/),
-  ).toBeVisible();
+  await expect(page.locator(".pool-launch-meta")).toHaveText(
+    /^launched \d+d ago by /,
+  );
+  await expect(page.locator(".pool-launch-meta time")).toHaveAttribute(
+    "title",
+    "1970-01-02 03:46:40 UTC",
+  );
   await expect(
     page
       .locator(".stat")
-      .filter({ has: page.getByText("Observed trades", { exact: true }) }),
-  ).toContainText("21001");
+      .filter({ has: page.getByText("Volume 24h", { exact: true }) })
+      .locator("small"),
+  ).toHaveText("21,001 trades");
 });

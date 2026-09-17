@@ -81,15 +81,26 @@ test("a pool whose detail is unpublished keeps the identity its row showed", asy
     launchOnly.symbol,
   );
   const address = page.locator(".pool-address-slot");
-  await expect(address).toContainText(new RegExp(launchOnly.token, "i"));
+  await expect(address).toContainText(
+    new RegExp(shortAddress(launchOnly.token), "i"),
+  );
   await expect(address.getByRole("button")).toBeVisible();
   await expect(
     address.getByRole("link", { name: "Open address on explorer" }),
   ).toHaveAttribute("href", new RegExp(`/address/${launchOnly.token}$`, "i"));
-  await expect(page.locator(".pool-launch-meta")).toContainText(
+  const launchMeta = page.locator(".pool-launch-meta");
+  await expect(launchMeta).toHaveText(
     new RegExp(
-      `Launched \\d{4}-\\d{2}-\\d{2}.+${shortAddress(launchOnly.launchSender)}`,
+      `^launched (<1m|\\d+[mhd]) ago by ${shortAddress(launchOnly.launchSender)}$`,
     ),
+  );
+  await expect(launchMeta.locator("time")).toHaveAttribute(
+    "title",
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/,
+  );
+  await expect(launchMeta.getByRole("link")).toHaveAttribute(
+    "href",
+    `/creators/${launchOnly.launchSender.toLowerCase()}/`,
   );
   await expect(
     page.getByRole("link", { name: "Launch transaction ↗" }),
@@ -152,7 +163,7 @@ test("a pool opened by URL alone states plain unavailable values", async ({
     "Token address unavailable",
   );
   await expect(page.locator(".pool-launch-meta")).toHaveText(
-    "Launch time unavailable · sender unavailable",
+    "launch unavailable",
   );
   await expect(page.locator("body")).not.toContainText(explanations);
   await expect(page.locator("body")).not.toContainText(methodologyCopy);
@@ -256,12 +267,13 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
         header.name.bottom,
       );
     else
-      expect(badge.top, "the badge wraps under the name").toBeGreaterThanOrEqual(
-        header.name.bottom,
-      );
+      expect(
+        badge.top,
+        "the badge wraps under the name",
+      ).toBeGreaterThanOrEqual(header.name.bottom);
   const address = page.locator(".pool-address-slot");
   await expect(address.locator(".mono").filter({ visible: true })).toHaveText(
-    new RegExp(`^${project === "desktop" ? token : shortAddress(token)}$`, "i"),
+    new RegExp(`^${shortAddress(token)}$`, "i"),
   );
   await expect(
     address.getByRole("button", { name: "Copy address" }),
@@ -269,6 +281,86 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
   await expect(
     address.getByRole("link", { name: "Open address on explorer" }),
   ).toBeVisible();
+}
+
+/** The chart panel as the export lays it out: its head holds the price, the
+    ETH unit, the signed change and the range control on one row with no
+    select anywhere in the panel; the panel opens high enough for the whole
+    canvas to show without scrolling on the desktop; the stat cards under it
+    are the export's 95px. */
+async function expectChartPanelLikeExport(page: Page, project: Project) {
+  const panel = page.locator(".pool-chart-panel");
+  await expect(
+    panel.locator(".interactive-chart canvas").first(),
+  ).toBeVisible();
+  await expect(panel.locator("select")).toHaveCount(0);
+  const rows = await page.evaluate(() => {
+    const rect = (selector: string) =>
+      document.querySelector(selector)!.getBoundingClientRect().toJSON();
+    return {
+      panel: rect(".pool-chart-panel"),
+      price: rect(".pool-chart-head .price"),
+      unit: rect(".pool-chart-head .price small"),
+      change: rect(".pool-chart-head .live-price-heading .change"),
+      control: rect(".pool-chart-head .segmented"),
+      canvas: rect(".pool-chart-region"),
+      stats: [...document.querySelectorAll(".live-six-stats .stat")].map(
+        (stat) => stat.getBoundingClientRect().height,
+      ),
+      tabs: rect(".pool-page .live-section"),
+      scrollWidth: document.documentElement.scrollWidth,
+      innerHeight: window.innerHeight,
+    };
+  });
+  expect(rows.scrollWidth, "the page is the viewport's width").toBe(
+    viewports[project].width,
+  );
+  await expect(page.locator(".pool-chart-head .price")).toContainText("ETH");
+  await expect(
+    page.locator(".pool-chart-head .live-price-heading .change"),
+  ).toHaveText(/^[+-]\d+\.\d{2}%$/);
+  const centre = (box: { y: number; height: number }) => box.y + box.height / 2;
+  for (const [name, box] of [
+    ["unit", rows.unit],
+    ["change", rows.change],
+  ] as const)
+    expect(
+      Math.abs(centre(box) - centre(rows.price)),
+      `the ${name} sits on the price's row`,
+    ).toBeLessThanOrEqual(4);
+  expect(rows.stats.length).toBeGreaterThanOrEqual(5);
+  for (const height of rows.stats)
+    expect(Math.abs(height - 95), "a 95px stat card").toBeLessThanOrEqual(4);
+  if (project === "desktop") {
+    expect(
+      rows.control.y,
+      "the range control shares the price row",
+    ).toBeLessThan(rows.price.y + rows.price.height);
+    expect(rows.control.height, "a 32px segmented control").toBe(32);
+    expect(
+      rows.panel.y,
+      "the chart panel opens near the header",
+    ).toBeLessThanOrEqual(240);
+    expect(rows.panel.height, "the export's 498px panel").toBeLessThanOrEqual(
+      520,
+    );
+    expect(
+      rows.canvas.height,
+      "a canvas at least as tall as the export's",
+    ).toBeGreaterThanOrEqual(360);
+    expect(
+      rows.canvas.y + rows.canvas.height,
+      "the whole chart shows without scrolling",
+    ).toBeLessThanOrEqual(rows.innerHeight);
+    expect(
+      rows.tabs.y,
+      "the tabs panel starts by the first screen's end",
+    ).toBeLessThanOrEqual(1000);
+  } else
+    expect(
+      rows.panel.y,
+      "the chart panel opens near the export's 529px",
+    ).toBeLessThanOrEqual(560);
 }
 
 test.describe("the pool header fits the viewport", () => {
@@ -289,6 +381,22 @@ test.describe("the pool header fits the viewport", () => {
       testInfo.project.name as Project,
     );
     expect(await shifts(page), "layout shift").toBe(0);
+  });
+
+  test("on a measured pool opened from its screener row, with the export's chart panel", async ({
+    page,
+  }, testInfo) => {
+    await openFromScreener(page, measured);
+    await resetShifts(page);
+    await settled(page);
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+    await expectHeaderFits(
+      page,
+      measured.token,
+      testInfo.project.name as Project,
+    );
+    await expectChartPanelLikeExport(page, testInfo.project.name as Project);
+    expect(await shifts(page), "layout shift as the market lands").toBe(0);
   });
 
   test("on a measured row whose detail is unpublished", async ({
