@@ -24,8 +24,8 @@ function surface(testInfo: { project: { name: string } }) {
         viewport: viewports.mobile,
         rows: ".explore-page .mobile-pools",
         maxTop: 1500,
-        /* The reserved first page: 25 cards at 168px. */
-        reservedHeight: 25 * 168,
+        /* The reserved first page: 25 cards at 104px. */
+        reservedHeight: 25 * 104,
       } as const);
 }
 

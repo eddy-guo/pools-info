@@ -82,8 +82,9 @@ for (const [name, url] of [
     const resolved = page.locator(".explore-page [data-row='resolved']");
     await expect(resolved.first()).toBeAttached();
     if (testInfo.project.name !== "desktop" && name === "measured") {
-      /* The card's reserved height fits a measured card's two stat rows with
-         no coverage line; a launch card's single row shares that height. */
+      /* The card's reserved height fits the identity/price row and the one
+         Vol · Liq · Holders line with no coverage text; a launch card's
+         single line shares that height. */
       const fit = await resolved
         .filter({ visible: true })
         .first()

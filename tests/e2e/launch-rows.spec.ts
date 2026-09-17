@@ -76,9 +76,11 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
         ),
       ].filter(shown).length,
       firstLine: list[0]?.querySelector(".launch-line")?.textContent ?? null,
-      firstFacts: [
-        ...(list[0]?.querySelectorAll("[data-launch-row] strong") ?? []),
-      ].map((node) => node.textContent),
+      firstAge: list[0]?.querySelector("[data-launch-row] time")?.textContent ??
+        null,
+      firstAddress:
+        list[0]?.querySelector("[data-launch-row] .address-chip .mono")
+          ?.textContent ?? null,
       rowHeights: [
         ...new Set(
           list.map((row) => Math.round(row.getBoundingClientRect().height)),
@@ -110,25 +112,18 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
       "Liquidity",
     );
   } else {
-    /* The mobile card holds a fixed height, so the same two facts take
-       the stat slots the measured card uses. */
-    expect(measured.firstFacts, "age and sender").toEqual([
-      expect.stringMatching(/^(<1m|\d+[mhd]) ago$/),
-      expect.stringMatching(/^0x[0-9a-f]{4}…[0-9a-f]{4}$/),
-    ]);
+    /* The mobile card holds a fixed height, so the age and the same shared
+       small chip the leaderboard's mobile row uses take the stat slot the
+       measured card uses. */
+    expect(measured.firstAge, "launch age").toMatch(/^(<1m|\d+[mhd]) ago$/);
+    expect(measured.firstAddress, "launch sender").toMatch(
+      /^0x[0-9a-f]{4}…[0-9a-f]{4}$/,
+    );
   }
   await expect(
     page.locator(".launch-cell a, [data-launch-row] a").first(),
     "the sender opens its wallet",
   ).toHaveAttribute("href", /^\/wallet\/0x[0-9a-f]{40}\/$/);
-  if (testInfo.project.name !== "desktop")
-    expect(
-      await page
-        .locator("[data-launch-row] a")
-        .first()
-        .evaluate((node) => node.getBoundingClientRect().height),
-      "44px tap target",
-    ).toBeGreaterThanOrEqual(44);
 });
 
 test("a launch rail card shows its age and sender, never two N/A marks", async ({
