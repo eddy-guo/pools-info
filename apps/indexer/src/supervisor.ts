@@ -4,6 +4,8 @@ import type { ChildProcess } from "node:child_process";
 export const RPC_RATE_LIMIT_EXIT_CODE = 75;
 /** An indivisible broad range needs operator inspection, not automatic retries. */
 export const BROAD_CAPACITY_EXIT_CODE = 76;
+/** A HyperSync token Envio rejected cannot recover by restarting either. */
+export const HYPERSYNC_UNAUTHORIZED_EXIT_CODE = 77;
 export interface WorkerSpec {
   name: "recent" | "indexer" | "analytics";
   file: string;
@@ -13,7 +15,10 @@ interface SupervisorRuntime {
   spawn: (worker: WorkerSpec) => ChildProcess;
   exitCode: (code: 0 | 1) => void;
   log: (event: {
-    event: "service_paused_rpc_rate_limit" | "service_paused_broad_capacity";
+    event:
+      | "service_paused_rpc_rate_limit"
+      | "service_paused_broad_capacity"
+      | "service_paused_hypersync_unauthorized";
     worker: WorkerSpec["name"];
   }) => void;
 }
@@ -64,7 +69,8 @@ export function superviseWorkers(
       cleanedUp(child);
       if (
         code === RPC_RATE_LIMIT_EXIT_CODE ||
-        code === BROAD_CAPACITY_EXIT_CODE
+        code === BROAD_CAPACITY_EXIT_CODE ||
+        code === HYPERSYNC_UNAUTHORIZED_EXIT_CODE
       ) {
         if (!paused) {
           paused = true;
@@ -72,7 +78,9 @@ export function superviseWorkers(
             event:
               code === RPC_RATE_LIMIT_EXIT_CODE
                 ? "service_paused_rpc_rate_limit"
-                : "service_paused_broad_capacity",
+                : code === BROAD_CAPACITY_EXIT_CODE
+                  ? "service_paused_broad_capacity"
+                  : "service_paused_hypersync_unauthorized",
             worker: worker.name,
           });
           // A sibling may have failed while another was already reporting 429s.

@@ -180,11 +180,16 @@ test(
         'Other '||n,'OTHER',10,'0x'||lpad(to_hex(n),64,'0'),
         '0x'||repeat('ab',20),100,19 FROM generate_series(1000,11000) n`);
     let changed = false;
+    let wrongChain = false;
     let head = 2000;
     const h = (n: number) => ({
       number: hex(n),
-      hash: word(n + (changed && n >= 20 ? 10000 : 0)),
-      parentHash: word(n - 1 + (changed && n > 20 ? 10000 : 0)),
+      hash: word(
+        n + (wrongChain ? 999999 : changed && n >= 20 ? 10000 : 0),
+      ),
+      parentHash: word(
+        n - 1 + (wrongChain ? 999999 : changed && n > 20 ? 10000 : 0),
+      ),
       timestamp: hex(n * 10),
     });
     /** Provider calls by method, counting every member of a batch. */
@@ -306,6 +311,16 @@ test(
       eth_blockNumber: 1,
       eth_getBlockByNumber: 2, // previously 3
     });
+    // A source that answers for another chain matches none of the saved
+    // checkpoints; reconcile must refuse the rewind rather than delete every
+    // checkpoint and null both cursors.
+    wrongChain = true;
+    await assert.rejects(
+      runRecentCycle(db, rpc({}), options),
+      /No matching recent checkpoint/,
+    );
+    assert.equal((await recentStream(db, "discovery")).cursor, 29);
+    assert.equal((await recentStream(db, "swaps")).cursor, 29);
   },
 );
 
