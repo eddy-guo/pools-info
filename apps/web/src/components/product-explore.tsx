@@ -158,7 +158,18 @@ function LaunchLine({
     </span>
   );
 }
-type ExploreSort = NonNullable<AnalyticsExploreOptions["sort"]>;
+/* The read API also orders by liquidity, but the screener does not offer it,
+   so a URL naming it reads as the default order. */
+type ScreenerSort = Exclude<
+  NonNullable<AnalyticsExploreOptions["sort"]>,
+  "liquidity"
+>;
+const SCREENER_SORTS: readonly string[] = [
+  "volume",
+  "trades",
+  "change",
+  "launch",
+] satisfies ScreenerSort[];
 export function ProductExplore() {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -174,22 +185,29 @@ export function ProductExplore() {
   const { params, set: setQuery } = useQuery(),
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
-  /* A new query reads from the top: the panel's head comes back under the
-     site header while the rows swap to skeletons, and the rows on show go
-     back to the first page. */
-  const panelRef = useRef<HTMLElement>(null);
-  const set = (updates: Record<string, string | null>) => {
-    setQuery({ ...updates, limit: null });
-    headIntoView(panelRef.current);
-  };
   const view = (params.get("view") ??
       (params.has("watchlist")
         ? "watchlist"
         : "all")) as AnalyticsExploreOptions["view"],
     q = params.get("q") ?? "";
-  const sort =
-      params.get("sort") ?? (view === LAUNCH_VIEW ? "launch" : "volume"),
-    direction = params.get("dir") ?? "desc";
+  /* A bookmarked order no header offers reads as the default, direction
+     included, and leaves the URL at the next write. */
+  const requested = params.get("sort"),
+    staleSort = requested !== null && !SCREENER_SORTS.includes(requested),
+    sort =
+      (staleSort ? null : requested) ??
+      (view === LAUNCH_VIEW ? "launch" : "volume"),
+    direction = (staleSort ? null : params.get("dir")) ?? "desc";
+  const write = (updates: Record<string, string | null>) =>
+    setQuery(staleSort ? { sort: null, dir: null, ...updates } : updates);
+  /* A new query reads from the top: the panel's head comes back under the
+     site header while the rows swap to skeletons, and the rows on show go
+     back to the first page. */
+  const panelRef = useRef<HTMLElement>(null);
+  const set = (updates: Record<string, string | null>) => {
+    write({ ...updates, limit: null });
+    headIntoView(panelRef.current);
+  };
   /* The rows on show live in the URL as `limit`, as on the traders and
      creators lists: absent or invalid, the first page; each Show more adds
      the next page, and a reload or Back brings back what was on show. */
@@ -203,7 +221,7 @@ export function ProductExplore() {
      claims it there. */
   const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
     ascending = direction === "asc";
-  const sortBy = (key: ExploreSort) => {
+  const sortBy = (key: ScreenerSort) => {
     if (activeSort !== key)
       set({
         sort: key,
@@ -218,7 +236,7 @@ export function ProductExplore() {
      reference's does: the label keeps its right edge on the column's figures
      and the head's box never changes with the order, so a sorted or launches
      URL hydrating over the static default head moves nothing. */
-  const sortable = (label: string, key: ExploreSort) => (
+  const sortable = (label: string, key: ScreenerSort) => (
     <th
       aria-sort={
         activeSort === key ? (ascending ? "ascending" : "descending") : "none"
@@ -274,7 +292,7 @@ export function ProductExplore() {
   const focusAt = useRef<number | null>(null);
   const showMore = () => {
     focusAt.current = shown;
-    setQuery({
+    write({
       limit: String(
         Math.min(shown + SHOW_MORE_STEP, list?.total ?? Infinity, CAP),
       ),
@@ -506,7 +524,7 @@ export function ProductExplore() {
                               so its head names the window as the export's does. */}
                           {sortable(window, "change")}
                           {sortable("Volume", "volume")}
-                          {sortable("Liquidity", "liquidity")}
+                          <th>Liquidity</th>
                           <th>Holders</th>
                           <th>Launch sender</th>
                           <th>Trend</th>

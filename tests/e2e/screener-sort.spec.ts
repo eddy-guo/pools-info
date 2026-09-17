@@ -1,15 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const px = (value: string) => Number.parseFloat(value);
-/* The read API orders by these; every other column stays a plain header. The
-   change column's head names the window it is measured over, as the export's
-   does, so the default page reads it as "24h". */
+/* The headers order by these; every other column, liquidity included, stays
+   a plain header. The change column's head names the window it is measured
+   over, as the export's does, so the default page reads it as "24h". */
 const sortable = [
   { label: "24h", key: "change", column: 4 },
   { label: "Volume", key: "volume", column: 5 },
-  { label: "Liquidity", key: "liquidity", column: 6 },
 ];
-const plain = ["Token", "Price", "Holders", "Launch sender", "Trend"];
+const plain = [
+  "Token",
+  "Price",
+  "Liquidity",
+  "Holders",
+  "Launch sender",
+  "Trend",
+];
 /* With no sort in the URL the screener reads by volume, highest first. */
 const defaultColumn = 5;
 /* The export's grid at the 1030px the panel gives a 1440px viewport: watch,
@@ -267,5 +273,81 @@ test.describe("screener column sorting", () => {
         `${state.state} first row carries figures`,
       ).toBeGreaterThan(0);
     }
+  });
+});
+
+/* No header offers liquidity order, so a link that still names it opens the
+   default order and the URL follows at the next change. */
+test.describe("a stale liquidity sort in the URL", () => {
+  test("opens the default order and leaves the URL at the next change", async ({
+    page,
+    isMobile,
+  }) => {
+    const opened = exploreRequest(page);
+    await page.goto("/?sort=liquidity&dir=asc");
+    const sent = new URL((await opened).url()).searchParams;
+    expect(sent.get("sort"), "the request carries the default order").toBe(
+      "volume",
+    );
+    expect(sent.get("direction"), "and its direction").toBe("desc");
+    await expect(firstRow(page)).toBeAttached();
+    expect(search(page).get("sort"), "the link reads as given").toBe(
+      "liquidity",
+    );
+
+    if (!isMobile) {
+      await expect(header(page, defaultColumn)).toHaveAttribute(
+        "aria-sort",
+        "descending",
+      );
+      await expect(header(page, defaultColumn)).toContainText("↓");
+      const liquidity = head(page)
+        .locator("th")
+        .filter({ hasText: "Liquidity" });
+      await expect(liquidity).toHaveText("Liquidity");
+      await expect(liquidity.locator("button")).toHaveCount(0);
+      await expect(liquidity).not.toHaveAttribute("aria-sort", /.*/);
+      await expect(
+        head(page).getByRole("button", { name: /liquidity/i }),
+        "no keyboard stop leads to a liquidity order",
+      ).toHaveCount(0);
+    }
+
+    const changed = exploreRequest(page);
+    await page.getByRole("button", { name: "7d", exact: true }).click();
+    const next = new URL((await changed).url()).searchParams;
+    expect(next.get("window")).toBe("7d");
+    expect(next.get("sort")).toBe("volume");
+    expect(
+      search(page).get("sort"),
+      "the stale order leaves the URL",
+    ).toBeNull();
+    expect(search(page).get("dir")).toBeNull();
+    expect(search(page).get("window")).toBe("7d");
+  });
+
+  /* Show more writes the URL without changing the query, and still drops the
+     pair rather than carrying it past the first page. The launches list over
+     All is the one with more than a page in the saved dataset, and its
+     default order is launch. */
+  test("leaves the URL at a Show more as well", async ({ page }) => {
+    const opened = exploreRequest(page);
+    await page.goto("/?view=new&sort=liquidity&dir=asc&window=All");
+    await opened;
+    await expect(firstRow(page)).toBeAttached();
+    const appended = exploreRequest(page);
+    await page
+      .locator(".explore-page .pagination")
+      .getByRole("button", { name: /^Show \d+ more$/ })
+      .click();
+    const next = new URL((await appended).url()).searchParams;
+    expect(next.get("sort")).toBe("launch");
+    expect(next.get("direction")).toBe("desc");
+    expect(search(page).get("limit")).toBe("50");
+    expect(
+      search(page).get("sort"),
+      "the stale order leaves the URL",
+    ).toBeNull();
+    expect(search(page).get("dir")).toBeNull();
   });
 });
