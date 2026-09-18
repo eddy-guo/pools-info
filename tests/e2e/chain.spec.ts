@@ -1522,7 +1522,10 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   const png = await response.body();
   expect(png.readUInt32BE(16)).toBe(1200);
   expect(png.readUInt32BE(20)).toBe(630);
-  expect(png.length).toBeLessThan(100_000);
+  // A coarse bound against a runaway image (an embedded token picture, say):
+  // the Liquid card's preset glow at the reference's strength renders at
+  // about 99 KB, the export design at about 66 KB.
+  expect(png.length).toBeLessThan(120_000);
   // The export design is the same route, one query parameter away, and
   // renders the real wallet at the same size within the same budget.
   await dialog
@@ -1546,7 +1549,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   const exportPng = await exportResponse.body();
   expect(exportPng.readUInt32BE(16)).toBe(1200);
   expect(exportPng.readUInt32BE(20)).toBe(630);
-  expect(exportPng.length).toBeLessThan(100_000);
+  expect(exportPng.length).toBeLessThan(120_000);
   await page.screenshot({
     path: testInfo.outputPath("real-positive-wallet-card.png"),
     fullPage: true,

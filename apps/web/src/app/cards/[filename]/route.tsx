@@ -504,7 +504,11 @@ export async function GET(
             color: visualTheme.text,
             fontFamily: "Geist",
             backgroundColor: visualTheme.panelInset,
-            backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.16)} 0%, ${alpha(preset, 0)} 42%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.07)} 0%, ${alpha(preset, 0)} 38%)`,
+            // The preset tints the card's chrome (mark, wordmark dot, identicon,
+            // window pill) and this ambient glow, drawn at the Liquid reference's
+            // strength so the chosen colour reads at a glance; the headline and
+            // the curve keep the up/down colour, never the preset.
+            backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.3)} 0%, ${alpha(preset, 0)} 52%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.12)} 0%, ${alpha(preset, 0)} 42%)`,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
