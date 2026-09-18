@@ -8,6 +8,7 @@ import type {
   AnalyticsWalletSummary,
   LedgerSwap,
   LedgerTransfer,
+  PricePoint,
 } from "@pools/core";
 import {
   acquireLedgerWriter,
@@ -31,8 +32,9 @@ import { createApi } from "./server";
 // and the windows it refreshes, so the fixture is trades applied through
 // `applyLedgerBatch` and `refreshLedgerWindows`, and every expectation below
 // is derived by hand from those trades: average-cost basis, realized =
-// proceeds - disposed cost, hour-aligned windows, and a held position marked
-// at the pool's latest sqrt price (2^192 / sqrt^2 wei per raw unit).
+// proceeds - disposed cost, hour-aligned windows, a held position marked
+// at the pool's latest sqrt price (2^192 / sqrt^2 wei per raw unit), and the
+// realized curve as one point per hour with a sale, at the hour's end.
 const E = 10n ** 18n;
 const hash = (n: number | bigint): `0x${string}` =>
   `0x${n.toString(16).padStart(64, "0")}`;
@@ -80,7 +82,7 @@ const pools = {
 };
 const wallet = (n: number) => addr(0x10000 + n);
 const W = Object.fromEntries(
-  [1, 2, 3, 4, 6, 7, 8].map((n) => [n, wallet(n)]),
+  [1, 2, 3, 4, 6, 7, 8, 9].map((n) => [n, wallet(n)]),
 ) as Record<number, `0x${string}`>;
 /** A sqrt price of 2^68: 2^192 / 2^136 = 2^56 wei per raw unit. */
 const sqrtQ = (2n ** 68n).toString();
@@ -185,8 +187,15 @@ const normalized = (body: string) =>
   body.replace(/"generatedAt":"[^"]*"/g, '"generatedAt":"-"');
 const tenth = E / 10n;
 
+/** The curve's point for hour `h`: its cumulative realized at the hour's
+ * end, or at the cutoff when the hour is still open there. */
+const at = (hour: number, wei: bigint, asOf = Infinity): PricePoint => ({
+  time: Math.min((hour + 1) * 3600, asOf),
+  wei: wei.toString(),
+});
+
 test(
-  "Postgres HTTP: MARKET_SOURCE=ledger serves the wallet page's header, window figures and positions from the ledger, hand-checked, and the accounting profile until the ledger has folded anything",
+  "Postgres HTTP: MARKET_SOURCE=ledger serves the wallet page's header, window figures, positions and realized curve from the ledger, hand-checked, and the accounting profile until the ledger has folded anything",
   { skip: !process.env.TEST_DATABASE_URL },
   async (t) => {
     const url = process.env.TEST_DATABASE_URL!;
@@ -297,10 +306,11 @@ test(
       .trade(blockOf(1000, 0), W[2], "buy", E, 10n, pools.R)
       // W4 closes one 0.1 ETH round trip in each of the 48 hours 1030-1077,
       // 23 of them inside the 24h window (hours 1055-1078).
-      // W6 has a supported position in P and sells 7 Q tokens it never
-      // bought: that position is excluded, its finances never served.
+      // W6 has a supported position in P and, three hours later, sells 7 Q
+      // tokens it never bought: that position is excluded, its finances
+      // never served and its hour drawn nowhere.
       .roundTrips(blockOf(1071, 0), W[6], 5, tenth / 2n)
-      .trade(blockOf(1071, 1), W[6], "sell", 9n * tenth, 7n, pools.Q)
+      .trade(blockOf(1074, 1), W[6], "sell", 9n * tenth, 7n, pools.Q)
       // W8 buys 100 P for 1 ETH and sends 90 to W7, which sells them in ten
       // sales of 1 ETH each in hour 1073: the transfer excludes W7's
       // position on arrival (zero_cost_inflow) and W8's on departure
@@ -311,6 +321,11 @@ test(
       rows.trade(blockOf(1073, 3), W[7], "sell", E, 9n);
     for (let hour = 1030; hour < 1078; hour++)
       rows.roundTrips(blockOf(hour, 2), W[4], 1, tenth);
+    // W9 loses 1,000 wei on one round trip in each of the 679 hours 400-1078,
+    // the last in the cursor's own hour: more hours than the curve serves
+    // unsampled, and a curve that runs below zero.
+    for (let hour = 400; hour <= 1078; hour++)
+      rows.roundTrips(blockOf(hour, 3), W[9], 1, -1000n);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
     assert.equal(applied.unattributed, 0);
     // Folded but not yet refreshed into windows: the page has nothing to
@@ -375,11 +390,10 @@ test(
     );
     assert.equal(day.window, "24h");
     // What the ledger does not keep is served empty, never from the frozen
-    // tables: no row per sale, and the curve is the next slice's.
-    assert.deepEqual(
-      [day.trades, day.tradesTruncated, day.curve, day.curveSampled],
-      [[], false, [], false],
-    );
+    // tables: no row per sale.
+    assert.deepEqual([day.trades, day.tradesTruncated], [[], false]);
+    for (const p of day.curve)
+      assert.deepEqual(Object.keys(p).sort(), ["time", "wei"]);
     assert.deepEqual(
       [day.positionRealizationsIncluded, day.positionsTruncated],
       [false, false],
@@ -424,8 +438,22 @@ test(
     assert.deepEqual(day.wallet, w1(2, true));
     const all = await profile(W[1], "All");
     assert.deepEqual(all.wallet, w1(2, false));
-    assert.deepEqual((await profile(W[1], "7d")).wallet, w1(2, false));
+    const week = await profile(W[1], "7d");
+    assert.deepEqual(week.wallet, w1(2, false));
     assert.deepEqual((await profile(W[1], "30d")).wallet, w1(2, false));
+    // W1's curve: zero at the window's first hour, the 0.5 ETH sale of hour
+    // 1060 at that hour's end, the five trips of hour 1070 at its end, and
+    // the header's figure at the cutoff; the hour 1050 buy draws no point
+    // but opens the All curve, whose window has no start of its own.
+    const w1curve = (start: number) => [
+      { time: start * 3600, wei: "0" },
+      at(1060, 5n * tenth),
+      at(1070, E),
+      { time: ts(cursor1), wei: E.toString() },
+    ];
+    assert.deepEqual([day.curve, day.curveSampled], [w1curve(1055), false]);
+    assert.deepEqual(week.curve, w1curve(911));
+    assert.deepEqual(all.curve, w1curve(1050));
     // The headline is the board's row to the wei, on every window: the same
     // row, the mark being the page's own addition.
     for (const window of ["24h", "7d", "30d", "All"]) {
@@ -539,6 +567,16 @@ test(
     const w2day = await profile(W[2], "24h");
     assert.deepEqual(w2day.wallet, w2(false));
     assert.deepEqual((await profile(W[2], "7d")).wallet, w2(true));
+    // A supported position with no sale draws the flat zero line the header
+    // reads, from the window's start, or the buy's hour on All.
+    assert.deepEqual(w2day.curve, [
+      { time: 1055 * 3600, wei: "0" },
+      { time: ts(cursor1), wei: "0" },
+    ]);
+    assert.deepEqual((await profile(W[2], "All")).curve, [
+      { time: 1000 * 3600, wei: "0" },
+      { time: ts(cursor1), wei: "0" },
+    ]);
     assert.deepEqual(w2day.positions, [
       {
         poolId: pools.R.id,
@@ -591,7 +629,7 @@ test(
       excludedPositionCount: 1,
       bestWei: (tenth / 2n).toString(),
       avgHold: 0,
-      last: ts(blockOf(1071, 1)),
+      last: ts(blockOf(1074, 1)),
       asOf: ts(cursor1),
       oldestAsOf: ts(cursor1),
       completeWindow: true,
@@ -610,6 +648,23 @@ test(
       [null, null, null, (9n * tenth).toString(), null],
     );
     assert.equal(w6.positions.length, 2);
+    // The excluded sale's hour 1074 is on the wallet's hour rows and on no
+    // point of its curve, which ends where the header does.
+    assert.deepEqual(
+      (
+        await db.query(
+          `SELECT h.hour FROM agg_wallet_hours h JOIN agg_wallets w USING (wallet_ref)
+           WHERE w.address=decode($1,'hex') AND h.sells>0 ORDER BY h.hour`,
+          [W[6].slice(2)],
+        )
+      ).rows.map((r) => r.hour),
+      [1071, 1074],
+    );
+    assert.deepEqual(w6.curve, [
+      { time: 1055 * 3600, wei: "0" },
+      at(1071, (25n * tenth) / 10n),
+      { time: ts(cursor1), wei: w6.wallet.realizedWei! },
+    ]);
 
     // W7: the header the board would rank by, had it a supported trade:
     // ten trades and 10 ETH of volume, no supported trade, no realized or
@@ -662,6 +717,9 @@ test(
         ],
       ],
     );
+    // Ten sales on an excluded position draw nothing: no supported position,
+    // no curve, as the accounting reader serves one.
+    assert.deepEqual([w7.curve, w7.curveSampled], [[], false]);
     // W8 sent ninety of the hundred away without a sale: the ledger never
     // saw where their 0.9 ETH of basis went, so its position is excluded
     // too (unattributed_outflow) and its buy is a trade and volume only;
@@ -695,6 +753,7 @@ test(
         null,
       ],
     );
+    assert.deepEqual(w8.curve, []);
 
     // W4's 48 hours of round trips: the 23 inside the 24h window realize
     // 2.3 ETH, all of them 4.8, and the one P position carries the same
@@ -721,6 +780,72 @@ test(
         w4all.positions[0].realizedWei,
       ],
       [1, (48n * tenth).toString(), 48, (48n * tenth).toString()],
+    );
+    // One point per hour, each at its hour's end: the 23 window hours from
+    // 1055, and all 48 from 1030 on All, ending on the header's figure.
+    const w4curve = (from: number, to: number, asOf: number) => [
+      { time: from * 3600, wei: "0" },
+      ...Array.from({ length: to - from + 1 }, (_, i) =>
+        at(from + i, BigInt(i + 1) * tenth),
+      ),
+      { time: asOf, wei: (BigInt(to - from + 1) * tenth).toString() },
+    ];
+    assert.deepEqual(
+      [w4day.curve, w4day.curveSampled],
+      [w4curve(1055, 1077, ts(cursor1)), false],
+    );
+    assert.deepEqual(
+      [w4all.curve, w4all.curveSampled],
+      [w4curve(1030, 1077, ts(cursor1)), false],
+    );
+
+    // W9's 679 losing hours: the 24 in the window unsampled, its hour 1078
+    // point at the cutoff since that hour is still open there; the 30d
+    // window and All hold every hour, more than the ~500 the curve serves,
+    // so every other hour and the last are kept, as the accounting reader
+    // samples its sales, and the response says so. Its rank is the last
+    // eligible one: a loss on every window.
+    const w9day = await profile(W[9], "24h");
+    assert.deepEqual(
+      [w9day.wallet.rank, w9day.wallet.realizedWei, w9day.wallet.tradeCount],
+      [4, "-24000", 48],
+    );
+    assert.deepEqual(
+      [w9day.curve, w9day.curveSampled],
+      [
+        [
+          { time: 1055 * 3600, wei: "0" },
+          ...Array.from({ length: 24 }, (_, i) =>
+            at(1055 + i, BigInt(-1000 * (i + 1)), ts(cursor1)),
+          ),
+          { time: ts(cursor1), wei: "-24000" },
+        ],
+        false,
+      ],
+    );
+    assert.equal(w9day.curve.at(-2)!.time, ts(cursor1));
+    const w9sampled = (start: number) => [
+      { time: start * 3600, wei: "0" },
+      ...Array.from({ length: 340 }, (_, j) =>
+        at(400 + 2 * j, BigInt(-1000 * (2 * j + 1)), ts(cursor1)),
+      ),
+      { time: ts(cursor1), wei: "-679000" },
+    ];
+    const w9month = await profile(W[9], "30d");
+    assert.deepEqual(w9month.wallet.realizedWei, "-679000");
+    assert.deepEqual(
+      [w9month.curve, w9month.curveSampled],
+      [w9sampled(359), true],
+    );
+    const w9all = await profile(W[9], "All");
+    assert.deepEqual(
+      [w9all.wallet.rank, w9all.wallet.realizedWei, w9all.curveSampled],
+      [4, "-679000", true],
+    );
+    assert.deepEqual(w9all.curve, w9sampled(400));
+    assert.deepEqual(
+      [(await profile(W[9], "7d")).curve.length, w9all.curve.length],
+      [170, 342],
     );
 
     // A wallet the ledger has never seen: the empty profile the accounting
@@ -770,5 +895,18 @@ test(
       asOf: ts(cursor2),
       oldestAsOf: ts(cursor2),
     });
+    // The curve follows the window: hour 1055's point has left it, the
+    // leading zero sits on hour 1056 and the end on the new cutoff, and
+    // W9's hour 1078, closed now, sits at its own end.
+    assert.deepEqual(later.curve, w4curve(1056, 1077, ts(cursor2)));
+    const w9later = await profile(W[9], "24h");
+    assert.deepEqual(w9later.curve, [
+      { time: 1056 * 3600, wei: "0" },
+      ...Array.from({ length: 23 }, (_, i) =>
+        at(1056 + i, BigInt(-1000 * (i + 1))),
+      ),
+      { time: ts(cursor2), wei: "-23000" },
+    ]);
+    assert.equal(w9later.curve.at(-2)!.time, 1079 * 3600);
   },
 );
