@@ -1228,7 +1228,8 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "download",
     "poolsinfo-pnl-all.png",
   );
-  await dialog.getByRole("switch", { name: /Show notional/ }).click();
+  const notionalSwitch = dialog.getByRole("switch", { name: /Show notional/ });
+  await notionalSwitch.click();
   await expect(card).toHaveAttribute(
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
@@ -1241,16 +1242,28 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     designToggle.getByRole("button", { name: "Liquid" }),
   ).toHaveAttribute("aria-pressed", "true");
   await designToggle.getByRole("button", { name: "Export" }).click();
+  // The export design's headline is already the realized amount and its
+  // fixed trio has no slot for the volume, so the notional option is offered
+  // disabled there with its reason on the label, and stays out of the URL
+  // rather than naming an option the image ignores (sweep s6 defect 13).
+  await expect(notionalSwitch).toBeDisabled();
+  await expect(notionalSwitch).not.toBeChecked();
+  await expect(
+    dialog.locator("label").filter({ hasText: "Show notional" }),
+  ).toContainText("Not offered on the Export design");
   await expect(card).toHaveAttribute(
     "src",
-    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
   );
   expect(await preview.boundingBox()).toEqual(reserved);
   await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
     "href",
-    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
   );
   await designToggle.getByRole("button", { name: "Liquid" }).click();
+  // The Liquid choice was kept while the option was out of reach.
+  await expect(notionalSwitch).toBeEnabled();
+  await expect(notionalSwitch).toBeChecked();
   await expect(card).toHaveAttribute(
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
@@ -1263,7 +1276,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "?window=All&theme=mint",
     "?window=All&theme=mint&anon=1",
     "?window=All&theme=mint&anon=1&notional=1",
-    "?window=All&theme=mint&anon=1&notional=1&design=export",
+    "?window=All&theme=mint&anon=1&design=export",
   ]);
   expect(await dialog.innerText()).not.toMatch(
     /reconcil|coverage|captur|excluded|methodolog|before gas|processed pools/i,

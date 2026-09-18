@@ -266,17 +266,13 @@ test("share card options round-trip through the query the modal and the route sh
   const chosen = {
     window: "7d" as const,
     preset: "mint" as const,
-    design: "export" as const,
+    design: "liquid" as const,
     anonymous: true,
     notional: true,
   };
   assert.deepEqual(parseCardOptions(cardQuery(chosen)), chosen);
   assert.equal(
-    cardUrl(`0x${"A".repeat(40)}`, {
-      ...chosen,
-      anonymous: false,
-      design: "liquid",
-    }),
+    cardUrl(`0x${"A".repeat(40)}`, { ...chosen, anonymous: false }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&notional=1`,
   );
   // The non-default design still round-trips into the URL, and independently
@@ -287,8 +283,25 @@ test("share card options round-trip through the query the modal and the route sh
       anonymous: false,
       notional: false,
       preset: "lime",
+      design: "export",
     }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&design=export`,
+  );
+  // The export design does not honour the notional option (its headline is
+  // the realized amount already), so the option never reaches its URL and a
+  // hand-written one reads as off: one image, not two identical ones.
+  assert.deepEqual(parseCardOptions(cardQuery({ ...chosen, design: "export" })), {
+    ...chosen,
+    design: "export",
+    notional: false,
+  });
+  assert.equal(
+    cardUrl(`0x${"a".repeat(40)}`, { ...chosen, design: "export" }),
+    `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&anon=1&design=export`,
+  );
+  assert.equal(
+    parseCardOptions(new URLSearchParams("design=export&notional=1")).notional,
+    false,
   );
   // A stale or hand-edited link still renders with the defaults.
   assert.deepEqual(

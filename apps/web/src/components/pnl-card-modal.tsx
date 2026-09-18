@@ -94,12 +94,15 @@ export function PnlCardModal({
       // Best effort: the toggle just won't persist in this browser.
     }
   }
+  /* The notional toggle is offered disabled, with its reason, on a design
+     that does not honour it; the choice is kept for the designs that do. */
+  const notionalOffered = cardDesigns[design].notional;
   const options: CardOptions = {
     window: period,
     preset,
     design,
     anonymous,
-    notional,
+    notional: notional && notionalOffered,
   };
   const url = cardUrl(address, options);
   const state =
@@ -286,17 +289,23 @@ export function PnlCardModal({
                 />
                 <span className={styles.knob} aria-hidden="true" />
               </label>
-              <label className={styles.toggle}>
+              <label
+                className={styles.toggle}
+                aria-disabled={!notionalOffered}
+              >
                 <span>
                   <strong>Show notional</strong>
                   <small>
-                    Show the realized amount and traded volume in ETH.
+                    {notionalOffered
+                      ? "Show the realized amount and traded volume in ETH."
+                      : `Not offered on the ${cardDesigns[design].label} design: its headline is already the realized amount in ETH.`}
                   </small>
                 </span>
                 <input
                   type="checkbox"
                   role="switch"
-                  checked={notional}
+                  checked={notional && notionalOffered}
+                  disabled={!notionalOffered}
                   onChange={(event) => setNotional(event.target.checked)}
                 />
                 <span className={styles.knob} aria-hidden="true" />

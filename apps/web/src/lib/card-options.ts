@@ -18,12 +18,16 @@ export const defaultCardPreset: CardPreset = "lime";
 /**
  * `liquid` is the card shipped first (PR 56) and stays the default so every
  * existing card URL keeps rendering the same PNG; `export` is the captain's
- * own export's layout (wordmark, window chip, monogram, PnL, ROI / Record /
- * Best trade, profile URL), added beside it.
+ * own export's layout (wordmark, window chip, monogram, realized PnL in ETH,
+ * ROI / Record / Best trade, profile URL), added beside it. `notional` says
+ * whether the design honours the notional option: the export layout's
+ * headline is already the realized amount and its fixed trio has no slot for
+ * the traded volume, so the option is offered disabled there rather than
+ * rendering the same image either way.
  */
 export const cardDesigns = {
-  liquid: { label: "Liquid" },
-  export: { label: "Export" },
+  liquid: { label: "Liquid", notional: true },
+  export: { label: "Export", notional: false },
 } as const;
 export type CardDesign = keyof typeof cardDesigns;
 export const defaultCardDesign: CardDesign = "liquid";
@@ -34,7 +38,10 @@ export interface CardOptions {
   design: CardDesign;
   /** Hides the address, its identicon and the rank. */
   anonymous: boolean;
-  /** Shows the realized amount beside the percentage and the traded volume. */
+  /**
+   * Shows the realized amount beside the percentage and the traded volume.
+   * Always false on a design that does not honour it.
+   */
   notional: boolean;
 }
 export const defaultCardOptions: CardOptions = {
@@ -49,7 +56,11 @@ export const defaultCardOptions: CardOptions = {
 export function parseCardOptions(params: URLSearchParams): CardOptions {
   const window = params.get("window"),
     preset = params.get("theme"),
-    design = params.get("design");
+    requested = params.get("design"),
+    design =
+      requested && Object.hasOwn(cardDesigns, requested)
+        ? (requested as CardDesign)
+        : defaultCardOptions.design;
   return {
     window:
       window && Object.hasOwn(windows, window)
@@ -59,12 +70,9 @@ export function parseCardOptions(params: URLSearchParams): CardOptions {
       preset && Object.hasOwn(cardPresets, preset)
         ? (preset as CardPreset)
         : defaultCardOptions.preset,
-    design:
-      design && Object.hasOwn(cardDesigns, design)
-        ? (design as CardDesign)
-        : defaultCardOptions.design,
+    design,
     anonymous: params.get("anon") === "1",
-    notional: params.get("notional") === "1",
+    notional: cardDesigns[design].notional && params.get("notional") === "1",
   };
 }
 
@@ -81,7 +89,8 @@ export function cardQuery(
   params.set("window", options.window);
   if (options.preset !== defaultCardPreset) params.set("theme", options.preset);
   if (options.anonymous) params.set("anon", "1");
-  if (options.notional) params.set("notional", "1");
+  if (options.notional && cardDesigns[options.design].notional)
+    params.set("notional", "1");
   if (options.design !== defaultCardDesign)
     params.set("design", options.design);
   return params;
