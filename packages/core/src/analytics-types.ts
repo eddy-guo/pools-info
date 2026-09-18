@@ -23,7 +23,8 @@ export interface AnalyticsCoverage {
   registryExhaustive: false;
   pnlScope:
     | "supported_pool_positions_only"
-    | "observed_initiator_and_verified_positions";
+    | "observed_initiator_and_verified_positions"
+    | "attributed_positions_all_pools";
   tier2Pools?: number;
   tier3Pools?: number;
   realizedPools?: number;
