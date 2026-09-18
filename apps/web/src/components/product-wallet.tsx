@@ -47,6 +47,9 @@ const unindexed = (data: AnalyticsWalletResponse | undefined) =>
   !!data && data.wallet.asOf === null;
 /** The one line an unobserved wallet's positions and curve carry instead of zeros. */
 const UNINDEXED = "This wallet's trading has not been indexed yet.";
+/** The line under an empty curve on a measured wallet with trades: the read
+    served its figures without a curve, which is not the same as no PnL. */
+const CURVE_UNSERVED = "The PnL curve is not served for this wallet yet.";
 /**
  * The export's tab counts, from the rows the read sent: a bounded list has
  * no total, so its tab carries no count. The slot is reserved at three
@@ -308,7 +311,13 @@ export function ProductWallet({ address }: { address: string }) {
                     pending={!data}
                     profit
                     label="Cumulative realized PnL"
-                    emptyNote={unindexed(data) ? UNINDEXED : undefined}
+                    emptyNote={
+                      unindexed(data)
+                        ? UNINDEXED
+                        : w && w.tradeCount > 0
+                          ? CURVE_UNSERVED
+                          : undefined
+                    }
                   />
                 </div>
               </section>

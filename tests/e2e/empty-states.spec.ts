@@ -328,6 +328,105 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
 });
 
 /*
+ * The aggregate ledger serves a wallet's header, window figures and positions
+ * but no per-wallet trade list and no curve yet (trades: [], curve: [] beside
+ * a real tradeCount). The production page of 18 Sep 2026 read that as three
+ * contradictions: a Trades tab at 0 beside a Trades tile of 594, "No realized
+ * PnL in this window." under a Realized PnL tile of +198.89 ETH, and every one
+ * of its 129 positions rendered at once.
+ */
+/* Sixty positions, more than two Show more pages. */
+const servedPositions = Array.from({ length: 60 }, (_, i) => ({
+  poolId: `0x${(i + 1).toString(16).padStart(64, "a")}`,
+  token: `0x${(i + 1).toString(16).padStart(40, "a")}`,
+  symbol: `P${i + 1}`,
+  decimals: 18,
+  launchTx: `0x${(i + 1).toString(16).padStart(64, "b")}`,
+  asOf: 1789695885,
+  throughBlock: 65841861,
+  supported: true,
+  flags: [],
+  realizedWei: String(BigInt(i + 1) * 10n ** 15n),
+  unrealizedWei: "0",
+  netWei: String(BigInt(i + 1) * 10n ** 15n),
+  volumeWei: String(BigInt(60 - i) * 10n ** 17n),
+  position: {
+    poolId: `0x${(i + 1).toString(16).padStart(64, "a")}`,
+    trader: wallet,
+    quantity: "0",
+    costWei: "0",
+    realizedWei: String(BigInt(i + 1) * 10n ** 15n),
+    proceedsWei: String(BigInt(i + 1) * 10n ** 17n),
+    investedWei: String(BigInt(i + 1) * 10n ** 17n),
+    buys: 5,
+    sells: 5,
+    flags: [],
+    realizations: [],
+  },
+}));
+
+test("a served wallet whose curve is not sent says so, with no Trades tab and its positions in pages", async ({
+  page,
+}, testInfo) => {
+  const { viewport } = surface(testInfo);
+  await page.setViewportSize(viewport);
+  await trackShifts(page);
+  await page.route(`**/api/product/wallets/${wallet}**`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        wallet: {
+          ...body.wallet,
+          tradeCount: 594,
+          supportedTradeCount: 594,
+          rankingTradeCount: 594,
+          realizedWei: "198890000000000000000",
+        },
+        positions: servedPositions,
+        positionsTruncated: false,
+        trades: [],
+        tradesTruncated: false,
+        curve: [],
+        launches,
+        launchesTruncated: false,
+      },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  // The tile keeps the served count; the strip has no Trades tab to
+  // contradict it.
+  await expect(tile(page, "Trades")).toHaveText("594");
+  await expect(tile(page, "Realized PnL")).toHaveText("+198.89 ETH");
+  await expect(page.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("tablist", { name: "Wallet activity" }).getByRole("tab"),
+  ).toHaveText(["Positions60", "Launches129"]);
+  // The curve panel says the curve is not served, never that there is no
+  // realized PnL under a tile that shows some; the readout keeps its dash.
+  await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
+    "The PnL curve is not served for this wallet yet.",
+  );
+  await expect(page.locator(".wallet-page .chart-readout time")).toHaveText(
+    "No observations",
+  );
+  await expect(
+    page.locator(".wallet-page .chart-readout .unavailable"),
+  ).toHaveText("\u2013");
+  await expect(page.locator(".wallet-page")).not.toContainText(
+    "No realized PnL",
+  );
+  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+  expect(
+    await bufferedShiftSum(page),
+    "every non-input layout shift since navigation",
+  ).toBeLessThan(0.001);
+});
+
+/*
  * The captain's escalation of 17 Sep 2026: on a cold home page against a read
  * API that was not answering, the visitor watched skeletons for eight seconds
  * and was then shown "Pepe in Hood at 14.1333 ETH" with launch cards reading
