@@ -2,6 +2,8 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   poolHref,
   shortAddress,
+  type AnalyticsExploreResponse,
+  type AnalyticsPoolRow,
   type CreatorRow,
   type CreatorsResponse,
 } from "@pools/core";
@@ -527,4 +529,131 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "href",
     poolHref(items[0].bestLaunch!),
   );
+});
+
+/** A creator's own page reads its launches through the explore read; this
+    serves one creator's launch history, newest first, where only every
+    `measuredEvery`th launch carries a market figure. */
+const creatorAddress = "0x00d153da1a8a38d3903273295257e7d25cf78a57";
+function creatorLaunches(total: number, measuredEvery: number) {
+  return Array.from({ length: total }, (_, i): AnalyticsPoolRow => {
+    const measured = i % measuredEvery === 0;
+    const n = total - i;
+    return {
+      id: `0x${n.toString(16).padStart(64, "a")}`,
+      token: `0x${n.toString(16).padStart(40, "b")}`,
+      name: `Launch ${n}`,
+      symbol: `L${n}`,
+      launchTx: `0x${n.toString(16).padStart(64, "c")}`,
+      launchSender: creatorAddress,
+      launchBlock: 1_000_000 + n,
+      launchedAt: 1_700_000_000 + n * 60,
+      marketCoverage: null,
+      processed: false,
+      market: null,
+      stats: {
+        priceWei: measured ? "1000000000000" : null,
+        volumeWei: measured ? (BigInt(n) * 10n ** 17n).toString() : null,
+        liquidityWei: null,
+        change: measured ? 1.5 : null,
+        trades: measured ? (n % 2 ? 3 : 0) : null,
+        holders: null,
+        completeWindow: false,
+      },
+      asOf: null,
+      throughBlock: null,
+      generatedAt: null,
+      sourceKind: null,
+    };
+  });
+}
+async function serveCreatorLaunches(
+  page: Page,
+  launches: AnalyticsPoolRow[],
+  reads: { offset: number; limit: number }[] = [],
+) {
+  await page.route("**/api/product/explore/?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get("q") !== creatorAddress) return route.continue();
+    const offset = Number(params.get("offset") ?? 0);
+    const limit = Number(params.get("limit") ?? 25);
+    reads.push({ offset, limit });
+    await route.fulfill({
+      json: {
+        coverage,
+        broadMarketCutoff: null,
+        items: launches.slice(offset, offset + limit),
+        total: launches.length,
+        nextOffset: offset + limit < launches.length ? offset + limit : null,
+        window: "24h",
+        delivery: { source: "indexer" },
+      } satisfies AnalyticsExploreResponse & {
+        delivery: { source: "indexer" };
+      },
+    });
+  });
+}
+
+test("a creator's unmeasured launches show their identity and launch time with empty figures, under the launch count", async ({
+  page,
+  isMobile,
+}) => {
+  const launches = creatorLaunches(10, 4);
+  await serveCreatorLaunches(page, launches);
+  await page.goto(`/creators/${creatorAddress}/`);
+  const panel = page.locator(".creator-launches");
+  const rows = panel.locator(
+    isMobile
+      ? '.mobile-launch[data-row="resolved"]'
+      : 'tbody tr[data-row="resolved"]',
+  );
+  await expect(rows).toHaveCount(10);
+  // The badge is the count the read names, never a coverage claim.
+  await expect(panel.locator(".panel-heading .badge")).toHaveText("10");
+  await expect(panel).not.toContainText("covered");
+  // No launch waits on a pass that will not come: an unmeasured launch keeps
+  // its identity and launch time and leaves its figure cells empty.
+  await expect(panel).not.toContainText("Processing");
+  await expect(panel).not.toContainText("N/A");
+  const measured = rows.first();
+  const unmeasured = rows.nth(1);
+  await expect(measured.locator("a").first()).toHaveText("Launch 10 (L10)");
+  await expect(unmeasured.locator("a").first()).toHaveText("Launch 9 (L9)");
+  const utc = (seconds: number) =>
+    new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
+    " UTC";
+  if (isMobile) {
+    await expect(measured.locator(".mobile-launch-top .number")).toHaveText(
+      "1 ETH",
+    );
+    await expect(measured.locator(".mobile-launch-stats")).toHaveText(
+      `${utc(launches[0].launchedAt)} · No swap observed`,
+    );
+    await expect(unmeasured.locator(".mobile-launch-top .number")).toHaveText(
+      "",
+    );
+    await expect(unmeasured.locator(".mobile-launch-stats")).toHaveText(
+      utc(launches[1].launchedAt),
+    );
+    return;
+  }
+  const cells = (row: Locator) => row.locator("td");
+  await expect(cells(measured)).toHaveText([
+    "Launch 10 (L10)",
+    utc(launches[0].launchedAt),
+    "No swap observed",
+    "1 ETH",
+    "",
+  ]);
+  await expect(cells(unmeasured)).toHaveText([
+    "Launch 9 (L9)",
+    utc(launches[1].launchedAt),
+    "",
+    "",
+    "",
+  ]);
+  await expect(
+    cells(unmeasured).nth(2).locator(".unavailable"),
+    "the empty activity cell still says why",
+  ).toHaveAttribute("aria-label", "Unavailable: No measured activity");
 });

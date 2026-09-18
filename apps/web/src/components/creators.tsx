@@ -521,13 +521,19 @@ function CreatorDirectory() {
   );
 }
 
-/** A covered launch's trading state over the last 24 hours. */
+/**
+ * A measured launch's trading state over the last 24 hours. A launch the
+ * read has no market figure for shows no state at all, as its figure cells
+ * are empty: nothing here is waiting on a later pass.
+ */
 function launchActivity(p: AnalyticsPoolRow) {
-  return (p.stats.trades ?? 0) > 0
-    ? "Active"
-    : p.processed
-      ? "No swap observed"
-      : "Processing";
+  return p.stats.trades === null ? (
+    <Unavailable reason="No measured activity" />
+  ) : p.stats.trades > 0 ? (
+    "Active"
+  ) : (
+    "No swap observed"
+  );
 }
 
 /**
@@ -568,12 +574,14 @@ function CreatorProfile({ address }: { address: string }) {
         <div className="panel-heading">
           <h2>
             Launches{" "}
+            {/* The count the read names, and only that: a launch with no
+                market figure is still a launch. */}
             <span className="badge" data-pending={pending}>
               {failed
                 ? "unavailable"
                 : pending
                   ? "count pending"
-                  : `${pools.length} covered`}
+                  : (catalog.total ?? pools.length).toLocaleString()}
             </span>
           </h2>
           <Link href={`/wallet/${address}/?window=All`}>
@@ -612,7 +620,11 @@ function CreatorProfile({ address }: { address: string }) {
                     real one) instead of remounting under a shift-scoring
                     swap. */}
                   {(pools.length ? pools : [undefined]).map((p, index) => (
-                    <tr key={index} aria-hidden={!p}>
+                    <tr
+                      key={index}
+                      aria-hidden={!p}
+                      data-row={p ? "resolved" : "skeleton"}
+                    >
                       <td data-pending={!p}>
                         {p ? (
                           <Link href={poolHref(p)}>
@@ -656,7 +668,12 @@ function CreatorProfile({ address }: { address: string }) {
               table drops that column first. */}
             <div className="mobile-launches">
               {(pools.length ? pools : [undefined]).map((p, index) => (
-                <div className="mobile-launch" key={index} aria-hidden={!p}>
+                <div
+                  className="mobile-launch"
+                  key={index}
+                  aria-hidden={!p}
+                  data-row={p ? "resolved" : "skeleton"}
+                >
                   <div className="mobile-launch-top">
                     {p ? (
                       <Link href={poolHref(p)}>
@@ -668,9 +685,14 @@ function CreatorProfile({ address }: { address: string }) {
                     <Eth wei={p?.stats.volumeWei} pending={!p} />
                   </div>
                   <div className="mobile-launch-stats" data-pending={!p}>
-                    {p
-                      ? `${utc(p.launchedAt)} · ${launchActivity(p)}`
-                      : "Launch pending"}
+                    {p ? (
+                      <>
+                        {utc(p.launchedAt)}
+                        {p.stats.trades !== null && <> · {launchActivity(p)}</>}
+                      </>
+                    ) : (
+                      "Launch pending"
+                    )}
                   </div>
                 </div>
               ))}
