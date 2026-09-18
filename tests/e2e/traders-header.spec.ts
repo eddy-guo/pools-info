@@ -445,3 +445,52 @@ for (const width of [1440, 1280, 1024, narrowestDesktop]) {
     expect(geometry.page, "the page is the viewport's width").toBe(width);
   });
 }
+
+// A five-digit trade count, as the real board's busiest wallets carry: every
+// place the board prints one takes the thousands separator the pool page's
+// own trade count uses, 30,160 rather than 30160.
+test("the board prints its trade counts with thousands separators", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "the phone cards print no trade count");
+  const busy = { rankingTradeCount: 30160, supportedTradeCount: 30160 };
+  await page.route("**/api/product/leaderboard/**", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    const items = (json.items as Record<string, unknown>[]).map(
+      (item, index) =>
+        index === 0 || index === LIST_OFFSET ? { ...item, ...busy } : item,
+    );
+    await route.fulfill({ response, json: { ...json, items } });
+  });
+  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    await route.fulfill({
+      response,
+      json: { ...json, wallet: { ...json.wallet, ...busy } },
+    });
+  });
+  await page.addInitScript((address) => {
+    localStorage.setItem("poolsinfo.my-wallet.v1", address);
+  }, topWallet);
+  await page.goto("/traders/?window=All");
+  await settled(page);
+  await expect(
+    page
+      .locator(".trader-podium-card")
+      .first()
+      .locator(".trader-podium-card-record"),
+  ).toContainText("30,160 trades");
+  await expect(
+    page
+      .locator(".desktop-traders tbody tr[data-row=resolved]")
+      .first()
+      .locator("td")
+      .nth(5),
+  ).toHaveText("30,160");
+  await expect(page.locator(".my-rank .my-rank-summary")).toHaveText(
+    "realized +0.0114711 ETH across 30,160 trades",
+  );
+});

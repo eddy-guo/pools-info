@@ -315,8 +315,9 @@ export function ProductWallet({ address }: { address: string }) {
               {unindexed(data) ? (
                 <Unavailable />
               ) : (
-                (w?.rankingTradeCount ??
-                w?.supportedTradeCount ?? <Unavailable />)
+                ((
+                  w?.rankingTradeCount ?? w?.supportedTradeCount
+                )?.toLocaleString("en-US") ?? <Unavailable />)
               )}
             </Stat>
             <Stat pending={loading && !data} label="Volume">
