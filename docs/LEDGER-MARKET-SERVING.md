@@ -236,12 +236,27 @@ response is the accounting reader's, field for field; what its values mean:
   `flags`) serves its counts, its volume and null for every finance and for
   `position`, as before; the fold keeps its numbers, the reader never serves
   them.
+- **`curve`** is the accounting reader's per-sale curve at the ledger's hour
+  grain, the same `{time, wei}` points: for a wallet with a supported
+  position, a leading zero at the window's start (the window's first whole
+  hour; on All, the start of the first hour the wallet traded a supported
+  position in), then the cumulative realized in the window at the end of
+  each hour with a sale on a supported position (`agg_wallet_hours` summed
+  across pools per hour, from the refresh's first hour through the refresh's
+  own hour), and the header's own `realizedWei` at the window's cutoff, so
+  the chart's end equals the headline. A point sits at its hour's end, never
+  before its sales; the refresh's own hour, still open at the cutoff, ends at
+  the cutoff. An excluded position's hours are left out rather than drawn as
+  flat points: they carry no finance (migration 022), so the sum is the
+  header's either way, and a wallet whose positions are all excluded has no
+  curve, as before. Past about 500 hours the points are sampled as the
+  accounting reader sampled its sales, every k-th hour and the last, and
+  `curveSampled` says so. Nothing is interpolated: a wallet whose hours the
+  ledger has not folded has no point for them.
 - **`trades`** is empty and `tradesTruncated` false: the ledger keeps no row
   per sale (design decision D3), so the Trades tab reads 0 and no trade-share
-  link is emitted. **`curve`** is empty and `curveSampled` false: the hourly
-  cumulative curve from `agg_wallet_hours` is the next slice
-  (docs/AGGREGATE-LEDGER.md). Neither is ever served from the frozen
-  accounting tables, which would put two worlds on one page.
+  link is emitted. It is never served from the frozen accounting tables,
+  which would put two worlds on one page.
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
 
@@ -257,10 +272,14 @@ stats when the window has no row), and for the positions one
 `agg_pool_state` probe per position plus one `agg_wallet_hours` primary-key
 range grouped per pool; the busiest ranked wallet on the 17 Sep copy has
 3,070 hour rows and 23 positions, the widest a few thousand positions, which
-the 500 cap bounds on the wire but not in the mark's sum. Warm on the
-production-shape copy (Postgres 18): 15 to 45 ms end to end for a top-100
-wallet, 150 ms cold. The warm set for a cutover adds the four windows of the
-board's top rows.
+the 500 cap bounds on the wire but not in the mark's sum. The curve is one
+more `agg_positions_wallet` range (the supported positions) with one
+`agg_wallet_hours` primary-key range per position, grouped per hour and
+summed in one window pass: 3,176 shared buffers and 4 ms warm for that
+busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
+`min(hour)` over the same ranges on All. Warm on the production-shape copy
+(Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
+warm set for a cutover adds the four windows of the board's top rows.
 
 ## Before the switch is set
 
