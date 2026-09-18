@@ -48,14 +48,17 @@ has no migration privileges or startup migration command.
 No deployment is implied by these files. The website must be explicitly wired
 to this service after deployment and data validation.
 
-`MARKET_SOURCE` picks the store behind explore's market figures and the pool
-page's `market`, once at startup: unset or `broad` serves the broad rollups and
-deep publications; `ledger` serves every pool the aggregate ledger covers from
-`agg_pool_hours` and `agg_pool_state`, and additionally needs SELECT on
-`agg_streams`, `agg_batches`, `agg_pool_hours`, `agg_pool_state`,
-`agg_live_trades` and `pool_launch_sources`. What changes in the responses
-(`aggregate_ledger` coverage and unit-basis sources, hourly candles,
-`market.fdvWei`, one price per pool) is in `docs/LEDGER-MARKET-SERVING.md`.
+`MARKET_SOURCE` picks the store behind explore's market figures, the pool
+page's `market` and the trader leaderboard, once at startup: unset or `broad`
+serves the broad rollups, deep publications and the accounting tables;
+`ledger` serves every pool the aggregate ledger covers from `agg_pool_hours`
+and `agg_pool_state` and the leaderboard from `agg_wallet_windows`, and
+additionally needs SELECT on `agg_streams`, `agg_batches`, `agg_pool_hours`,
+`agg_pool_state`, `agg_live_trades`, `agg_wallets`, `agg_wallet_windows`,
+`agg_window_refreshes` and `pool_launch_sources`. What changes in the
+responses (`aggregate_ledger` coverage and unit-basis sources, hourly candles,
+`market.fdvWei`, one price per pool, the top-100 board) is in
+`docs/LEDGER-MARKET-SERVING.md`.
 
 ## HTTP contract
 
@@ -178,7 +181,7 @@ jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 | Endpoint                                                                    | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. Crowd returns an explicit unsupported/empty state. Missing metrics always sort last. |
-| `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination.                                                                                                                                                                 |
+| `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination. With `MARKET_SOURCE=ledger` the board is the top 100 per window from the ledger's windows and nothing beyond: `total` is at most 100, `nextOffset` is null once 100 rows are reachable, `offset` plus `limit` past 100 answers 400 `invalid_offset`, and `unrealizedWei` is null on every row (see "The trader leaderboard" in `docs/LEDGER-MARKET-SERVING.md`). |
 | `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row, a top-100-per-window-and-sort leaderboard over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination; no rank beyond 100 is served.                                |
 | `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted.                                                                                                                 |
 | `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                  |

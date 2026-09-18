@@ -1,21 +1,26 @@
 # Serving the market from the aggregate ledger
 
-The read API serves the screener's and the pool page's market figures from one
-of two stores, chosen once at startup by `MARKET_SOURCE`:
+The read API serves the screener's and the pool page's market figures, and
+the trader leaderboard, from one of two stores, chosen once at startup by
+`MARKET_SOURCE`:
 
 - `broad` (the default, and what an unset variable means): the canonical broad
-  rollups beside the deep publications (`docs/BROAD-MARKET-SERVING.md`),
-  byte for byte as before this switch existed.
+  rollups beside the deep publications (`docs/BROAD-MARKET-SERVING.md`) and
+  the accounting tables behind the leaderboard, byte for byte as before this
+  switch existed.
 - `ledger`: the aggregate ledger's `agg_pool_hours` and `agg_pool_state`
-  (`docs/AGGREGATE-LEDGER.md`) for every pool the ledger covers. Any other
-  pool answers exactly as with `broad`.
+  (`docs/AGGREGATE-LEDGER.md`) for every pool the ledger covers, and its
+  `agg_wallet_windows` for the leaderboard ("The trader leaderboard" below).
+  Any other pool answers exactly as with `broad`.
 
 Any other value refuses to start. The `listening` log line names the source in
 effect. With `ledger`, `/ready` also checks read access to `agg_streams`,
-`agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades` and the
-supply columns of migration 019. The code is `apps/api/src/ledger-market.ts`,
-the ledger branches of `broad-explore.ts` and `projected-explore.ts`, and the
-ledger cut in `observed-market-read.ts`. No endpoint is added.
+`agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades`,
+`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes` and the supply
+columns of migration 019. The code is `apps/api/src/ledger-market.ts`, the
+ledger branches of `broad-explore.ts` and `projected-explore.ts`, the ledger
+cut in `observed-market-read.ts` and `ledger-leaderboard.ts`. No endpoint is
+added.
 
 ## Which pools the ledger serves
 
@@ -107,6 +112,76 @@ that disagrees with the cursor, or a pool hour that starts after the cursor
 answers `503 market_evidence_invalid`; a deep publication at the cursor block
 with a different hash or time answers `503 market_identity_conflict`. The
 broad source is unaffected by any ledger row.
+
+## The trader leaderboard
+
+`GET /v1/leaderboard` is served from `agg_wallet_windows`
+(`packages/db/src/ledger-windows.ts`): one row per wallet per window, summed
+by the tip loop from whole UTC hours ending with the ledger cursor's hour,
+with the top of the board by realized already ranked. The response is the
+accounting board's, field for field; what its values mean changes:
+
+- **The board is the top 100 per window and nothing beyond** (captain, 17 Sep
+  2026). `total` is the eligible wallets up to 100, `nextOffset` is null once
+  100 rows are reachable, and `offset` plus `limit` past 100 answers 400
+  `invalid_offset` rather than a page of unranked rows. The broad source keeps
+  its deeper pages.
+- **Eligible** is the writer's rule: at least 10 supported trades in the
+  window on a supported position, the predicate migration 020's partial index
+  carries. `minTrades=10` and `metric=realized` (the website's default; it
+  never sends a gate) read the writer's own `rank` off the rank index, one
+  probe per address, and `total` is the refresh's ranked count. Any other gate or metric orders the
+  same eligible rows the same way (realized or net descending, the address
+  breaking ties, so the realized order equals the materialised ranks whenever
+  the gate is 10) and counts them up to 100; the page's last figure bounds
+  the candidates first, as the writer's `rankWindow` does, so the tie-break
+  sort touches a page of rows rather than the window's whole eligible set.
+- **Figures**: `realizedWei` is proceeds minus disposed cost of the window's
+  sales at average cost, with basis carried in from before the window (a
+  token bought last week and sold today realizes against last week's cost);
+  `netWei` is the window's own cash out minus cash in; `roi` is realized over
+  the window's disposed cost (null when nothing bought was sold, as for a
+  sale of tokens received at zero cost); `wins`/`losses` count closed
+  inventory cycles by their gain; `avgHold` is the closed cycles' hold time;
+  `bestWei` the best single sale; `tradeCount` every attributed swap and
+  `supportedTradeCount` those on supported positions; `last` the wallet's
+  last activity across its positions (the same in every window).
+  `unrealizedWei` is null on every row: it needs a price per position and is
+  the wallet page's figure. `asOf` and `oldestAsOf`, on the coverage and on
+  every row, are the cursor the window's rows were summed to
+  (`agg_window_refreshes.through_timestamp`, at most a refresh interval behind
+  the ledger cursor), and `completeWindow` is true, since the ledger folds
+  every swap since launch. `coverage.pnlScope` is
+  `attributed_positions_all_pools` and `processedPools` the pools with a
+  trade (`agg_pool_state`).
+- **Windows** are hour-aligned as the pool figures are: 24h is the 24 whole
+  hours ending with the cursor's hour, so a wallet whose trades sit in the
+  window's first hour leaves the board when the cursor's hour moves. 1h and
+  6h are served from their own rows (the tip loop refreshes all six).
+- **Population**: the accounting board ranked wallets on the 1,364 deep-tier
+  pools whose captures stop minutes after launch and excluded every
+  wrapper-routed position; the ledger's board ranks every attributed wallet on
+  every pool with a trade, and its top 100 shares no wallet with the old
+  board's on any window (`docs/LEDGER-CUTOVER.md`, "The trader leaderboard:
+  the old board beside the new"). Zero-cost-inflow positions count toward a
+  wallet's total (design decision D2 stands as the writer ranks them).
+
+Failure behaviour: a ledger with no cursor or no pool hour answers as with
+`broad` (the accounting tables); a window without a refresh row, which a
+walk-back leaves until the tip loop's next refresh, answers 503
+`leaderboard_refresh_pending`; a refresh past the cursor answers 503
+`market_evidence_invalid`.
+
+Cold cost, measured on a production-shape copy (Postgres 18, 370k All rows,
+86k eligible): the default board touches about 480 pages per window (the rank
+index and one `agg_wallets` probe per row) plus the coverage's catalog count
+(3,950 pages of `indexed_pools`, the same statement explore's coverage runs)
+and the `agg_pool_state` count (1,559 pages); warm, 20 to 30 ms end to end.
+`metric=net` has no index and reads the window's whole eligible set through
+the partial index (about 8,600 heap pages on All, 5,300 on 30d, 27 to 46 ms
+warm); a gate under 10 reads the window's rows without an index. The warm
+set for a cutover (`docs/LEDGER-CUTOVER.md`) is therefore the four default
+boards, the four `metric=net` boards, and explore's catalog count.
 
 ## Before the switch is set
 
