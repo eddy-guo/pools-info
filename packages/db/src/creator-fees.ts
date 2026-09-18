@@ -49,23 +49,26 @@ export async function creatorFeeCoverage(db: Client) {
 }
 
 /** The launch-stream batches whose retained logs can fill an unknown flag,
- * oldest first, with the count of such pools in each. `scope` "unpublished"
- * names only pools with no deep publication; "all" every unknown flag. A pool
- * whose launch reached the catalog through another source only is left out:
- * it has no retained log to derive from. */
+ * oldest first, with the count of such pools in each; a pool counts under
+ * its oldest retained source only. `scope` "unpublished" names only pools
+ * with no deep publication; "all" every unknown flag. A pool whose launch
+ * reached the catalog through another source only is left out: it has no
+ * retained log to derive from. */
 export async function unresolvedCreatorFeeBatches(
   db: Client,
   scope: "unpublished" | "all",
 ): Promise<UnresolvedCreatorFeeBatch[]> {
   const rows = (
     await db.query(
-      `SELECT s.batch_end::text AS batch_end, count(DISTINCT p.pool_id)::int AS pools
-         FROM indexed_pools p
-         JOIN pool_launch_sources s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.stream_key=$1
-        WHERE p.chain_id=4663 AND p.creator_fees IS NULL
-          AND ($2 OR NOT EXISTS(SELECT 1 FROM analytics_pool_snapshots a
-            WHERE a.chain_id=p.chain_id AND a.pool_id=p.pool_id))
-        GROUP BY s.batch_end ORDER BY s.batch_end`,
+      `SELECT batch_end::text AS batch_end, count(*)::int AS pools FROM (
+         SELECT p.pool_id, min(s.batch_end) AS batch_end
+           FROM indexed_pools p
+           JOIN pool_launch_sources s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.stream_key=$1
+          WHERE p.chain_id=4663 AND p.creator_fees IS NULL
+            AND ($2 OR NOT EXISTS(SELECT 1 FROM analytics_pool_snapshots a
+              WHERE a.chain_id=p.chain_id AND a.pool_id=p.pool_id))
+          GROUP BY p.pool_id) x
+        GROUP BY batch_end ORDER BY batch_end`,
       [ledgerLaunchStreamIdentity.key, scope === "all"],
     )
   ).rows;
