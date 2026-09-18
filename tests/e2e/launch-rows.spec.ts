@@ -76,8 +76,8 @@ test("the launches tab reads as launches, not as unavailable cells", async ({
         ),
       ].filter(shown).length,
       firstLine: list[0]?.querySelector(".launch-line")?.textContent ?? null,
-      firstAge: list[0]?.querySelector("[data-launch-row] time")?.textContent ??
-        null,
+      firstAge:
+        list[0]?.querySelector("[data-launch-row] time")?.textContent ?? null,
       firstAddress:
         list[0]?.querySelector("[data-launch-row] .address-chip .mono")
           ?.textContent ?? null,
@@ -160,4 +160,56 @@ test("a launch rail card shows its age and sender, never two N/A marks", async (
     [...new Set(rail.map((card) => card.height))],
     "every card keeps one height",
   ).toHaveLength(1);
+});
+
+test("a measured row whose read carries no price leaves the price cell empty, deriving nothing from the raw sqrt price", async ({
+  page,
+}) => {
+  /* The sweep found rows with a volume and a trade count but
+     `stats.priceWei: null`, while the same object carried
+     `marketCoverage.rawPrice.sqrtPriceX96`. A price is arithmetic on a
+     displayed figure and belongs to the read API: the page shows the figures
+     it was given and an empty cell for the one it was not. */
+  await page.route("**/api/product/explore/?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get("limit") === "6") return route.continue();
+    const response = await route.fetch();
+    const payload = await response.json();
+    const first = payload.items[0];
+    first.stats.priceWei = null;
+    first.marketCoverage = {
+      ...(first.marketCoverage ?? {
+        source: "canonical_broad",
+        startBlock: 1,
+        cutoff: { block: 23791928, hash: `0x${"1".repeat(64)}`, asOf: 1 },
+        windowStart: 0,
+        indexedAt: "2026-09-17T00:00:00.000Z",
+        unitsConflict: false,
+        unitBasis: null,
+        priceBaseline: null,
+      }),
+      rawPrice: {
+        block: 23791928,
+        hash: `0x${"1".repeat(64)}`,
+        asOf: 1,
+        sqrtPriceX96: "1236582724772573764280751478506603",
+      },
+    };
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto("/");
+  const first = rows(page).first();
+  await expect(first).toBeVisible();
+  /* An empty cell has no box, so it cannot be filtered as visible; the
+     row it sits in is the visible one. */
+  const price = first.locator(".price");
+  await expect(price).toHaveCount(1);
+  await expect(price).toHaveClass(/unavailable/);
+  await expect(price).toHaveText("");
+  await expect(price).toHaveAttribute(
+    "aria-label",
+    "Unavailable: No observed swap price",
+  );
+  await expect(first).toContainText("ETH");
+  await expect(first).toContainText(/\d trades?/);
 });
