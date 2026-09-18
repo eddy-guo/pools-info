@@ -245,6 +245,11 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
     unindexedLine,
   );
+  // The most traded pools rail carries the same one line: an unobserved
+  // wallet has no window in which its activity could be empty.
+  await expect(page.locator(".wallet-page .wallet-top-pools")).toHaveText(
+    unindexedLine,
+  );
   // No rank badge at all: the board this wallet was clicked from ranks it.
   await expect(page.locator(".wallet-page .page-heading")).not.toContainText(
     "RANK",
@@ -308,6 +313,9 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   await expect(empty).toContainText("This wallet has no positions.");
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
     "No realized PnL in this window.",
+  );
+  await expect(page.locator(".wallet-page .wallet-top-pools")).toHaveText(
+    "No pool activity in this window.",
   );
   await expect(page.locator(".wallet-page .page-heading")).toContainText(
     "UNRANKED",
