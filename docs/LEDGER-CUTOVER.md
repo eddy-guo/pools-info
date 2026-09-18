@@ -169,6 +169,61 @@ path read 42 of 42 and 743 ETH). Launch counts and ranking are unchanged, and
 no figure is invented for an unmeasured launch. Serving creators from the
 ledger would close that gap.
 
+## The trader leaderboard: the old board beside the new
+
+The trader leaderboard was the last product read still on the copied
+accounting tables after the switch above: frozen at 15 Sep 22:47Z, computed
+over deep captures that stop minutes after each pool's launch, and excluding
+every wrapper-routed position. `apps/api/src/ledger-leaderboard.ts` serves it
+from `agg_wallet_windows` under the same `MARKET_SOURCE=ledger`
+(`docs/LEDGER-MARKET-SERVING.md`, "The trader leaderboard"); it goes live
+with the next api deployment on the switched service, no variable change.
+The board is supposed to differ, and this is by how much, so that whoever
+compares the two knows the change was expected. Walked with
+`node scripts/leaderboard-walk.mjs <old api> <new api>` on 18 Sep 2026
+01:5xZ: the old board from the production api
+(`https://api-production-9f93.up.railway.app`), the new from a local api in
+ledger mode over a production-shape copy of the ledger with its windows
+refreshed to cursor 65,409,776 (17 Sep 13:40:27Z). Rerun it after the deploy
+with both origins live to refresh the figures.
+
+| window | old: shown / eligible, asOf | old top, bottom (realized) | new: shown / eligible, asOf | new top, bottom (realized) | shared |
+| --- | --- | --- | --- | --- | --- |
+| 24h | 100 / 1,017, 15 Sep 22:47Z | 1.0466 ETH, 0.0578 ETH | 100 / 2,453, 17 Sep 13:40Z | 76.0767 ETH, 2.6528 ETH | 0 |
+| 7d | 100 / 1,405, 15 Sep 22:47Z | 1.0466 ETH, 0.0706 ETH | 100 / 9,206, 17 Sep 13:40Z | 138.3626 ETH, 9.6893 ETH | 0 |
+| 30d | 100 / 1,406, 15 Sep 22:47Z | 1.0466 ETH, 0.0706 ETH | 100 / 45,585, 17 Sep 13:40Z | 138.3626 ETH, 22.3487 ETH | 0 |
+| All | 100 / 1,431, 15 Sep 22:47Z | 1.0466 ETH, 0.0832 ETH | 100 / 86,281, 17 Sep 13:40Z | 246.6491 ETH, 25.6153 ETH | 0 |
+
+Shape: identical, field for field (the integration test pins the key set to
+the accounting mapper's); `unrealizedWei` is null on every new row where it
+was a figure or null before, `coverage.pnlScope` reads
+`attributed_positions_all_pools`, and `total` is at most 100.
+
+Population: the old board's four windows all top out at the same wallet and
+1.0466 ETH because its data ends on 15 Sep; the new board's eligible
+population (`agg_wallet_windows` rows with 10 or more supported trades on a
+supported position) is 2.4 to 60 times the old one per window, drawn from
+61,613 pools with a trade and 428,610 wallets against the old 1,364 pools,
+and no wallet of the old top 100 is in the new top 100 on any window. The
+reason is the design report's section 4.5, verified again here: on 7d, 30d
+and All every one of the new top 100 holds a wrapper-routed position (89, 72
+and 67 of them hold nothing else), the sniper and copy-trade wallets the old
+rule dropped with `unsupported_route`, and their token flow is
+transfer-verified. Two population facts the captain should know before
+looking: on 24h, 81 of the top 100 hold a zero-cost-inflow position (tokens
+received without a purchase), whose sales realize their full proceeds with
+no ROI (design decision D2 counts them; a predicate on the position flags
+would exclude them), and the top wallets are bots by trade count (up to
+43,063 supported trades on All).
+
+Warm set for the deploy: the four default boards
+(`/v1/leaderboard?window=<24h|7d|30d|All>&limit=100`, about 480 pages each
+plus the coverage's catalog and pool-state counts) and the four `metric=net`
+boards (the window's whole eligible set, about 8,600 pages on All), all
+measured under 60 ms warm on the copy; the old 7d board cost 821 ms cold on
+the accounting tables, and the new one's cold cost is the same order for the
+catalog count and smaller for the board itself.
+
 ## Reading our figures against pools.xyz
 
 The screener's and pool page's 24h volume and trades are the swaps in the
