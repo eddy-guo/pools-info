@@ -5533,29 +5533,14 @@ main {
 }
 /* The wallet's lists fit the panel's own width rather than scrolling
    sideways. Positions give the token at least 180px beside four 150px figures
-   (780px) and drop Cost under that; trades hold a 140px pool beside their
-   fixed columns (672px) and launches a 200px token (570px). Under 672px, where
-   trades no longer fit, every tab shows rows instead of its table. */
+   (780px) and drop Cost under that (630px); launches hold a 200px token beside
+   their fixed columns (570px). Under 672px both tabs show rows instead of
+   their tables. */
 .wallet-activity {
   container: wallet-activity / inline-size;
 }
 .wallet-positions-table {
   min-width: 780px;
-}
-.wallet-trades-table {
-  min-width: 672px;
-}
-.wallet-trades-table th:nth-child(1) {
-  width: 190px;
-}
-.wallet-trades-table th:nth-child(3) {
-  width: 72px;
-}
-.wallet-trades-table th:nth-child(4) {
-  width: 130px;
-}
-.wallet-trades-table th:nth-child(5) {
-  width: 140px;
 }
 .wallet-launches-table {
   min-width: 570px;
@@ -5566,7 +5551,6 @@ main {
 .wallet-launches-table th:nth-child(3) {
   width: 180px;
 }
-.wallet-trades-table td:nth-child(2),
 .wallet-launches-table td:first-child {
   overflow: hidden;
   text-overflow: ellipsis;

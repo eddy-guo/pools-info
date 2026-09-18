@@ -148,6 +148,10 @@ function useLeaderboard(
 /** Shared row markup for the ranked list and the Following tab: `pending`
     means the slot is reserved but not yet resolved, `w` undefined with
     `pending` false means the slot is known to hold nothing. */
+/** The trades the board ranked a wallet on, with thousands separators as the
+    pool page prints its trade count (30,160, never 30160). */
+const tradeCount = (w: AnalyticsWalletSummary) =>
+  (w.rankingTradeCount ?? w.supportedTradeCount).toLocaleString("en-US");
 function DesktopTraderRow({
   w,
   index,
@@ -216,13 +220,7 @@ function DesktopTraderRow({
         )}
       </td>
       <td data-pending={pending}>
-        {w ? (
-          <>{w.rankingTradeCount ?? w.supportedTradeCount}</>
-        ) : pending ? (
-          "Pending"
-        ) : (
-          " "
-        )}
+        {w ? <>{tradeCount(w)}</> : pending ? "Pending" : " "}
       </td>
       <td data-pending={pending}>
         <Eth pending={pending} wei={w?.volumeWei} />
@@ -438,7 +436,7 @@ function PodiumCard({
             <span>
               {w.wins}W · {w.losses}L
             </span>
-            <span>{w.rankingTradeCount ?? w.supportedTradeCount} trades</span>
+            <span>{tradeCount(w)} trades</span>
           </>
         ) : (
           <span data-pending={pending}>{pending ? "Pending" : " "}</span>
@@ -504,10 +502,7 @@ function MyRankRow({
       ) : w.rank ? (
         <span className="my-rank-summary" key="ranked">
           realized <Eth wei={w.realizedWei} signed /> across{" "}
-          <span className="number">
-            {w.rankingTradeCount ?? w.supportedTradeCount}
-          </span>{" "}
-          trades
+          <span className="number">{tradeCount(w)}</span> trades
         </span>
       ) : (
         <span className="my-rank-summary" key="unranked">

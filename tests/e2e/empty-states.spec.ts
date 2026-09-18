@@ -260,7 +260,7 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions",
   );
-  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades");
+  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   // The launches are real: they come from the catalog, not the accounting.
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
@@ -320,11 +320,142 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions0",
   );
-  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades0");
+  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
   );
   await expect(page.locator(".wallet-page")).not.toContainText(unindexedLine);
+});
+
+/*
+ * The aggregate ledger serves a wallet's header, window figures and positions
+ * but no per-wallet trade list and no curve yet (trades: [], curve: [] beside
+ * a real tradeCount). The production page of 18 Sep 2026 read that as three
+ * contradictions: a Trades tab at 0 beside a Trades tile of 594, "No realized
+ * PnL in this window." under a Realized PnL tile of +198.89 ETH, and every one
+ * of its 129 positions rendered at once.
+ */
+/* Sixty positions, more than two Show more pages. */
+const servedPositions = Array.from({ length: 60 }, (_, i) => ({
+  poolId: `0x${(i + 1).toString(16).padStart(64, "a")}`,
+  token: `0x${(i + 1).toString(16).padStart(40, "a")}`,
+  symbol: `P${i + 1}`,
+  decimals: 18,
+  launchTx: `0x${(i + 1).toString(16).padStart(64, "b")}`,
+  asOf: 1789695885,
+  throughBlock: 65841861,
+  supported: true,
+  flags: [],
+  realizedWei: String(BigInt(i + 1) * 10n ** 15n),
+  unrealizedWei: "0",
+  netWei: String(BigInt(i + 1) * 10n ** 15n),
+  volumeWei: String(BigInt(60 - i) * 10n ** 17n),
+  position: {
+    poolId: `0x${(i + 1).toString(16).padStart(64, "a")}`,
+    trader: wallet,
+    quantity: "0",
+    costWei: "0",
+    realizedWei: String(BigInt(i + 1) * 10n ** 15n),
+    proceedsWei: String(BigInt(i + 1) * 10n ** 17n),
+    investedWei: String(BigInt(i + 1) * 10n ** 17n),
+    buys: 5,
+    sells: 5,
+    flags: [],
+    realizations: [],
+  },
+}));
+
+test("a served wallet whose curve is not sent says so, with no Trades tab and its positions in pages", async ({
+  page,
+}, testInfo) => {
+  const { viewport } = surface(testInfo);
+  await page.setViewportSize(viewport);
+  await trackShifts(page);
+  await page.route(`**/api/product/wallets/${wallet}**`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        wallet: {
+          ...body.wallet,
+          tradeCount: 594,
+          supportedTradeCount: 594,
+          rankingTradeCount: 594,
+          realizedWei: "198890000000000000000",
+        },
+        positions: servedPositions,
+        positionsTruncated: false,
+        trades: [],
+        tradesTruncated: false,
+        curve: [],
+        launches,
+        launchesTruncated: false,
+      },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  // The tile keeps the served count; the strip has no Trades tab to
+  // contradict it.
+  await expect(tile(page, "Trades")).toHaveText("594");
+  await expect(tile(page, "Realized PnL")).toHaveText("+198.89 ETH");
+  await expect(page.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("tablist", { name: "Wallet activity" }).getByRole("tab"),
+  ).toHaveText(["Positions60", "Launches129"]);
+  // The curve panel says the curve is not served, never that there is no
+  // realized PnL under a tile that shows some; the readout keeps its dash.
+  await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
+    "The PnL curve is not served for this wallet yet.",
+  );
+  await expect(page.locator(".wallet-page .chart-readout time")).toHaveText(
+    "No observations",
+  );
+  await expect(
+    page.locator(".wallet-page .chart-readout .unavailable"),
+  ).toHaveText("\u2013");
+  await expect(page.locator(".wallet-page")).not.toContainText(
+    "No realized PnL",
+  );
+  // The positions come in pages under the shared Show more control, not
+  // all at once: 25 rows from first paint, 25 more per click, the count
+  // reading off the rows on hand.
+  const rows = page
+    .locator(".wallet-activity [data-row='resolved']")
+    .filter({ visible: true });
+  const foot = page.locator(".wallet-activity .pagination");
+  await expect(rows).toHaveCount(25);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 25 of 60",
+  );
+  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+  expect(
+    await bufferedShiftSum(page),
+    "every non-input layout shift since navigation",
+  ).toBeLessThan(0.001);
+  const more = foot.getByRole("button", { name: "Show 25 more" });
+  await more.click();
+  await expect(rows).toHaveCount(50);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 50 of 60",
+  );
+  await expect(page).toHaveURL(/limit=50/);
+  // The first newly revealed row takes focus, and the last page names the
+  // rows it has left.
+  await expect(
+    page.locator("[data-row-index='25'] a").filter({ visible: true }),
+  ).toBeFocused();
+  await expect(
+    foot.getByRole("button", { name: "Show 10 more" }),
+  ).toBeVisible();
+  await foot.getByRole("button", { name: "Show 10 more" }).click();
+  await expect(rows).toHaveCount(60);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 60 of 60",
+  );
+  await expect(foot.getByRole("button")).toHaveCount(0);
 });
 
 /*
