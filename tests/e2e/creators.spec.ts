@@ -423,6 +423,16 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
       "aria-label",
       "Unavailable: No measured launch",
     );
+    // A creator with launches the read has no figure for shows no bar: its
+    // "4 of 4" would read as a survival rate over the 21 launches beside it.
+    const partial = cards.nth(3).locator(".mobile-creator-stats");
+    await expect(partial).toContainText("Vol 266.9 ETH");
+    await expect(partial.locator(".still-trading")).toHaveCount(0);
+    await expect(partial.locator(".unavailable")).toHaveAttribute(
+      "aria-label",
+      "Unavailable: Not every launch measured",
+    );
+    await expect(cards.locator(".still-trading")).toHaveCount(3);
     await expect(page.getByText("N/A")).toHaveCount(0);
     for (const card of await cards.all()) {
       const box = await card.evaluate((node) => {
@@ -516,6 +526,18 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "aria-label",
     "Unavailable: No measured launch",
   );
+  // So does one whose measured launches are fewer than its launches: the
+  // export's fraction is "traded of launches", and "4 of 4" beside a launch
+  // count of 21 would read as a survival rate the figures do not support.
+  const partialCell = rowsLocator.nth(3).locator("td").nth(3);
+  await expect(rowsLocator.nth(3).locator("td").nth(2)).toHaveText("21");
+  await expect(partialCell).toHaveText("");
+  await expect(partialCell.locator(".still-trading")).toHaveCount(0);
+  await expect(partialCell.locator(".unavailable")).toHaveAttribute(
+    "aria-label",
+    "Unavailable: Not every launch measured",
+  );
+  await expect(rowsLocator.locator(".still-trading")).toHaveCount(3);
   await expect(page.getByText("N/A")).toHaveCount(0);
 
   // Volume and median: 14/400 in the secondary numeric colour, right-aligned.

@@ -29,23 +29,26 @@ type CreatorSort = (typeof CREATOR_SORTS)[number][0];
 const CAP = 100;
 
 /** The export's still-trading cell: a 132x5 fill under the fraction and
-    percentage it represents. Left-aligned text never moves its start when
-    the digits change, so this needs no shift-avoidance keying. */
-function StillTrading({
-  traded,
-  measured,
-}: {
-  traded: number;
-  measured: number;
-}) {
-  const pct = Math.round((traded / measured) * 100);
+    percentage it represents, whose denominator the export defines as the
+    creator's launch count. The read's `traded` counts measured launches
+    only, so the cell is shown when every launch is measured and the fraction
+    is the one the row's launch count names; a creator with launches the read
+    has no figure for gets an empty cell, since "8 of 8" beside 414 launches
+    reads as a survival rate the figures do not support. Left-aligned text
+    never moves its start when the digits change, so this needs no
+    shift-avoidance keying. */
+function StillTrading({ r }: { r: CreatorRow }) {
+  if (!r.measured) return <Unavailable reason="No measured launch" />;
+  if (r.measured < r.launches)
+    return <Unavailable reason="Not every launch measured" />;
+  const pct = Math.round((r.traded / r.measured) * 100);
   return (
     <span className="still-trading">
       <span className="still-trading-bar" aria-hidden="true">
         <span style={{ width: `${pct}%` }} />
       </span>
       <span className="still-trading-label">
-        {traded} of {measured} · {pct}%
+        {r.traded} of {r.measured} · {pct}%
       </span>
     </span>
   );
@@ -99,11 +102,7 @@ function MobileCreatorRow({
                 </>
               )}
             </span>
-            {r.measured ? (
-              <StillTrading traded={r.traded} measured={r.measured} />
-            ) : (
-              <Unavailable reason="No measured launch" />
-            )}
+            <StillTrading r={r} />
           </div>
         </Fragment>
       ) : pending ? (
@@ -363,14 +362,7 @@ function CreatorDirectory() {
                     </td>
                     <td data-pending={pending}>
                       {r ? (
-                        r.measured ? (
-                          <StillTrading
-                            traded={r.traded}
-                            measured={r.measured}
-                          />
-                        ) : (
-                          <Unavailable reason="No measured launch" />
-                        )
+                        <StillTrading r={r} />
                       ) : pending ? (
                         "Pending"
                       ) : (
