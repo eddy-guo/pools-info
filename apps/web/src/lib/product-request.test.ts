@@ -8,6 +8,8 @@ import {
 } from "./product-server";
 import {
   cardCurve,
+  cardExportHero,
+  cardExportHeroSize,
   cardExportTrio,
   cardHero,
   cardStats,
@@ -266,17 +268,13 @@ test("share card options round-trip through the query the modal and the route sh
   const chosen = {
     window: "7d" as const,
     preset: "mint" as const,
-    design: "export" as const,
+    design: "liquid" as const,
     anonymous: true,
     notional: true,
   };
   assert.deepEqual(parseCardOptions(cardQuery(chosen)), chosen);
   assert.equal(
-    cardUrl(`0x${"A".repeat(40)}`, {
-      ...chosen,
-      anonymous: false,
-      design: "liquid",
-    }),
+    cardUrl(`0x${"A".repeat(40)}`, { ...chosen, anonymous: false }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&notional=1`,
   );
   // The non-default design still round-trips into the URL, and independently
@@ -287,8 +285,25 @@ test("share card options round-trip through the query the modal and the route sh
       anonymous: false,
       notional: false,
       preset: "lime",
+      design: "export",
     }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&design=export`,
+  );
+  // The export design does not honour the notional option (its headline is
+  // the realized amount already), so the option never reaches its URL and a
+  // hand-written one reads as off: one image, not two identical ones.
+  assert.deepEqual(parseCardOptions(cardQuery({ ...chosen, design: "export" })), {
+    ...chosen,
+    design: "export",
+    notional: false,
+  });
+  assert.equal(
+    cardUrl(`0x${"a".repeat(40)}`, { ...chosen, design: "export" }),
+    `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&anon=1&design=export`,
+  );
+  assert.equal(
+    parseCardOptions(new URLSearchParams("design=export&notional=1")).notional,
+    false,
   );
   // A stale or hand-edited link still renders with the defaults.
   assert.deepEqual(
@@ -368,6 +383,30 @@ test("share card figures are signed, amount-free without notional and never plac
     record: "3W · 5L",
     bestTrade: null,
   });
+  // The export hero is the realized amount, as the captain's export draws it,
+  // so no stat in the trio restates it (sweep s6 defect 14: the hero and the
+  // ROI stat both read +187.32%).
+  const exportHero = cardExportHero(wallet);
+  assert.deepEqual(exportHero, { value: "-0.02336 ETH", tone: "down" });
+  assert.ok(
+    !Object.values(cardExportTrio(wallet, "ORBIT")).includes(
+      exportHero!.value,
+    ),
+  );
+  assert.deepEqual(
+    cardExportHero({ ...wallet, realizedWei: "1046600000000000000" }),
+    { value: "+1.047 ETH", tone: "up" },
+  );
+  assert.equal(cardExportHero({ ...wallet, realizedWei: null }), null);
+  // The design's 207 px hero fits the figures the export was drawn with; a
+  // longer one steps down to the largest size that fits the card's width.
+  assert.equal(cardExportHeroSize("+12.40 ETH"), 207);
+  assert.equal(cardExportHeroSize("+1.047 ETH"), 207);
+  assert.ok(cardExportHeroSize("-0.02336 ETH") < 207);
+  assert.ok(
+    cardExportHeroSize("-0.0001234 ETH") < cardExportHeroSize("-0.02336 ETH"),
+  );
+  assert.ok(cardExportHeroSize("-0.0001234 ETH") >= 120);
 });
 
 test("share card chart follows the wallet's own curve and names its top position", () => {

@@ -25,12 +25,13 @@ for (const route of routes) {
       "v4 · Robinhood Chain",
     );
     // CHAIN_REFRESH_DISABLED=1 makes /api/live-trades/ 503 in this suite, so
-    // the strip's dot settles on the feed's real, unstreaming state.
+    // the strip's dot settles on the rail's own word for a read that failed:
+    // delayed, never "Paused" (nobody paused it) and never "Live".
     await expect(page.locator(".subnav-live")).toHaveAttribute(
       "data-state",
-      "paused",
+      "delayed",
     );
-    await expect(page.locator(".subnav-live")).toHaveText("Paused");
+    await expect(page.locator(".subnav-live")).toHaveText("Delayed");
     await expect(strip).not.toContainText("block");
     await expect(strip).not.toContainText("indexed");
     await expect(page.getByRole("link", { name: "Methodology" })).toHaveCount(
@@ -203,7 +204,7 @@ test("the strip's Live dot turns green once the trade feed reports streaming", a
   );
 });
 
-test("the strip's Live dot shows Paused, never Live, when the feed read fails", async ({
+test("the strip's Live dot shows Delayed, never Live or Paused, when the feed read fails", async ({
   page,
 }) => {
   await page.route("**/api/live-trades/", async (route) => {
@@ -214,8 +215,72 @@ test("the strip's Live dot shows Paused, never Live, when the feed read fails", 
   const dot = page.locator(".subnav-live");
   await expect(dot).toHaveAttribute("data-state", "unknown");
   await expect(dot).toHaveText("");
+  const before = await dot.boundingBox();
+  await expect(dot).toHaveAttribute("data-state", "delayed");
+  await expect(dot).toHaveText("Delayed");
+  expect((await dot.boundingBox())!.width, "the reserved width holds").toBe(
+    before!.width,
+  );
+});
+
+// Sweep s6 defect 17: the strip read "Paused" while the rail said the feed
+// was running, and still "Paused" once the reader paused it. The strip now
+// carries the rail's own word, so every state the rail can be in reads the
+// same in both places, and a page with no rail names the feed as the rail
+// would (offline for a feed that never started, never "Paused").
+test("the strip tracks the rail through streaming, paused and offline", async ({
+  page,
+}) => {
+  await page.clock.install({
+    time: new Date(liveFeedFixture.coverage.asOf * 1000),
+  });
+  let offline = false;
+  await page.route("**/api/live-trades/", (route) =>
+    route.fulfill({
+      json: offline
+        ? {
+            ...liveFeedFixture,
+            events: [],
+            coverage: {
+              ...liveFeedFixture.coverage,
+              state: "uninitialized",
+              startBlock: null,
+              headBlock: null,
+              throughBlock: null,
+              throughHash: null,
+              asOf: null,
+              checkedAt: null,
+              lagBlocks: null,
+              discoveryThroughBlock: null,
+              discoveryLagBlocks: null,
+            },
+          }
+        : liveFeedFixture,
+    }),
+  );
+  await page.goto("/");
+  const dot = page.locator(".subnav-live");
+  const rail = page.getByRole("region", { name: "Recent trades" });
+  const railState = rail.getByRole("status");
+  await expect(railState).toHaveText("streaming");
+  await expect(dot).toHaveAttribute("data-state", "streaming");
+  await expect(dot).toHaveText("Live");
+  const width = (await dot.boundingBox())!.width;
+  await rail.getByRole("button", { name: "Pause feed" }).click();
+  await expect(railState).toHaveText("paused");
   await expect(dot).toHaveAttribute("data-state", "paused");
   await expect(dot).toHaveText("Paused");
+  expect((await dot.boundingBox())!.width).toBe(width);
+  await rail.getByRole("button", { name: "Resume feed" }).click();
+  await expect(railState).toHaveText("streaming");
+  await expect(dot).toHaveText("Live");
+  // A page without a rail polls on its own and names a feed that never
+  // started offline, the honest state while nothing feeds the rail.
+  offline = true;
+  await page.goto("/traders/");
+  await expect(dot).toHaveAttribute("data-state", "offline");
+  await expect(dot).toHaveText("Offline");
+  expect((await dot.boundingBox())!.width).toBe(width);
 });
 
 test.describe("Wallet profile entry", () => {

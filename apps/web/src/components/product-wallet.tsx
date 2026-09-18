@@ -499,9 +499,20 @@ export function ProductWallet({ address }: { address: string }) {
                         ))}
                       </div>
                       {data && !data.positions.length && (
+                        /* The hint offers the All window only while another
+                           is selected: with All on show there is nothing
+                           left to select. */
                         <EmptyState
-                          title="No positions in this window"
-                          description="Select All to see this wallet's full history."
+                          title={
+                            period === "All"
+                              ? "No positions"
+                              : "No positions in this window"
+                          }
+                          description={
+                            period === "All"
+                              ? "This wallet has no positions."
+                              : "Select All to see this wallet's full history."
+                          }
                         />
                       )}
                     </div>

@@ -521,7 +521,10 @@ export function ProductTraders() {
   const forKey = state.key === key;
   const settled = forKey && state.settled;
   const items = forKey ? state.items.slice(0, shown) : [];
-  const total = settled ? state.total : null;
+  /* The board is a top-100 board, so its display total is the API's count
+     capped there, as the creators list reads its own: the count line and the
+     Show more button then agree on where the list ends. */
+  const total = settled ? Math.min(state.total, CAP) : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
   /* No ranking was served, so none is drawn: the podium and the rows would
      otherwise shimmer indefinitely, reading as a board still on its way. */

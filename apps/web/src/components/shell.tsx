@@ -17,13 +17,23 @@ import { WalletProfileEntry } from "./wallet-profile";
 
 const oneEthWei = (10n ** 18n).toString();
 const LIVE_FEED_POLL_MS = 15000;
+/** One word per feed state, each distinct from the others and true to the rail's. */
+const liveFeedLabel: Record<LiveFeedState, string> = {
+  unknown: "",
+  streaming: "Live",
+  delayed: "Delayed",
+  paused: "Paused",
+  offline: "Offline",
+};
 
-/** Whether the trade feed the header's dot reports on is currently streaming.
-    A page that already streams (TradeStream) registers itself as a source
-    and this reads that poll's state; only a page with no such source polls
-    on its own, so the feed is never polled twice. Starts "unknown" (a
-    neutral dot, no label) rather than claiming either state before a read
-    confirms it; a failed read reads as "paused", never as streaming. */
+/** The state of the trade feed the header's dot reports on, in the rail's
+    own words. A page that already streams (TradeStream) registers itself as
+    a source and this reads that poll's state; only a page with no such
+    source polls on its own, so the feed is never polled twice. Starts
+    "unknown" (a neutral dot, no label) rather than claiming any state before
+    a read confirms it. The strip's own poll names the feed as the rail would:
+    a feed that never started is offline, a stale window or a failed read is
+    delayed, and only the rail's reader can pause it, so this never says so. */
 function useLiveFeedState(): LiveFeedState {
   const { hasSource, state: reported } = useSyncExternalStore(
     subscribeLiveFeedSnapshot,
@@ -48,13 +58,19 @@ function useLiveFeedState(): LiveFeedState {
           signal: AbortSignal.timeout(10000),
         });
         if (!response.ok) throw Error("unavailable");
-        const data = validateLiveFeed(await response.json());
+        const { coverage } = validateLiveFeed(await response.json());
         if (!cancelled)
           setPolled(
-            data.coverage.state === "current" ? "streaming" : "paused",
+            coverage.state === "uninitialized" || coverage.asOf == null
+              ? "offline"
+              : coverage.state === "current" &&
+                  Date.now() / 1000 - coverage.asOf <=
+                    coverage.staleAfterSeconds
+                ? "streaming"
+                : "delayed",
           );
       } catch {
-        if (!cancelled) setPolled("paused");
+        if (!cancelled) setPolled("delayed");
       } finally {
         if (!cancelled) timer = setTimeout(poll, LIVE_FEED_POLL_MS);
       }
@@ -161,11 +177,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <i aria-hidden="true" />
             <span className="subnav-live-label">
               <span className="subnav-live-value">
-                {liveFeed === "streaming"
-                  ? "Live"
-                  : liveFeed === "paused"
-                    ? "Paused"
-                    : ""}
+                {liveFeedLabel[liveFeed]}
               </span>
             </span>
           </span>

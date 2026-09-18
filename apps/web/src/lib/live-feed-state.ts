@@ -1,4 +1,16 @@
-export type LiveFeedState = "unknown" | "streaming" | "paused";
+/**
+ * The trade feed's state as the rail (`TradeStream`) names it: `unknown`
+ * until a first read answers, then the rail's own word, so the header strip
+ * can only ever show what the rail shows. `paused` is the reader's own
+ * choice; `offline` a feed that has never started; `delayed` a feed whose
+ * window is stale or whose last read failed.
+ */
+export type LiveFeedState =
+  | "unknown"
+  | "streaming"
+  | "delayed"
+  | "paused"
+  | "offline";
 type Snapshot = { hasSource: boolean; state: LiveFeedState };
 type Listener = () => void;
 

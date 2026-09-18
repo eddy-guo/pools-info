@@ -189,6 +189,9 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   ).toBe(true);
 });
 
+// The count line reads the same top-100 ceiling the button stops at, never
+// the API's raw total (sweep s6 defect 12: "Showing 100 of 1,405" with no
+// button and no way to reach the rest).
 test("the trader leaderboard never requests past its 100-row cap, even when more exist", async ({
   page,
 }) => {
@@ -200,7 +203,7 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
     const offset = Number(url.searchParams.get("offset") ?? 0);
     const limit = Number(url.searchParams.get("limit") ?? 0);
     seenCeilings.push(offset + limit);
-    await route.fulfill({ response, json: { ...json, total: 500 } });
+    await route.fulfill({ response, json: { ...json, total: 1405 } });
   });
 
   await page.goto("/traders/?window=All");
@@ -209,13 +212,16 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
   const count = pagination.locator(".pagination-count");
   const more = pagination.getByRole("button", { name: /^Show \d+ more$/ });
 
-  await expect(count).toHaveText("Showing 25 of 500");
+  await expect(count).toHaveText("Showing 25 of 100");
+  await expect(count).not.toContainText("1,405");
   for (const target of [50, 75, 100]) {
     await more.click();
     await expect(page).toHaveURL(new RegExp(`[?&]limit=${target}(?:&|$)`));
-    await expect(count).toHaveText(`Showing ${target.toLocaleString()} of 500`);
+    await expect(count).toHaveText(`Showing ${target.toLocaleString()} of 100`);
   }
   await expect(more).toHaveCount(0);
+  await expect(count, "the count and the button agree on where the list ends")
+    .toHaveText("Showing 100 of 100");
   expect(
     Math.max(...seenCeilings),
     "no request ever asks for a row past the 100th",

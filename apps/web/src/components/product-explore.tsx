@@ -173,6 +173,21 @@ const SCREENER_SORTS: readonly string[] = [
   "change",
   "launch",
 ] satisfies ScreenerSort[];
+/* The read API also accepts a crowd view, which it answers with no rows
+   (crowd launches are outside the registry), so the screener offers no tab
+   for it and a URL naming it reads as the default view. */
+type ScreenerView = Exclude<
+  NonNullable<AnalyticsExploreOptions["view"]>,
+  "crowd"
+>;
+const SCREENER_VIEWS = [
+  ["all", "All"],
+  ["gainers", "Gainers"],
+  ["new", "New"],
+  ["watchlist", "Watchlist"],
+] as const satisfies readonly (readonly [ScreenerView, string])[];
+const isScreenerView = (value: string): value is ScreenerView =>
+  SCREENER_VIEWS.some(([key]) => key === value);
 export function ProductExplore() {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -188,13 +203,17 @@ export function ProductExplore() {
   const { params, set: setQuery } = useQuery(),
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
-  const view = (params.get("view") ??
-      (params.has("watchlist")
-        ? "watchlist"
-        : "all")) as AnalyticsExploreOptions["view"],
+  /* A bookmarked view no tab offers, or an order no header offers (direction
+     included), reads as the default and leaves the URL at the next write. */
+  const requestedView = params.get("view"),
+    staleView = requestedView !== null && !isScreenerView(requestedView),
+    view: ScreenerView =
+      requestedView !== null && isScreenerView(requestedView)
+        ? requestedView
+        : params.has("watchlist")
+          ? "watchlist"
+          : "all",
     q = params.get("q") ?? "";
-  /* A bookmarked order no header offers reads as the default, direction
-     included, and leaves the URL at the next write. */
   const requested = params.get("sort"),
     staleSort = requested !== null && !SCREENER_SORTS.includes(requested),
     sort =
@@ -202,7 +221,11 @@ export function ProductExplore() {
       (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = (staleSort ? null : params.get("dir")) ?? "desc";
   const write = (updates: Record<string, string | null>) =>
-    setQuery(staleSort ? { sort: null, dir: null, ...updates } : updates);
+    setQuery({
+      ...(staleView ? { view: null } : null),
+      ...(staleSort ? { sort: null, dir: null } : null),
+      ...updates,
+    });
   /* A new query reads from the top: the panel's head comes back under the
      site header while the rows swap to skeletons, and the rows on show go
      back to the first page. */
@@ -263,7 +286,7 @@ export function ProductExplore() {
   );
   const query = new URLSearchParams({
     window,
-    view: view ?? "all",
+    view,
     q,
     sort,
     direction,
@@ -435,15 +458,7 @@ export function ProductExplore() {
           <section className="panel" ref={panelRef}>
             <div className="table-toolbar explore-toolbar">
               <div className="table-tabs" aria-label="Pool views">
-                {(
-                  [
-                    ["all", "All"],
-                    ["gainers", "Gainers"],
-                    ["new", "New"],
-                    ["crowd", "Crowd"],
-                    ["watchlist", "Watchlist"],
-                  ] as const
-                ).map(([key, label]) => (
+                {SCREENER_VIEWS.map(([key, label]) => (
                   <button
                     key={key}
                     className={view === key ? "active" : ""}

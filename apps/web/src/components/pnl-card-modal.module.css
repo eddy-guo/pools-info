@@ -179,6 +179,16 @@
   outline: 2px solid var(--ac);
   outline-offset: 2px;
 }
+/* A design that does not honour the option shows it disabled, its label
+   saying why, rather than a switch that renders the same image either way. */
+.toggle[aria-disabled="true"],
+.toggle[aria-disabled="true"] input {
+  cursor: default;
+}
+.toggle[aria-disabled="true"] strong,
+.toggle[aria-disabled="true"] .knob {
+  opacity: 0.5;
+}
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -113,9 +113,13 @@ test("the wallet's empty positions use the same designed empty state", async ({
 
   await page.goto(`/wallet/${wallet}/?window=All`);
   const empty = page.locator(".table-region .empty-state");
+  // With All already selected the hint has nothing left to offer (sweep s6
+  // defect 16: "Select All" while All was the selected window).
   await expect(
-    empty.getByRole("heading", { name: "No positions in this window" }),
+    empty.getByRole("heading", { name: "No positions", exact: true }),
   ).toBeVisible();
+  await expect(empty).toContainText("This wallet has no positions.");
+  await expect(empty).not.toContainText("Select All");
   await expect(empty.locator(".empty-symbol svg")).toBeVisible();
 
   const region = (await page
@@ -133,6 +137,26 @@ test("the wallet's empty positions use the same designed empty state", async ({
     await bufferedShiftSum(page),
     "every non-input layout shift since navigation",
   ).toBe(0);
+  // Any narrower window still points at All, the one action that could
+  // change the answer. The window's own read is awaited so the routed
+  // response above is never disposed under its handler.
+  const narrowed = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/product/wallets/${wallet}`) &&
+      response.url().includes("window=7d"),
+  );
+  await page
+    .locator(".wallet-page .segmented")
+    .getByRole("button", { name: "7d", exact: true })
+    .click();
+  await narrowed;
+  await expect(
+    empty.getByRole("heading", { name: "No positions in this window" }),
+  ).toBeVisible();
+  await expect(empty).toContainText(
+    "Select All to see this wallet's full history.",
+  );
+  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
 });
 
 /*

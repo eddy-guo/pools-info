@@ -621,10 +621,11 @@ test("a live feed that has never started reads as offline, never as streaming or
     return getComputedStyle(dot).backgroundColor === color;
   });
   expect(green, "no green dot over a feed that never started").toBe(false);
-  // The header strip mirrors the rail: not streaming, and not left unknown.
+  // The header strip mirrors the rail's own word: offline, never "Paused"
+  // (nobody paused it) and not left unknown.
   const strip = page.locator(".subnav-live");
-  await expect(strip).toHaveAttribute("data-state", "paused");
-  await expect(strip).toHaveText("Paused");
+  await expect(strip).toHaveAttribute("data-state", "offline");
+  await expect(strip).toHaveText("Offline");
 });
 
 test("live feed has bounded rows, no overlapping polls, stops when hidden, and recovers from a failed window", async ({
@@ -1228,7 +1229,8 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "download",
     "poolsinfo-pnl-all.png",
   );
-  await dialog.getByRole("switch", { name: /Show notional/ }).click();
+  const notionalSwitch = dialog.getByRole("switch", { name: /Show notional/ });
+  await notionalSwitch.click();
   await expect(card).toHaveAttribute(
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
@@ -1241,16 +1243,28 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     designToggle.getByRole("button", { name: "Liquid" }),
   ).toHaveAttribute("aria-pressed", "true");
   await designToggle.getByRole("button", { name: "Export" }).click();
+  // The export design's headline is already the realized amount and its
+  // fixed trio has no slot for the volume, so the notional option is offered
+  // disabled there with its reason on the label, and stays out of the URL
+  // rather than naming an option the image ignores (sweep s6 defect 13).
+  await expect(notionalSwitch).toBeDisabled();
+  await expect(notionalSwitch).not.toBeChecked();
+  await expect(
+    dialog.locator("label").filter({ hasText: "Show notional" }),
+  ).toContainText("Not offered on the Export design");
   await expect(card).toHaveAttribute(
     "src",
-    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
   );
   expect(await preview.boundingBox()).toEqual(reserved);
   await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
     "href",
-    `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1&design=export`,
+    `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
   );
   await designToggle.getByRole("button", { name: "Liquid" }).click();
+  // The Liquid choice was kept while the option was out of reach.
+  await expect(notionalSwitch).toBeEnabled();
+  await expect(notionalSwitch).toBeChecked();
   await expect(card).toHaveAttribute(
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
@@ -1263,7 +1277,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "?window=All&theme=mint",
     "?window=All&theme=mint&anon=1",
     "?window=All&theme=mint&anon=1&notional=1",
-    "?window=All&theme=mint&anon=1&notional=1&design=export",
+    "?window=All&theme=mint&anon=1&design=export",
   ]);
   expect(await dialog.innerText()).not.toMatch(
     /reconcil|coverage|captur|excluded|methodolog|before gas|processed pools/i,
@@ -1509,7 +1523,10 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   const png = await response.body();
   expect(png.readUInt32BE(16)).toBe(1200);
   expect(png.readUInt32BE(20)).toBe(630);
-  expect(png.length).toBeLessThan(100_000);
+  // A coarse bound against a runaway image (an embedded token picture, say):
+  // the Liquid card's preset glow at the reference's strength renders at
+  // about 99 KB, the export design at about 66 KB.
+  expect(png.length).toBeLessThan(120_000);
   // The export design is the same route, one query parameter away, and
   // renders the real wallet at the same size within the same budget.
   await dialog
@@ -1533,7 +1550,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
   const exportPng = await exportResponse.body();
   expect(exportPng.readUInt32BE(16)).toBe(1200);
   expect(exportPng.readUInt32BE(20)).toBe(630);
-  expect(exportPng.length).toBeLessThan(100_000);
+  expect(exportPng.length).toBeLessThan(120_000);
   await page.screenshot({
     path: testInfo.outputPath("real-positive-wallet-card.png"),
     fullPage: true,

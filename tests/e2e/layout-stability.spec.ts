@@ -216,7 +216,7 @@ for (const entry of routes) {
               nodes.map((node) => node.getBoundingClientRect().toJSON()),
             );
         const tabs = await rects(".table-tabs button");
-        expect(tabs, "all, gainers, new, crowd and watchlist").toHaveLength(5);
+        expect(tabs, "all, gainers, new and watchlist").toHaveLength(4);
         tabs.forEach((tab, index) => {
           expect(tab.y, "tabs share one row").toBe(tabs[0].y);
           if (index)

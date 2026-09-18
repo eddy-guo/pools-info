@@ -5,6 +5,8 @@ import sharp from "sharp";
 import {
   cardCurve,
   cardEth,
+  cardExportHero,
+  cardExportHeroSize,
   cardExportTrio,
   cardHero,
   cardStats,
@@ -252,8 +254,8 @@ const rankFormat = new Intl.NumberFormat("en-US");
 
 /**
  * The captain's export layout: wordmark, window chip, monogram + name + rank,
- * the PnL headline, the fixed ROI / Record / Best trade trio and the profile
- * URL - exactly those eight elements, nothing else.
+ * the realized PnL headline in ETH, the fixed ROI / Record / Best trade trio
+ * and the profile URL - exactly those eight elements, nothing else.
  */
 function ExportCard({
   address,
@@ -279,6 +281,7 @@ function ExportCard({
     { label: "Record", value: trio.record },
     { label: "Best trade", value: trio.bestTrade },
   ];
+  const heroSize = cardExportHeroSize(heroValue);
   return (
     <div
       style={{
@@ -369,9 +372,9 @@ function ExportCard({
           <span
             style={{
               marginTop: 12,
-              fontSize: 207,
+              fontSize: heroSize,
               fontWeight: 600,
-              letterSpacing: -9.3,
+              letterSpacing: -heroSize * 0.045,
               lineHeight: 1,
               color: heroColor,
             }}
@@ -448,7 +451,7 @@ export async function GET(
       launch,
     );
     const w = result.wallet,
-      hero = cardHero(w);
+      hero = options.design === "export" ? cardExportHero(w) : cardHero(w);
     if (!w.tradeCount || !hero)
       return new Response("No saved PnL for this wallet", { status: 404 });
     const preset = cardPresets[options.preset].color,
@@ -501,7 +504,11 @@ export async function GET(
             color: visualTheme.text,
             fontFamily: "Geist",
             backgroundColor: visualTheme.panelInset,
-            backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.16)} 0%, ${alpha(preset, 0)} 42%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.07)} 0%, ${alpha(preset, 0)} 38%)`,
+            // The preset tints the card's chrome (mark, wordmark dot, identicon,
+            // window pill) and this ambient glow, drawn at the Liquid reference's
+            // strength so the chosen colour reads at a glance; the headline and
+            // the curve keep the up/down colour, never the preset.
+            backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.3)} 0%, ${alpha(preset, 0)} 52%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.12)} 0%, ${alpha(preset, 0)} 42%)`,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
