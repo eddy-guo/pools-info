@@ -6388,12 +6388,21 @@ a.wallet-top-pool:hover {
     width: 14px;
     height: 14px;
   }
+  /* Four windows and their figures do not fit one 324px line, and a figure
+     is never clipped: two per row on two reserved 17px lines, so the
+     pending single line and the resolved four take the same box. */
+  .pool-page .live-changes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+    height: 34px;
+  }
   /* The price rows, then the range control under them on its own row. */
   .pool-chart-head {
     flex-direction: column;
     align-items: flex-end;
     gap: 20px;
-    height: 168px;
+    height: 185px;
   }
   .pool-chart-head > div:first-child {
     width: 100%;
