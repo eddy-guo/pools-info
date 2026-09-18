@@ -1,7 +1,9 @@
-import type {
-  AnalyticsWalletPosition,
-  AnalyticsWalletResponse,
-  LiveWindow,
+import {
+  ledgerHour,
+  type AnalyticsWalletPosition,
+  type AnalyticsWalletResponse,
+  type LiveWindow,
+  type PricePoint,
 } from "@pools/core";
 import { readLaunches, walletSummary } from "./accounting-read";
 import type { ReadQuery } from "./catalog-read";
@@ -18,11 +20,11 @@ import { ledgerCut } from "./ledger-market";
  * window's figures from the same `agg_wallet_windows` row the trader board
  * ranks, so the profile's headline equals the board's row to the wei at the
  * same cursor, and the positions from `agg_positions`, the fold's whole state
- * per pool, marked at each pool's latest price state. The response is the
- * accounting reader's, field for field; what the ledger does not keep is
- * served empty rather than from the frozen tables: there is no row per sale
- * (design decision D3), so `trades` is empty, and the hourly realized curve
- * is the next slice's, so `curve` is empty. */
+ * per pool, marked at each pool's latest price state, and the realized curve
+ * from `agg_wallet_hours`, the wallet's realized per pool per UTC hour. The
+ * response is the accounting reader's, field for field; what the ledger does
+ * not keep is served empty rather than from the frozen tables: there is no
+ * row per sale (design decision D3), so `trades` is empty. */
 
 /** The mark of a supported position: what its held units fetch at the pool's
  * latest price state, less their cost, exact to the wei and truncated toward
@@ -57,6 +59,29 @@ const positionsSql = `WITH marked AS (
   SELECT m.*,mark::text AS unrealized,
     (SELECT CASE WHEN count(*)=0 OR bool_or(mark IS NULL) THEN NULL ELSE sum(mark)::text END FROM marked WHERE supported) AS wallet_unrealized
   FROM marked m ORDER BY m.pool_id LIMIT 501`;
+/** The wallet's cumulative realized over the window ($1 wallet_ref, hours
+ * from $2, the refresh's own start, through $3, the refresh's hour), one
+ * point per hour with a sale on a supported position, summed across pools:
+ * the accounting reader's per-sale curve at the ledger's hour grain, and the
+ * same rule as the header, since an excluded position's hours carry no
+ * finance (`ledgerExcludingFlags`, migration 022) and are left out here
+ * rather than drawn as flat points. Sampled as the accounting reader samples
+ * its sales, every k-th hour and the last, to about 500 points. */
+const curveSql = `WITH hours AS (
+    SELECT h.hour,sum(h.realized_wei) AS realized
+    FROM agg_wallet_hours h JOIN agg_positions p ON p.chain_id=h.chain_id AND p.wallet_ref=h.wallet_ref AND p.pool_ref=h.pool_ref
+    WHERE h.chain_id=4663 AND h.wallet_ref=$1 AND h.hour>=$2 AND h.hour<=$3 AND p.supported AND h.sells>0
+    GROUP BY h.hour
+  ), gains AS (
+    SELECT hour,sum(realized) OVER (ORDER BY hour ROWS UNBOUNDED PRECEDING) AS cumulative,
+      row_number() OVER (ORDER BY hour) AS n,count(*) OVER () AS total
+    FROM hours
+  ) SELECT hour,cumulative::text AS cumulative,total FROM gains
+  WHERE mod(n-1,greatest(1,ceil(total/498.0)::bigint))=0 OR n=total ORDER BY n`;
+/** The first hour the wallet traded a supported position in, the All
+ * curve's start as the accounting reader's is its first capture. */
+const firstHourSql = `SELECT min(h.hour) AS hour FROM agg_wallet_hours h JOIN agg_positions p ON p.chain_id=h.chain_id AND p.wallet_ref=h.wallet_ref AND p.pool_ref=h.pool_ref
+  WHERE h.chain_id=4663 AND h.wallet_ref=$1 AND h.hour<=$2 AND p.supported`;
 /** The wallet's position counts and last activity as the window refresh
  * computes them (`positionStats` in `packages/db/src/ledger-windows.ts`), for
  * a wallet the ledger knows that has no hour in the window and so no row in
@@ -98,6 +123,8 @@ export async function readLedgerWallet(
     wallet: AnalyticsWalletResponse["wallet"],
     positions: AnalyticsWalletPosition[],
     positionsTruncated: boolean,
+    curve: PricePoint[],
+    curveSampled: boolean,
   ): AnalyticsWalletResponse => ({
     coverage,
     window,
@@ -107,13 +134,13 @@ export async function readLedgerWallet(
     tradesTruncated: false,
     positionsTruncated,
     positionRealizationsIncluded: false,
-    curveSampled: false,
-    curve: [],
+    curveSampled,
+    curve,
     launches: launches.slice(0, 500).map(catalogPool),
     launchesTruncated: launches.length > 500,
   });
   if (ref === undefined)
-    return response(walletSummary(undefined, address), [], false);
+    return response(walletSummary(undefined, address), [], false, [], false);
   const positions = (await query(positionsSql, [ref, refresh.windowStart]))
     .rows;
   // The summary is the window's row, the board's own figures; a wallet with
@@ -144,6 +171,32 @@ export async function readLedgerWallet(
     },
     address,
   );
+  // The curve, as the accounting reader draws it: a leading zero at the
+  // window's start (the All window's at the wallet's first supported hour),
+  // the cumulative realized at the end of each hour with a sale, and the
+  // header's own figure at the window's cutoff, so the chart's end equals the
+  // headline; nothing for a wallet with no supported position. An hour's
+  // point sits at its end, never before its sales, and the refresh's own
+  // hour, still open at the cutoff, ends at the cutoff.
+  const through = ledgerHour(refresh.asOf);
+  const curveRows = wallet.supportedPositionCount
+    ? (await query(curveSql, [ref, refresh.windowStart, through])).rows
+    : [];
+  const curve: PricePoint[] = curveRows.map((p) => ({
+    time: Math.min((Number(p.hour) + 1) * 3600, refresh.asOf),
+    wei: p.cumulative,
+  }));
+  if (wallet.supportedPositionCount) {
+    const first =
+      window === "All"
+        ? (await query(firstHourSql, [ref, through])).rows[0].hour
+        : refresh.windowStart;
+    curve.unshift({
+      time: first === null ? refresh.asOf : Number(first) * 3600,
+      wei: "0",
+    });
+    curve.push({ time: refresh.asOf, wei: wallet.realizedWei! });
+  }
   return response(
     wallet,
     positions.slice(0, 500).map((p) => ({
@@ -177,5 +230,7 @@ export async function readLedgerWallet(
         : null,
     })),
     positions.length > 500,
+    curve,
+    Number(curveRows[0]?.total ?? 0) > curveRows.length,
   );
 }
