@@ -64,7 +64,7 @@ const pools = {
 };
 const wallet = (n: number) => addr(0x10000 + n);
 const W = Object.fromEntries(
-  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => [n, wallet(n)]),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, wallet(n)]),
 ) as Record<number, string>;
 
 /** A batch's rows: each trade is a swap and its manager transfer in its own
@@ -124,6 +124,23 @@ class Rows {
         E + gain,
         10n,
       );
+    return this;
+  }
+  /** A plain transfer between wallets, no swap in its transaction. */
+  move(block: number, from: string, to: string, tokens: bigint) {
+    const i = this.logs.get(block) ?? 0;
+    this.logs.set(block, i + 1);
+    this.transfers.push({
+      txHash: hash(BigInt(block) * 100000n + BigInt(i)),
+      logIndex: i,
+      block,
+      blockHash: hash(block),
+      timestamp: ts(block),
+      token: pools.P.token,
+      from,
+      to,
+      value: tokens.toString(),
+    });
     return this;
   }
 }
@@ -270,7 +287,15 @@ test(
       .roundTrips(blockOf(1074, 0), W[9], 4, tenth)
       .roundTrips(blockOf(1074, 1), W[9], 1, -2n * tenth)
       // W10 trades in hour 1055, the first hour of the 24h window.
-      .roundTrips(blockOf(1055, 0), W[10], 5, (12n * tenth) / 10n);
+      .roundTrips(blockOf(1055, 0), W[10], 5, (12n * tenth) / 10n)
+      // W12 buys 100 tokens for 1 ETH and sends 90 to W11, which sells them
+      // in ten sales of 1 ETH each: 10 ETH of proceeds on no basis of its
+      // own, the most of anyone, on a position excluded on arrival; the
+      // transfer excludes W12's position on departure.
+      .trade(blockOf(1073, 0), W[12], "buy", E, 100n)
+      .move(blockOf(1073, 1), W[12], W[11], 90n);
+    for (let i = 0; i < 10; i++)
+      rows.trade(blockOf(1073, 2), W[11], "sell", E, 9n);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
     assert.equal(applied.unattributed, 0);
     // Folded but not yet refreshed into windows: the board has nothing to
@@ -324,6 +349,63 @@ test(
       [W[6], 8],
       [W[9], 9],
     ]);
+    // W11's ten sales are trades and volume, never supported trades, wins
+    // or a realized figure: a zero-cost inflow excludes the position, so it
+    // stands on no board under any gate or metric; W12, which sent the
+    // tokens, is excluded by the same transfer (unattributed_outflow) and
+    // stands on none either, whatever the gate.
+    const farm = (
+      await db.query(
+        `SELECT x.realized_wei::text AS realized,x.disposed_cost_wei::text AS disposed,x.volume_wei::text AS volume,x.trades,
+           x.supported_trades,x.wins,x.supported_positions,x.excluded_positions,x.rank
+         FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref) WHERE x."window"='24h' AND w.address=decode($1,'hex')`,
+        [W[11].slice(2)],
+      )
+    ).rows[0];
+    assert.deepEqual(farm, {
+      realized: "0",
+      disposed: "0",
+      volume: (10n * E).toString(),
+      trades: 10,
+      supported_trades: 0,
+      wins: 0,
+      supported_positions: 0,
+      excluded_positions: 1,
+      rank: null,
+    });
+    for (const query of [
+      "window=24h&limit=100",
+      "window=All&limit=100",
+      "window=24h&metric=net&limit=100",
+      "window=24h&minTrades=0&limit=100",
+      "window=24h&minTrades=1&metric=net&limit=100",
+    ]) {
+      const items = (await board(query)).items;
+      assert.ok(
+        !items.some((i) => i.address === W[11] || i.address === W[12]),
+        `${query}: ${JSON.stringify(items.map((i) => i.address))}`,
+      );
+    }
+    const sender = (
+      await db.query(
+        `SELECT x.realized_wei::text AS realized,x.disposed_cost_wei::text AS disposed,x.volume_wei::text AS volume,x.trades,
+           x.supported_trades,x.supported_positions,x.excluded_positions,x.rank,p.flags
+         FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref) JOIN agg_positions p USING (wallet_ref)
+         WHERE x."window"='24h' AND w.address=decode($1,'hex')`,
+        [W[12].slice(2)],
+      )
+    ).rows[0];
+    assert.deepEqual(sender, {
+      realized: "0",
+      disposed: "0",
+      volume: E.toString(),
+      trades: 1,
+      supported_trades: 0,
+      supported_positions: 0,
+      excluded_positions: 1,
+      rank: null,
+      flags: ["unattributed_outflow"],
+    });
     for (const [b, total] of [
       [day, 6],
       [all, 9],

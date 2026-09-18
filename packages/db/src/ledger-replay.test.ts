@@ -304,10 +304,7 @@ test("the attribution rule over the deep tier's raw evidence reproduces the repo
             .map((p) =>
               p.flags
                 .filter(
-                  (f) =>
-                    f !== "zero_cost_inflow" &&
-                    f !== "wrapper_route" &&
-                    f !== "counterparty_route",
+                  (f) => f !== "wrapper_route" && f !== "counterparty_route",
                 )
                 .join(","),
             ),
@@ -321,10 +318,7 @@ test("the attribution rule over the deep tier's raw evidence reproduces the repo
               !p.supported &&
               p.flags
                 .filter(
-                  (f) =>
-                    f !== "zero_cost_inflow" &&
-                    f !== "wrapper_route" &&
-                    f !== "counterparty_route",
+                  (f) => f !== "wrapper_route" && f !== "counterparty_route",
                 )
                 .join(",") === k,
           ).length,

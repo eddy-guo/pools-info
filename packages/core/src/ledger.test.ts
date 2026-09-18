@@ -657,8 +657,13 @@ test("remainders and third-party movements are inflows at zero cost or outflows 
   assert.equal(mine.cost, E);
   assert.equal(mine.inflow, 20n);
   assert.deepEqual(mine.flags, ["zero_cost_inflow"]);
-  assert.equal(mine.supported, true);
+  // The 20 have no basis the ledger can vouch for: excluded from here on.
+  assert.equal(mine.supported, false);
   assert.equal(theirs.quantity, 80n);
+  // The 20 left the holder without a sale: its basis went with them and
+  // the holder's outcome is no longer the ledger's to state.
+  assert.equal(theirs.supported, false);
+  assert.deepEqual(theirs.flags, ["unattributed_outflow"]);
   assert.equal(theirs.outflow, 20n);
   assert.equal(theirs.outflowCost, E / 5n);
   assert.equal(theirs.cost, (E * 4n) / 5n);
@@ -686,7 +691,11 @@ test("remainders and third-party movements are inflows at zero cost or outflows 
   assert.equal(mine.outflow, 10n);
   assert.equal(mine.proceeds, E * 2n);
   assert.equal(mine.wrapperSwaps, 1);
-  assert.deepEqual(mine.flags, ["wrapper_route", "zero_cost_inflow"]);
+  assert.deepEqual(mine.flags, [
+    "unattributed_outflow",
+    "wrapper_route",
+    "zero_cost_inflow",
+  ]);
   assert.equal(mine.cost + mine.disposedCost + mine.outflowCost, mine.invested);
   assert.equal(state.positions.has(positionKey(pool, wrapper)), true);
   assert.equal(position(state, wrapper).inflow, 10n);
@@ -740,21 +749,45 @@ test("transfers outside a swap are zero-cost inflows and basis-removing outflows
   assert.equal(position(state, wallet).quantity, 75n);
   assert.equal(position(state, wallet).cost, (E * 3n) / 4n);
   assert.equal(position(state, wallet).outflowCost, E / 4n);
+  assert.deepEqual(position(state, wallet).flags, ["unattributed_outflow"]);
+  assert.equal(position(state, wallet).supported, false);
   assert.equal(position(state, other).quantity, 25n);
   assert.equal(position(state, other).cost, 0n);
   assert.deepEqual(position(state, other).flags, ["zero_cost_inflow"]);
-  // The recipient sells what arrived free: proceeds are real, basis is zero.
-  run(
+  assert.equal(position(state, other).supported, false);
+  assert.deepEqual(move.application.excluded, [
+    position(state, wallet),
+    position(state, other),
+  ]);
+  // The recipient sells what arrived free: the position folds the proceeds
+  // (the sale is not an unknown basis, the tokens were seen arriving) but the
+  // sale is excluded, so nothing of it reaches the wallet's hour.
+  const free = run(
     [swap(4, { side: "sell", ethWei: E, tokenRaw: 25n, initiator: other })],
     [transfer(4, 11, other, rules.manager, 25n)],
     state,
   );
   assert.equal(position(state, other).realized, E);
-  assert.equal(position(state, other).supported, true);
+  assert.equal(position(state, other).supported, false);
+  assert.deepEqual(position(state, other).flags, ["zero_cost_inflow"]);
+  assert.equal(free.application.sales[0].supported, false);
+  const freeHour = state.walletHours.get(
+    `${other}:${pool}:${ledgerHour(4000)}`,
+  )!;
+  assert.equal(freeHour.sells, 1);
+  assert.equal(freeHour.volume, E);
+  assert.equal(freeHour.supportedTrades, 0);
+  assert.equal(freeHour.proceeds, 0n);
+  assert.equal(freeHour.realized, 0n);
+  assert.equal(freeHour.wins, 0);
+  assert.equal(freeHour.best, null);
   // Transferring more than the ledger holds is an unknown basis: excluded.
   run([], [transfer(5, 5, wallet, other, 76n)], state);
   assert.equal(position(state, wallet).supported, false);
-  assert.deepEqual(position(state, wallet).flags, ["unknown_basis"]);
+  assert.deepEqual(position(state, wallet).flags, [
+    "unattributed_outflow",
+    "unknown_basis",
+  ]);
   assert.equal(position(state, wallet).quantity, 0n);
   assert.ok(ledgerIdentitiesHold(position(state, wallet)));
   // Same-transaction round trips net to nothing: no event, no position.
@@ -885,7 +918,9 @@ test("unattributed swaps still count for the pool and exclude every position the
     state,
   );
   assert.equal(position(state, a).counterpartySwaps, 1);
-  assert.equal(position(state, other).supported, true);
+  // ...though the one token it sent b in that transaction excludes it.
+  assert.equal(position(state, other).supported, false);
+  assert.deepEqual(position(state, other).flags, ["unattributed_outflow"]);
   assert.equal(position(state, other).quantity, 99n);
   // ...until its token moves inside an unattributed transaction: nothing of
   // that transaction is applied, every touched position is excluded.
@@ -1260,10 +1295,275 @@ test("the attribution rule over the pepe capture's raw evidence agrees with ever
     counterparty: 3,
     unattributed: 1,
     positions: 363,
-    supported: 363,
+    supported: 359,
     withInflow: 3,
     oldSupported: 341,
     equalToOld: 341,
-    oldExcludedNowSupported: 17,
+    oldExcludedNowSupported: 16,
   });
+  for (const p of state.positions.values())
+    assert.equal(p.supported, p.inflow === 0n && p.outflow === 0n, p.wallet);
+});
+
+test("a zero-cost inflow excludes the position: of one wallet's bought and received positions, only the bought sale counts", () => {
+  const sender = addr(0x301),
+    poolB = hash(0x101),
+    tokenB = addr(0x201);
+  const registry = [
+    { poolId: pool, token },
+    { poolId: poolB, token: tokenB },
+  ];
+  const events = (swaps: LedgerSwap[], transfers: LedgerTransfer[]) =>
+    planLedgerBatch({ swaps, transfers, registry }, rules);
+  const state = createLedgerState();
+  // Hour 0: the wallet buys 100 of A for 1 ETH, and receives 100 of B from
+  // another wallet (which bought them) without a swap of its own.
+  applyLedgerEvents(
+    state,
+    events(
+      [
+        swap(1, { side: "buy", ethWei: E, tokenRaw: 100n }),
+        swap(2, {
+          side: "buy",
+          ethWei: E,
+          tokenRaw: 100n,
+          poolId: poolB,
+          token: tokenB,
+          initiator: sender,
+        }),
+      ],
+      [
+        transfer(1, 11, rules.manager, wallet, 100n),
+        transfer(2, 11, rules.manager, sender, 100n, { token: tokenB }),
+        transfer(3, 5, sender, wallet, 100n, { token: tokenB }),
+      ],
+    ),
+  );
+  stateHolds(state);
+  const bought = position(state, wallet),
+    received = position(state, wallet, poolB);
+  assert.equal(bought.supported, true);
+  assert.deepEqual(bought.flags, []);
+  assert.equal(received.quantity, 100n);
+  assert.equal(received.cost, 0n);
+  assert.equal(received.inflow, 100n);
+  assert.equal(received.supported, false);
+  assert.deepEqual(received.flags, ["zero_cost_inflow"]);
+  // Hour 1: both sold whole, each for 2 ETH.
+  const sold = applyLedgerEvents(
+    state,
+    events(
+      [
+        swap(3601, { side: "sell", ethWei: 2n * E, tokenRaw: 100n }),
+        swap(3602, {
+          side: "sell",
+          ethWei: 2n * E,
+          tokenRaw: 100n,
+          poolId: poolB,
+          token: tokenB,
+        }),
+      ],
+      [
+        transfer(3601, 11, wallet, rules.manager, 100n),
+        transfer(3602, 11, wallet, rules.manager, 100n, { token: tokenB }),
+      ],
+    ),
+  );
+  stateHolds(state);
+  // Both positions fold their own figures; the received one stays excluded.
+  assert.equal(bought.realized, E);
+  assert.equal(bought.disposedCost, E);
+  assert.equal(bought.supported, true);
+  assert.equal(received.proceeds, 2n * E);
+  assert.equal(received.realized, 2n * E);
+  assert.equal(received.disposedCost, 0n);
+  assert.equal(received.supported, false);
+  assert.deepEqual(
+    sold.sales.map((s) => [s.poolId, s.supported]),
+    [
+      [pool, true],
+      [poolB, false],
+    ],
+  );
+  // The hour rows: the bought sale is the only supported trade, win and
+  // realized figure; the received sale is a count and volume, nothing else.
+  const hour = ledgerHour(3601 * 1000);
+  const boughtHour = state.walletHours.get(`${wallet}:${pool}:${hour}`)!,
+    receivedHour = state.walletHours.get(`${wallet}:${poolB}:${hour}`)!;
+  assert.deepEqual(
+    [boughtHour, receivedHour].map((h) => ({
+      sells: h.sells,
+      volume: h.volume,
+      supportedTrades: h.supportedTrades,
+      proceeds: h.proceeds,
+      disposedCost: h.disposedCost,
+      realized: h.realized,
+      wins: h.wins,
+      closures: h.closures,
+      best: h.best,
+    })),
+    [
+      {
+        sells: 1,
+        volume: 2n * E,
+        supportedTrades: 1,
+        proceeds: 2n * E,
+        disposedCost: E,
+        realized: E,
+        wins: 1,
+        closures: 1,
+        best: E,
+      },
+      {
+        sells: 1,
+        volume: 2n * E,
+        supportedTrades: 0,
+        proceeds: 0n,
+        disposedCost: 0n,
+        realized: 0n,
+        wins: 0,
+        closures: 0,
+        best: null,
+      },
+    ],
+  );
+  // A buy into a position that already received tokens counts as volume and
+  // a trade, never as spent; nothing later un-excludes it.
+  applyLedgerEvents(
+    state,
+    events(
+      [
+        swap(7201, {
+          side: "buy",
+          ethWei: E,
+          tokenRaw: 50n,
+          poolId: poolB,
+          token: tokenB,
+        }),
+      ],
+      [transfer(7201, 11, rules.manager, wallet, 50n, { token: tokenB })],
+    ),
+  );
+  stateHolds(state);
+  assert.equal(received.supported, false);
+  assert.equal(received.buys, 1);
+  const laterHour = state.walletHours.get(
+    `${wallet}:${poolB}:${ledgerHour(7201 * 1000)}`,
+  )!;
+  assert.equal(laterHour.buys, 1);
+  assert.equal(laterHour.volume, E);
+  assert.equal(laterHour.supportedTrades, 0);
+  assert.equal(laterHour.spent, 0n);
+});
+
+test("a zero-cost inflow into a supported position zeroes the finances of every hour it already earned", () => {
+  const sender = addr(0x301);
+  const state = createLedgerState();
+  // Hour 0: bought and sold at a gain, a supported closure.
+  run(
+    [swap(1, { side: "buy", ethWei: E, tokenRaw: 100n })],
+    [transfer(1, 11, rules.manager, wallet, 100n)],
+    state,
+  );
+  run(
+    [swap(2, { side: "sell", ethWei: 3n * E, tokenRaw: 100n })],
+    [transfer(2, 11, wallet, rules.manager, 100n)],
+    state,
+  );
+  const earned = state.walletHours.get(`${wallet}:${pool}:0`)!;
+  assert.equal(earned.realized, 2n * E);
+  assert.equal(earned.wins, 1);
+  // Hour 2: tokens arrive without a swap. The position is excluded and the
+  // earlier hour's finances go with it; the writer zeroes rows outside the
+  // state from `excluded`.
+  run(
+    [swap(7201, { side: "buy", ethWei: E, tokenRaw: 20n, initiator: sender })],
+    [transfer(7201, 11, rules.manager, sender, 20n)],
+    state,
+  );
+  const arrived = run([], [transfer(7202, 5, sender, wallet, 10n)], state);
+  assert.deepEqual(arrived.application.excluded, [
+    position(state, sender),
+    position(state, wallet),
+  ]);
+  assert.equal(position(state, wallet).supported, false);
+  assert.deepEqual(position(state, wallet).flags, ["zero_cost_inflow"]);
+  assert.equal(earned.realized, 0n);
+  assert.equal(earned.proceeds, 0n);
+  assert.equal(earned.disposedCost, 0n);
+  assert.equal(earned.spent, 0n);
+  assert.equal(earned.supportedTrades, 0);
+  assert.equal(earned.wins, 0);
+  assert.equal(earned.closures, 0);
+  assert.equal(earned.best, null);
+  assert.equal(earned.buys, 1);
+  assert.equal(earned.sells, 1);
+  assert.equal(earned.volume, 4n * E);
+  // A second inflow into the excluded position is not a second exclusion.
+  const again = run([], [transfer(7203, 5, sender, wallet, 5n)], state);
+  assert.deepEqual(again.application.excluded, []);
+  assert.equal(position(state, wallet).inflow, 15n);
+  // The sender is excluded by the same transfers, its basis gone with them.
+  assert.equal(position(state, sender).supported, false);
+  assert.deepEqual(position(state, sender).flags, ["unattributed_outflow"]);
+  assert.equal(position(state, sender).outflowCost, (E * 3n) / 4n);
+});
+
+test("an unattributed outflow excludes the position: the basis leaves with the tokens, no loss is booked, and neither its earlier nor its later sales count", () => {
+  const cold = addr(0x301);
+  const state = createLedgerState();
+  // Hour 0: buy 100 for 4 ETH, sell 50 for 3 ETH (a supported sale, gain 1).
+  run(
+    [swap(1, { side: "buy", ethWei: 4n * E, tokenRaw: 100n })],
+    [transfer(1, 11, rules.manager, wallet, 100n)],
+    state,
+  );
+  run(
+    [swap(2, { side: "sell", ethWei: 3n * E, tokenRaw: 50n })],
+    [transfer(2, 11, wallet, rules.manager, 50n)],
+    state,
+  );
+  const hour0 = state.walletHours.get(`${wallet}:${pool}:0`)!;
+  assert.equal(hour0.realized, E);
+  assert.equal(hour0.supportedTrades, 2);
+  // Later: 20 move to another wallet (a cold wallet, a friend, a farm: the
+  // ledger cannot tell). The position keeps its figures, its basis for the
+  // 20 (0.8 ETH) moves to outflowCost rather than to a loss, and it is
+  // excluded: hour 0's finances go, its counts stay.
+  const moved = run([], [transfer(3601, 5, wallet, cold, 20n)], state);
+  const p = position(state, wallet);
+  assert.deepEqual(moved.application.excluded, [p, position(state, cold)]);
+  assert.equal(p.supported, false);
+  assert.deepEqual(p.flags, ["unattributed_outflow"]);
+  assert.equal(p.realized, E);
+  assert.equal(p.disposedCost, 2n * E);
+  assert.equal(p.outflowCost, (8n * E) / 10n);
+  assert.equal(p.cost, (12n * E) / 10n);
+  assert.equal(p.quantity, 30n);
+  assert.ok(ledgerIdentitiesHold(p));
+  assert.deepEqual(
+    [hour0.realized, hour0.proceeds, hour0.spent, hour0.supportedTrades],
+    [0n, 0n, 0n, 0],
+  );
+  assert.deepEqual([hour0.buys, hour0.sells, hour0.volume], [1, 1, 7n * E]);
+  // Later still: the remaining 30 sell for 9 ETH. The position books the gain
+  // (proceeds 9 against basis 1.2); the sale is not supported and the hour
+  // holds a count and volume only.
+  const later = run(
+    [swap(7201, { side: "sell", ethWei: 9n * E, tokenRaw: 30n })],
+    [transfer(7201, 11, wallet, rules.manager, 30n)],
+    state,
+  );
+  assert.equal(later.application.sales[0].supported, false);
+  assert.equal(p.realized, E + 9n * E - (12n * E) / 10n);
+  assert.equal(p.quantity, 0n);
+  assert.equal(p.supported, false);
+  const hour2 = state.walletHours.get(
+    `${wallet}:${pool}:${ledgerHour(7201 * 1000)}`,
+  )!;
+  assert.deepEqual(
+    [hour2.sells, hour2.volume, hour2.supportedTrades, hour2.realized],
+    [1, 9n * E, 0, 0n],
+  );
+  stateHolds(state);
 });

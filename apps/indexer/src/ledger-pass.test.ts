@@ -481,8 +481,9 @@ test(
       { source: "hypersync", stream: "launches:agg:v1", launches: 1, calls: 1 },
       { source: "hypersync", stream: "launches:agg:v1", launches: 0, calls: 0 },
     ]);
-    // The positions: W's average-cost history on A, V's zero-cost inflow on A
-    // and V's buy on B.
+    // The positions: W's average-cost history on A (excluded by the 50 it
+    // sent V, migration 022), V's zero-cost inflow on A (excluded) and V's
+    // buy on B.
     assert.deepEqual(
       (await positions(db)).map((p) => [
         p.wallet,
@@ -516,8 +517,8 @@ test(
           "2",
           1,
           1,
-          true,
-          [],
+          false,
+          ["unattributed_outflow"],
         ],
         [
           V,
@@ -533,7 +534,7 @@ test(
           "0",
           0,
           0,
-          true,
+          false,
           ["zero_cost_inflow"],
         ],
         [V, "B", "40", "4", "4", "0", "0", "0", "0", "0", "0", 1, 0, true, []],

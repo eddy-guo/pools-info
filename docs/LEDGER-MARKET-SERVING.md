@@ -140,8 +140,9 @@ accounting board's, field for field; what its values mean changes:
   sales at average cost, with basis carried in from before the window (a
   token bought last week and sold today realizes against last week's cost);
   `netWei` is the window's own cash out minus cash in; `roi` is realized over
-  the window's disposed cost (null when nothing bought was sold, as for a
-  sale of tokens received at zero cost); `wins`/`losses` count closed
+  the window's disposed cost, null when nothing bought was sold and never a
+  percent of a zero basis (a sale of tokens received by transfer is on an
+  excluded position and reaches neither figure); `wins`/`losses` count closed
   inventory cycles by their gain; `avgHold` is the closed cycles' hold time;
   `bestWei` the best single sale; `tradeCount` every attributed swap and
   `supportedTradeCount` those on supported positions; `last` the wallet's
@@ -163,8 +164,15 @@ accounting board's, field for field; what its values mean changes:
   wrapper-routed position; the ledger's board ranks every attributed wallet on
   every pool with a trade, and its top 100 shares no wallet with the old
   board's on any window (`docs/LEDGER-CUTOVER.md`, "The trader leaderboard:
-  the old board beside the new"). Zero-cost-inflow positions count toward a
-  wallet's total (design decision D2 stands as the writer ranks them).
+  the old board beside the new"). A position that received tokens without a
+  swap of its own (`zero_cost_inflow`), or sent them away without one
+  (`unattributed_outflow`), is excluded at the fold since migration 022
+  (design decision D2, taken 18 Sep 2026): its swaps are trades and volume
+  on the row, never supported trades, wins, spent, realized or disposed
+  cost, so a wallet with nothing but such positions stands on no board under
+  any gate or metric, a transfer to another wallet costs that position's
+  coverage rather than booking a loss, and the wallet page's header, read
+  from the same window row, agrees with the board to the wei.
 
 Failure behaviour: a ledger with no cursor or no pool hour answers as with
 `broad` (the accounting tables); a window without a refresh row, which a
