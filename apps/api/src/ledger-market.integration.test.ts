@@ -208,10 +208,17 @@ test(
         VALUES(4663,'launches:agg:v1',$1,$2,$3,$4,'{}')`,
         [from, to, word(to), "f".repeat(64)],
       );
+    // The creator-fee flag the launch lane stores (migration 021): N's
+    // deployment takes creator fees, O's does not, and the others were written
+    // before the column existed.
+    const storedCreatorFees: Record<string, boolean | null> = {
+      N: true,
+      O: false,
+    };
     for (const [key, pool] of [...Object.entries(pools), ["U", U] as const])
       await db.query(
-        `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,decimals,token_total_supply_raw,token_supply_block)
-        VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,'launches:agg:v1',$9,$10,$11,$12)`,
+        `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,decimals,token_total_supply_raw,token_supply_block,creator_fees)
+        VALUES(4663,$1,$2,$3,$4,$5,$6,$7,$8,'launches:agg:v1',$9,$10,$11,$12,$13)`,
         [
           pool.id,
           address(Number.parseInt(pool.id.slice(-4), 16)),
@@ -225,9 +232,13 @@ test(
           "decimals" in pool ? pool.decimals : 18,
           "supply" in pool && pool.supply !== null ? pool.supply.toString() : null,
           "supply" in pool && pool.supply !== null ? cursorBlock + 500 : null,
+          storedCreatorFees[key] ?? null,
         ],
       );
     // K's deep publication stopped mid-pump, long before the ledger's cursor.
+    // It is a renderable publication (empty trade and price series inside its
+    // range) so K's page can be read through the API, where the ledger
+    // outdates it.
     const deepBlock = 23500500,
       deepTime = (H - 30) * 3600 + 379;
     await db.query(
@@ -262,9 +273,16 @@ test(
         {
           schemaVersion: 1,
           chainId: 4663,
+          generatedAt: "2026-09-15T00:00:00Z",
+          fromBlock: pools.K.launchBlock,
           toBlock: deepBlock,
-          blockHash: word(deepBlock),
+          fromTimestamp: pools.K.launchedAt,
           toTimestamp: deepTime,
+          blockHash: word(deepBlock),
+          discoveredLaunches: 1,
+          requests: 0,
+          durationMs: 0,
+          reconciliation: null,
           markets: [
             {
               id: pools.K.id,
@@ -277,11 +295,19 @@ test(
               launchedAt: pools.K.launchedAt,
               launchTx: word(pools.K.launchBlock + 7),
               launchSender: address(98),
+              positionRecipient: address(97),
+              strategy: address(96),
               creatorFees: true,
+              fee: 2500,
               priceWei: kaijuDeepPriceWei,
               volumeWei: "0",
+              swaps: 0,
+              buys: 0,
+              sells: 0,
+              series: [],
             },
           ],
+          trades: [],
         },
         `pool:${pools.K.id}`,
       ],
@@ -644,13 +670,30 @@ test(
       assert.equal(response.data.analytics, null);
       return response.data.market;
     };
-    // A ledger-served pool with no deep publication has no creator-fee flag to
-    // serve, and the key is ABSENT rather than false: an invented "Disabled"
-    // would misstate whether a pool charges its creator a fee. (The published
-    // case belongs to a pool that is both ledger-served and published, which
-    // this fixture has none of: K carries a publication that outranks the
-    // ledger, so the page reads the publication directly there.)
-    assert.equal("creatorFees" in (await poolPage(pools.N.id, "24h")), false);
+    // The creator-fee flag on a ledger-served pool: the catalog's stored flag
+    // is served as stored (N true, O false); with no stored flag and no deep
+    // publication (Q) the key is ABSENT rather than false, since an invented
+    // "Disabled" would misstate whether a pool charges its creator a fee; and
+    // K, written before the column existed, falls back to the publication the
+    // ledger outdates (true), until its own column is filled, which then wins
+    // over the publication.
+    assert.equal((await poolPage(pools.N.id, "24h")).creatorFees, true);
+    assert.equal((await poolPage(pools.O.id, "7d")).creatorFees, false);
+    assert.equal("creatorFees" in (await poolPage(pools.Q.id, "24h")), false);
+    assert.equal((await poolPage(pools.K.id, "24h")).creatorFees, true);
+    await db.query("UPDATE indexed_pools SET creator_fees=false WHERE pool_id=$1", [
+      pools.K.id,
+    ]);
+    assert.equal((await poolPage(pools.K.id, "24h")).creatorFees, false);
+    await db.query("UPDATE indexed_pools SET creator_fees=NULL WHERE pool_id=$1", [
+      pools.K.id,
+    ]);
+    // On the broad source the flag stays where it always was, on the
+    // publication K's page then serves, and its market carries no key.
+    const kBroad = await get("broad", `/v1/pools/${pools.K.id}?window=24h`);
+    assert.equal(kBroad.status, 200, JSON.stringify(kBroad.data));
+    assert.equal(kBroad.data.analytics.snapshot.markets[0].creatorFees, true);
+    assert.equal("creatorFees" in kBroad.data.market, false);
     for (const window of ["24h", "7d", "All"]) {
       const market = await poolPage(pools.N.id, window);
       const r = row(launchOrder(window), pools.N.id);

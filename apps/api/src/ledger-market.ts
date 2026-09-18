@@ -176,6 +176,25 @@ export async function ledgerPool(
 const ledgerMarkets = new WeakSet<ObservedMarket>();
 export const servedByLedger = (market: ObservedMarket) =>
   ledgerMarkets.has(market);
+/** The creator-fee flag the pool page serves with a ledger market: the
+ * catalog's stored flag (migration 021, written at discovery) over the frozen
+ * deep publication's, which answers for a pool written before the column
+ * existed, and undefined unless one of them is a real boolean, so the
+ * response omits the key rather than inventing a "Disabled". */
+export function creatorFeeFlag(
+  stored: unknown,
+  published: unknown,
+): boolean | undefined {
+  if (typeof stored === "boolean") return stored;
+  if (typeof published === "boolean") return published;
+  return undefined;
+}
+export function withCreatorFees(
+  market: ObservedMarket,
+  creatorFees: boolean | undefined,
+): ObservedMarket {
+  return creatorFees === undefined ? market : { ...market, creatorFees };
+}
 const price = (sqrt: string) => ledgerPriceSql(sqrt, "$4::integer");
 /** One pool's market from the ledger. $1 pool_ref, $2 the window's first
  * hour (null for All), $3 cutoff block, $4 decimals (null when unverified).

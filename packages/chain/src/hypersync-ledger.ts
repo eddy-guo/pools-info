@@ -264,6 +264,10 @@ export interface LedgerRegistryPool {
 export interface LedgerCatalogPool extends CatalogPool {
   /** ERC-20 decimals; null when the read did not decode to 0..36. */
   decimals: number | null;
+  /** Whether the launching deployment takes creator fees: the pinned
+   * registry's flag for the strategy the launch log came from, which the lane
+   * resolves to verify the launch (migration 021 stores it per pool). */
+  creatorFees: boolean;
   /** totalSupply() in raw units and the block it was read at, both null when
    * the reply was not one word. Absent on a batch collected before supply
    * joined the launch reads (evidence schema version 1). */
@@ -474,7 +478,7 @@ function ledgerLaunchRows(
       throw Error("Unverified catalog launch");
     usedTransactions.add(txHash);
     usedBlocks.add(block.number);
-    return { log, decoded, transaction, block };
+    return { log, decoded, transaction, block, deployment };
   });
   for (const l of launcherLogs) {
     const t = transactions.get(l.transaction_hash.toLowerCase());
@@ -568,7 +572,10 @@ function launchPools(
 ): LedgerCatalogPool[] {
   const pools = new Map<string, LedgerCatalogPool>();
   const fields = launchReadFields[schemaVersion];
-  for (const [i, { log, decoded, transaction, block }] of rows.entries()) {
+  for (const [
+    i,
+    { log, decoded, transaction, block, deployment },
+  ] of rows.entries()) {
     const id = decoded.poolId.toLowerCase();
     if (pools.has(id)) throw Error("Duplicate ledger launch identity");
     const at = i * fields.length;
@@ -596,6 +603,7 @@ function launchPools(
         }),
       ).slice(0, 40),
       decimals: decodedDecimals(results[at + 2]),
+      creatorFees: deployment.creatorFees,
       ...(schemaVersion === 2
         ? {
             totalSupplyRaw: supply,
