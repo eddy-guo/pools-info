@@ -82,6 +82,15 @@ its `completeWindow` is false. All is the pool's whole history.
   `pnpm supply:read run`, a Multicall3 read of `totalSupply()` over the public
   RPC with the block it was read at (`token_supply_block`); see
   `docs/LEDGER-CUTOVER.md`.
+- **Creator fee** (`market.creatorFees`, pool page only, optional): whether
+  the deployment that launched the pool takes creator fees, from
+  `indexed_pools.creator_fees` (migration 021, written by the launch lane at
+  discovery), or, where that column is null on a row written before it
+  existed, from the deep publication the ledger outdates. The key is absent
+  when neither holds a real boolean: an unknown flag is never served as
+  false, because "Disabled" is a claim about someone's money. Rows written
+  before the column are filled by `pnpm creator-fees:backfill`
+  (`docs/LEDGER-CUTOVER.md`, "Creator-fee flags").
 
 Not served from the ledger: holders and liquidity keep today's values (both
 are being removed from the product; `agg_pool_state.liquidity` is raw active

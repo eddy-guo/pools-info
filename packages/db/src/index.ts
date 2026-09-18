@@ -286,6 +286,11 @@ export interface PoolRecord {
    * 019), both null when unread. A reading never replaces a later one. */
   totalSupplyRaw?: string | null;
   supplyBlock?: number | null;
+  /** Whether the launching deployment takes creator fees (migration 021):
+   * the pinned registry's flag for the strategy that emitted the launch log.
+   * Absent or null when the source did not carry it; stored once known, and
+   * immutable, since two observations of one launch name one strategy. */
+  creatorFees?: boolean | null;
 }
 export interface EventRecord {
   txHash: string;
@@ -550,8 +555,11 @@ async function commitBatchInTransaction(
           supplyBlock! < 0))
     )
       throw Error("Invalid launch supply");
+    const creatorFees = p.creatorFees ?? null;
+    if (creatorFees !== null && typeof creatorFees !== "boolean")
+      throw Error("Invalid launch creator fee flag");
     const inserted = await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
+      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block,creator_fees) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -569,6 +577,7 @@ async function commitBatchInTransaction(
         p.decimals ?? null,
         supplyRaw,
         supplyBlock,
+        creatorFees,
       ],
     );
     if (inserted.rowCount) {
@@ -617,6 +626,18 @@ async function commitBatchInTransaction(
           "UPDATE indexed_pools SET token_total_supply_raw=$2,token_supply_block=$3 WHERE chain_id=4663 AND pool_id=$1 AND (token_supply_block IS NULL OR token_supply_block<=$3)",
           [p.id.toLowerCase(), supplyRaw, supplyBlock],
         );
+      if (creatorFees !== null) {
+        if (
+          identity.creator_fees !== null &&
+          identity.creator_fees !== creatorFees
+        )
+          throw Error("Conflicting launch identity");
+        if (identity.creator_fees === null)
+          await db.query(
+            "UPDATE indexed_pools SET creator_fees=$2 WHERE chain_id=4663 AND pool_id=$1",
+            [p.id.toLowerCase(), creatorFees],
+          );
+      }
       // Matching observations add provenance, never restart a pool's history.
       const history = await getStream(db, "pool:" + p.id.toLowerCase());
       if (
@@ -768,6 +789,16 @@ export {
   type TokenSupplyRow,
   type UnreadTokenSupply,
 } from "./token-supply";
+
+export {
+  creatorFeeCoverage,
+  unresolvedCreatorFeeBatches,
+  retainedLaunchLogs,
+  saveCreatorFees,
+  type CreatorFeeRow,
+  type RetainedLaunchLog,
+  type UnresolvedCreatorFeeBatch,
+} from "./creator-fees";
 
 export {
   ledgerStream,
