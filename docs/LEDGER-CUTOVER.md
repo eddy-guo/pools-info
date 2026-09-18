@@ -224,6 +224,96 @@ measured under 60 ms warm on the copy; the old 7d board cost 821 ms cold on
 the accounting tables, and the new one's cold cost is the same order for the
 catalog count and smaller for the board itself.
 
+## Unattributed transfers excluded: the board before and after migration 022
+
+The board above went live at 03:28Z on 18 Sep with 58 of its 24h top 100
+resting on a cost basis under one percent of their realized figure (48 with
+ROI null and volume equal to realized, 10 with ROI between 374 and 457
+million percent): design decision D2 had `zero_cost_inflow` informational,
+so a sale of tokens received without a swap booked its whole proceeds as a
+supported win. The rows were creator-run distribution farms, and the board's
+top row `0xb3c9cf93ec4eff830d01766681052607040c53b1` was the buying side of
+one: on the production-shape copy it had launched all 85 pools it traded,
+invested 308.93 ETH, sold part itself (+110.43 ETH realized) and moved
+202.62 ETH of basis out as tokens (`outflow_cost_wei`) that its receivers,
+about 43 wallets per pool, sold for 204.94 ETH, which is why its wallet page
+read +198.89 ETH realized beside -122.54 ETH net on 18 Sep (realized - net =
+spent - disposed cost = held cost + cost that left as tokens). D2 was taken
+at the fold on 18 Sep 2026 (PR #108, `docs/AGGREGATE-LEDGER.md`): a transfer
+the ledger did not attribute to a swap excludes the position, in
+(`zero_cost_inflow`) or out (the new `unattributed_outflow`), and migration
+`022_unattributed_transfers_exclude.sql` brought every row written under
+the old rule to the new one in one transaction: re-flag, hour rows zeroed,
+journal pre-images rewritten so a walk-back restores rows the new
+constraints accept, the constraints, and the six windows rebuilt and
+re-ranked with their refresh rows (byte-identical to the writer's own
+rebuild). The alternatives, a transfer-out booked as a zero-proceeds
+disposal and a rank by net, were rejected because both show a transfer to
+one's own cold wallet as a loss; this rule invents nothing, and a move costs
+that position's coverage rather than the truth. Recording each transfer's
+counterparty at the fold is a filed follow-up.
+
+The apply, 18 Sep 2026: `ledger-tip` deployment cdcf1179 on the merge
+5550167; the old instance released the writer lock at 08:11:35Z, the new one
+took it and ran `migrate()` (now after the lock, on its own connection with
+an hour's statement budget; PR #108 moved it), `ledger_tip_started` at
+08:13:47Z, so 022 took about 131 s on LedgerPostgres against 70 s (load 4)
+and 145 s (load 11) on the copy; the first cycle at 08:14:07Z folded the
+redeploy's 2,000-block gap (lag 247 blocks, 25 s) and the second at
+08:14:27Z was at the tip (128 blocks, 13 s). Disk: the database read 2,430
+MB (volume 2,874 MB of 5,000) before; the copy grew 473 MB on the same
+migration. Production's shape at the apply: 2,209,267 positions of which
+536,663 carried a transfer (508,838 still supported), 3,103,291 hour rows,
+58,636 journal rows (the copy's pass-era journal had a million; the tip's
+256 batches are small, so the pre-image steps were near-instant here).
+
+Old beside new, on the production-shape copy `pools_test_zerobasis` (cursor
+17 Sep 13:40:27Z, the same source as the table above; realized in ETH, the
+full top 10 per window in the firstmate data directory
+`pools-zero-basis-rank-z1/before-after.md`):
+
+| window | old 100: cost 0 / under 1% | new 100: cost 0 / under 1% | of the old 100 survive | old top row                                           |
+| ------ | -------------------------- | -------------------------- | ---------------------- | ----------------------------------------------------- |
+| 24h    | 59 / 66                    | 0 / 0                      | 29                     | `0xb3c9…` rank 33 at 1.9323 (was 76.0766 at rank 1)   |
+| 7d     | 4 / 6                      | 0 / 0                      | 71                     | `0x62cc…` rank 1 at 138.3625, unchanged               |
+| 30d    | 5 / 7                      | 0 / 0                      | 59                     | `0x62cc…` rank 1 at 138.3625, unchanged               |
+| All    | 3 / 4                      | 0 / 0                      | 48                     | `0xaead…` rank 2 at 104.0910 (was 246.6490 at rank 1) |
+
+Production, read from the api at 08:15:04Z, one cycle after the apply: 24h
+`0xb3c9…` at rank 40 with 1.4785 ETH (the live board is 19 hours past the
+copy), top `0xcf4828…` 11.97 ETH; 7d, 30d and All `0x62cc…` rank 1 at
+138.3626 ETH, All then `0xaead…` 104.09 and `0x3012…` 96.38, the copy's
+figures to the wei; on all four windows no row with realized above zero and
+ROI null, none above 10,000 percent, ROI between 4.4 and 3,304 percent,
+every row on a positive disposed cost. The launcher's own page reads 14
+supported and 115 excluded positions, realized equal to net (1.4785 ETH on
+24h, 3.2957 ETH on All). Production's pre-apply top 100 was not archived,
+so its survivor counts are the copy's.
+
+Two things to know when reading the board now. Eight of the All top 9 on
+the copy, before and after, launched every pool they trade
+(`indexed_pools.launch_sender`), including the new #1 `0x62cc…` (35 pools,
+no transfers): the rule removes the sybil receivers and the launchers that
+fan tokens out, and a launcher that buys and sells its own launches without
+moving tokens keeps its place; a "trades own launches" flag is derivable
+from `launch_sender` with no fold change, a product decision not taken. And
+the rollback lever: the journal restores batches, not the migration (its
+pre-images now carry the new rule); undoing the rule is a code revert plus
+a migration that restores 017's constraints and re-supports the transfer
+positions, which brings back their flag state and every position row's
+lifetime figures (022 did not touch them) but not the per-hour finances the
+migration zeroed, which the ledger keeps nowhere else, so the old board
+figures return only from a LedgerPostgres snapshot taken before 08:11:36Z
+or a re-fold with `pnpm ledger:pass` (day-scale, on the captain's word).
+No such snapshot exists: read at 08:3xZ the same day, Railway holds no
+backup and no backup schedule for the volume (instance c29bc41c on
+`postgres-volume-Beld`), and volume backups are not available on the
+project's Hobby plan (`subscriptionPlanLimit.volumes.maxBackupsCount` is 0;
+Pro, USD 20 minimum usage a month against Hobby's 5, allows them, billed
+like volume storage on the backup's incremental size, and a manual backup is
+limited to half the volume's size, so this 5 GB volume at 2.9 GB used would
+first have to grow). Enabling them is a plan change the captain decides.
+
 ## The wallet page: the frozen route beside the ledger's
 
 Every row of the ledger's board links to `/wallet/<address>/?window=<w>`,
