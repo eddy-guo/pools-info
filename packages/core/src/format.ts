@@ -9,10 +9,10 @@ export function formatEth(wei: string, signed = false, digits = 2): string {
   const n = displayEth(wei);
   return `${signed && n > 0 ? "+" : ""}${new Intl.NumberFormat("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(n)}`;
 }
-export function compact(n: number): string {
+export function compact(n: number, digits = 2): string {
   return new Intl.NumberFormat("en-US", {
     notation: "compact",
-    maximumFractionDigits: 2,
+    maximumFractionDigits: digits,
   }).format(n);
 }
 export function formatMoney(

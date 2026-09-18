@@ -354,25 +354,46 @@ export function Price({
     </span>
   );
 }
+/** Four integer digits ("+9999.99%") are the widest fixed figure the trader
+    leaderboard's 104px ROI column holds; from here the abbreviated form
+    takes over where a surface asks for it. */
+const ABBREVIATE_CHANGE_FROM = 10_000;
+
 export function Change({
   value,
   pending = false,
   digits = 2,
+  abbreviate = false,
 }: {
   value?: number | null;
   pending?: boolean;
   digits?: number;
+  /** Render a figure of 10,000% and over in the site's K/M notation
+      (`+457.3M%`), sign, colour and unit kept, with the exact fixed figure
+      in the element's `title`; a smaller figure renders as it would
+      without it. */
+  abbreviate?: boolean;
 }) {
   const unavailable = useUnavailable("No opening price observation", pending);
   if (value == null)
     return <span className="number change unavailable" {...unavailable} />;
   const displayed = Number(value.toFixed(digits));
+  const sign = displayed > 0 ? "+" : "";
+  const exact = displayed.toFixed(digits);
+  const abbreviated =
+    abbreviate && Math.abs(displayed) >= ABBREVIATE_CHANGE_FROM;
+  // The figure stays split into sign, digits and unit rather than one
+  // string: the pending state above is a lone "Pending" text node, and a
+  // lone string here would make React rewrite that node in place, which
+  // Chrome scores as a layout shift in every right-aligned cell; separate
+  // children mount as new nodes instead, which it never scores.
   return (
     <span
       className={`number change ${displayed > 0 ? "positive" : displayed < 0 ? "negative" : "muted"}`}
+      title={abbreviated ? `${sign}${exact}%` : undefined}
     >
-      {displayed > 0 ? "+" : ""}
-      {displayed.toFixed(digits)}%
+      {sign}
+      {abbreviated ? compact(value, 1) : exact}%
     </span>
   );
 }
