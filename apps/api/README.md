@@ -36,7 +36,10 @@ permissions and are unrelated to user accounts.
 
 Deploy the indexer first so its pre-deploy migration applies
 all migrations through `006_catalog_search.sql` before exposing the growing
-event history. Migration 005 adds normalized accounting rows; the writer
+event history. The catalog query names `indexed_pools.creator_fees` (migration
+021, applied by the ledger tip loop at its start) on every route, so `/ready`
+refuses until that column exists and a release ahead of the migration keeps
+the previous release serving. Migration 005 adds normalized accounting rows; the writer
 backfills existing publications without RPC. `/ready` checks read access and
 rejects `analytics_projection_pending` until every publication has a matching
 projection. Migration 006 adds indexed substring/fuzzy catalog search. The API
@@ -269,10 +272,10 @@ a buy whose transaction sender is the creator's address, anywhere in that
 source's covered history (broad swaps at or below the served cutoff, or the
 deep publication's trades), false when the measured launches show none, null
 without a measured launch. It is not windowed, and a transaction sender is an
-initiator, not a proven beneficiary. A creator-fee flag is not served: the
-catalog holds no launch fee fact (the strategy contract decides it, and only
-the deep publication's `market` records it), so it waits for a per-launch
-catalog column.
+initiator, not a proven beneficiary. A creator-fee flag is not served here:
+the catalog column that holds it (`indexed_pools.creator_fees`, migration 021,
+which the pool route serves as `market.creatorFees` with a ledger market) is
+not yet read by this route.
 
 `sort=launches` lists every creator (launch-first, like explore's launch order)
 and breaks ties on `volumeWei DESC NULLS LAST`; `volume` and `median` list only

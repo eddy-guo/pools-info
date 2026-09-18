@@ -71,6 +71,34 @@ Blockscout's token API agrees for POOLS, FRONG, KAIJU, CONFETTI, HOOKR, UNICAT
 and CYBERCAB. Migration 019 was applied from the reader change's own file
 before the run, so its recorded checksum is that file's.
 
+## Creator-fee flags
+
+Whether a pool's creator takes a fee is decided by which strategy contract
+launched it: the pinned registry (`packages/chain/src/deployments.ts`,
+`docs/DEPLOYMENT-REGISTRY.md`) holds one flag per strategy, and the launch
+lane resolves that deployment from the launch log's emitting address to verify
+every launch it writes. Migration 021 stores it as `indexed_pools.creator_fees`
+(nullable: null is unknown, never a stand-in for false), the lane writes it
+with each launch from then on, and the pool page prefers it over the frozen
+deep publication's flag, which answers only for a row written before the
+column existed (`docs/LEDGER-MARKET-SERVING.md`, "Creator fee").
+
+Rows written before the column are filled by `pnpm creator-fees:backfill run`
+(`apps/indexer/src/creator-fees-backfill.ts`), which makes no chain request:
+the launch stream `launches:agg:v1` retains every verified launch log in its
+batch evidence, so the fill reads those logs back per batch, resolves each
+emitting strategy through the same registry, and writes the flag onto the pool
+whose recorded launch transaction and block the log names, only where the flag
+is still null. `run` fills the pools with no deep publication (the ones whose
+page shows the stat as unavailable); `run --all` fills every unknown flag;
+`status` counts both. It is idempotent and resumable, and a batch that fills
+fewer pools than it was selected for is logged as `creator_fees_batch_short`
+rather than hidden. On a copy of the production-shaped database (62,858 pools,
+716 launch batches, Postgres 18) `run --all` took 8 s, filled all 62,858 with
+no short batch, and every one of the 1,364 deep publications' flags agreed
+with the derived value: 59,392 launches from fees-on strategies, 3,466 from
+fees-off ones.
+
 ## What the api reads, and what came across from the old database
 
 The read API opens one `DATABASE_URL`, so `MARKET_SOURCE=ledger` alone reads

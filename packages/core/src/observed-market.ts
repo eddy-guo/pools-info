@@ -16,12 +16,14 @@ export interface ObservedMarket {
   fdvWei?: string | null;
   /** Whether the pool's launching deployment takes creator fees. It is a
    * property of that deployment rather than of the pool, so it comes from the
-   * pinned registry in `packages/chain/src/deployments.ts`. Served with the
-   * ledger's market, where the deep publication the page used to read is not
-   * served. It is ABSENT whenever it is not known - never false - because a
-   * fabricated "Disabled" would be a misleading claim about someone's money;
-   * it is absent on the broad and raw paths too, which carry the publication
-   * itself. */
+   * pinned registry in `packages/chain/src/deployments.ts`, stored per pool
+   * at discovery (`indexed_pools.creator_fees`, migration 021) and, for a row
+   * written before that column, read from the deep publication. Served with
+   * the ledger's market, where the deep publication the page used to read is
+   * not served. It is ABSENT whenever it is not known - never false - because
+   * a fabricated "Disabled" would be a misleading claim about someone's
+   * money; it is absent on the broad and raw paths too, which carry the
+   * publication itself. */
   creatorFees?: boolean;
   window: LiveWindow;
   volumeWei: string | null;

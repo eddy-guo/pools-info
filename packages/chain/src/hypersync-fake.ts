@@ -48,8 +48,10 @@ export function fakeLaunch(options: {
   sender: string;
   transactionHash: string;
   metadata?: { description: string; website: string; image: string };
+  /** The registry entry that emits the launch; the first one unless named. */
+  deployment?: (typeof instantDeployments)[number];
 }) {
-  const deployment = instantDeployments[0];
+  const deployment = options.deployment ?? instantDeployments[0];
   const zero = "0x0000000000000000000000000000000000000000";
   const key = encodeAbiParameters(
     [

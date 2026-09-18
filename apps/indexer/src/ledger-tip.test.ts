@@ -16,6 +16,7 @@ import {
   contracts,
   decodeAggregateRequest,
   encodeAggregateReply,
+  instantDeployments,
   ledgerPassPolicy,
   swapEvent,
   type HyperSyncRetryEvent,
@@ -197,11 +198,14 @@ function tipChain(
     sender: S,
     transactionHash: word(0xb1),
   });
+  // C launches from the fees-off strategy: the tip writes the emitting
+  // deployment's flag, as the pass does for A and B.
   const c = fakeLaunch({
     block: start + 230,
     token: TC,
     sender: S,
     transactionHash: word(0xc1),
+    deployment: instantDeployments[1],
   });
   const A = (
     block: number,
@@ -330,7 +334,7 @@ async function snapshot(db: Client, windows = false) {
     ),
     launches: (await getStream(db, ledgerLaunchStreamIdentity.key)).cursor,
     catalog: await q(
-      "SELECT pool_id,token,name,symbol,decimals,token_total_supply_raw::text AS supply,token_supply_block::text AS supply_block,launch_block::text,launch_sender,source_stream,source_batch::text FROM indexed_pools ORDER BY launch_block,pool_id",
+      "SELECT pool_id,token,name,symbol,decimals,token_total_supply_raw::text AS supply,token_supply_block::text AS supply_block,creator_fees,launch_block::text,launch_sender,source_stream,source_batch::text FROM indexed_pools ORDER BY launch_block,pool_id",
     ),
     wallets: await q(
       "SELECT encode(address,'hex') AS address,first_block::text FROM agg_wallets ORDER BY address",
@@ -423,7 +427,7 @@ test(
     assert.deepEqual(await snapshot(db), expected);
     // The launch that arrived at the tip is complete.
     const c = await db.query(
-      "SELECT symbol,decimals,token_total_supply_raw::text AS supply,token_supply_block::int AS block,source_stream,source_batch::int AS batch FROM indexed_pools WHERE pool_id=$1",
+      "SELECT symbol,decimals,token_total_supply_raw::text AS supply,token_supply_block::int AS block,creator_fees,source_stream,source_batch::int AS batch FROM indexed_pools WHERE pool_id=$1",
       [poolC],
     );
     assert.deepEqual(c.rows, [
@@ -432,10 +436,20 @@ test(
         decimals: 6,
         supply: "123456789",
         block: rpcHead,
+        creator_fees: false,
         source_stream: "launches:agg:v1",
         batch: start + 299,
       },
     ]);
+    assert.deepEqual(
+      (
+        await db.query(
+          "SELECT creator_fees FROM indexed_pools WHERE pool_id<>$1 ORDER BY launch_block",
+          [poolC],
+        )
+      ).rows,
+      [{ creator_fees: true }, { creator_fees: true }],
+    );
     // The head beside the cursor.
     const head = (
       await db.query(

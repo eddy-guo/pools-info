@@ -14,7 +14,12 @@ import { readTradeShare } from "./trade-share-read";
 import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
 import { readObservedMarket } from "./observed-market-read";
-import { servedByLedger, type MarketSource } from "./ledger-market";
+import {
+  creatorFeeFlag,
+  servedByLedger,
+  withCreatorFees,
+  type MarketSource,
+} from "./ledger-market";
 import {
   encodeCursor,
   isAddress,
@@ -43,7 +48,7 @@ export const limitations = {
 const coverageColumns =
   "s.start_block, s.cursor_block, s.cursor_hash, s.updated_at";
 const poolColumns =
-  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch, p.discovery_source, p.image_url, p.description, p.external_url, p.metadata_sources";
+  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch, p.discovery_source, p.image_url, p.description, p.external_url, p.metadata_sources, p.creator_fees";
 const eventColumns =
   "e.stream_key, e.pool_id, e.token, e.tx_hash, e.log_index, e.block_number, e.block_hash, e.timestamp, e.kind, e.transaction_sender, e.payload";
 const eventOrder =
@@ -156,6 +161,11 @@ export async function readData(
     await query("SELECT 1 FROM analytics_accounting_trades WHERE false");
     await query("SELECT 1 FROM analytics_accounting_prices WHERE false");
     await query("SELECT 1 FROM token_images WHERE false");
+    // The catalog CTE names the creator-fee column (migration 021) on every
+    // path, and the tip loop applies that migration at its own start, so a
+    // release ahead of it stays unready and the previous release keeps
+    // serving until the column exists.
+    await query("SELECT creator_fees FROM indexed_pools WHERE false");
     if (marketSource === "ledger") {
       await query("SELECT 1 FROM agg_streams WHERE false");
       await query("SELECT 1 FROM agg_batches WHERE false");
@@ -381,15 +391,21 @@ export async function readData(
       // The creator-fee flag is the one field of that publication the page has
       // no other source for, and withholding it renders an empty stat. It is
       // carried on the market instead of the publication, because serving the
-      // publication would put the page's price and candles back on it.
-      // Absent, never false, when the publication that holds it is missing:
-      // an invented "Disabled" would misstate whether a pool charges its
-      // creator a fee, which is a claim about someone's money.
-      market:
-        servedByLedger(market) &&
-        typeof analytics?.snapshot.markets[0]?.creatorFees === "boolean"
-          ? { ...market, creatorFees: analytics.snapshot.markets[0].creatorFees }
-          : market,
+      // publication would put the page's price and candles back on it. The
+      // catalog's own column (migration 021, written at discovery) is
+      // preferred; the frozen publication answers for a pool written before
+      // the column existed. Absent, never false, when neither holds it: an
+      // invented "Disabled" would misstate whether a pool charges its creator
+      // a fee, which is a claim about someone's money.
+      market: servedByLedger(market)
+        ? withCreatorFees(
+            market,
+            creatorFeeFlag(
+              result.rows[0].creator_fees,
+              analytics?.snapshot.markets[0]?.creatorFees,
+            ),
+          )
+        : market,
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
   }

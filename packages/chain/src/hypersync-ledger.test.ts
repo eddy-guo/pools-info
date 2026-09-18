@@ -43,6 +43,7 @@ import {
   encodeAggregateReply,
 } from "./multicall";
 import { Rpc } from "./rpc";
+import { getInstantDeployment, instantDeployments } from "./deployments";
 import { contracts, launchEvent, swapEvent, transferEvent } from "./events";
 import { tokenMetadataFactory } from "./token-metadata";
 
@@ -568,6 +569,13 @@ test("the recorded tip page yields one verified launch with name, symbol and dec
     ["Tip Token", "TIP", 18, (10n ** 27n).toString(), 64798181],
   );
   assert.equal(c.launch.evidence.schemaVersion, 2);
+  // The flag is the pinned registry's for the strategy that emitted the
+  // launch log, resolved from the log the lane already verified.
+  assert.equal(
+    pool.creatorFees,
+    getInstantDeployment(launchLog.address)!.creatorFees,
+  );
+  assert.equal(typeof pool.creatorFees, "boolean");
   assert.ok(pool.description !== undefined || pool.imageUrl !== undefined);
   assert.equal(pool.launchTx, launchLog.transaction_hash);
   assert.equal(pool.launchLogIndex, Number(launchLog.log_index));
@@ -590,6 +598,12 @@ test("the recorded tip page yields one verified launch with name, symbol and dec
   inflated.pools[0].totalSupplyRaw = (10n ** 28n).toString();
   assert.throws(
     () => verifyLedgerLaunchBatch(inflated),
+    /HyperSync ledger rows disagree with retained evidence/,
+  );
+  const flipped = structuredClone(c.launch);
+  flipped.pools[0].creatorFees = !pool.creatorFees;
+  assert.throws(
+    () => verifyLedgerLaunchBatch(flipped),
     /HyperSync ledger rows disagree with retained evidence/,
   );
   // A batch collected before supply joined the reads still verifies as the
@@ -655,11 +669,15 @@ function fakeChain(height: number, options: { maxLogsPerPage?: number } = {}) {
       image: "https://a.example/a.png",
     },
   });
+  // B launches from the fees-off strategy of the same generation (same fee
+  // and tick spacing, so the same pool key shape): the flag is the emitting
+  // deployment's, not the pool's.
   const b = fakeLaunch({
     block: start + 150,
     token: TB,
     sender: S,
     transactionHash: word(0xb1),
+    deployment: instantDeployments[1],
   });
   const logs = [
     ...a.logs,
@@ -771,11 +789,16 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
       p.decimals,
       p.totalSupplyRaw,
       p.supplyBlock,
+      p.creatorFees,
     ]),
     [
-      [poolA, "Alpha", "A", 18, (10n ** 27n).toString(), 64798181],
-      [poolB, "Beta", "B", 6, "123456789", 64798181],
+      [poolA, "Alpha", "A", 18, (10n ** 27n).toString(), 64798181, true],
+      [poolB, "Beta", "B", 6, "123456789", 64798181, false],
     ],
+  );
+  assert.deepEqual(
+    [instantDeployments[0].creatorFees, instantDeployments[1].creatorFees],
+    [true, false],
   );
   assert.equal(c.launch.pools[0].description, "Token A");
   assert.deepEqual(calls, { eth_chainId: 1, eth_blockNumber: 1, eth_call: 1 });

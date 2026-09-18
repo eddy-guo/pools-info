@@ -394,6 +394,7 @@ export async function runLedgerRange(
       ...(p.totalSupplyRaw === undefined
         ? {}
         : { totalSupplyRaw: p.totalSupplyRaw, supplyBlock: p.supplyBlock }),
+      creatorFees: p.creatorFees,
     })),
   });
   const applied = await applyLedgerBatch(db, ledgerBatchOf(collection));
