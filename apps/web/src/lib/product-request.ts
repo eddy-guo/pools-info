@@ -70,7 +70,7 @@ export function productRequest(path: string[], input: URLSearchParams) {
       throw Error("Invalid metric");
     if (
       key === "view" &&
-      !["all", "gainers", "new", "crowd", "watchlist"].includes(value)
+      !["all", "gainers", "new", "watchlist"].includes(value)
     )
       throw Error("Invalid view");
     if (

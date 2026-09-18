@@ -336,3 +336,33 @@ test.describe("a stale liquidity sort in the URL", () => {
     expect(search(page).get("dir")).toBeNull();
   });
 });
+
+/* The read API answers a crowd view with no rows, so the screener offers no
+   Crowd tab (sweep s6 defect 11): a link that still names it opens the
+   default view rather than a tab that can never show a pool. */
+test.describe("a stale crowd view in the URL", () => {
+  test("opens the default view and offers no Crowd tab", async ({ page }) => {
+    const opened = exploreRequest(page);
+    await page.goto("/?view=crowd");
+    const sent = new URL((await opened).url()).searchParams;
+    expect(sent.get("view"), "the request carries the default view").toBe(
+      "all",
+    );
+    await expect(firstRow(page)).toBeAttached();
+    const tabs = page.locator(".explore-toolbar .table-tabs button");
+    await expect(tabs).toHaveText(["All", "Gainers", "New", "Watchlist"]);
+    await expect(tabs.filter({ hasText: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(
+      page.locator(".explore-page .empty-state"),
+      "the default view's rows are on show, not an empty state",
+    ).toHaveCount(0);
+
+    const changed = exploreRequest(page);
+    await page.getByRole("button", { name: "7d", exact: true }).click();
+    expect(new URL((await changed).url()).searchParams.get("view")).toBe("all");
+    expect(search(page).get("view"), "the stale view leaves the URL").toBeNull();
+  });
+});
