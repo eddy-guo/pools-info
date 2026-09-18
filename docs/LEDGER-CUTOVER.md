@@ -305,6 +305,14 @@ lifetime figures (022 did not touch them) but not the per-hour finances the
 migration zeroed, which the ledger keeps nowhere else, so the old board
 figures return only from a LedgerPostgres snapshot taken before 08:11:36Z
 or a re-fold with `pnpm ledger:pass` (day-scale, on the captain's word).
+No such snapshot exists: read at 08:3xZ the same day, Railway holds no
+backup and no backup schedule for the volume (instance c29bc41c on
+`postgres-volume-Beld`), and volume backups are not available on the
+project's Hobby plan (`subscriptionPlanLimit.volumes.maxBackupsCount` is 0;
+Pro, USD 20 minimum usage a month against Hobby's 5, allows them, billed
+like volume storage on the backup's incremental size, and a manual backup is
+limited to half the volume's size, so this 5 GB volume at 2.9 GB used would
+first have to grow). Enabling them is a plan change the captain decides.
 
 ## The wallet page: the frozen route beside the ledger's
 
