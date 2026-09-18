@@ -440,6 +440,21 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   ]);
   await expect(page.locator(".wallet-behaviour .unavailable")).toHaveCount(0);
   await expect(page.locator(".market-sidebar")).not.toContainText("N/A");
+  // The PnL chart's seven axis ticks keep their line boxes but print
+  // nothing for a series with no points: the note under the chart already
+  // says there is no realized PnL, so no tick stands in for a figure.
+  const ticks = main.locator(".chart-axis > span, .chart-dates > span");
+  await expect(ticks).toHaveCount(7);
+  for (const tick of await ticks.all()) await expect(tick).toHaveText(/^\s*$/);
+  expect(
+    await page.evaluate(
+      () =>
+        [...document.querySelectorAll("*")].filter(
+          (node) => !node.children.length && node.textContent?.trim() === "N/A",
+        ).length,
+    ),
+    "no leaf on the page reads N/A",
+  ).toBe(0);
 });
 
 test("copy trade opens the designed card as a read-only preview", async ({

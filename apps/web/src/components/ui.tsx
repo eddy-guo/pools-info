@@ -710,10 +710,14 @@ export function Chart({
             </>
           )}
         </svg>
+        {/* A tick names a figure the series holds, or nothing: a series with
+            no points has no scale to label, and the note under the chart
+            already says so, so the ticks keep their line boxes and stay
+            blank rather than printing a stand-in. */}
         <div className="chart-axis">
           {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
             <span key={i} data-pending={pending}>
-              {points.length ? axisLabel(v) : pending ? "Pending" : "N/A"}
+              {points.length ? axisLabel(v) : pending ? "Pending" : "\u00a0"}
             </span>
           ))}
         </div>
@@ -735,7 +739,7 @@ export function Chart({
                   })
               : pending
                 ? "Pending"
-                : "N/A"}
+                : "\u00a0"}
           </span>
         ))}
       </div>
