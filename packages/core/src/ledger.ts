@@ -13,18 +13,28 @@ export const ledgerFlashHoldSeconds = 60;
 export const ledgerZeroAddress = "0x0000000000000000000000000000000000000000";
 export type LedgerFlag =
   | "zero_cost_inflow"
+  | "unattributed_outflow"
   | "wrapper_route"
   | "counterparty_route"
   | "unknown_basis"
   | "unattributed_swap_activity";
 /** Flags a supported position may carry: they describe, they never exclude. */
 export const ledgerInformationalFlags: readonly LedgerFlag[] = [
-  "zero_cost_inflow",
   "wrapper_route",
   "counterparty_route",
 ];
-/** Flags that exclude a position: its finances are never served. */
+/** Flags that exclude a position: its finances are never served. The ledger
+ * vouches for a position it witnessed end to end, swap by swap. Tokens that
+ * arrived without a swap it attributed (`zero_cost_inflow`) have no basis it
+ * can vouch for, so a later sale would book its whole proceeds as profit;
+ * tokens that left without a swap (`unattributed_outflow`) took their basis
+ * to a disposition it never saw, so the position's outcome is unknown rather
+ * than the sales it did see. Both exclude from the moment the transfer lands
+ * (decided 18 Sep 2026, migration 022), as a sale of tokens the ledger never
+ * saw arrive does. */
 export const ledgerExcludingFlags: readonly LedgerFlag[] = [
+  "zero_cost_inflow",
+  "unattributed_outflow",
   "unknown_basis",
   "unattributed_swap_activity",
 ];
@@ -650,6 +660,7 @@ function refreshFlags(p: LedgerPosition) {
     p.flags.filter((f) => ledgerExcludingFlags.includes(f)),
   );
   if (p.inflow > 0n) flags.add("zero_cost_inflow");
+  if (p.outflow > 0n) flags.add("unattributed_outflow");
   if (p.wrapperSwaps > 0) flags.add("wrapper_route");
   if (p.counterpartySwaps > 0) flags.add("counterparty_route");
   p.flags = [...flags].sort();
@@ -664,9 +675,11 @@ function basisOf(p: LedgerPosition, tokenRaw: bigint) {
 /** Apply planned events to a state holding every row they can touch (missing
  * rows are new). Buys and sells are foldTrades; a sell or an outflow above the
  * held quantity empties the inventory and excludes the position with
- * `unknown_basis`, as foldTrades does; an unattributed swap excludes every
- * position its token touched. Inventory cycles open when the quantity leaves
- * zero and close on the sell that returns it to zero, exactly the closures
+ * `unknown_basis`, as foldTrades does; any inflow or outflow excludes it
+ * (`zero_cost_inflow`, `unattributed_outflow`), the figures folding on for
+ * the position's own row; an unattributed swap excludes every position its
+ * token touched. Inventory cycles open when the quantity leaves zero and
+ * close on the sell that returns it to zero, exactly the closures
  * walletMetrics derives; an outflow that empties the inventory ends the cycle
  * without a closure, since a transfer out is not a sale. */
 export function applyLedgerEvents(
@@ -695,9 +708,8 @@ export function applyLedgerEvents(
     return p;
   };
   const exclude = (p: LedgerPosition, flag: LedgerFlag) => {
-    if (p.flags.includes(flag)) return;
     const wasSupported = p.supported;
-    p.flags = [...p.flags, flag];
+    if (!p.flags.includes(flag)) p.flags = [...p.flags, flag];
     refreshFlags(p);
     if (!wasSupported) return;
     out.excluded.push(p);
@@ -935,13 +947,18 @@ export function applyLedgerEvents(
     }
     const p = position(e.poolId, e.wallet, e);
     if (e.kind === "inflow") {
+      // The tokens are held (a later sale of them is not an unknown basis)
+      // but their cost is not, so the position is excluded from here on.
       const before = p.quantity;
       p.quantity += e.tokenRaw;
       p.inflow += e.tokenRaw;
       openCycle(p, before, e);
-      refreshFlags(p);
+      exclude(p, "zero_cost_inflow");
       continue;
     }
+    // Tokens leave without a sale: their basis goes with them and the
+    // position is excluded from here on; more than the ledger holds is an
+    // unknown basis on top.
     p.outflow += e.tokenRaw;
     if (e.tokenRaw > p.quantity) {
       p.outflowCost += p.cost;
@@ -949,7 +966,7 @@ export function applyLedgerEvents(
       p.cost = 0n;
       p.cycleOpenedAt = null;
       p.cycleGain = null;
-      refreshFlags(p);
+      exclude(p, "unattributed_outflow");
       exclude(p, "unknown_basis");
       continue;
     }
@@ -961,7 +978,7 @@ export function applyLedgerEvents(
       p.cycleOpenedAt = null;
       p.cycleGain = null;
     }
-    refreshFlags(p);
+    exclude(p, "unattributed_outflow");
   }
   return out;
 }
@@ -975,6 +992,7 @@ export function ledgerIdentitiesHold(p: LedgerPosition) {
     p.quantity >= 0n &&
     p.cost >= 0n &&
     p.inflow > 0n === p.flags.includes("zero_cost_inflow") &&
+    p.outflow > 0n === p.flags.includes("unattributed_outflow") &&
     (p.cycleOpenedAt === null) === (p.cycleGain === null) &&
     p.quantity > 0n === (p.cycleOpenedAt !== null) &&
     (p.closedCycles === null) === (p.flashCycles === null) &&
