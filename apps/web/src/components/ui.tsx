@@ -149,7 +149,17 @@ export function AddressLabel({
   const subject = kind === "tx" ? "transaction" : "address";
   return (
     <span className="address-label">
-      <span className="mono">{full ? address : shortAddress(address)}</span>
+      {full ? (
+        /* Both forms are in the markup; the stylesheet shows the short one
+           only where the full one cannot fit (the wallet header on a phone),
+           so the copy control keeps the whole address in either case. */
+        <>
+          <span className="mono address-full">{address}</span>
+          <span className="mono address-short">{shortAddress(address)}</span>
+        </>
+      ) : (
+        <span className="mono">{shortAddress(address)}</span>
+      )}
       <CopyButton value={address} label={`Copy ${subject}`} />
       <ExplorerLink address={address} kind={kind} />
     </span>
