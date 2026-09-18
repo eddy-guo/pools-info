@@ -488,8 +488,13 @@ test("the database refuses forged identities, wrong scales, other chains and an 
   await refused("UPDATE agg_positions SET quantity_raw=-1");
   await refused("UPDATE agg_positions SET flags=ARRAY['unknown_basis']");
   await refused("UPDATE agg_positions SET supported=false");
+  // zero_cost_inflow excludes (migration 022): a supported position cannot
+  // carry it, and an excluded one cannot carry it without an inflow.
   await refused(
     "UPDATE agg_positions SET supported=false,flags=ARRAY['zero_cost_inflow']",
+  );
+  await refused(
+    "UPDATE agg_positions SET inflow_raw=5,flags=ARRAY['zero_cost_inflow']",
   );
   await refused("UPDATE agg_positions SET inflow_raw=5");
   await refused("UPDATE agg_positions SET flags=ARRAY['wrapper_route']");
@@ -558,15 +563,17 @@ test("walk-back restores every pre-image in reverse order and a replaced range r
   });
   await ensureLedgerStream(fresh, "pass");
 
-  // A: W buys. B: W sells part, V buys through a wrapper, W gives V tokens.
-  // C: V sells more than the ledger holds (excluded, zeroing V's hour in B),
-  // a new wallet U appears, and a loop leaves an unattributed swap.
-  const U = addr(0x302);
+  // A: W buys. B: W sells part, V buys through a wrapper, W gives X tokens
+  // (X is excluded on arrival, W on departure with a proportional basis
+  // gone). C: V sells more than the ledger holds (excluded, zeroing V's hour
+  // in B), a new wallet U appears, and a loop leaves an unattributed swap.
+  const U = addr(0x302),
+    X = addr(0x303);
   const A = batch(base, base + 9, [trade(base + 5, "buy", E, 100n)]);
   const B = batch(base + 10, base + 19, [
     trade(base + 12, "sell", (E * 6n) / 10n, 40n),
     trade(base + 14, "buy", E, 30n, V, { txTo: addr(0x400) }),
-    { transfers: [transfer(base + 16, 2, W, V, 10n, hash(4444))] },
+    { transfers: [transfer(base + 16, 2, W, X, 10n, hash(4444))] },
   ]);
   const loop = hash(5555);
   const C = batch(base + 20, base + 29, [

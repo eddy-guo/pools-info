@@ -80,7 +80,7 @@ const pools = {
 };
 const wallet = (n: number) => addr(0x10000 + n);
 const W = Object.fromEntries(
-  [1, 2, 3, 4, 6].map((n) => [n, wallet(n)]),
+  [1, 2, 3, 4, 6, 7, 8].map((n) => [n, wallet(n)]),
 ) as Record<number, `0x${string}`>;
 /** A sqrt price of 2^68: 2^192 / 2^136 = 2^56 wei per raw unit. */
 const sqrtQ = (2n ** 68n).toString();
@@ -143,6 +143,23 @@ class Rows {
         E + gain,
         10n,
       );
+    return this;
+  }
+  /** A plain transfer of P between wallets, no swap in its transaction. */
+  move(block: number, from: string, to: string, tokens: bigint) {
+    const i = this.logs.get(block) ?? 0;
+    this.logs.set(block, i + 1);
+    this.transfers.push({
+      txHash: hash(BigInt(block) * 100000n + BigInt(i)),
+      logIndex: i,
+      block,
+      blockHash: hash(block),
+      timestamp: ts(block),
+      token: pools.P.token,
+      from,
+      to,
+      value: tokens.toString(),
+    });
     return this;
   }
 }
@@ -283,7 +300,15 @@ test(
       // W6 has a supported position in P and sells 7 Q tokens it never
       // bought: that position is excluded, its finances never served.
       .roundTrips(blockOf(1071, 0), W[6], 5, tenth / 2n)
-      .trade(blockOf(1071, 1), W[6], "sell", 9n * tenth, 7n, pools.Q);
+      .trade(blockOf(1071, 1), W[6], "sell", 9n * tenth, 7n, pools.Q)
+      // W8 buys 100 P for 1 ETH and sends 90 to W7, which sells them in ten
+      // sales of 1 ETH each in hour 1073: the transfer excludes W7's
+      // position on arrival (zero_cost_inflow) and W8's on departure
+      // (unattributed_outflow), so W7's 10 ETH of proceeds is volume only.
+      .trade(blockOf(1073, 0), W[8], "buy", E, 100n)
+      .move(blockOf(1073, 1), W[8], W[7], 90n);
+    for (let i = 0; i < 10; i++)
+      rows.trade(blockOf(1073, 3), W[7], "sell", E, 9n);
     for (let hour = 1030; hour < 1078; hour++)
       rows.roundTrips(blockOf(hour, 2), W[4], 1, tenth);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
@@ -585,6 +610,91 @@ test(
       [null, null, null, (9n * tenth).toString(), null],
     );
     assert.equal(w6.positions.length, 2);
+
+    // W7: the header the board would rank by, had it a supported trade:
+    // ten trades and 10 ETH of volume, no supported trade, no realized or
+    // disposed figure and so no ROI (never a percent of a zero basis), no
+    // rank; the one position excluded with the flag and no finance served.
+    const w7 = await profile(W[7], "24h");
+    assert.deepEqual(w7.wallet, {
+      address: W[7],
+      rank: null,
+      realizedWei: "0",
+      netWei: "0",
+      unrealizedWei: null,
+      volumeWei: (10n * E).toString(),
+      roi: null,
+      wins: 0,
+      losses: 0,
+      winRate: null,
+      tradeCount: 10,
+      supportedTradeCount: 0,
+      supportedPositionCount: 0,
+      excludedPositionCount: 1,
+      bestWei: null,
+      avgHold: null,
+      last: ts(blockOf(1073, 3)),
+      asOf: ts(cursor1),
+      oldestAsOf: ts(cursor1),
+      completeWindow: true,
+    } satisfies AnalyticsWalletSummary);
+    assert.deepEqual(
+      w7.positions.map((p) => [
+        p.poolId,
+        p.supported,
+        p.flags,
+        p.realizedWei,
+        p.netWei,
+        p.unrealizedWei,
+        p.volumeWei,
+        p.position,
+      ]),
+      [
+        [
+          pools.P.id,
+          false,
+          ["zero_cost_inflow"],
+          null,
+          null,
+          null,
+          (10n * E).toString(),
+          null,
+        ],
+      ],
+    );
+    // W8 sent ninety of the hundred away without a sale: the ledger never
+    // saw where their 0.9 ETH of basis went, so its position is excluded
+    // too (unattributed_outflow) and its buy is a trade and volume only;
+    // no loss is booked for the move.
+    const w8 = await profile(W[8], "24h");
+    assert.deepEqual(
+      [
+        w8.wallet.supportedPositionCount,
+        w8.wallet.excludedPositionCount,
+        w8.wallet.tradeCount,
+        w8.wallet.supportedTradeCount,
+        w8.wallet.realizedWei,
+        w8.wallet.netWei,
+        w8.wallet.volumeWei,
+        w8.wallet.roi,
+        w8.positions[0].supported,
+        w8.positions[0].flags,
+        w8.positions[0].position,
+      ],
+      [
+        0,
+        1,
+        1,
+        0,
+        "0",
+        "0",
+        E.toString(),
+        null,
+        false,
+        ["unattributed_outflow"],
+        null,
+      ],
+    );
 
     // W4's 48 hours of round trips: the 23 inside the 24h window realize
     // 2.3 ETH, all of them 4.8, and the one P position carries the same

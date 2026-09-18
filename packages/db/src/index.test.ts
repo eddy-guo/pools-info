@@ -351,6 +351,7 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
       "019_token_total_supply.sql",
       "020_ledger_tip.sql",
       "021_creator_fees.sql",
+      "022_unattributed_transfers_exclude.sql",
     ],
   );
   const readIndexes = await db.query(

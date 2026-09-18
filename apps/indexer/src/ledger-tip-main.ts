@@ -91,7 +91,6 @@ async function main() {
       return;
     }
     assertLedgerTipAllowed(config);
-    await migrate(db);
     let throttled = 0;
     const pacer = new HyperSyncPacer();
     const client = () =>
@@ -126,6 +125,25 @@ async function main() {
       throw Error("Another process holds the ledger writer lock");
     }
     try {
+      // Migrations run under the writer lock, after the previous instance
+      // of a deployment overlap has released it: a migration that rewrites
+      // ledger rows (022 re-flags positions and rebuilds the windows) never
+      // runs beside a batch the old image is still folding under the old
+      // rule, and the api only reads while it runs. They get their own
+      // connection with an hour's budget: a migration file is one query to
+      // the driver, whose call timeout is the statement budget, and 022 takes
+      // one to three minutes on a production-shaped copy against the ten
+      // minutes a batch's own statements keep.
+      const migrator = createClient(undefined, {
+        statementTimeoutMs: 3600000,
+        applicationName: "pools-ledger-tip-migrate",
+      });
+      await migrator.connect();
+      try {
+        await migrate(migrator);
+      } finally {
+        await migrator.end();
+      }
       const summary = await runLedgerTip(db, {
         client,
         rpc: () => createLedgerPassRpc(config, stop.signal),

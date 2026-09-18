@@ -31,7 +31,20 @@ the report and why, and what phases 4 and 5 still owe.
   outflows. Swaps apply before residual transfers, transactions in block
   order, both in log order. `wrapper_route` marks a swap whose transaction
   `to` was not the router, `counterparty_route` a swap attributed to a
-  recipient, `zero_cost_inflow` a position with `inflow_raw > 0`.
+  recipient; both describe. `zero_cost_inflow` marks a position with
+  `inflow_raw > 0` and `unattributed_outflow` one with `outflow_raw > 0`,
+  and each excludes it from the moment the transfer lands (decided 18 Sep
+  2026, migration 022): the ledger vouches for a position it witnessed end
+  to end. Tokens that arrived without a swap have no basis it can vouch for,
+  and a sale booked against a zero basis read as pure profit (on the 24h
+  board of 18 Sep, 58 of the top 100 were such rows, sybil receivers of
+  creator-run distribution farms); tokens that left without a swap took
+  their basis (`outflow_cost_wei`) to a disposition it never saw (the same
+  farms' buying wallets: buy, fan out, the receivers sell), so that
+  position's outcome is unknown rather than the sales it did see, and no
+  loss is invented for the move. The position's own figures keep folding and
+  are never served; its hour rows keep counts and volume and lose their
+  finances, as for the two other excluding flags.
 - `applyLedgerEvents` is the incremental average-cost position: `foldTrades`
   made stateful (buy adds quantity and cost; sell disposes `cost * tok / qty`,
   or the whole cost when the inventory closes), with `disposed_cost`,
@@ -135,8 +148,10 @@ database checks. `packages/db/src/ledger.test.ts` forges each of them.
   (10,202 of them cycle closures) reproduce exactly; the rule over all 281,613
   deep-tier events gives 123,902 initiator and 2,412 counterparty
   attributions, 759 unattributed swaps, 54,423 positions of which 426 are
-  excluded (report: the same), and the three wallets of report section 4.4
-  reproduce to the wei shown there.
+  excluded by an unknown basis or unattributed activity (report: the same)
+  and, since migration 022, more by a transfer in or out alone (the replay
+  prints the count per flag set); the three wallets of report section 4.4
+  hold no such position and reproduce to the wei shown there.
 
 ## Phase 2: the history pass
 
@@ -246,7 +261,7 @@ the cutoff header, the metadata issues and the raw Multicall3 replies;
   (100,000). The batch semantics are unchanged; only the boundaries move.
 - **Metadata is read at the RPC's head, not the cutoff.** The public RPC
   answers `eth_call` for the last few thousand blocks only (`historical state
-  ... is not available` beyond them), so name, symbol and decimals are read
+... is not available` beyond them), so name, symbol and decimals are read
   at `eth_blockNumber`. They are immutable for factory tokens; the evidence
   records the block.
 - **Value lists are digested, not stored.** Storing 62,000 pool ids per
@@ -436,9 +451,13 @@ request.
   with its lag under two batches, belong to it. The old indexer service stays
   down.
 
-Decisions D1 (wrapper-routed wallets on the board) and D2 (zero-cost inflows
-in ranking) are query predicates on `flags`; D3's flip adds a per-sale table
-fed by `LedgerSale`; D4 and D5 belong to phases 5 and 4. The pass leaves the
+Decision D1 (wrapper-routed wallets on the board) is a query predicate on
+`flags`; D2 (zero-cost inflows in ranking) was taken at the fold on 18 Sep
+2026, `zero_cost_inflow` and `unattributed_outflow` each excluding the
+position (migration 022 re-flagged the rows written before it, zeroed their
+hours and pre-images and rebuilt the windows in one transaction; recording
+each transfer's counterparty is a filed follow-up); D3's flip adds a
+per-sale table fed by `LedgerSale`; D4 and D5 belong to phases 5 and 4. The pass leaves the
 stream in mode `tip` once a fresh archive height leaves a gap under
 `ledgerPassPolicy.catchUpMargin` (2,000 blocks) past the 128-block safety lag,
 not on an exact zero gap: a chain that never stops producing blocks never
