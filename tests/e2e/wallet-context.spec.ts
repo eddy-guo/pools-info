@@ -422,7 +422,7 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
     main.getByText("No realized PnL in this window.", { exact: true }),
   ).toBeVisible();
   await expect(
-    main.getByRole("heading", { name: "No positions in this window" }),
+    main.getByRole("heading", { name: "No positions", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".market-sidebar .wallet-top-pools")).toHaveText(
     "No pool activity in this window.",
