@@ -1,5 +1,15 @@
 # Status - 15 Sep 2026, current settling pass
 
+## Production serves from the aggregate ledger (18 Sep 2026, 00:12 UTC)
+
+The api on Railway reads `LedgerPostgres` with `MARKET_SOURCE=ledger`: the
+screener lists the whole catalog (63,052 pools at the flip against 1,406 on
+the old path), the pool page's price, chart, volume, trades and change come
+from the ledger, and the tip loop `ledger-tip` keeps it about 13 s behind the
+chain. The flip, its rollback conditions and what stays dark are recorded in
+`docs/LEDGER-CUTOVER.md` under "The switch in production". Everything below
+this section predates it.
+
 ## HyperSync history backfill: built and tested, not run (16 Sep, 02:25 UTC live check)
 
 The complete tier-2 swap history is to come from Envio HyperSync on its free

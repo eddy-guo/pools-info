@@ -98,6 +98,49 @@ checked in `LedgerPostgres` before the switch.
   `feed_coverage_unavailable`. The live feed is dark until the ledger's tip
   loop runs; the reader does not serve it from `agg_live_trades`.
 
+## The switch in production
+
+Production has served from `LedgerPostgres` with `MARKET_SOURCE=ledger` since
+18 Sep 2026 00:12:32Z (api deployment 32a0ecb8 on 88ac98f, `listening
+marketSource="ledger"`). Three earlier flips on 17 Sep were rolled back within
+minutes, none on wrong data: an empty screener Trend column (removed since),
+a cold page cache on the ledger database (the screener's explore statement hit
+the api's 3 s budget with `57014`), and the pool page's Creator fee stat
+rendering its unavailable mark because the ledger path answers
+`analytics: null` (fixed on the read side by the flag on `market.creatorFees`
+and on the page by reading it where no accounted cut names it). The fourth
+flip was held on three rollback conditions checked at equal weight, at the
+first read and again after a thirty-minute watch, and every one must still
+hold after any change to either path:
+
+- FRONG's Creator fee stat reads Enabled or Disabled on the live site, never
+  the unavailable mark. It is the only test of the flag's primary case, a
+  published pool the ledger serves: the integration fixture cannot reach it
+  because there a publication outranks the ledger, the opposite of production.
+- `window=24h` and `window=7d` on the same pool return different figures. On
+  the old path they were byte-identical for every pool (the broad rollups
+  closed on 31 July), so identical figures mean the ledger is not being served
+  whatever else looks right.
+- No `read_failed` with `57014` on any product read. A slow first pass after a
+  redeploy is the fresh api process warming and settles; the cold database
+  fails loudly instead, and the page cache goes cold on its own after about
+  ninety idle minutes with no restart, so the flip was preceded by a hand-warm
+  through a temporary api in ledger mode confirmed under half a second twice
+  in a row (the reads are the warm-up; nothing can inspect residency).
+
+Rollback stays the same pair: `DATABASE_URL` referencing the old `Postgres`,
+`MARKET_SOURCE` deleted, the previous image redeployed.
+
+Two visible consequences of the empty `broad_*` rollups follow from the
+decision above and are not defects: the Live trades rail reads "Feed not
+running", and the creators aggregate (`apps/api/src/creators-read.ts`), which
+measures a launch by the broad rule whatever `MARKET_SOURCE` says, now counts
+only launches with a deep publication in its still-trading, volume, median and
+best columns (one creator reads 28 of 28 launches and 207 ETH where the old
+path read 42 of 42 and 743 ETH). Launch counts and ranking are unchanged, and
+no figure is invented for an unmeasured launch. Serving creators from the
+ledger would close that gap.
+
 ## Reading our figures against pools.xyz
 
 The screener's and pool page's 24h volume and trades are the swaps in the
