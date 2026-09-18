@@ -245,6 +245,11 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
     unindexedLine,
   );
+  // The most traded pools rail carries the same one line: an unobserved
+  // wallet has no window in which its activity could be empty.
+  await expect(page.locator(".wallet-page .wallet-top-pools")).toHaveText(
+    unindexedLine,
+  );
   // No rank badge at all: the board this wallet was clicked from ranks it.
   await expect(page.locator(".wallet-page .page-heading")).not.toContainText(
     "RANK",
@@ -308,6 +313,9 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   await expect(empty).toContainText("This wallet has no positions.");
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
     "No realized PnL in this window.",
+  );
+  await expect(page.locator(".wallet-page .wallet-top-pools")).toHaveText(
+    "No pool activity in this window.",
   );
   await expect(page.locator(".wallet-page .page-heading")).toContainText(
     "UNRANKED",
@@ -419,6 +427,35 @@ test("a served wallet whose curve is not sent says so, with no Trades tab and it
   await expect(page.locator(".wallet-page")).not.toContainText(
     "No realized PnL",
   );
+  // At phone width the readout's label, value and time are three lines: the
+  // production page of 18 Sep 2026 wrapped them into a 40px box that cut the
+  // value's line and hid the time. The time's box sits inside the readout's
+  // and the readout's inside the region's, both fixed from first paint.
+  if (testInfo.project.name === "mobile") {
+    const region = page.locator(".wallet-page .wallet-chart-region");
+    const readout = region.locator(".chart-readout");
+    const boxes = {
+      region: await region.boundingBox(),
+      readout: await readout.boundingBox(),
+      time: await readout.locator("time").boundingBox(),
+    };
+    const within = (
+      inner: { x: number; y: number; width: number; height: number } | null,
+      outer: { x: number; y: number; width: number; height: number } | null,
+    ) =>
+      !!inner &&
+      !!outer &&
+      inner.x >= outer.x &&
+      inner.y >= outer.y &&
+      inner.x + inner.width <= outer.x + outer.width &&
+      inner.y + inner.height <= outer.y + outer.height;
+    expect(within(boxes.time, boxes.readout), JSON.stringify(boxes)).toBe(
+      true,
+    );
+    expect(within(boxes.readout, boxes.region), JSON.stringify(boxes)).toBe(
+      true,
+    );
+  }
   // The positions come in pages under the shared Show more control, not
   // all at once: 25 rows from first paint, 25 more per click, the count
   // reading off the rows on hand.

@@ -459,7 +459,7 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
     unindexed,
   );
   await expect(page.locator(".market-sidebar .wallet-top-pools")).toHaveText(
-    "No pool activity in this window.",
+    unindexed,
   );
   await expect(page.locator(".market-sidebar h2").last()).toHaveText(
     "Most traded pools",

@@ -46,7 +46,8 @@ const tabs = [
  */
 const unindexed = (data: AnalyticsWalletResponse | undefined) =>
   !!data && data.wallet.asOf === null;
-/** The one line an unobserved wallet's positions and curve carry instead of zeros. */
+/** The one line an unobserved wallet's positions, curve and most traded
+    pools carry instead of zeros. */
 const UNINDEXED = "This wallet's trading has not been indexed yet.";
 /** The most positions the read sends (`apps/api/README.md`, the wallet
     route's bound), and so the most rows a hand-edited URL can reserve. */
@@ -773,7 +774,9 @@ export function ProductWallet({ address }: { address: string }) {
                   ))}
                   {data && !topPools.length && (
                     <p className="panel-footnote">
-                      No pool activity in this window.
+                      {unindexed(data)
+                        ? UNINDEXED
+                        : "No pool activity in this window."}
                     </p>
                   )}
                 </div>
