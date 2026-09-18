@@ -215,7 +215,15 @@ export function Candles(
         horzLines: { color: visualTheme.surface4 },
       },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: visualTheme.line, minimumWidth: 80 },
+      /* A tick label is drawn centred on its tick and, by default, allowed
+         to run past the scale's edge, which cut the topmost price label in
+         half; an edge tick is dropped instead. Chart-level scale options
+         seed every pane's own scale, so the volume pane gets the same. */
+      rightPriceScale: {
+        borderColor: visualTheme.line,
+        minimumWidth: 80,
+        entireTextOnly: true,
+      },
       timeScale: {
         borderColor: visualTheme.line,
         timeVisible: true,

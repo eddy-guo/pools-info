@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { ObservedMarket } from "@pools/core";
+import { visualTheme, type ObservedMarket } from "@pools/core";
 import captured from "../../data/pools/index.json";
 import { preloadedProduct } from "../../apps/web/src/lib/product-server";
 import { methodologyCopy } from "../support/pool-copy";
@@ -119,6 +119,123 @@ test("broad-only pool uses the real chart and exact market stats, with nothing u
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+/* The chart draws its price-scale labels on a canvas, so the labels are
+   measured where they are painted: a label is whole when no ink reaches the
+   first or last pixel row of its pane's axis. The library centres a label on
+   its tick and, unless the scale is told `entireTextOnly`, lets an edge tick's
+   label run past the pane (the topmost label cut in half on production). One
+   bar spanning 0.73 to 1.33 millionths of an ETH puts the 0.0₅1500 tick 0.8px
+   under the top of the desktop's 291px price pane (default margins, a tick
+   every 0.0₆1000): unfixed, that label's lower half showed in the top rows;
+   fixed, the tick is dropped and the scale starts at 0.0₅1400 about 35px
+   down. The bar stays under the library's 2^53/100 safe value, which its
+   development build asserts on. */
+test("price-scale labels stay whole at the edges of every pane", async ({
+  page,
+}, testInfo) => {
+  const market = fixture();
+  market.priceWei = "1330000000000";
+  market.history.candles = [
+    {
+      time: 199980,
+      open: "730000000000",
+      high: "1330000000000",
+      low: "730000000000",
+      close: "1330000000000",
+      volume: "1000000000000000000",
+    },
+  ];
+  await page.route(`**/api/product/pools/${id}/`, (route) =>
+    route.fulfill({
+      json: {
+        pool,
+        analytics: null,
+        market,
+        delivery: { source: "indexer", notice: null },
+      },
+    }),
+  );
+  await page.goto(`/pool/${id}/`);
+  await expect(page.locator(".interactive-chart canvas").first()).toBeVisible();
+  /* Each pane row of the chart's table holds the pane and its right price
+     axis; the time axis row is the last. Ink is any pixel past the axis
+     border at half the label colour's contrast or more, so the antialiased
+     fringe of a whole label never counts. Bands are the runs of rows that
+     carry ink: one per label. */
+  const rgb = (hex: string) =>
+    [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+  const scan = () =>
+    page.evaluate(
+      ({ fill, text }) => {
+        const rows = [
+          ...document.querySelectorAll(".interactive-chart table tr"),
+        ].filter((row) => row.children.length === 3);
+        const distance = (a: number[], b: number[]) =>
+          a.reduce((sum, channel, i) => sum + Math.abs(channel - b[i]), 0);
+        const threshold = distance(text, fill) / 2;
+        return rows.slice(0, -1).map((row) => {
+          const canvas = row.children[2].querySelector("canvas")!;
+          const { width, height } = canvas;
+          const pixels = canvas
+            .getContext("2d")!
+            .getImageData(0, 0, width, height).data;
+          const inkAt = (y: number) => {
+            for (let x = 2; x < width; x++) {
+              const i = (y * width + x) * 4;
+              if (distance([...pixels.subarray(i, i + 3)], fill) >= threshold)
+                return true;
+            }
+            return false;
+          };
+          const bands: [number, number][] = [];
+          for (let y = 0, start = -1; y <= height; y++) {
+            const ink = y < height && inkAt(y);
+            if (ink && start < 0) start = y;
+            if (!ink && start >= 0) {
+              bands.push([start, y - 1]);
+              start = -1;
+            }
+          }
+          return { height, bands };
+        });
+      },
+      { fill: rgb(visualTheme.panel), text: rgb(visualTheme.muted) },
+    );
+  await expect
+    .poll(async () => (await scan())[0]?.bands.length ?? 0, {
+      message: "the price pane has drawn its labels",
+    })
+    .toBeGreaterThanOrEqual(3);
+  const panes = await scan();
+  expect(panes, "a price pane over a volume pane").toHaveLength(2);
+  for (const [name, { height, bands }] of [
+    ["price", panes[0]],
+    ["volume", panes[1]],
+  ] as const) {
+    expect(bands.length, `the ${name} pane shows labels`).toBeGreaterThan(0);
+    for (const [top, bottom] of bands) {
+      expect(
+        top,
+        `a ${name} label clear of the pane's top edge`,
+      ).toBeGreaterThan(0);
+      expect(
+        bottom,
+        `a ${name} label clear of the pane's bottom edge`,
+      ).toBeLessThan(height - 1);
+    }
+  }
+  /* The fixture only proves anything while its edge tick is where the
+     geometry above puts it: the first label shown is the 0.0₅1400 tick on the
+     desktop (about 35px down) and, on the phone's 183px pane with a tick every
+     0.0₆2000, the same value about 22px down. */
+  const [firstTop] = panes[0].bands[0];
+  const expected = testInfo.project.name === "desktop" ? [28, 40] : [15, 27];
+  expect(
+    firstTop,
+    "the top label sits where the fixture's geometry puts it",
+  ).toBeGreaterThanOrEqual(expected[0]);
+  expect(firstTop).toBeLessThanOrEqual(expected[1]);
 });
 /* A bare pool link has only its observed market, and the ledger's market
    carries the creator-fee flag when it is known. Only a real boolean renders
