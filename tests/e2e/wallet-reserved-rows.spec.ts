@@ -56,13 +56,26 @@ test("a settled wallet blanks the rows it held open under its positions", async 
   ).toEqual(heights.resolved);
 });
 
-for (const tab of ["trades", "launches"]) {
-  test(`the wallet's ${tab} tab shows no unavailable marks in a reserved row`, async ({
-    page,
-  }) => {
-    await settled(page, `/wallet/${wallet}/?window=All&tab=${tab}`);
-    await expect(rows(page, "reserved").filter({ hasText: "N/A" })).toHaveCount(
-      0,
-    );
-  });
-}
+test("the wallet's launches tab shows no unavailable marks in a reserved row", async ({
+  page,
+}) => {
+  await settled(page, `/wallet/${wallet}/?window=All&tab=launches`);
+  await expect(rows(page, "reserved").filter({ hasText: "N/A" })).toHaveCount(
+    0,
+  );
+});
+
+// The Trades tab was cut with the ledger's wallet route, which serves no
+// per-wallet trade list: a bookmark to it opens the Positions tab, as any
+// unknown tab always did, with no error.
+test("a bookmarked trades tab falls to the positions tab", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await settled(page, `/wallet/${wallet}/?window=All&tab=trades`);
+  await expect(page.getByRole("tab", { selected: true })).toHaveText(
+    /^Positions/,
+  );
+  await expect(page.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
+  expect(await rows(page, "resolved").count()).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});

@@ -35,7 +35,6 @@ import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 const tabs = [
   { id: "positions", label: "Positions" },
-  { id: "trades", label: "Trades" },
   { id: "launches", label: "Launches" },
 ];
 /**
@@ -58,7 +57,6 @@ function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
   if (id !== "launches" && unindexed(data)) return null;
   if (id === "positions")
     return data.positionsTruncated ? null : data.positions.length;
-  if (id === "trades") return data.tradesTruncated ? null : data.trades.length;
   if (id === "launches")
     return data.launchesTruncated ? null : data.launches.length;
   return null;
@@ -547,97 +545,6 @@ export function ProductWallet({ address }: { address: string }) {
                     {data?.positionsTruncated && (
                       <p className="panel-footnote">
                         Showing the first {data.positions.length} positions.
-                      </p>
-                    )}
-                  </>
-                )}
-                {tab === "trades" && (
-                  <>
-                    <div
-                      className="table-scroll wallet-list-region"
-                      aria-busy={stale}
-                      data-stale-rows={stale}
-                    >
-                      <table className="data-table wallet-trades-table">
-                        <thead>
-                          <tr>
-                            <th>Time (UTC)</th>
-                            <th>Pool</th>
-                            <th>Side</th>
-                            <th>ETH</th>
-                            <th>Transaction</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data?.trades.map((e) => (
-                            <tr
-                              key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
-                            >
-                              <td>{utc(e.trade.timestamp)}</td>
-                              <td>{e.symbol}</td>
-                              <td
-                                className={
-                                  e.trade.side === "buy"
-                                    ? "positive"
-                                    : "negative"
-                                }
-                              >
-                                {e.trade.side}
-                              </td>
-                              <td>
-                                <Eth wei={e.trade.ethWei} />
-                              </td>
-                              <td>
-                                <a
-                                  href={`${explorer}/tx/${e.trade.txHash}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  {shortAddress(e.trade.txHash)} ↗
-                                </a>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div
-                      className="mobile-wallet-rows"
-                      aria-busy={stale}
-                      data-stale-rows={stale}
-                    >
-                      {data?.trades.map((e) => (
-                        <div
-                          className="mobile-wallet-row"
-                          key={`${e.poolId}:${e.trade.txHash}:${e.trade.logIndex}`}
-                        >
-                          <div className="mobile-wallet-row-top">
-                            <strong>{e.symbol}</strong>
-                            <Eth wei={e.trade.ethWei} />
-                          </div>
-                          <div className="mobile-wallet-row-stats">
-                            <span
-                              className={
-                                e.trade.side === "buy" ? "positive" : "negative"
-                              }
-                            >
-                              {e.trade.side}
-                            </span>{" "}
-                            · {utc(e.trade.timestamp)} ·{" "}
-                            <a
-                              href={`${explorer}/tx/${e.trade.txHash}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {shortAddress(e.trade.txHash)} ↗
-                            </a>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {data?.tradesTruncated && (
-                      <p className="panel-footnote">
-                        Showing the latest {data.trades.length} trades.
                       </p>
                     )}
                   </>

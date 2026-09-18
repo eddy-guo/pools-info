@@ -260,7 +260,7 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions",
   );
-  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades");
+  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   // The launches are real: they come from the catalog, not the accounting.
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
@@ -320,7 +320,7 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions0",
   );
-  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades0");
+  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
   );
