@@ -193,7 +193,13 @@ function DesktopTraderRow({
       </td>
       <td data-pending={pending}>
         {w ? (
-          <>{w.roi === null ? <Unavailable /> : <Change value={w.roi} />}</>
+          <>
+            {w.roi === null ? (
+              <Unavailable />
+            ) : (
+              <Change value={w.roi} abbreviate />
+            )}
+          </>
         ) : pending ? (
           "Pending"
         ) : (
@@ -300,7 +306,11 @@ function MobileTraderCard({
                   wei={metric === "realized" ? w.realizedWei : w.netWei}
                   signed
                 />
-                {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
+                {w.roi === null ? (
+                  <Unavailable />
+                ) : (
+                  <Change value={w.roi} abbreviate />
+                )}
               </div>
               <FollowRowButton address={w.address} />
             </div>
@@ -411,7 +421,11 @@ function PodiumCard({
         {w ? (
           <>
             realized · ROI{" "}
-            {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
+            {w.roi === null ? (
+              <Unavailable />
+            ) : (
+              <Change value={w.roi} abbreviate />
+            )}
           </>
         ) : (
           <span data-pending={pending}>{pending ? "Pending" : " "}</span>

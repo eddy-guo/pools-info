@@ -220,8 +220,10 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
     await expect(count).toHaveText(`Showing ${target.toLocaleString()} of 100`);
   }
   await expect(more).toHaveCount(0);
-  await expect(count, "the count and the button agree on where the list ends")
-    .toHaveText("Showing 100 of 100");
+  await expect(
+    count,
+    "the count and the button agree on where the list ends",
+  ).toHaveText("Showing 100 of 100");
   expect(
     Math.max(...seenCeilings),
     "no request ever asks for a row past the 100th",
@@ -336,3 +338,110 @@ test("a stored wallet's you row resolves with no layout shift", async ({
     "every non-input layout shift since navigation",
   ).toBe(0);
 });
+
+// The board's two widest figures once the real leaderboard switched on: a
+// nine-digit ROI ("+457346536.31%", a zero-cost-basis wallet), which ran out
+// of its 104px column and across the W/L bar beside it, and a three-digit
+// win/loss pair ("307W · 263L"), which ran past its column into the trades
+// count. The ROI now abbreviates past four integer digits with the exact
+// figure kept in its title, and the W/L column holds the pair with its bar.
+const extremeRoi = 457346536.31;
+const extremeRecord = { wins: 307, losses: 263 };
+// The narrowest viewport whose board still renders the table: the 896px the
+// remaining columns need, inside the page's clamp(14px, 2.4vw, 32px) gutters
+// and the panel's own borders.
+const narrowestDesktop = 944;
+
+for (const width of [1440, 1280, 1024, narrowestDesktop]) {
+  test(`a nine-digit ROI and a three-digit W/L pair stay inside their columns at ${width}px`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "the phone rows have no columns to overrun");
+    await page.route("**/api/product/leaderboard/**", async (route) => {
+      const response = await route.fetch();
+      const json = await response.json();
+      // Ranks 1-3 sit in the podium, so the flat list's first two rows are
+      // the fixture's fourth and fifth wallets; the podium's first card
+      // takes the ROI too.
+      const items = (json.items as Record<string, unknown>[]).map(
+        (item, index) =>
+          index === 0 || index === LIST_OFFSET
+            ? { ...item, roi: extremeRoi }
+            : index === LIST_OFFSET + 1
+              ? { ...item, ...extremeRecord }
+              : item,
+      );
+      await route.fulfill({ response, json: { ...json, items } });
+    });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/traders/?window=All");
+    const rows = page.locator(".desktop-traders tbody tr[data-row=resolved]");
+    await expect(rows.first()).toBeVisible();
+
+    const roi = rows.nth(0).locator("td").nth(3).locator(".change");
+    await expect(roi).toHaveText("+457.3M%");
+    await expect(roi).toHaveAttribute("title", "+457346536.31%");
+    await expect(roi).toHaveCSS("color", "rgb(63, 214, 140)");
+    await expect(
+      page.locator(".trader-podium-card").first().locator(".change"),
+    ).toHaveText("+457.3M%");
+    const record = rows.nth(1).locator("td").nth(4).locator(".wl-text");
+    await expect(record).toHaveText("307W · 263L");
+
+    const geometry = await rows.nth(0).evaluate((node) => {
+      const first = node as HTMLElement;
+      const second = first.nextElementSibling as HTMLElement;
+      const textRect = (node: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return range.getBoundingClientRect();
+      };
+      const contentRight = (cell: HTMLElement) =>
+        cell.getBoundingClientRect().right -
+        parseFloat(getComputedStyle(cell).paddingRight);
+      const overflowing = (row: HTMLElement) =>
+        [...row.children]
+          .slice(0, 10)
+          .filter((cell) => cell.scrollWidth > cell.clientWidth)
+          .map(
+            (cell) =>
+              `${cell.textContent} by ${cell.scrollWidth - cell.clientWidth}px`,
+          );
+      const roiCell = first.children[3] as HTMLElement;
+      const recordCell = second.children[4] as HTMLElement;
+      return {
+        roiTextPastContent:
+          textRect(roiCell.querySelector(".change")!).right -
+          contentRight(roiCell),
+        roiTextToBar:
+          first.children[4].querySelector(".wl-bar")!.getBoundingClientRect()
+            .left - textRect(roiCell.querySelector(".change")!).right,
+        recordPastContent:
+          recordCell.querySelector(".wl-record")!.getBoundingClientRect()
+            .right - contentRight(recordCell),
+        overflowing: [...overflowing(first), ...overflowing(second)],
+        page: document.documentElement.scrollWidth,
+      };
+    });
+    // A right-aligned run that fits ends on the content edge itself, so the
+    // bound allows sub-pixel float noise and nothing more.
+    expect(
+      geometry.roiTextPastContent,
+      "the ROI text ends inside its cell's content box",
+    ).toBeLessThanOrEqual(0.01);
+    expect(
+      geometry.roiTextToBar,
+      "the ROI text stays clear of the W/L bar",
+    ).toBeGreaterThan(0);
+    expect(
+      geometry.recordPastContent,
+      "the win/loss bar and pair end inside their cell's content box",
+    ).toBeLessThanOrEqual(0);
+    expect(
+      geometry.overflowing,
+      "no cell of either row scrolls past its width",
+    ).toEqual([]);
+    expect(geometry.page, "the page is the viewport's width").toBe(width);
+  });
+}

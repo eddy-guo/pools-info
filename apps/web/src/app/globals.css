@@ -4836,15 +4836,17 @@ main {
 }
 /* Leaderboard columns follow the export's grid, scaled to the panel's own
    width: rank, trader, then right-aligned numerics with fixed widths so
-   every row shares the same column edges. W/L is widened for its bar and
-   Last narrowed now that it carries a relative age rather than the full UTC
-   stamp. Trader is the one auto-width column, so the fixed columns take
-   their widths first and leave it the remainder: the table's floor is those
-   fixed widths (1024px) plus 168px for Trader (the 134px chip, its cell
-   padding and slack for Linux's wider glyphs); a narrower panel drops
-   columns rather than scrolling, below. */
+   every row shares the same column edges. W/L holds its 56px bar, the 8px
+   gap and a three-digit pair ("307W · 263L", 72px at 12px plus Linux's
+   wider glyphs) inside its 13px cell padding, and Last is narrowed to the
+   relative age it carries ("29d") now that it no longer shows the full UTC
+   stamp, which pays for most of that room. Trader is the one auto-width
+   column, so the fixed columns take their widths first and leave it the
+   remainder: the table's floor is those fixed widths (1036px) plus 168px
+   for Trader (the 134px chip, its cell padding and slack for Linux's wider
+   glyphs); a narrower panel drops columns rather than scrolling, below. */
 .leaderboard-panel .data-table {
-  min-width: 1192px;
+  min-width: 1204px;
 }
 .leaderboard-panel .data-table th:nth-child(1) {
   width: 58px;
@@ -4856,7 +4858,7 @@ main {
   width: 104px;
 }
 .leaderboard-panel .data-table th:nth-child(5) {
-  width: 130px;
+  width: 168px;
 }
 .leaderboard-panel .data-table th:nth-child(6) {
   width: 80px;
@@ -4871,7 +4873,7 @@ main {
   width: 134px;
 }
 .leaderboard-panel .data-table th:nth-child(10) {
-  width: 90px;
+  width: 64px;
 }
 .leaderboard-panel .data-table th:nth-child(11) {
   width: 44px;
@@ -5739,37 +5741,37 @@ a.wallet-top-pool:hover {
   height: 60px;
 }
 /* The board fits its own width rather than scrolling sideways: under the full
-   table's 1192px it drops Last, under 1102px Positions as well, under 992px
-   Best sale, and under the 858px the remaining columns need it shows the
-   rows, which carry every figure. A phone is always under 858px. */
+   table's 1204px it drops Last, under 1140px Positions as well, under 1030px
+   Best sale, and under the 896px the remaining columns need it shows the
+   rows, which carry every figure. A phone is always under 896px. */
 .leaderboard-panel {
   container: traders-board / inline-size;
 }
-@container traders-board (width < 1192px) {
+@container traders-board (width < 1204px) {
   .leaderboard-panel .data-table {
-    min-width: 1102px;
+    min-width: 1140px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(10) {
     display: none;
   }
 }
-@container traders-board (width < 1102px) {
+@container traders-board (width < 1140px) {
   .leaderboard-panel .data-table {
-    min-width: 992px;
+    min-width: 1030px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(8) {
     display: none;
   }
 }
-@container traders-board (width < 992px) {
+@container traders-board (width < 1030px) {
   .leaderboard-panel .data-table {
-    min-width: 858px;
+    min-width: 896px;
   }
   .leaderboard-panel .data-table :is(th, td):nth-child(9) {
     display: none;
   }
 }
-@container traders-board (width < 858px) {
+@container traders-board (width < 896px) {
   .leaderboard-panel .desktop-traders {
     display: none;
   }
