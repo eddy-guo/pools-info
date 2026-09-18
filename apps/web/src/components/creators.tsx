@@ -1,37 +1,21 @@
 "use client";
 import Link from "next/link";
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type {
-  AnalyticsExploreResponse,
   AnalyticsPoolRow,
   CreatorRow,
   CreatorsResponse,
 } from "@pools/core";
-import {
-  DATA_UNAVAILABLE,
-  OUTSIDE_COVERAGE,
-  fetchProduct,
-  type Delivered,
-} from "@/lib/use-product";
+import { DATA_UNAVAILABLE, fetchProduct } from "@/lib/use-product";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
 import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
-import { AddressChip, AddressLabel, UnavailableState } from "./ui";
-import { SHOW_MORE_STEP, ShowMore } from "./product-common";
-
-/** The explore API pages at most 100 rows; one batch streams 20 pages before pausing on Load more. */
-const PAGE_SIZE = 100;
-const BATCH = 20 * PAGE_SIZE;
+import { AddressChip, AddressLabel, EmptyState, UnavailableState } from "./ui";
+import { EXPLORE_ROWS_CAP, SHOW_MORE_STEP, ShowMore } from "./product-common";
+import { useExploreRows } from "@/lib/use-explore-rows";
 
 /** Mapped onto the read API's own sort keys. */
 const CREATOR_SORTS = [
@@ -142,75 +126,6 @@ function MobileCreatorRow({
       ) : null}
     </div>
   );
-}
-
-type Catalog = {
-  items: AnalyticsPoolRow[];
-  total: number | null;
-  /** Offset of the next unfetched page; null once the catalog is exhausted. */
-  nextOffset: number | null;
-  error?: string;
-};
-
-/** Streams a single creator's saved launches one page per effect run, pausing at the current batch budget. */
-function useCatalog(address: string) {
-  const [state, setState] = useState<Catalog>({
-    items: [],
-    total: null,
-    nextOffset: 0,
-  });
-  const [budget, setBudget] = useState(BATCH);
-  useEffect(() => {
-    const offset = state.nextOffset;
-    if (offset === null || offset >= budget || state.error) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const response = await fetch(
-          `/api/product/explore/?window=24h&sort=launch&limit=${PAGE_SIZE}&offset=${offset}&q=${encodeURIComponent(address)}`,
-          {
-            signal: AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(12000),
-            ]),
-          },
-        );
-        if (!response.ok)
-          throw Error(
-            response.status === 503 ? DATA_UNAVAILABLE : OUTSIDE_COVERAGE,
-          );
-        const page =
-          (await response.json()) as Delivered<AnalyticsExploreResponse>;
-        if (controller.signal.aborted) return;
-        if (page.nextOffset !== null && page.nextOffset <= offset)
-          throw Error("The saved creator catalog stopped paging.");
-        setState((prior) => ({
-          items: [...prior.items, ...page.items],
-          total: page.total,
-          nextOffset: page.nextOffset,
-        }));
-      } catch (error) {
-        if (!controller.signal.aborted)
-          setState((prior) => ({
-            ...prior,
-            error:
-              error instanceof DOMException
-                ? "The saved creator catalog is responding slowly."
-                : error instanceof Error
-                  ? error.message
-                  : DATA_UNAVAILABLE,
-          }));
-      }
-    })();
-    return () => controller.abort();
-  }, [address, budget, state.nextOffset, state.error]);
-  return {
-    ...state,
-    streaming:
-      state.nextOffset !== null && state.nextOffset < budget && !state.error,
-    loadMore: () => setBudget((prior) => prior + BATCH),
-    retry: () => setState((prior) => ({ ...prior, error: undefined })),
-  };
 }
 
 export function Creators({ address }: { address?: string }) {
@@ -537,23 +452,55 @@ function launchActivity(p: AnalyticsPoolRow) {
 }
 
 /**
- * The header cells are fixed by `.creator-launches-table`'s colgroup, and
- * each row keeps its DOM node across the pending-to-resolved swap (keyed by
- * position, not pool id) rather than remounting under a shift-scoring swap.
- * A creator with more than one matching launch still grows the panel as
- * later pages of the scan resolve, since nothing here knows the eventual
- * row count before first paint; closing that fully needs the same
- * shown-count-plus-reserved-height pattern the leaderboards use, which is
- * follow-up work, not part of this pass.
+ * The creator's launches in launch order, read through the screener's own
+ * hook: the rows the URL's `limit` names are reserved at first paint (25 by
+ * default, grown by the shared Show more control up to the explore ceiling),
+ * so a read that lands never resizes the panel and the footer under it never
+ * moves. Rows are keyed by position, so a pending row becomes the real one in
+ * place rather than remounting under a shift-scoring swap.
  */
 function CreatorProfile({ address }: { address: string }) {
-  const catalog = useCatalog(address);
-  const pools = useMemo(
-    () => catalog.items.filter((p) => p.launchSender.toLowerCase() === address),
-    [catalog.items, address],
+  const { params, set } = useQuery();
+  const rawShown = Number(params.get("limit"));
+  const shown =
+    Number.isInteger(rawShown) && rawShown > 0
+      ? Math.min(rawShown, EXPLORE_ROWS_CAP)
+      : SHOW_MORE_STEP;
+  const { list, loading, settled, error, refresh } = useExploreRows(
+    `window=24h&sort=launch&q=${address}`,
+    shown,
   );
-  const pending = !pools.length && catalog.streaming;
-  const failed = !!catalog.error && !pools.length;
+  /* Nothing was served: the reserved rows stay blank rather than shimmering
+     on for ever, and the panel says what happened. */
+  const failed = !!error && !list;
+  const total = list ? list.total : null;
+  const rows = Array.from({ length: shown }, (_, index) => list?.rows[index]);
+  const skeletonAt = (index: number) =>
+    !failed && (!list || (loading && index < list.total));
+  const empty = settled && total === 0;
+
+  const focusAt = useRef<number | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const showMore = useCallback(() => {
+    focusAt.current = shown;
+    set({
+      limit: String(
+        Math.min(shown + SHOW_MORE_STEP, total ?? Infinity, EXPLORE_ROWS_CAP),
+      ),
+    });
+  }, [shown, set, total]);
+  const held = list?.rows;
+  useEffect(() => {
+    const index = focusAt.current;
+    if (index === null || !held || held.length <= index) return;
+    focusAt.current = null;
+    const links = panelRef.current?.querySelectorAll<HTMLElement>(
+      `[data-row-index="${index}"] a`,
+    );
+    /* Both layouts hold the row; the one the container query shows has a box. */
+    [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
+  }, [held]);
+
   return (
     <div className={`page ${styles.page}`}>
       <div className="page-heading">
@@ -565,85 +512,104 @@ function CreatorProfile({ address }: { address: string }) {
           <AddressLabel address={address} full />
         </div>
       </div>
-      {catalog.error && !failed && (
+      {error && !failed && (
         <p role="alert" className="coverage-notice">
-          {catalog.error}
+          {error}
         </p>
       )}
-      <section className="panel live-section creator-launches">
+      <section className="panel live-section creator-launches" ref={panelRef}>
         <div className="panel-heading">
           <h2>
             Launches{" "}
             {/* The count the read names, and only that: a launch with no
                 market figure is still a launch. */}
-            <span className="badge" data-pending={pending}>
+            <span className="badge" data-pending={total === null && !failed}>
               {failed
                 ? "unavailable"
-                : pending
+                : total === null
                   ? "count pending"
-                  : (catalog.total ?? pools.length).toLocaleString()}
+                  : total.toLocaleString()}
             </span>
           </h2>
           <Link href={`/wallet/${address}/?window=All`}>
             View wallet profile ↗
           </Link>
         </div>
-        {failed ? (
-          <UnavailableState subject="Launches" onRetry={catalog.retry} />
-        ) : pools.length || pending ? (
-          <>
-            <div className="table-scroll desktop-creator-launches">
-              <table className="data-table creator-launches-table">
-                {/* Fixed widths so a row streamed in later, with a longer
-                  token name or a resolved date, cannot reflow the columns
-                  already on screen. */}
-                <colgroup>
-                  <col />
-                  <col className="col-launch" />
-                  <col className="col-activity" />
-                  <col className="col-volume" />
-                  <col className="col-fees" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Token</th>
-                    <th>Launch (UTC)</th>
-                    <th>24h activity</th>
-                    <th>24h volume</th>
-                    <th>Creator fees</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Keyed by position, not pool id: `pools` only ever grows by
-                    appending later pages, so the row already on screen keeps
-                    its node (and the single pending row becomes the first
-                    real one) instead of remounting under a shift-scoring
-                    swap. */}
-                  {(pools.length ? pools : [undefined]).map((p, index) => (
+        {loading && list && (
+          <span className="sr-only" role="status">
+            Updating saved launches
+          </span>
+        )}
+        {/* The reserved row geometry stays put when the creator has fewer
+            launches than a page, or none: the empty state overlays the top
+            of that area rather than sitting under a screen of blank rows. */}
+        <div className="table-region" data-empty={empty || failed}>
+          <div className="table-scroll desktop-creator-launches">
+            <table className="data-table creator-launches-table">
+              {/* Fixed widths so a row streamed in later, with a longer
+                token name or a resolved date, cannot reflow the columns
+                already on screen. */}
+              <colgroup>
+                <col />
+                <col className="col-launch" />
+                <col className="col-activity" />
+                <col className="col-volume" />
+                <col className="col-fees" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>Launch (UTC)</th>
+                  <th>24h activity</th>
+                  <th>24h volume</th>
+                  <th>Creator fees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((p, index) => {
+                  const skeleton = !p && skeletonAt(index);
+                  return (
                     <tr
                       key={index}
+                      data-row-index={index}
+                      data-row={
+                        p ? "resolved" : skeleton ? "skeleton" : "reserved"
+                      }
                       aria-hidden={!p}
-                      data-row={p ? "resolved" : "skeleton"}
                     >
-                      <td data-pending={!p}>
+                      <td data-pending={skeleton}>
                         {p ? (
                           <Link href={poolHref(p)}>
                             {p.name} ({p.symbol})
                           </Link>
-                        ) : (
+                        ) : skeleton ? (
                           "Token pending"
+                        ) : (
+                          "\u00a0"
                         )}
                       </td>
-                      <td data-pending={!p}>
-                        {p ? utc(p.launchedAt) : "Launch pending"}
+                      <td data-pending={skeleton}>
+                        {p
+                          ? utc(p.launchedAt)
+                          : skeleton
+                            ? "Launch pending"
+                            : "\u00a0"}
                       </td>
-                      <td data-pending={!p}>
-                        {p ? launchActivity(p) : "Pending"}
+                      <td data-pending={skeleton}>
+                        {p
+                          ? launchActivity(p)
+                          : skeleton
+                            ? "Pending"
+                            : "\u00a0"}
                       </td>
-                      <td>
-                        <Eth wei={p?.stats.volumeWei} pending={!p} />
+                      <td data-pending={skeleton}>
+                        {p || skeleton ? (
+                          <Eth wei={p?.stats.volumeWei} pending={skeleton} />
+                        ) : (
+                          "\u00a0"
+                        )}
                       </td>
-                      <td data-pending={!p}>
+                      <td data-pending={skeleton}>
                         {p ? (
                           p.market ? (
                             p.market.creatorFees ? (
@@ -654,25 +620,31 @@ function CreatorProfile({ address }: { address: string }) {
                           ) : (
                             <Unavailable />
                           )
-                        ) : (
+                        ) : skeleton ? (
                           "Pending"
+                        ) : (
+                          "\u00a0"
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Below 768px: the token with its 24h volume at the right, then
-              the launch time and activity; creator fees stay out, as the
-              table drops that column first. */}
-            <div className="mobile-launches">
-              {(pools.length ? pools : [undefined]).map((p, index) => (
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Below 768px: the token with its 24h volume at the right, then the
+            launch time and activity; creator fees stay out, as the table
+            drops that column first. */}
+          <div className="mobile-launches">
+            {rows.map((p, index) => {
+              const skeleton = !p && skeletonAt(index);
+              return (
                 <div
                   className="mobile-launch"
                   key={index}
+                  data-row-index={index}
+                  data-row={p ? "resolved" : skeleton ? "skeleton" : "reserved"}
                   aria-hidden={!p}
-                  data-row={p ? "resolved" : "skeleton"}
                 >
                   <div className="mobile-launch-top">
                     {p ? (
@@ -680,30 +652,47 @@ function CreatorProfile({ address }: { address: string }) {
                         {p.name} ({p.symbol})
                       </Link>
                     ) : (
-                      <span data-pending="true">Token pending</span>
+                      <span data-pending={skeleton}>
+                        {skeleton ? "Token pending" : "\u00a0"}
+                      </span>
                     )}
-                    <Eth wei={p?.stats.volumeWei} pending={!p} />
+                    {p || skeleton ? (
+                      <Eth wei={p?.stats.volumeWei} pending={skeleton} />
+                    ) : (
+                      <span className="number">{"\u00a0"}</span>
+                    )}
                   </div>
-                  <div className="mobile-launch-stats" data-pending={!p}>
+                  <div className="mobile-launch-stats" data-pending={skeleton}>
                     {p ? (
                       <>
                         {utc(p.launchedAt)}
                         {p.stats.trades !== null && <> · {launchActivity(p)}</>}
                       </>
-                    ) : (
+                    ) : skeleton ? (
                       "Launch pending"
+                    ) : (
+                      "\u00a0"
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="empty-state">
-            <h3>No launches in current coverage</h3>
-            <p>This does not establish the address’s full launch history.</p>
+              );
+            })}
           </div>
-        )}
+          {failed && <UnavailableState subject="Launches" onRetry={refresh} />}
+          {empty && (
+            <EmptyState
+              title="No launches"
+              description="Nothing launched by this address."
+            />
+          )}
+        </div>
+        <ShowMore
+          shown={shown}
+          total={failed ? 0 : total}
+          cap={EXPLORE_ROWS_CAP}
+          loading={loading}
+          onMore={showMore}
+        />
       </section>
     </div>
   );
