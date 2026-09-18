@@ -2,6 +2,11 @@ import { test, expect } from "@playwright/test";
 import chain from "../../data/snapshots/chain.json";
 import captures from "../../data/pools/index.json";
 import { poolHref, type LiveTradeFeedResponse } from "@pools/core";
+import {
+  creatorAddress,
+  creatorLaunches,
+  creatorLaunchesPage,
+} from "../support/creator-launches";
 
 const wallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 const savedPool = Object.values(captures.snapshots).find(
@@ -89,6 +94,14 @@ const routes = [
     url: `/creators/${chain.markets[0].launchSender}/`,
     sentinel: ".live-section",
   },
+  /* A creator with more launches than a page: the list reserves its 25 rows
+     from first paint and the footer under it never paints in view and then
+     moves once the table lands (measured at 0.059 on production before). */
+  {
+    name: "creator-detail-many",
+    url: `/creators/${creatorAddress}/`,
+    sentinel: ".live-section",
+  },
   {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
@@ -148,6 +161,7 @@ for (const entry of routes) {
         ),
       });
     });
+    const manyLaunches = creatorLaunches(60, 3);
     await page.route("**/api/product/**", async (route) => {
       if (entry.name === "unknown-pool") {
         await gate;
@@ -156,6 +170,15 @@ for (const entry of routes) {
           status: 503,
           json: { error: "Saved publication unavailable" },
         });
+      }
+      const creatorRead =
+        entry.name === "creator-detail-many"
+          ? creatorLaunchesPage(manyLaunches, route.request().url())
+          : null;
+      if (creatorRead) {
+        await gate;
+        responses.push(route.request().url());
+        return route.fulfill({ json: creatorRead.json });
       }
       const response = await route.fetch();
       await gate;

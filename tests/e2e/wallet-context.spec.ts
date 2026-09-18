@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { shortAddress } from "@pools/core";
 
 const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 const activeWallet = "0x9909d019032fbaa169ecad03b38c17d8a2a9d1f8";
@@ -81,7 +82,9 @@ async function expectBehaviour(
 
 test("a ranked wallet shows profile content without coverage or preview copy", async ({
   page,
+  context,
 }, testInfo) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await settled(page, `/wallet/${topWallet}/?window=All`);
   const main = page.locator("main");
   const text = await main.innerText();
@@ -153,6 +156,28 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   await expect(page.locator(".wallet-meta")).toContainText(topWallet);
   await expect(page.locator(".wallet-last-meta")).toHaveText(
     /^last (<1m|\d+[mhd]) ago$/,
+  );
+  // The address shows the form its row can hold whole: the full 42
+  // characters on the desktop, the head-and-tail short form every other
+  // surface uses on a phone, where the full string was cut mid-way. Either
+  // way the copy control carries the whole address.
+  const shownAddress = page
+    .locator(".wallet-meta .address-label .mono")
+    .filter({ visible: true });
+  await expect(shownAddress).toHaveCount(1);
+  await expect(shownAddress).toHaveText(
+    testInfo.project.name === "mobile" ? shortAddress(topWallet) : topWallet,
+  );
+  expect(
+    await shownAddress.evaluate((node) => node.scrollWidth <= node.clientWidth),
+    "the address is shown whole, never clipped",
+  ).toBe(true);
+  await page
+    .locator(".wallet-meta")
+    .getByRole("button", { name: "Copy address" })
+    .click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    topWallet,
   );
 
   // Positions like the export: a 30px identity beside the token, and the
@@ -440,6 +465,21 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   ]);
   await expect(page.locator(".wallet-behaviour .unavailable")).toHaveCount(0);
   await expect(page.locator(".market-sidebar")).not.toContainText("N/A");
+  // The PnL chart's seven axis ticks keep their line boxes but print
+  // nothing for a series with no points: the note under the chart already
+  // says there is no realized PnL, so no tick stands in for a figure.
+  const ticks = main.locator(".chart-axis > span, .chart-dates > span");
+  await expect(ticks).toHaveCount(7);
+  for (const tick of await ticks.all()) await expect(tick).toHaveText(/^\s*$/);
+  expect(
+    await page.evaluate(
+      () =>
+        [...document.querySelectorAll("*")].filter(
+          (node) => !node.children.length && node.textContent?.trim() === "N/A",
+        ).length,
+    ),
+    "no leaf on the page reads N/A",
+  ).toBe(0);
 });
 
 test("copy trade opens the designed card as a read-only preview", async ({

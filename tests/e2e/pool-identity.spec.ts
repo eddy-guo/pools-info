@@ -234,6 +234,8 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
         ...document.querySelectorAll(".page-heading a, .page-heading button"),
       ].map(rect),
       name: rect(document.querySelector(".pool-identity-title h1")!),
+      tile: rect(document.querySelector(".pool-image-slot")!),
+      copy: rect(document.querySelector(".pool-heading-copy")!),
       /* The launch mode badge follows the symbol. */
       badges: [...document.querySelectorAll(".pool-identity-title > span")]
         .slice(1)
@@ -257,6 +259,20 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
   }
   for (const slot of header.slots)
     expect(slot.fits, `${slot.selector} holds its content`).toBe(true);
+  // The 54px tile sits beside the name it belongs to: its top within the
+  // name's line, the copy starting right after it. A phone stacks the copy
+  // to several rows, where a tile centred on the column would hang a line
+  // and a half under the name beside an empty gutter.
+  expect(header.copy.left, "the copy starts after the tile").toBeGreaterThan(
+    header.tile.right,
+  );
+  expect(
+    header.tile.top,
+    "the tile hangs from the name's line",
+  ).toBeGreaterThanOrEqual(header.name.top - 1);
+  expect(header.tile.top, "the tile hangs from the name's line").toBeLessThan(
+    header.name.bottom,
+  );
   expect(header.badges).toHaveLength(1);
   for (const badge of header.badges)
     if (project === "desktop")
@@ -299,6 +315,17 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       price: rect(".pool-chart-head .price"),
       unit: rect(".pool-chart-head .price small"),
       change: rect(".pool-chart-head .live-price-heading .change"),
+      windows: [...document.querySelectorAll(".live-changes > span")].map(
+        (node) => ({
+          text: node.textContent,
+          box: node.getBoundingClientRect().toJSON(),
+          fits: node.scrollWidth <= node.clientWidth,
+        }),
+      ),
+      windowsFit: (() => {
+        const node = document.querySelector(".live-changes")!;
+        return node.scrollWidth <= node.clientWidth;
+      })(),
       control: rect(".pool-chart-head .segmented"),
       canvas: rect(".pool-chart-region"),
       stats: [...document.querySelectorAll(".live-six-stats .stat")].map(
@@ -329,6 +356,24 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       Math.abs(centre(box) - centre(rows.price)),
       `the ${name} sits on the price's row`,
     ).toBeLessThanOrEqual(4);
+  // Every window's figure is legible without sideways scrolling: on the
+  // desktop the four share the price panel's one line; on a phone that line
+  // cannot hold them, so they take two rows of two rather than a clipped
+  // last figure.
+  expect(rows.windowsFit, "the window changes fit their row").toBe(true);
+  expect(rows.windows.length).toBeGreaterThan(0);
+  for (const window of rows.windows) {
+    expect(window.text).toMatch(/^\S+ [+-]?\d+\.\d{2}%$/);
+    expect(window.fits, `${window.text} is shown whole`).toBe(true);
+    expect(window.box.right, `${window.text} is on screen`).toBeLessThanOrEqual(
+      viewports[project].width,
+    );
+  }
+  if (project !== "desktop" && rows.windows.length > 2)
+    expect(
+      rows.windows[2].box.top,
+      "the third window starts the second row",
+    ).toBeGreaterThan(rows.windows[0].box.bottom - 1);
   expect(rows.stats.map((stat) => stat.label)).toEqual([
     "FDV",
     "Volume 24h",
@@ -422,6 +467,84 @@ test.describe("the pool header fits the viewport", () => {
       testInfo.project.name as Project,
     );
     expect(await shifts(page), "layout shift as the response lands").toBe(0);
+  });
+
+  test("the window changes hold the sweep's four figures whole", async ({
+    page,
+  }, testInfo) => {
+    /* The fixture's markets span minutes, so no served pool carries four
+       windows of three-digit changes; the row is measured with the exact
+       figures the sweep clipped on production (`7d +37…` cut at 390px). */
+    const project = testInfo.project.name as Project;
+    await page.goto(`/pool/${measured.id}/`);
+    await expect(page.locator(".live-changes > span").first()).toBeVisible();
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+    const rows = await page.evaluate(() => {
+      const row = document.querySelector<HTMLElement>(".live-changes")!;
+      const figures = [
+        ["1h", "+376.09%"],
+        ["6h", "+376.09%"],
+        ["24h", "+376.09%"],
+        ["7d", "+376.09%"],
+      ];
+      row.replaceChildren(
+        ...figures.map(([window, change]) => {
+          const span = document.createElement("span");
+          const b = document.createElement("b");
+          b.textContent = window;
+          const value = document.createElement("span");
+          value.className = "number change positive";
+          value.textContent = change;
+          span.append(b, " ", value);
+          return span;
+        }),
+      );
+      return {
+        fits:
+          row.scrollWidth <= row.clientWidth &&
+          row.scrollHeight <= row.clientHeight,
+        height: row.getBoundingClientRect().height,
+        bottom: row.getBoundingClientRect().bottom,
+        windows: [...row.children].map((node) => ({
+          text: node.textContent,
+          box: node.getBoundingClientRect().toJSON(),
+          fits: node.scrollWidth <= node.clientWidth,
+        })),
+      };
+    });
+    expect(rows.fits, "the row holds all four without overflow").toBe(true);
+    for (const window of rows.windows) {
+      expect(window.fits, `${window.text} is shown whole`).toBe(true);
+      expect(
+        window.box.bottom,
+        `${window.text} sits inside the row's box`,
+      ).toBeLessThanOrEqual(rows.bottom);
+      expect(
+        window.box.left,
+        `${window.text} is on screen`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        window.box.right,
+        `${window.text} is on screen`,
+      ).toBeLessThanOrEqual(viewports[project].width);
+    }
+    if (project === "desktop") {
+      expect(rows.height, "one 17px line").toBe(17);
+      for (const window of rows.windows)
+        expect(window.box.top, "the four share one line").toBe(
+          rows.windows[0].box.top,
+        );
+    } else {
+      expect(rows.height, "two reserved 17px lines").toBe(34);
+      expect(rows.windows[1].box.top, "two per row").toBe(
+        rows.windows[0].box.top,
+      );
+      expect(
+        rows.windows[2].box.top,
+        "the third starts the second row",
+      ).toBeGreaterThanOrEqual(rows.windows[0].box.bottom - 1);
+      expect(rows.windows[3].box.top).toBe(rows.windows[2].box.top);
+    }
   });
 
   test("on a launch-only row whose detail is unpublished", async ({

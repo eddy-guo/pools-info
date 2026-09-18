@@ -149,7 +149,17 @@ export function AddressLabel({
   const subject = kind === "tx" ? "transaction" : "address";
   return (
     <span className="address-label">
-      <span className="mono">{full ? address : shortAddress(address)}</span>
+      {full ? (
+        /* Both forms are in the markup; the stylesheet shows the short one
+           only where the full one cannot fit (the wallet header on a phone),
+           so the copy control keeps the whole address in either case. */
+        <>
+          <span className="mono address-full">{address}</span>
+          <span className="mono address-short">{shortAddress(address)}</span>
+        </>
+      ) : (
+        <span className="mono">{shortAddress(address)}</span>
+      )}
       <CopyButton value={address} label={`Copy ${subject}`} />
       <ExplorerLink address={address} kind={kind} />
     </span>
@@ -710,10 +720,14 @@ export function Chart({
             </>
           )}
         </svg>
+        {/* A tick names a figure the series holds, or nothing: a series with
+            no points has no scale to label, and the note under the chart
+            already says so, so the ticks keep their line boxes and stay
+            blank rather than printing a stand-in. */}
         <div className="chart-axis">
           {[g.max, (g.max + g.min) / 2, g.min].map((v, i) => (
             <span key={i} data-pending={pending}>
-              {points.length ? axisLabel(v) : pending ? "Pending" : "N/A"}
+              {points.length ? axisLabel(v) : pending ? "Pending" : "\u00a0"}
             </span>
           ))}
         </div>
@@ -735,7 +749,7 @@ export function Chart({
                   })
               : pending
                 ? "Pending"
-                : "N/A"}
+                : "\u00a0"}
           </span>
         ))}
       </div>

@@ -1034,6 +1034,11 @@ main {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+/* A full address carries its short form too, for a box that cannot hold the
+   whole string; only such a box shows it. */
+.address-label > .address-short {
+  display: none;
+}
 .copy-wrap {
   position: relative;
   display: inline-flex;
@@ -4959,7 +4964,8 @@ main {
   inset: 44px 0 auto;
 }
 .table-region[data-empty="true"] tbody,
-.table-region[data-empty="true"] .mobile-pool {
+.table-region[data-empty="true"] .mobile-pool,
+.table-region[data-empty="true"] .mobile-launch {
   visibility: hidden;
 }
 /* Collapsed borders are painted by the table rather than the row group, so
@@ -5403,6 +5409,19 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The 42-character address does not fit a phone's page heading (the wallet's
+   one-line meta row clipped it mid-string; the creator's wrapped one
+   character onto a second line): the head-and-tail short form every other
+   surface uses stands in, and the full address stays on the copy control
+   beside it. */
+@container site (max-width: 767px) {
+  .page-heading .address-label > .address-full {
+    display: none;
+  }
+  .page-heading .address-label > .address-short {
+    display: inline;
+  }
 }
 .wallet-meta .icon-button {
   min-height: 0;
@@ -6331,8 +6350,14 @@ a.wallet-top-pool:hover {
     height: 276px;
     gap: 24px;
   }
+  /* The copy stacks to 156px here, so a centred 54px tile would sit a line
+     and a half under the name it belongs to: the tile hangs from the top
+     instead, centred on the two-row title block beside it. */
   .pool-page.page .page-heading > :first-child {
-    align-items: center;
+    align-items: flex-start;
+  }
+  .pool-page .pool-image-slot {
+    margin-top: 3px;
   }
   .pool-page.page .page-heading h1 {
     font-size: 26px;
@@ -6387,12 +6412,21 @@ a.wallet-top-pool:hover {
     width: 14px;
     height: 14px;
   }
+  /* Four windows and their figures do not fit one 324px line, and a figure
+     is never clipped: two per row on two reserved 17px lines, so the
+     pending single line and the resolved four take the same box. */
+  .pool-page .live-changes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 14px;
+    height: 34px;
+  }
   /* The price rows, then the range control under them on its own row. */
   .pool-chart-head {
     flex-direction: column;
     align-items: flex-end;
     gap: 20px;
-    height: 168px;
+    height: 185px;
   }
   .pool-chart-head > div:first-child {
     width: 100%;

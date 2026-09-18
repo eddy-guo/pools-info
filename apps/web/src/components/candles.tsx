@@ -100,7 +100,7 @@ function intervalFor(
     : interval;
 }
 function axisPrice(value: number) {
-  if (!Number.isFinite(value)) return "N/A";
+  if (!Number.isFinite(value)) return "";
   if (value === 0) return "0";
   if (Math.abs(value) >= 0.001)
     return new Intl.NumberFormat("en-US", {

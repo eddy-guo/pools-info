@@ -26,6 +26,10 @@ export function PendingValue({
 
 /** The running-total step every "Show more" list grows by. */
 export const SHOW_MORE_STEP = 25;
+/** The most rows a list over the explore read shows at once: forty pages of
+    Show more, and the most a hand-edited or stale URL can make a page read
+    and render. */
+export const EXPLORE_ROWS_CAP = 1000;
 
 /**
  * Gmail-inbox style growth, not classic paging: a "Showing N of M" readout

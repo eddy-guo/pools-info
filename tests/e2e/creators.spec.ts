@@ -2,9 +2,15 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   poolHref,
   shortAddress,
+  type AnalyticsPoolRow,
   type CreatorRow,
   type CreatorsResponse,
 } from "@pools/core";
+import {
+  creatorAddress,
+  creatorLaunches,
+  creatorLaunchesPage,
+} from "../support/creator-launches";
 
 const coverage: CreatorsResponse["coverage"] = {
   catalogPools: 130,
@@ -417,6 +423,16 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
       "aria-label",
       "Unavailable: No measured launch",
     );
+    // A creator with launches the read has no figure for shows no bar: its
+    // "4 of 4" would read as a survival rate over the 21 launches beside it.
+    const partial = cards.nth(3).locator(".mobile-creator-stats");
+    await expect(partial).toContainText("Vol 266.9 ETH");
+    await expect(partial.locator(".still-trading")).toHaveCount(0);
+    await expect(partial.locator(".unavailable")).toHaveAttribute(
+      "aria-label",
+      "Unavailable: Not every launch measured",
+    );
+    await expect(cards.locator(".still-trading")).toHaveCount(3);
     await expect(page.getByText("N/A")).toHaveCount(0);
     for (const card of await cards.all()) {
       const box = await card.evaluate((node) => {
@@ -510,6 +526,18 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "aria-label",
     "Unavailable: No measured launch",
   );
+  // So does one whose measured launches are fewer than its launches: the
+  // export's fraction is "traded of launches", and "4 of 4" beside a launch
+  // count of 21 would read as a survival rate the figures do not support.
+  const partialCell = rowsLocator.nth(3).locator("td").nth(3);
+  await expect(rowsLocator.nth(3).locator("td").nth(2)).toHaveText("21");
+  await expect(partialCell).toHaveText("");
+  await expect(partialCell.locator(".still-trading")).toHaveCount(0);
+  await expect(partialCell.locator(".unavailable")).toHaveAttribute(
+    "aria-label",
+    "Unavailable: Not every launch measured",
+  );
+  await expect(rowsLocator.locator(".still-trading")).toHaveCount(3);
   await expect(page.getByText("N/A")).toHaveCount(0);
 
   // Volume and median: 14/400 in the secondary numeric colour, right-aligned.
@@ -527,4 +555,165 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "href",
     poolHref(items[0].bestLaunch!),
   );
+});
+
+async function serveCreatorLaunches(
+  page: Page,
+  launches: AnalyticsPoolRow[],
+  reads: { offset: number; limit: number }[] = [],
+) {
+  await page.route("**/api/product/explore/?**", async (route) => {
+    const read = creatorLaunchesPage(launches, route.request().url());
+    if (!read) return route.continue();
+    reads.push({ offset: read.offset, limit: read.limit });
+    await route.fulfill({ json: read.json });
+  });
+}
+
+test("a creator's unmeasured launches show their identity and launch time with empty figures, under the launch count", async ({
+  page,
+  isMobile,
+}) => {
+  const launches = creatorLaunches(10, 4);
+  await serveCreatorLaunches(page, launches);
+  await page.goto(`/creators/${creatorAddress}/`);
+  const panel = page.locator(".creator-launches");
+  const rows = panel.locator(
+    isMobile
+      ? '.mobile-launch[data-row="resolved"]'
+      : 'tbody tr[data-row="resolved"]',
+  );
+  await expect(rows).toHaveCount(10);
+  // The page reserves its default 25-row shape from the URL; the rows past
+  // this creator's ten stay blank rather than shimmering for nothing.
+  await expect(
+    panel.locator(isMobile ? ".mobile-launch" : "tbody tr"),
+  ).toHaveCount(25);
+  await expect(
+    panel.locator(
+      isMobile
+        ? '.mobile-launch[data-row="reserved"]'
+        : 'tbody tr[data-row="reserved"]',
+    ),
+  ).toHaveCount(15);
+  await expect(panel.locator(".pagination-count")).toHaveText(
+    "Showing 10 of 10",
+  );
+  await expect(panel.getByRole("button", { name: /^Show/ })).toHaveCount(0);
+  // The badge is the count the read names, never a coverage claim.
+  await expect(panel.locator(".panel-heading .badge")).toHaveText("10");
+  await expect(panel).not.toContainText("covered");
+  // No launch waits on a pass that will not come: an unmeasured launch keeps
+  // its identity and launch time and leaves its figure cells empty.
+  await expect(panel).not.toContainText("Processing");
+  await expect(panel).not.toContainText("N/A");
+  const measured = rows.first();
+  const unmeasured = rows.nth(1);
+  await expect(measured.locator("a").first()).toHaveText("Launch 10 (L10)");
+  await expect(unmeasured.locator("a").first()).toHaveText("Launch 9 (L9)");
+  const utc = (seconds: number) =>
+    new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
+    " UTC";
+  if (isMobile) {
+    await expect(measured.locator(".mobile-launch-top .number")).toHaveText(
+      "1 ETH",
+    );
+    await expect(measured.locator(".mobile-launch-stats")).toHaveText(
+      `${utc(launches[0].launchedAt)} · No swap observed`,
+    );
+    await expect(unmeasured.locator(".mobile-launch-top .number")).toHaveText(
+      "",
+    );
+    await expect(unmeasured.locator(".mobile-launch-stats")).toHaveText(
+      utc(launches[1].launchedAt),
+    );
+    return;
+  }
+  const cells = (row: Locator) => row.locator("td");
+  await expect(cells(measured)).toHaveText([
+    "Launch 10 (L10)",
+    utc(launches[0].launchedAt),
+    "No swap observed",
+    "1 ETH",
+    "",
+  ]);
+  await expect(cells(unmeasured)).toHaveText([
+    "Launch 9 (L9)",
+    utc(launches[1].launchedAt),
+    "",
+    "",
+    "",
+  ]);
+  await expect(
+    cells(unmeasured).nth(2).locator(".unavailable"),
+    "the empty activity cell still says why",
+  ).toHaveAttribute("aria-label", "Unavailable: No measured activity");
+});
+
+test("a creator's launches take the shared 25-row Show more, never the whole history at once", async ({
+  page,
+  isMobile,
+}) => {
+  const launches = creatorLaunches(60, 3);
+  const reads: { offset: number; limit: number }[] = [];
+  await serveCreatorLaunches(page, launches, reads);
+  await page.goto(`/creators/${creatorAddress}/`);
+  const panel = page.locator(".creator-launches");
+  const rows = panel.locator(isMobile ? ".mobile-launch" : "tbody tr");
+  const resolved = panel.locator(
+    isMobile
+      ? '.mobile-launch[data-row="resolved"]'
+      : 'tbody tr[data-row="resolved"]',
+  );
+  const footer = panel.locator(".pagination");
+  const count = footer.locator(".pagination-count");
+  const showMore = footer.getByRole("button", { name: /^Show \d+ more$/ });
+
+  await expect(resolved).toHaveCount(25);
+  await expect(rows).toHaveCount(25);
+  await expect(panel.locator(".panel-heading .badge")).toHaveText("60");
+  await expect(count).toHaveText("Showing 25 of 60");
+  await expect(showMore).toHaveText("Show 25 more");
+  expect(reads, "one read of the first page").toEqual([
+    { offset: 0, limit: 25 },
+  ]);
+  // Newest first, as the explore launch order serves them.
+  await expect(resolved.first().locator("a").first()).toHaveText(
+    "Launch 60 (L60)",
+  );
+
+  await showMore.click();
+  await expect(page).toHaveURL(/[?&]limit=50(?:&|$)/);
+  await expect(rows).toHaveCount(50);
+  await expect(resolved).toHaveCount(50);
+  await expect(count).toHaveText("Showing 50 of 60");
+  expect(reads[1], "the next page is read from where the rows end").toEqual({
+    offset: 25,
+    limit: 25,
+  });
+  await expect(
+    resolved.nth(25).locator("a").first(),
+    "focus lands on the first newly revealed launch",
+  ).toBeFocused();
+
+  // The last page asks for what remains, and the control goes with it.
+  await expect(showMore).toHaveText("Show 10 more");
+  await showMore.click();
+  await expect(page).toHaveURL(/[?&]limit=60(?:&|$)/);
+  await expect(rows).toHaveCount(60);
+  await expect(resolved).toHaveCount(60);
+  await expect(count).toHaveText("Showing 60 of 60");
+  await expect(showMore).toHaveCount(0);
+  expect(reads).toHaveLength(3);
+
+  // A reload restores the same rows from the URL.
+  await page.reload();
+  await expect(resolved).toHaveCount(60);
+  await expect(count).toHaveText("Showing 60 of 60");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+    "the page fits the viewport",
+  ).toBe(true);
 });

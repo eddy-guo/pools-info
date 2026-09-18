@@ -37,7 +37,7 @@ import {
 } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
-import { SHOW_MORE_STEP, ShowMore } from "./product-common";
+import { EXPLORE_ROWS_CAP, SHOW_MORE_STEP, ShowMore } from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -52,9 +52,6 @@ const LAUNCH_VIEW = "new";
  */
 const launchOnly = (pool: AnalyticsPoolRow) =>
   !pool.processed && !pool.marketCoverage;
-/** The most rows the screener shows at once: forty pages of Show more, and
-    the most a hand-edited or stale URL can make a page read and render. */
-const CAP = 1000;
 /** Brings the panel's head back under the site header when it has scrolled away. */
 function headIntoView(panel: HTMLElement | null) {
   const padding =
@@ -240,7 +237,7 @@ export function ProductExplore() {
   const rawLimit = Number(params.get("limit")),
     shown =
       Number.isInteger(rawLimit) && rawLimit > 0
-        ? Math.min(rawLimit, CAP)
+        ? Math.min(rawLimit, EXPLORE_ROWS_CAP)
         : SHOW_MORE_STEP;
   const filter = useDebouncedInput(q, (next) => set({ q: next }));
   /* Each rail reads on its own, so each says for itself whether it was served. */
@@ -327,7 +324,11 @@ export function ProductExplore() {
     focusAt.current = shown;
     write({
       limit: String(
-        Math.min(shown + SHOW_MORE_STEP, list?.total ?? Infinity, CAP),
+        Math.min(
+          shown + SHOW_MORE_STEP,
+          list?.total ?? Infinity,
+          EXPLORE_ROWS_CAP,
+        ),
       ),
     });
   };
@@ -797,7 +798,7 @@ export function ProductExplore() {
             <ShowMore
               shown={shown}
               total={failed ? 0 : (list?.total ?? null)}
-              cap={CAP}
+              cap={EXPLORE_ROWS_CAP}
               loading={loading}
               onMore={showMore}
             />
