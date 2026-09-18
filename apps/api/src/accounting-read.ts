@@ -145,6 +145,16 @@ export async function readLeaderboard(
     nextOffset: offset + limit < total ? offset + limit : null,
   };
 }
+/** The wallet's launches: catalog rows whose launch transaction it sent, the
+ * newest first, one past the served 500 so the reader can say it cut them. */
+export async function readLaunches(query: ReadQuery, address: string) {
+  return (
+    await query(
+      `${catalogCte} SELECT * FROM catalog WHERE launch_sender=$1 ORDER BY launch_block DESC,pool_id LIMIT 501`,
+      [address],
+    )
+  ).rows;
+}
 export async function readWallet(
   query: ReadQuery,
   address: string,
@@ -204,12 +214,7 @@ export async function readWallet(
     });
     curve.push({ time: coverage.asOf, wei: wallet.realizedWei! });
   }
-  const launches = (
-    await query(
-      `${catalogCte} SELECT * FROM catalog WHERE launch_sender=$1 ORDER BY launch_block DESC,pool_id LIMIT 501`,
-      [address],
-    )
-  ).rows;
+  const launches = await readLaunches(query, address);
   return {
     coverage,
     window,

@@ -21,6 +21,7 @@ import {
   type MarketSource,
 } from "./ledger-market";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
+import { readLedgerWallet } from "./ledger-wallet";
 import {
   encodeCursor,
   isAddress,
@@ -174,6 +175,8 @@ export async function readData(
       await query("SELECT 1 FROM agg_pool_state WHERE false");
       await query("SELECT 1 FROM agg_live_trades WHERE false");
       await query("SELECT 1 FROM agg_wallets WHERE false");
+      await query("SELECT 1 FROM agg_positions WHERE false");
+      await query("SELECT 1 FROM agg_wallet_hours WHERE false");
       await query("SELECT 1 FROM agg_wallet_windows WHERE false");
       await query("SELECT 1 FROM agg_window_refreshes WHERE false");
       await query(
@@ -206,7 +209,11 @@ export async function readData(
   if (request.route === "creators")
     return readCreators(query, request.creators);
   if (request.route === "profile")
-    return readWallet(query, request.wallet!, request.window);
+    return (
+      (marketSource === "ledger" &&
+        (await readLedgerWallet(query, request.wallet!, request.window))) ||
+      readWallet(query, request.wallet!, request.window)
+    );
   if (request.route === "search")
     return readSearch(query, request.q, request.group);
   if (request.route === "feed") {
