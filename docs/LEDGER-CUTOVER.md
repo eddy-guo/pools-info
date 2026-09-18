@@ -397,12 +397,20 @@ wallets that also had a supported deep-tier position by 15 Sep) and 97 an
 empty one; 68 of them are wallets the accounting tables never saw at all.
 The slowest ledger read of the 200 was 46 ms warm.
 
-What the ledger route leaves empty on purpose: `trades` (no row per sale
-in the ledger, design decision D3, so the Trades tab reads 0 and no
-trade-share link is emitted from it) and `curve` (the hourly cumulative
-curve is the next slice), both of which the page already renders empty for
-every wallet the frozen route has no rows for, which is the state the
-frontend home captured as its "before".
+What the ledger route left empty on purpose at that walk: `trades` (no row
+per sale in the ledger, design decision D3, so the Trades tab reads 0 and no
+trade-share link is emitted from it; still empty) and `curve`, both of
+which the page already rendered empty for every wallet the frozen route has
+no rows for, which is the state the frontend home captured as its "before".
+The curve landed in the next slice (PR https://github.com/eddy-guo/pools-info/pull/111): the hourly cumulative realized
+from `agg_wallet_hours`, one point at the end of each hour with a sale on a
+supported position, ending on the header's figure, so on a clean wallet the
+curve's endpoint equals the realized the header shows; its frozen-versus-
+ledger walk for the 7d leader `0x62cc49d34520f821f851f7f7073e8d6e4184675c`
+(15 points to 138.362590 ETH, the header's figure to the wei) and the
+launcher `0xb3c9cf93ec4eff830d01766681052607040c53b1` is in that pull
+request, and the points, rule and cost are in `docs/LEDGER-MARKET-SERVING.md`
+"The wallet page".
 
 ## Reading our figures against pools.xyz
 
