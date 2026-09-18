@@ -16,6 +16,7 @@ import {
   instantDeployments,
   launchEvent,
   ledgerPassPolicy,
+  type InstantDeployment,
 } from "@pools/chain";
 import { FakeHyperSync, fakeLaunch, word } from "@pools/chain/testing";
 import {
@@ -45,7 +46,7 @@ const S = addr(0x5555),
 const launchTopic = toEventSelector(launchEvent);
 const log = (
   n: number,
-  deployment = instantDeployments[0],
+  deployment: InstantDeployment = instantDeployments[0],
 ): RetainedLaunchLog => ({
   address: deployment.strategy,
   topic0: launchTopic,
