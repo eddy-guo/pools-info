@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   shortAddress,
   poolHref,
@@ -29,6 +29,7 @@ import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { MyWalletButton, useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
+import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useQuery } from "./state";
 import { PnlCardModal } from "./pnl-card-modal";
 import { CopyTradePreview } from "./copy-trade-preview";
@@ -47,6 +48,9 @@ const unindexed = (data: AnalyticsWalletResponse | undefined) =>
   !!data && data.wallet.asOf === null;
 /** The one line an unobserved wallet's positions and curve carry instead of zeros. */
 const UNINDEXED = "This wallet's trading has not been indexed yet.";
+/** The most positions the read sends (`apps/api/README.md`, the wallet
+    route's bound), and so the most rows a hand-edited URL can reserve. */
+const POSITIONS_CAP = 500;
 /** The line under an empty curve on a measured wallet with trades: the read
     served its figures without a curve, which is not the same as no PnL. */
 const CURVE_UNSERVED = "The PnL curve is not served for this wallet yet.";
@@ -163,6 +167,41 @@ export function ProductWallet({ address }: { address: string }) {
     .slice(0, 5);
   const pct = (n: number | null | undefined) =>
     n == null ? <Unavailable /> : <span>{n.toFixed(1)}%</span>;
+  /* The positions the URL's `limit` names, 25 by default, are reserved from
+     first paint and grown by the shared Show more control: the read sends
+     every position at once, so growing shows rows already on hand and the
+     list never resizes under a response. */
+  const rawShown = Number(params.get("limit"));
+  const shown =
+    Number.isInteger(rawShown) && rawShown > 0
+      ? Math.min(rawShown, POSITIONS_CAP)
+      : SHOW_MORE_STEP;
+  const positionRows = Array.from(
+    { length: shown },
+    (_, index) => data?.positions[index],
+  );
+  const positionsTotal = data ? data.positions.length : null;
+  const focusAt = useRef<number | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const showMore = useCallback(() => {
+    focusAt.current = shown;
+    set({
+      limit: String(
+        Math.min(shown + SHOW_MORE_STEP, positionsTotal ?? POSITIONS_CAP),
+      ),
+    });
+  }, [shown, set, positionsTotal]);
+  useEffect(() => {
+    const index = focusAt.current;
+    if (index === null || index >= shown) return;
+    if (!data || data.positions.length <= index) return;
+    focusAt.current = null;
+    const links = panelRef.current?.querySelectorAll<HTMLElement>(
+      `[data-row-index="${index}"] a`,
+    );
+    /* Both layouts hold the row; the one the container query shows has a box. */
+    [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
+  }, [data, shown]);
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -321,7 +360,10 @@ export function ProductWallet({ address }: { address: string }) {
                   />
                 </div>
               </section>
-              <section className="panel live-section wallet-activity">
+              <section
+                className="panel live-section wallet-activity"
+                ref={panelRef}
+              >
                 <div
                   className="table-tabs"
                   role="tablist"
@@ -382,19 +424,12 @@ export function ProductWallet({ address }: { address: string }) {
                             </tr>
                           </thead>
                           <tbody>
-                            {Array.from(
-                              {
-                                length: Math.max(
-                                  25,
-                                  data?.positions.length ?? 0,
-                                ),
-                              },
-                              (_, index) => data?.positions[index],
-                            ).map((p, index) => (
+                            {positionRows.map((p, index) => (
                               <tr
                                 key={index}
                                 aria-hidden={!p}
                                 data-row={p ? "resolved" : "reserved"}
+                                data-row-index={index}
                               >
                                 <td data-pending={!p && !data}>
                                   {p ? (
@@ -474,15 +509,13 @@ export function ProductWallet({ address }: { address: string }) {
                         aria-busy={stale}
                         data-stale-rows={stale}
                       >
-                        {Array.from(
-                          { length: Math.max(25, data?.positions.length ?? 0) },
-                          (_, index) => data?.positions[index],
-                        ).map((p, index) => (
+                        {positionRows.map((p, index) => (
                           <div
                             className="mobile-position"
                             key={index}
                             aria-hidden={!p}
                             data-row={p ? "resolved" : "reserved"}
+                            data-row-index={index}
                           >
                             {p ? (
                               <Fragment key="resolved">
@@ -551,6 +584,13 @@ export function ProductWallet({ address }: { address: string }) {
                         />
                       )}
                     </div>
+                    <ShowMore
+                      shown={shown}
+                      total={positionsTotal}
+                      cap={POSITIONS_CAP}
+                      loading={!data}
+                      onMore={showMore}
+                    />
                     {data?.positionsTruncated && (
                       <p className="panel-footnote">
                         Showing the first {data.positions.length} positions.

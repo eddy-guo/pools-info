@@ -419,11 +419,43 @@ test("a served wallet whose curve is not sent says so, with no Trades tab and it
   await expect(page.locator(".wallet-page")).not.toContainText(
     "No realized PnL",
   );
+  // The positions come in pages under the shared Show more control, not
+  // all at once: 25 rows from first paint, 25 more per click, the count
+  // reading off the rows on hand.
+  const rows = page
+    .locator(".wallet-activity [data-row='resolved']")
+    .filter({ visible: true });
+  const foot = page.locator(".wallet-activity .pagination");
+  await expect(rows).toHaveCount(25);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 25 of 60",
+  );
   await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
   expect(
     await bufferedShiftSum(page),
     "every non-input layout shift since navigation",
   ).toBeLessThan(0.001);
+  const more = foot.getByRole("button", { name: "Show 25 more" });
+  await more.click();
+  await expect(rows).toHaveCount(50);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 50 of 60",
+  );
+  await expect(page).toHaveURL(/limit=50/);
+  // The first newly revealed row takes focus, and the last page names the
+  // rows it has left.
+  await expect(
+    page.locator("[data-row-index='25'] a").filter({ visible: true }),
+  ).toBeFocused();
+  await expect(
+    foot.getByRole("button", { name: "Show 10 more" }),
+  ).toBeVisible();
+  await foot.getByRole("button", { name: "Show 10 more" }).click();
+  await expect(rows).toHaveCount(60);
+  await expect(foot.locator(".pagination-count")).toHaveText(
+    "Showing 60 of 60",
+  );
+  await expect(foot.getByRole("button")).toHaveCount(0);
 });
 
 /*
