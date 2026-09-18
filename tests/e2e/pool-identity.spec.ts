@@ -234,6 +234,8 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
         ...document.querySelectorAll(".page-heading a, .page-heading button"),
       ].map(rect),
       name: rect(document.querySelector(".pool-identity-title h1")!),
+      tile: rect(document.querySelector(".pool-image-slot")!),
+      copy: rect(document.querySelector(".pool-heading-copy")!),
       /* The launch mode badge follows the symbol. */
       badges: [...document.querySelectorAll(".pool-identity-title > span")]
         .slice(1)
@@ -257,6 +259,20 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
   }
   for (const slot of header.slots)
     expect(slot.fits, `${slot.selector} holds its content`).toBe(true);
+  // The 54px tile sits beside the name it belongs to: its top within the
+  // name's line, the copy starting right after it. A phone stacks the copy
+  // to several rows, where a tile centred on the column would hang a line
+  // and a half under the name beside an empty gutter.
+  expect(header.copy.left, "the copy starts after the tile").toBeGreaterThan(
+    header.tile.right,
+  );
+  expect(
+    header.tile.top,
+    "the tile hangs from the name's line",
+  ).toBeGreaterThanOrEqual(header.name.top - 1);
+  expect(header.tile.top, "the tile hangs from the name's line").toBeLessThan(
+    header.name.bottom,
+  );
   expect(header.badges).toHaveLength(1);
   for (const badge of header.badges)
     if (project === "desktop")

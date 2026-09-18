@@ -6332,8 +6332,14 @@ a.wallet-top-pool:hover {
     height: 276px;
     gap: 24px;
   }
+  /* The copy stacks to 156px here, so a centred 54px tile would sit a line
+     and a half under the name it belongs to: the tile hangs from the top
+     instead, centred on the two-row title block beside it. */
   .pool-page.page .page-heading > :first-child {
-    align-items: center;
+    align-items: flex-start;
+  }
+  .pool-page .pool-image-slot {
+    margin-top: 3px;
   }
   .pool-page.page .page-heading h1 {
     font-size: 26px;
