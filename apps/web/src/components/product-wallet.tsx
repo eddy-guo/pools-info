@@ -39,12 +39,23 @@ const tabs = [
   { id: "launches", label: "Launches" },
 ];
 /**
+ * The accounting has never observed this wallet: `asOf` is the latest cut of
+ * the pools it holds a position in and is null only when it holds none, while
+ * a measured wallet with no trades in the window still carries the cut. Its
+ * launches come from the catalog and stay real either way.
+ */
+const unindexed = (data: AnalyticsWalletResponse | undefined) =>
+  !!data && data.wallet.asOf === null;
+/** The one line an unobserved wallet's positions and curve carry instead of zeros. */
+const UNINDEXED = "This wallet's trading has not been indexed yet.";
+/**
  * The export's tab counts, from the rows the read sent: a bounded list has
  * no total, so its tab carries no count. The slot is reserved at three
  * digits so a count arriving moves no tab beside it.
  */
 function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
   if (!data) return null;
+  if (id !== "launches" && unindexed(data)) return null;
   if (id === "positions")
     return data.positionsTruncated ? null : data.positions.length;
   if (id === "trades") return data.tradesTruncated ? null : data.trades.length;
@@ -100,13 +111,13 @@ function behaviour(data: AnalyticsWalletResponse | undefined) {
     },
     {
       label: "Wins",
-      value: w ? String(wins) : null,
+      value: w && !unindexed(data) ? String(wins) : null,
       share: closed ? wins / closed : 0,
       tone: "up",
     },
     {
       label: "Losses",
-      value: w ? String(losses) : null,
+      value: w && !unindexed(data) ? String(losses) : null,
       share: closed ? losses / closed : 0,
       tone: "down",
     },
@@ -167,15 +178,20 @@ export function ProductWallet({ address }: { address: string }) {
             <div className={styles.title}>
               <Fragment key={mine ? "portfolio" : "address"}>
                 <h1>{mine ? "Portfolio" : shortAddress(address)}</h1>
-                <span className={styles.mode} data-pending={!data && !failed}>
-                  {w?.rank
-                    ? `RANK ${w.rank}`
-                    : data
-                      ? "UNRANKED"
-                      : failed
-                        ? "RANK UNAVAILABLE"
-                        : "RANK PENDING"}
-                </span>
+                {/* An unobserved wallet has no rank to be without: the badge
+                    goes rather than reading UNRANKED beside a board that
+                    ranks it. It sits after the heading, so nothing moves. */}
+                {!unindexed(data) && (
+                  <span className={styles.mode} data-pending={!data && !failed}>
+                    {w?.rank
+                      ? `RANK ${w.rank}`
+                      : data
+                        ? "UNRANKED"
+                        : failed
+                          ? "RANK UNAVAILABLE"
+                          : "RANK PENDING"}
+                  </span>
+                )}
               </Fragment>
             </div>
             <div className="wallet-meta">
@@ -256,12 +272,19 @@ export function ProductWallet({ address }: { address: string }) {
               {pct(w?.winRate)}
             </Stat>
             <Stat pending={loading && !data} label="Trades">
-              {w?.rankingTradeCount ?? w?.supportedTradeCount ?? (
+              {unindexed(data) ? (
                 <Unavailable />
+              ) : (
+                (w?.rankingTradeCount ??
+                w?.supportedTradeCount ?? <Unavailable />)
               )}
             </Stat>
             <Stat pending={loading && !data} label="Volume">
-              <Eth pending={!data} wei={w?.volumeWei} digits={5} />
+              <Eth
+                pending={!data}
+                wei={unindexed(data) ? null : w?.volumeWei}
+                digits={5}
+              />
             </Stat>
             <Stat pending={loading && !data} label="Avg hold">
               {w?.avgHold == null ? (
@@ -287,6 +310,7 @@ export function ProductWallet({ address }: { address: string }) {
                     pending={!data}
                     profit
                     label="Cumulative realized PnL"
+                    emptyNote={unindexed(data) ? UNINDEXED : undefined}
                   />
                 </div>
               </section>
@@ -501,17 +525,21 @@ export function ProductWallet({ address }: { address: string }) {
                       {data && !data.positions.length && (
                         /* The hint offers the All window only while another
                            is selected: with All on show there is nothing
-                           left to select. */
+                           left to select. An unobserved wallet has no
+                           window to select either, so it carries its one
+                           line in every window. */
                         <EmptyState
                           title={
-                            period === "All"
+                            period === "All" || unindexed(data)
                               ? "No positions"
                               : "No positions in this window"
                           }
                           description={
-                            period === "All"
-                              ? "This wallet has no positions."
-                              : "Select All to see this wallet's full history."
+                            unindexed(data)
+                              ? UNINDEXED
+                              : period === "All"
+                                ? "This wallet has no positions."
+                                : "Select All to see this wallet's full history."
                           }
                         />
                       )}
