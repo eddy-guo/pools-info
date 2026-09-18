@@ -621,10 +621,11 @@ test("a live feed that has never started reads as offline, never as streaming or
     return getComputedStyle(dot).backgroundColor === color;
   });
   expect(green, "no green dot over a feed that never started").toBe(false);
-  // The header strip mirrors the rail: not streaming, and not left unknown.
+  // The header strip mirrors the rail's own word: offline, never "Paused"
+  // (nobody paused it) and not left unknown.
   const strip = page.locator(".subnav-live");
-  await expect(strip).toHaveAttribute("data-state", "paused");
-  await expect(strip).toHaveText("Paused");
+  await expect(strip).toHaveAttribute("data-state", "offline");
+  await expect(strip).toHaveText("Offline");
 });
 
 test("live feed has bounded rows, no overlapping polls, stops when hidden, and recovers from a failed window", async ({

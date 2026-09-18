@@ -12,6 +12,7 @@ import { validateLiveFeed } from "@/lib/live-feed";
 import {
   registerLiveFeedSource,
   reportLiveFeedState,
+  type LiveFeedState,
 } from "@/lib/live-feed-state";
 import { Eth, Unavailable, explorer, utc } from "./live-ui";
 import styles from "./trade-stream.module.css";
@@ -183,7 +184,7 @@ export function TradeStream({ poolId }: { poolId?: string }) {
     (coverage.state === "uninitialized" || coverage.asOf == null);
   // One word in the head: the feed polls on its own every 15s, so a delayed
   // window recovers without a control.
-  const feed = !enabled
+  const feed: Exclude<LiveFeedState, "unknown"> = !enabled
     ? "paused"
     : offline
       ? "offline"
@@ -191,16 +192,14 @@ export function TradeStream({ poolId }: { poolId?: string }) {
         ? "delayed"
         : "streaming";
   // The header strip's dot mirrors this poll rather than starting its own:
-  // "unknown" until this scope's first response lands, then streaming only
-  // when this feed itself reads as streaming (offline, delayed and paused all
-  // read as the strip's single "not streaming" state).
+  // "unknown" until this scope's first response lands, then this very word,
+  // so a reader's pause, a feed that never started and a stale window each
+  // read the same in the strip as in this head.
   const resolved =
     current !== undefined && (current.data !== undefined || current.error);
   useEffect(() => registerLiveFeedSource(), []);
   useEffect(() => {
-    reportLiveFeedState(
-      !resolved ? "unknown" : feed === "streaming" ? "streaming" : "paused",
-    );
+    reportLiveFeedState(resolved ? feed : "unknown");
   }, [resolved, feed]);
   return (
     <section
