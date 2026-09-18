@@ -5,6 +5,8 @@ import sharp from "sharp";
 import {
   cardCurve,
   cardEth,
+  cardExportHero,
+  cardExportHeroSize,
   cardExportTrio,
   cardHero,
   cardStats,
@@ -252,8 +254,8 @@ const rankFormat = new Intl.NumberFormat("en-US");
 
 /**
  * The captain's export layout: wordmark, window chip, monogram + name + rank,
- * the PnL headline, the fixed ROI / Record / Best trade trio and the profile
- * URL - exactly those eight elements, nothing else.
+ * the realized PnL headline in ETH, the fixed ROI / Record / Best trade trio
+ * and the profile URL - exactly those eight elements, nothing else.
  */
 function ExportCard({
   address,
@@ -279,6 +281,7 @@ function ExportCard({
     { label: "Record", value: trio.record },
     { label: "Best trade", value: trio.bestTrade },
   ];
+  const heroSize = cardExportHeroSize(heroValue);
   return (
     <div
       style={{
@@ -369,9 +372,9 @@ function ExportCard({
           <span
             style={{
               marginTop: 12,
-              fontSize: 207,
+              fontSize: heroSize,
               fontWeight: 600,
-              letterSpacing: -9.3,
+              letterSpacing: -heroSize * 0.045,
               lineHeight: 1,
               color: heroColor,
             }}
@@ -448,7 +451,7 @@ export async function GET(
       launch,
     );
     const w = result.wallet,
-      hero = cardHero(w);
+      hero = options.design === "export" ? cardExportHero(w) : cardHero(w);
     if (!w.tradeCount || !hero)
       return new Response("No saved PnL for this wallet", { status: 404 });
     const preset = cardPresets[options.preset].color,

@@ -181,6 +181,61 @@ export function cardHero(
 }
 
 /**
+ * The export design's hero: the window's realized amount in ETH, signed and
+ * in the up or down colour, as the captain's export draws it. Its ROI is one
+ * of the trio's stats, so the two never restate one figure; a wallet with no
+ * realized amount has no export card.
+ */
+export function cardExportHero(
+  wallet: AnalyticsWalletSummary,
+): { value: string; tone: CardStat["tone"] } | null {
+  if (wallet.realizedWei === null) return null;
+  return {
+    value: cardEth(wallet.realizedWei, true),
+    tone: weiTone(wallet.realizedWei),
+  };
+}
+
+/** Geist SemiBold advance widths, per 1000 em, of every glyph an ETH hero holds. */
+const heroAdvance: Record<string, number> = {
+  "0": 683,
+  "1": 427,
+  "2": 642,
+  "3": 637,
+  "4": 643,
+  "5": 656,
+  "6": 615,
+  "7": 538,
+  "8": 644,
+  "9": 618,
+  "+": 566,
+  "-": 418,
+  ".": 225,
+  ",": 225,
+  " ": 236,
+  E: 615,
+  T: 584,
+  H: 719,
+};
+/**
+ * The export hero's font size: the design's 207 px, or the largest whole
+ * size at which the figure fits the card's content width at the design's
+ * -0.045 em letter spacing, since the renderer never shrinks text on its own
+ * and a small realized amount ("-0.001234 ETH") runs far longer than the
+ * "+12.40 ETH" the export was drawn with.
+ */
+export function cardExportHeroSize(
+  value: string,
+  width = 1040,
+  max = 207,
+): number {
+  const em =
+    [...value].reduce((sum, ch) => sum + (heroAdvance[ch] ?? 683), 0) / 1000 -
+    0.045 * (value.length - 1);
+  return Math.max(1, Math.min(max, Math.floor(width / em)));
+}
+
+/**
  * The export design's fixed ROI / Record / Best trade trio: unlike
  * {@link cardStats}'s dynamic top-3, these three slots are always drawn, each
  * left empty (not dashed or estimated) when the window has no such figure.
