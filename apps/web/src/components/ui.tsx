@@ -556,11 +556,14 @@ export function Chart({
   label = "Price",
   profit = false,
   pending = false,
+  emptyNote = "No realized PnL in this window.",
 }: {
   points: PricePoint[];
   label?: string;
   profit?: boolean;
   pending?: boolean;
+  /** The line under an empty chart once its read has resolved. */
+  emptyNote?: string;
 }) {
   const gradient = useId().replace(/:/g, "");
   const { unit } = useUnit();
@@ -608,11 +611,16 @@ export function Chart({
       <div className="chart-readout">
         <span className="muted">{label}</span>
         <strong>
-          {profit ? (
-            <Money wei={point?.wei} signed pending={pending} />
-          ) : (
-            <Price wei={point?.wei} pending={pending} />
-          )}
+          {/* The quiet mark, as a stat card's value slot: an empty slot has
+              no line box, and the row's baseline-aligned label and date
+              would move up once "Pending" resolves to nothing. */}
+          <QuietUnavailable value="quiet">
+            {profit ? (
+              <Money wei={point?.wei} signed pending={pending} />
+            ) : (
+              <Price wei={point?.wei} pending={pending} />
+            )}
+          </QuietUnavailable>
         </strong>
         <time>
           {point
@@ -758,7 +766,7 @@ export function Chart({
           ? "\u00a0"
           : pending
             ? "Loading saved PnL observations"
-            : "No realized PnL in this window."}
+            : emptyNote}
       </p>
     </div>
   );

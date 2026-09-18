@@ -160,6 +160,174 @@ test("the wallet's empty positions use the same designed empty state", async ({
 });
 
 /*
+ * The frozen accounting route answers a wallet it has never observed with
+ * `wallet.asOf: null` (the latest cut of the pools it holds a position in,
+ * null only when it holds none) beside zero counts, while the live board
+ * ranks that same wallet at the top. The page reads that shape as not yet
+ * indexed rather than as hard zeros; a measured wallet with nothing in the
+ * window still carries its cut and keeps its zeros.
+ */
+const unindexedLine = "This wallet's trading has not been indexed yet.";
+/* The unobserved shape, field for field as the read API serves it. */
+const unobservedWallet = {
+  address: wallet,
+  rank: null,
+  realizedWei: null,
+  netWei: null,
+  unrealizedWei: null,
+  volumeWei: "0",
+  roi: null,
+  wins: 0,
+  losses: 0,
+  winRate: null,
+  tradeCount: 0,
+  supportedTradeCount: 0,
+  supportedPositionCount: 0,
+  excludedPositionCount: 0,
+  bestWei: null,
+  avgHold: null,
+  last: null,
+  asOf: null,
+  oldestAsOf: null,
+  completeWindow: false,
+};
+/* 129 launches, the count the real unobserved top wallet carries. */
+const launches = Array.from({ length: 129 }, (_, i) => ({
+  id: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+  token: `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  name: `Launch ${i + 1}`,
+  symbol: `L${i + 1}`,
+  launchTx: `0x${(i + 1).toString(16).padStart(64, "f")}`,
+  launchSender: wallet,
+  launchBlock: 65841861 + i,
+  launchedAt: 1789695885 + i * 60,
+}));
+
+const tile = (page: Page, label: string) =>
+  page
+    .locator(".wallet-page .live-eight-stats .stat")
+    .filter({ has: page.locator("span", { hasText: label }) })
+    .locator("strong");
+const behaviourValue = (page: Page, label: string) =>
+  page
+    .locator(".wallet-page .wallet-behaviour-row")
+    .filter({ has: page.locator("span", { hasText: label }) })
+    .locator(".number");
+
+test("a wallet the accounting has never observed reads as not indexed, not as zeros", async ({
+  page,
+}, testInfo) => {
+  const { viewport } = surface(testInfo);
+  await page.setViewportSize(viewport);
+  await trackShifts(page);
+  await page.route(`**/api/product/wallets/${wallet}**`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        wallet: unobservedWallet,
+        positions: [],
+        positionsTruncated: false,
+        trades: [],
+        tradesTruncated: false,
+        curve: [],
+        launches,
+        launchesTruncated: false,
+      },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  const empty = page.locator(".table-region .empty-state");
+  await expect(empty).toContainText(unindexedLine);
+  await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
+    unindexedLine,
+  );
+  // No rank badge at all: the board this wallet was clicked from ranks it.
+  await expect(page.locator(".wallet-page .page-heading")).not.toContainText(
+    "RANK",
+  );
+  // The unmeasured figures carry the quiet mark the six honest tiles use.
+  for (const label of ["Trades", "Volume"]) {
+    await expect(tile(page, label)).toHaveText("\u2013");
+    await expect(tile(page, label).locator(".unavailable")).toHaveCount(1);
+  }
+  for (const label of ["Wins", "Losses"])
+    await expect(behaviourValue(page, label)).toHaveText("");
+  const tabs = page.getByRole("tablist", { name: "Wallet activity" });
+  await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
+    "Positions",
+  );
+  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades");
+  // The launches are real: they come from the catalog, not the accounting.
+  await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
+    "Launches129",
+  );
+  await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+  expect(
+    await bufferedShiftSum(page),
+    "every non-input layout shift since navigation",
+  ).toBe(0);
+});
+
+test("a measured wallet with nothing in the window keeps its zeros", async ({
+  page,
+}, testInfo) => {
+  const { viewport } = surface(testInfo);
+  await page.setViewportSize(viewport);
+  await page.route(`**/api/product/wallets/${wallet}**`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    // The preloaded wallet is measured: its cut is the condition that keeps
+    // every zero below an honest zero.
+    expect(typeof body.wallet.asOf).toBe("number");
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        wallet: {
+          ...unobservedWallet,
+          asOf: body.wallet.asOf,
+          oldestAsOf: body.wallet.oldestAsOf,
+        },
+        positions: [],
+        positionsTruncated: false,
+        trades: [],
+        tradesTruncated: false,
+        curve: [],
+        launches,
+        launchesTruncated: false,
+      },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  const empty = page.locator(".table-region .empty-state");
+  await expect(empty).toContainText("This wallet has no positions.");
+  await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
+    "No realized PnL in this window.",
+  );
+  await expect(page.locator(".wallet-page .page-heading")).toContainText(
+    "UNRANKED",
+  );
+  await expect(tile(page, "Trades")).toHaveText("0");
+  await expect(tile(page, "Volume")).toHaveText("0 ETH");
+  for (const label of ["Wins", "Losses"])
+    await expect(behaviourValue(page, label)).toHaveText("0");
+  const tabs = page.getByRole("tablist", { name: "Wallet activity" });
+  await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
+    "Positions0",
+  );
+  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText("Trades0");
+  await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
+    "Launches129",
+  );
+  await expect(page.locator(".wallet-page")).not.toContainText(unindexedLine);
+});
+
+/*
  * The captain's escalation of 17 Sep 2026: on a cold home page against a read
  * API that was not answering, the visitor watched skeletons for eight seconds
  * and was then shown "Pepe in Hood at 14.1333 ETH" with launch cards reading

@@ -432,34 +432,42 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   const main = page.locator("main");
   const text = await main.innerText();
   for (const copy of removedCopy) expect(text, copy).not.toContain(copy);
-  await expect(page.locator(".page-heading h1 + span")).toHaveText("UNRANKED");
+  // The accounting has never observed this wallet (`wallet.asOf` is null):
+  // it has no rank to be without, so no badge sits beside the name, and its
+  // zeros read as not yet indexed rather than as measured figures.
+  await expect(page.locator(".page-heading h1 + span")).toHaveCount(0);
+  await expect(page.locator(".page-heading")).not.toContainText("RANK");
   // No last-trade timestamp exists for this wallet, so the meta line carries
   // only the address, never a placeholder segment.
   await expect(page.locator(".wallet-last-meta")).toHaveCount(0);
-  await expect(
-    main
-      .locator(".stat")
-      .filter({ has: page.getByText("Realized PnL", { exact: true }) })
-      .locator(".unavailable"),
-    "a stat card's unknown value is the quiet mark",
-  ).toHaveText("\u2013");
-  await expect(
-    main.getByText("No realized PnL in this window.", { exact: true }),
-  ).toBeVisible();
+  for (const label of ["Realized PnL", "Trades", "Volume"])
+    await expect(
+      main
+        .locator(".stat")
+        .filter({ has: page.getByText(label, { exact: true }) })
+        .locator(".unavailable"),
+      "a stat card's unknown value is the quiet mark",
+    ).toHaveText("\u2013");
+  const unindexed = "This wallet's trading has not been indexed yet.";
+  await expect(main.locator(".chart-empty-note")).toHaveText(unindexed);
   await expect(
     main.getByRole("heading", { name: "No positions", exact: true }),
   ).toBeVisible();
+  await expect(main.locator(".table-region .empty-state")).toContainText(
+    unindexed,
+  );
   await expect(page.locator(".market-sidebar .wallet-top-pools")).toHaveText(
     "No pool activity in this window.",
   );
   await expect(page.locator(".market-sidebar h2").last()).toHaveText(
     "Most traded pools",
   );
-  // A figure with no denominator leaves its value and bar empty.
+  // A figure with no denominator leaves its value and bar empty, and so do
+  // the two counts the accounting never took for this wallet.
   await expectBehaviour(page, [
     ["Win rate", "", "0%"],
-    ["Wins", "0", "0%"],
-    ["Losses", "0", "0%"],
+    ["Wins", "", "0%"],
+    ["Losses", "", "0%"],
     ["Still held", "", "0%"],
     ["Volume in top pool", "", "0%"],
   ]);
