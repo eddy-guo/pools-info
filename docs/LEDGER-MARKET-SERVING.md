@@ -183,6 +183,77 @@ warm); a gate under 10 reads the window's rows without an index. The warm
 set for a cutover (`docs/LEDGER-CUTOVER.md`) is therefore the four default
 boards, the four `metric=net` boards, and explore's catalog count.
 
+## The wallet page
+
+`GET /v1/wallets/:address?window=` is served from the ledger by
+`apps/api/src/ledger-wallet.ts`: the summary from the wallet's row in
+`agg_wallet_windows` for the window, the very row the board above ranks, so
+the page's headline equals the board's figure to the wei at the same cursor;
+the positions from `agg_positions` (the fold's whole state per pool, one row
+per pool the wallet ever traded or received tokens in) joined to
+`indexed_pools` for the identity and to `agg_pool_state` for the mark. The
+response is the accounting reader's, field for field; what its values mean:
+
+- **`wallet`** is the board row with its meanings ("The trader leaderboard"
+  above): `rank` 1 to 100 or null, and null is not "unranked" copy but no
+  rank at all; `last` the wallet's last activity across its positions, the
+  same in every window. A wallet the ledger knows that has no hour in the
+  window has no row in it and reads as zero activity in the window (realized,
+  net and volume `"0"`, counts 0, `roi`, `bestWei` and `avgHold` null) with
+  its lifetime position counts and last activity. A wallet the ledger has
+  never attributed a swap or transfer to is the empty profile the accounting
+  reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
+  window's refresh cursor, `completeWindow` true.
+- **`wallet.unrealizedWei`** is the page's own addition to the board row: the
+  sum of the marks of every supported position (over the whole set, not the
+  500 served), or null while any of them is unmarked. A position's mark is
+  what its held units fetch at the pool's latest price state less their cost,
+  `trunc(quantity_raw * 2^192 / sqrt^2) - cost_wei`, exact to the wei and
+  truncated toward zero as `ledgerPriceSql` prices a whole token (the
+  decimals cancel). A flat position marks at zero less its cost, zero under
+  the fold's invariant, whatever the pool's price; a held one is unmarked
+  while the pool's decimals are unknown (`indexed_pools.decimals` null, a pool
+  the pass never read) or it has no price state. Mark-to-last-trade on a thin
+  pool is a figure that could never be realized, as it was on the accounting
+  reader.
+- **`positions[]`** are in pool-id order, the first 500 with
+  `positionsTruncated` past them: `realizedWei`, `netWei` and `volumeWei` are
+  the window's own figures per pool, summed from `agg_wallet_hours` from the
+  refresh's own first hour so they sum to the summary's; `position` is the
+  fold's lifetime state (`quantity`, `costWei`, lifetime `realizedWei`,
+  `investedWei`, `proceedsWei`, `buys`, `sells`); `asOf` and `throughBlock`
+  are the ledger cut on every position (there is no per-pool capture cutoff
+  any more); `decimals` is `indexed_pools.decimals`, null when unread, never
+  defaulted. An excluded position (`supported` false, an excluding flag among
+  `flags`) serves its counts, its volume and null for every finance and for
+  `position`, as before; the fold keeps its numbers, the reader never serves
+  them.
+- **`trades`** is empty and `tradesTruncated` false: the ledger keeps no row
+  per sale (design decision D3), so the Trades tab reads 0 and no trade-share
+  link is emitted. **`curve`** is empty and `curveSampled` false: the hourly
+  cumulative curve from `agg_wallet_hours` is the next slice
+  (docs/AGGREGATE-LEDGER.md). Neither is ever served from the frozen
+  accounting tables, which would put two worlds on one page.
+- **`launches`** are catalog rows whoever serves the page, the same
+  statement as before.
+
+Failure behaviour is the board's: a ledger with no cursor or no pool hour
+answers as with `broad`; a window without a refresh row answers 503
+`wallet_refresh_pending`; a refresh past the cursor 503
+`market_evidence_invalid`.
+
+Cost: one unique-index probe for the `wallet_ref`, one primary-key probe on
+`agg_wallet_windows` (or one `agg_positions_wallet` range for the position
+stats when the window has no row), and for the positions one
+`agg_positions_wallet` range with one `indexed_pools` and one
+`agg_pool_state` probe per position plus one `agg_wallet_hours` primary-key
+range grouped per pool; the busiest ranked wallet on the 17 Sep copy has
+3,070 hour rows and 23 positions, the widest a few thousand positions, which
+the 500 cap bounds on the wire but not in the mark's sum. Warm on the
+production-shape copy (Postgres 18): 15 to 45 ms end to end for a top-100
+wallet, 150 ms cold. The warm set for a cutover adds the four windows of the
+board's top rows.
+
 ## Before the switch is set
 
 Migration 019 applied and the supply read run; the frontend reading

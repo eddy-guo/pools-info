@@ -2,11 +2,12 @@ import type {
   AnalyticsCoverage,
   AnalyticsLeaderboardOptions,
   AnalyticsLeaderboardResponse,
+  LiveWindow,
 } from "@pools/core";
 import { walletSummary } from "./accounting-read";
 import type { ReadQuery } from "./catalog-read";
 import { catalogSummary } from "./explore-read";
-import { ledgerCut } from "./ledger-market";
+import { ledgerCut, type LedgerCut } from "./ledger-market";
 import { RequestError } from "./request";
 
 /** The trader leaderboard from the aggregate ledger (`MARKET_SOURCE=ledger`,
@@ -27,17 +28,66 @@ export const ledgerLeaderboardPolicy = Object.freeze({
   rankedWallets: 100,
 });
 
-/** Every column `walletSummary` reads, under its names. Unrealized is not a
- * board figure (it needs a price per position; the wallet page computes it),
- * the window's cutoff is the cursor its rows were summed to, and every row
- * spans its whole window, since the ledger folds every swap since launch. */
-const summaryColumns = (
+/** Every column `walletSummary` reads, under its names, from a window row
+ * `x`. Unrealized is not a board figure (it needs a price per position; the
+ * wallet reader marks them), the window's cutoff is the cursor its rows were
+ * summed to, and every row spans its whole window, since the ledger folds
+ * every swap since launch. */
+export const summaryColumns = (
   address: string,
 ) => `'0x'||encode(${address},'hex') AS wallet,x.realized_wei::text AS realized,x.net_wei::text AS net,
   x.volume_wei::text AS volume,x.disposed_cost_wei::text AS disposed_cost,NULL::text AS unrealized,
   x.trades AS trade_count,x.supported_trades,x.wins,x.losses,x.closures,x.hold_seconds::text AS hold_seconds,
   x.best_wei::text AS best,x.last_timestamp::text AS last,x.supported_positions AS supported_count,
   x.excluded_positions AS excluded_count,true AS complete_window`;
+/** The window's refresh row: the cursor its rows were summed to. A window
+ * the tip loop has not refreshed since the ledger's last walk-back has no
+ * rows to stand on and answers a retryable 503 until the next refresh
+ * (about a minute); a refresh past the served cut is evidence out of order. */
+export async function ledgerWindowRefresh(
+  query: ReadQuery,
+  cut: LedgerCut,
+  window: LiveWindow,
+  pending: string,
+) {
+  const refresh = (
+    await query(
+      `SELECT through_block,through_timestamp,window_start,ranked FROM agg_window_refreshes WHERE chain_id=4663 AND "window"=$1`,
+      [window],
+    )
+  ).rows[0];
+  if (!refresh) throw new RequestError(503, pending);
+  if (Number(refresh.through_block) > cut.block)
+    throw new RequestError(503, "market_evidence_invalid");
+  return {
+    asOf: Number(refresh.through_timestamp),
+    windowStart: Number(refresh.window_start),
+    ranked: Number(refresh.ranked),
+  };
+}
+/** The ledger's coverage as every wallet read serves it: the catalog's count,
+ * the pools with a trade, and the window's cutoff as both cut times. */
+export async function ledgerCoverage(
+  query: ReadQuery,
+  asOf: number,
+): Promise<AnalyticsCoverage> {
+  const catalog = await catalogSummary(query);
+  const processed = (
+    await query(
+      `SELECT count(*)::int AS count FROM agg_pool_state WHERE chain_id=4663`,
+    )
+  ).rows[0];
+  return {
+    catalogPools: catalog.count,
+    processedPools: processed.count,
+    asOf,
+    oldestAsOf: asOf,
+    generatedAt: new Date().toISOString(),
+    complete: false,
+    registryExhaustive: false,
+    pnlScope: "attributed_positions_all_pools",
+  };
+}
 /** Eligible for the board: the writer's own rule, as a literal so the planner
  * matches migration 020's partial index whenever the gate is its 10 or more. */
 const eligible = (minTrades: number) =>
@@ -63,16 +113,13 @@ export async function readLedgerLeaderboard(
     throw new RequestError(400, "invalid_min_trades");
   if (offset + limit > ledgerLeaderboardPolicy.rankedWallets)
     throw new RequestError(400, "invalid_offset");
-  const refresh = (
-    await query(
-      `SELECT through_block,through_timestamp,ranked FROM agg_window_refreshes WHERE chain_id=4663 AND "window"=$1`,
-      [window],
-    )
-  ).rows[0];
-  if (!refresh) throw new RequestError(503, "leaderboard_refresh_pending");
-  if (Number(refresh.through_block) > cut.block)
-    throw new RequestError(503, "market_evidence_invalid");
-  const asOf = Number(refresh.through_timestamp);
+  const refresh = await ledgerWindowRefresh(
+    query,
+    cut,
+    window,
+    "leaderboard_refresh_pending",
+  );
+  const asOf = refresh.asOf;
   // The writer's own ranking serves the board it ranked: the top 100 off the
   // rank index, one probe per address. Any other gate or metric orders the
   // eligible rows the same way (the address breaking ties) and counts them up
@@ -108,7 +155,7 @@ export async function readLedgerLeaderboard(
         )
       ).rows;
   const total = ranked
-    ? Number(refresh.ranked)
+    ? refresh.ranked
     : Number(
         (
           await query(
@@ -118,24 +165,8 @@ export async function readLedgerLeaderboard(
           )
         ).rows[0].count,
       );
-  const catalog = await catalogSummary(query);
-  const processed = (
-    await query(
-      `SELECT count(*)::int AS count FROM agg_pool_state WHERE chain_id=4663`,
-    )
-  ).rows[0];
-  const coverage: AnalyticsCoverage = {
-    catalogPools: catalog.count,
-    processedPools: processed.count,
-    asOf,
-    oldestAsOf: asOf,
-    generatedAt: new Date().toISOString(),
-    complete: false,
-    registryExhaustive: false,
-    pnlScope: "attributed_positions_all_pools",
-  };
   return {
-    coverage,
+    coverage: await ledgerCoverage(query, asOf),
     window,
     metric,
     minTrades,
