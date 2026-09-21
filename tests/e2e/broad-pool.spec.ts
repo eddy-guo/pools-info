@@ -457,3 +457,160 @@ test("a pool whose saved launch arrives as decimal strings still renders its ide
       .locator("small"),
   ).toHaveText("21,001 trades");
 });
+
+/* Synthetic prices exercise the library boundary; they are not claims about
+   current pools. Run these against next dev as well as the built server: only
+   the development library validates the magnitude passed to setData. */
+for (const sample of [
+  {
+    name: "one-wei",
+    unit: 1n,
+    eth: ["0.0171 ETH", "0.0172 ETH", "0.0171 ETH", "0.0172 ETH"],
+    usd: ["$0.0144000", "$0.0148000", "$0.0144000", "$0.0148000"],
+    axisClose: "0.0₁₇2000",
+  },
+  {
+    name: "ordinary",
+    unit: 1_000_000_000_000n,
+    eth: ["0.051000 ETH", "0.052000 ETH", "0.051000 ETH", "0.052000 ETH"],
+    usd: ["$0.00", "$0.01", "$0.00", "$0.01"],
+    axisClose: "0.0₅2000",
+  },
+  {
+    name: "high",
+    unit: 1_000_000_000_000_000_000n,
+    eth: ["1 ETH", "2 ETH", "1 ETH", "2 ETH"],
+    usd: ["$4,000.00", "$8,000.00", "$4,000.00", "$8,000.00"],
+    axisClose: "2",
+  },
+]) {
+  test(`${sample.name} candle prices retain OHLC, keyboard coordinates and ETH/USD semantics`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    /* Observe the painted crosshair label, not a component test handle. The
+       tooltip alone would pass if the keyboard still sent unscaled wei to
+       setCrosshairPosition and placed the actual crosshair off the pane. */
+    await page.addInitScript(() => {
+      const labels = new WeakMap<HTMLCanvasElement, string[]>();
+      const proto = CanvasRenderingContext2D.prototype;
+      const fill = proto.fillText;
+      const clear = proto.clearRect;
+      proto.clearRect = function (...args) {
+        labels.set(this.canvas, []);
+        return clear.apply(this, args);
+      };
+      proto.fillText = function (...args) {
+        const current = labels.get(this.canvas) ?? [];
+        current.push(args[0]);
+        labels.set(this.canvas, current);
+        return fill.apply(this, args);
+      };
+      Object.assign(window, {
+        candleLabels: (canvas: HTMLCanvasElement) => labels.get(canvas) ?? [],
+      });
+    });
+    const market = fixture();
+    market.priceWei = String(4n * sample.unit);
+    market.change = 300;
+    market.history.fromTimestamp = 199200;
+    market.history.candles = [199200, 199980].map((time, i) => {
+      const open = sample.unit * BigInt(i + 1);
+      return {
+        time,
+        open: String(open),
+        high: String(open * 2n),
+        low: String(open),
+        close: String(open * 2n),
+        volume: "1000000000000000000",
+      };
+    });
+    await page.route(`**/api/product/pools/${id}/`, (route) =>
+      route.fulfill({
+        json: {
+          pool,
+          analytics: null,
+          market,
+          delivery: { source: "indexer", notice: null },
+        },
+      }),
+    );
+    await page.route("**/api/product/prices/eth-usd/", (route) =>
+      route.fulfill({
+        json: {
+          usdPerEth: 4000,
+          asOf: "2026-09-21T00:00:00.000Z",
+          source: "coinbase",
+        },
+      }),
+    );
+    await page.goto(`/pool/${id}/`);
+    const chart = page.getByRole("img", { name: /Price candle chart/ });
+    await expect(chart.locator("canvas").first()).toBeVisible();
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await chart.focus();
+    await chart.press("ArrowLeft");
+    const tooltip = page.locator(".chart-tooltip");
+    await expect(tooltip.locator(".price")).toHaveText(sample.eth);
+    await expect(tooltip.locator("time")).toHaveAttribute(
+      "datetime",
+      new Date(199200 * 1000).toISOString(),
+    );
+    const crosshairAxis = chart
+      .locator("table tr")
+      .first()
+      .locator("td")
+      .nth(2)
+      .locator("canvas")
+      .nth(1);
+    const axisLabels = () =>
+      crosshairAxis.evaluate((canvas) =>
+        (
+          window as unknown as {
+            candleLabels: (canvas: HTMLCanvasElement) => string[];
+          }
+        ).candleLabels(canvas as HTMLCanvasElement),
+      );
+    await expect.poll(axisLabels).toContain(sample.axisClose);
+    await expect(page.locator(".live-price-heading .change")).toHaveCount(0);
+    const changeWindow = page.locator(".live-changes > span").filter({
+      has: page.getByText("24h", { exact: true }),
+    });
+    await expect(changeWindow).toHaveCount(1);
+    const change = changeWindow.locator(".change");
+    await expect(change).toHaveText("+300.00%");
+    const units = page.locator(".header-actions .unit-toggle");
+    await units.getByRole("button", { name: "USD", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(tooltip.locator(".price")).toHaveText(sample.usd);
+    await expect(tooltip.locator(":scope > span").last()).toHaveText(
+      "V$4,000.00",
+    );
+    await expect(change).toHaveText("+300.00%");
+    // The candle axis remains ETH, as before; the unit toggle converts the
+    // exact source values through Price/Eth, never chart coordinates.
+    await expect.poll(axisLabels).toContain(sample.axisClose);
+    await units.getByRole("button", { name: "ETH", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(tooltip.locator(".price")).toHaveText(sample.eth);
+    if (sample.name === "high") {
+      market.priceWei = String(BigInt(market.priceWei!) * 10n);
+      for (const candle of market.history.candles) {
+        for (const field of ["open", "high", "low", "close"] as const)
+          candle[field] = String(BigInt(candle[field]) * 10n);
+      }
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await expect(tooltip.locator(".price")).toHaveText([
+        "10 ETH",
+        "20 ETH",
+        "10 ETH",
+        "20 ETH",
+      ]);
+      await chart.focus();
+      await chart.press("ArrowLeft");
+      await expect.poll(axisLabels).toContain("20");
+    }
+    expect(errors).toEqual([]);
+  });
+}
