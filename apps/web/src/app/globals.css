@@ -3774,11 +3774,14 @@ main {
 }
 /* Match the reference's desktop pool row density without shrinking mobile targets. */
 .desktop-pools .data-table td {
-  height: auto;
+  /* Compact table text follows the 1.25 UI rhythm. Keep the measured row
+     height explicit so tightening the two-line identity cell cannot move the
+     reserved list or its Show more control. */
+  height: 62px;
   padding-top: 13px;
   padding-bottom: 13px;
   font-size: 14px;
-  line-height: 18px;
+  line-height: 1.25;
   font-variant-numeric: tabular-nums;
 }
 .desktop-pools .watch {
@@ -3812,7 +3815,7 @@ main {
   display: block;
   margin-top: 0;
   font-size: 12px;
-  line-height: 17px;
+  line-height: 1.25;
   color: var(--color-text-3);
   overflow: hidden;
   text-overflow: ellipsis;

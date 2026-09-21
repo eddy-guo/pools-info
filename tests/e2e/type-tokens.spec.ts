@@ -185,3 +185,128 @@ for (const route of ["/", "/traders/?window=All"]) {
     }
   });
 }
+
+test("screener cells use the compact line rhythm while prose keeps its reading rhythm", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    const state = { cls: 0 };
+    Object.assign(window, { compactLineMeasurement: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+  const desktop = testInfo.project.name === "desktop";
+  await page.setViewportSize({
+    width: desktop ? 1440 : 390,
+    height: desktop ? 1000 : 844,
+  });
+  await page.goto("/");
+  const layout = desktop ? ".desktop-pools" : ".mobile-pools";
+  await expect(
+    page.locator(`${layout} [data-row='resolved']`).first(),
+  ).toBeVisible();
+  const measured = await page.evaluate(async (layout) => {
+    await document.fonts.ready;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    const shown = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        style.display !== "none" &&
+        style.visibility !== "hidden"
+      );
+    };
+    const row = document.querySelector(`${layout} [data-row='resolved']`)!;
+    const token = row.querySelector(".token-cell")!;
+    const lines = [
+      token.querySelector("strong")!,
+      token.querySelector("small")!,
+    ];
+    const tokenBox = token.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    const compact = [...row.querySelectorAll("*")]
+      .filter(
+        (element) =>
+          shown(element) &&
+          [...element.childNodes].some(
+            (node) =>
+              node.nodeType === Node.TEXT_NODE && node.textContent!.trim(),
+          ) &&
+          parseFloat(getComputedStyle(element).fontSize) <= 13 &&
+          parseFloat(getComputedStyle(element).lineHeight) > 0,
+      )
+      .map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          text: element.textContent!.trim(),
+          fontSize: parseFloat(style.fontSize),
+          lineHeight: parseFloat(style.lineHeight),
+        };
+      });
+    const prose = getComputedStyle(document.querySelector(".footer-credit")!);
+    return {
+      compact,
+      prose: {
+        fontSize: parseFloat(prose.fontSize),
+        lineHeight: parseFloat(prose.lineHeight),
+      },
+      rowHeight: rowBox.height,
+      lines: lines.map((line) => {
+        const box = line.getBoundingClientRect();
+        return {
+          text: line.textContent!.trim(),
+          top: box.top,
+          bottom: box.bottom,
+          insideToken:
+            box.top >= tokenBox.top - 0.5 &&
+            box.bottom <= tokenBox.bottom + 0.5,
+          insideRow:
+            box.top >= rowBox.top - 0.5 && box.bottom <= rowBox.bottom + 0.5,
+          clipped: line.scrollHeight > line.clientHeight,
+        };
+      }),
+      cls: (window as unknown as { compactLineMeasurement: { cls: number } })
+        .compactLineMeasurement.cls,
+    };
+  }, layout);
+  await testInfo.attach("compact-line-height", {
+    body: JSON.stringify(measured),
+    contentType: "application/json",
+  });
+  expect(
+    measured.compact.length,
+    "the row has compact UI text",
+  ).toBeGreaterThan(0);
+  for (const text of measured.compact)
+    expect(
+      text.lineHeight / text.fontSize,
+      `${text.text} follows the compact 1.25 rhythm`,
+    ).toBeCloseTo(1.25, 2);
+  expect(
+    measured.prose.lineHeight / measured.prose.fontSize,
+    "prose keeps the 1.5 reading rhythm",
+  ).toBeCloseTo(1.5, 2);
+  expect(measured.rowHeight, "reserved row height is unchanged").toBe(
+    desktop ? 62 : 104,
+  );
+  expect(measured.lines[1].top).toBeGreaterThanOrEqual(
+    measured.lines[0].bottom - 0.5,
+  );
+  for (const line of measured.lines) {
+    expect(line.insideToken, `${line.text} fits its two-line cell`).toBe(true);
+    expect(line.insideRow, `${line.text} fits its row`).toBe(true);
+    expect(line.clipped, `${line.text} is not vertically clipped`).toBe(false);
+  }
+  expect(measured.cls, "measured CLS after first paint").toBe(0);
+});

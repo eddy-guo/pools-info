@@ -1,0 +1,117 @@
+{
+  "measuredAt": "2026-09-21T17:23:57Z",
+  "liveUrl": "https://www.poolsinfo.com/",
+  "desktop": {
+    "viewport": {
+      "width": 1440,
+      "height": 1000,
+      "devicePixelRatio": 1
+    },
+    "before": {
+      "visibleTextNodesAtOrAbove1_4": 103,
+      "desktopTableNodesAtOrAbove1_4": 100,
+      "tokenSubtitle": {
+        "fontSize": 12,
+        "lineHeight": 17,
+        "ratio": 1.4167
+      },
+      "senderAddress": {
+        "fontSize": 12.5,
+        "lineHeight": 18,
+        "ratio": 1.44
+      },
+      "priceUnit": {
+        "fontSize": 11,
+        "lineHeight": 18,
+        "ratio": 1.6364
+      }
+    },
+    "after": {
+      "desktopTableNodesAtOrAbove1_4": 0,
+      "tokenSubtitle": {
+        "fontSize": 12,
+        "lineHeight": 15,
+        "ratio": 1.25
+      },
+      "senderAddress": {
+        "fontSize": 12.5,
+        "lineHeight": 15.625,
+        "ratio": 1.25
+      },
+      "priceUnit": {
+        "fontSize": 11,
+        "lineHeight": 13.75,
+        "ratio": 1.25
+      },
+      "rowHeight": 62,
+      "layoutShift": 0
+    }
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "devicePixelRatio": 3,
+      "mobile": true,
+      "touch": true
+    },
+    "beforeAndAfter": {
+      "tokenSubtitle": {
+        "fontSize": 12,
+        "lineHeight": 15,
+        "ratio": 1.25
+      },
+      "price": {
+        "fontSize": 12.5,
+        "lineHeight": 15.625,
+        "ratio": 1.25
+      },
+      "stats": {
+        "fontSize": 12,
+        "lineHeight": 15,
+        "ratio": 1.25
+      },
+      "rowHeight": 104,
+      "layoutShift": 0,
+      "screenshotsAreByteIdentical": true
+    }
+  },
+  "comparison": {
+    "approvedExport": {
+      "lineHeight": "normal",
+      "measuredCompactLineBoxes": [
+        {
+          "fontSize": 13,
+          "lineBox": 17,
+          "ratio": 1.3077
+        },
+        {
+          "fontSize": 12,
+          "lineBox": 16,
+          "ratio": 1.3333
+        },
+        {
+          "fontSize": 11.5,
+          "lineBox": 15,
+          "ratio": 1.3043
+        }
+      ]
+    },
+    "provenInAppControl": "The true-390px screener card already uses the body 1.25 line-height for its subtitle, price, and stats.",
+    "prose": {
+      "selector": ".footer-credit",
+      "fontSize": 11,
+      "lineHeight": 16.5,
+      "ratio": 1.5
+    }
+  },
+  "diagnosis": {
+    "initiatingStyles": [
+      ".desktop-pools .data-table td { line-height: 18px; }",
+      ".desktop-pools .token-cell small { line-height: 17px; }"
+    ],
+    "maskingCondition": "The loose rules affect only .desktop-pools, which is hidden below the 768px site-container breakpoint. At a true 390px viewport, .mobile-pools is shown and already uses 1.25.",
+    "visibleSymptom": "The token name/subtitle and sender address/action stacks use excess line-box space, making each two-line cell look vertically over-padded even though the row remains 62px.",
+    "falsifier": "The boundary would be wrong if .desktop-pools were shared by another component or if compact 390px row text also needed changing. Source search finds one component owner, ProductExplore, and the 390px computed styles and byte-identical screenshots show no mobile change."
+  }
+}
