@@ -538,7 +538,10 @@ async function withNoLiveData(page: Page) {
 test("the page retries a warming product read after its Retry-After delay", async ({
   page,
 }) => {
-  await page.clock.install();
+  // install() alone still tracks wall time, so pause before the retry is armed.
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
   let calls = 0;
   await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
     calls += 1;
