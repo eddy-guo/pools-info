@@ -282,6 +282,15 @@ the catalog column that holds it (`indexed_pools.creator_fees`, migration 021,
 which the pool route serves as `market.creatorFees` with a ledger market) is
 not yet read by this route.
 
+Under `MARKET_SOURCE=ledger` (`docs/LEDGER-MARKET-SERVING.md`, "The
+creators aggregate") the rule follows explore's: a launch the aggregate
+ledger covers is measured from its pool hours and state, so `measured` stays
+the creator's share of `/v1/explore?sort=volume` under either source, and its
+`boughtOwnLaunch` evidence is the ledger's attributed position (`buys > 0`
+for the sender in that pool) rather than a transaction sender; `note` states
+the rule in force. Every other launch, the response shape, the order and the
+Launches column are unchanged.
+
 `sort=launches` lists every creator (launch-first, like explore's launch order)
 and breaks ties on `volumeWei DESC NULLS LAST`; `volume` and `median` list only
 creators with a measured launch, excluded before `total` and paging, as explore

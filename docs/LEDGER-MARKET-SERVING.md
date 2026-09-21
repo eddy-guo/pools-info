@@ -281,6 +281,47 @@ busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
 (Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
 warm set for a cutover adds the four windows of the board's top rows.
 
+## The creators aggregate
+
+`GET /v1/creators` (`apps/api/src/creators-read.ts`) measures a launch by the
+rule that gives an explore row its window volume (`rankedFlowCtes`), so with
+`ledger` it follows the switch as explore does: every launch the ledger
+covers, under "Which pools the ledger serves" above and whose deep
+publication, if any, is no newer than the cursor, is measured from the
+ledger's pool hours and state (the window's whole hours, or the state's
+lifetime totals for All; a covered launch with no swap is a proven zero, so it
+is measured and not traded), and every other launch keeps the broad rule.
+`1h` is a window whole hours cannot answer, so a covered launch is unmeasured
+under it. A ledger that has folded nothing yet changes no byte.
+
+`boughtOwnLaunch` for a ledger-served launch is the ledger's attributed
+evidence: a position of the launch sender in that pool with `buys > 0`
+(`agg_positions`), that is, a buy attributed to that address by the
+beneficiary rule of `planLedgerBatch` (the transaction's initiator when it
+received the tokens, otherwise the one address that did), over the pool's
+whole folded history. The broad and deep sources keep their sender-routed
+rule, and the response's `note` says which rule applies. The set is found by
+one `agg_wallets` lookup per launch sender and one `agg_positions`
+primary-key probe per launch, held on that probe by a `LATERAL ... LIMIT 1`:
+the wallet index's plan read 1.3M buffers with two parallel workers and a
+temp spill where this reads about 260k.
+
+Response shape, ranking rule, the Launches column and every other field are
+unchanged, and no row goes empty that was not empty before: under `broad` on
+production's data (empty `broad_*` rollups, 1,364 deep publications) 28 of the
+top 100 by launches had no measured launch; under `ledger` every one of the
+100 is measured on every launch. The launch-order tie-break is the served
+volume (`volumeWei DESC NULLS LAST`), so rows on an equal launch count may
+swap places when their volumes change; the launch count at each rank does
+not. On the production-shaped copy (62,896 launches, 2.18M positions, ledger
+cursor 65,409,776) the ranked statement executed in about 570 ms warm for All
+and 470 ms for 24h, 290k shared buffers, and the read answered over HTTP in
+0.5-1.0 s; `ledger-market.scale.test.ts` bounds the read at 2,000 ms and
+prints `creatorsAllMs` and `creatorsVolume24hMs`. The population walk (the
+old and new top 100 by launches and by volume side by side) is
+`scripts/creators-walk.mjs <old api origin> <new api origin>`, recorded in the
+pull request that made the change.
+
 ## Before the switch is set
 
 Migration 019 applied and the supply read run; the frontend reading

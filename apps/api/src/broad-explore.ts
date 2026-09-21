@@ -137,6 +137,15 @@ export function broadFlowCte(source: "catalog" | "page") {
 // launch it covers whose deep publication, if any, is no newer than its
 // cursor ($7-$9 below), so the broad and deep rules only ever evaluate for
 // the launches it does not; a window whole hours cannot answer proves no flow.
+// With both, `own` for a ledger-served launch is the ledger's own evidence:
+// a position of the launch sender in that pool with a buy attributed to it
+// (`agg_positions.buys`, the beneficiary rule of `planLedgerBatch`: the
+// initiator when it received the tokens, else the one address that did),
+// over the pool's whole folded history, found by one primary-key probe per
+// launch after the senders are matched to their wallet rows: the LATERAL
+// with its LIMIT keeps the planner on that probe (about 260k buffers at
+// production shape) rather than the wallet index's every position of every
+// launching wallet (1.3M buffers, two parallel workers and a temp spill).
 export function rankedFlowCtes(
   where = "",
   {
@@ -157,6 +166,7 @@ export function rankedFlowCtes(
     SELECT DISTINCT bs.pool_id FROM broad_swaps bs JOIN indexed_pools p ON p.chain_id=bs.chain_id AND p.pool_id=bs.pool_id AND p.launch_sender=bs.transaction_sender
     WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2`
     : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
+  const ledgerOwn = ownBuys && ledger;
   return `${catalogCte}, flow AS (
     ${flow}
   )${broadFlowCte("catalog")}${
@@ -165,13 +175,22 @@ export function rankedFlowCtes(
     SELECT ip.pool_id,f.trades,f.volume FROM ledger_flow f JOIN indexed_pools ip ON ip.pool_ref=f.pool_ref
   )`
       : ""
+  }${
+    ledgerOwn
+      ? `, ledger_own AS (
+    SELECT ip.pool_id FROM indexed_pools ip
+    JOIN agg_wallets w ON w.address=decode(substr(ip.launch_sender,3),'hex')
+    JOIN LATERAL (SELECT 1 FROM agg_positions ap WHERE ap.chain_id=4663 AND ap.pool_ref=ip.pool_ref AND ap.wallet_ref=w.wallet_ref AND ap.buys>0 LIMIT 1) ap ON true
+    WHERE ip.chain_id=4663
+  )`
+      : ""
   }, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
       CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
       CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
         ownBuys
           ? `,
-      CASE WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(f.own,false) END AS own`
+      CASE ${ledgerSelected("lo.pool_id IS NOT NULL")}WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(f.own,false) END AS own`
           : ""
       }
     FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id${ownBuys ? " LEFT JOIN broad_own bo ON bo.pool_id=p.pool_id" : ""}
@@ -182,7 +201,7 @@ export function rankedFlowCtes(
     LEFT JOIN ledger_launches ll ON ll.pool_id=p.pool_id
     LEFT JOIN ledger_flow_ids lf ON lf.pool_id=p.pool_id`
         : ""
-    } ${where}
+    }${ledgerOwn ? "\n    LEFT JOIN ledger_own lo ON lo.pool_id=p.pool_id" : ""} ${where}
   )`;
 }
 // Ledger parameters, bound after the broad ones: $7 the ledger's cursor

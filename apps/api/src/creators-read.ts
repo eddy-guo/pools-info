@@ -12,9 +12,19 @@ import {
 } from "./broad-explore";
 import { catalogCte, type ReadQuery } from "./catalog-read";
 import { catalogPool } from "./explore-read";
+import {
+  ledgerCut,
+  ledgerWindowHour,
+  type MarketSource,
+} from "./ledger-market";
 
 export const creatorsNote =
   "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei, bestLaunch and boughtOwnLaunch come from measured launches only. An unmeasured launch counts in launches and nowhere else; no figure is invented for it. boughtOwnLaunch is sender-routed evidence: a buy in one of the sender's measured launches whose transaction sender is that address, and a transaction sender is an initiator, not a proven beneficiary.";
+/** The note under `MARKET_SOURCE=ledger` once the ledger has folded: the
+ * same figures, with a launch the ledger covers measured from its pool hours
+ * and state, and its own-buy evidence the ledger's attributed position. */
+export const ledgerCreatorsNote =
+  "launches counts every discovered launch by the sender; measured, traded, volumeWei, medianVolumeWei, bestLaunch and boughtOwnLaunch come from measured launches only. An unmeasured launch counts in launches and nowhere else; no figure is invented for it. A launch the aggregate ledger covers is measured from the ledger's pool hours and state, and its boughtOwnLaunch is attributed evidence: a buy in one of the sender's measured launches attributed to that address (the transaction's initiator when it received the tokens, otherwise the one address that did). Any other measured launch keeps the broad rule, where boughtOwnLaunch is sender-routed: a buy whose transaction sender is that address, an initiator rather than a proven beneficiary.";
 export const measuredFigures = [
   "measured",
   "traded",
@@ -27,24 +37,33 @@ export const measuredFigures = [
 /** Creators are launch transaction senders grouped over the whole catalog.
  * A launch is measured under the rule that gives an explore row its window
  * volume (`rankedFlowCtes`), so `measured` is the creator's share of explore's
- * `sort=volume` population and its figures agree with that list. One pass
- * over the ranked launches groups by sender; the median is taken from the
- * ordered measured volumes as exact numeric, never a float percentile. */
+ * `sort=volume` population and its figures agree with that list: under
+ * `MARKET_SOURCE=ledger` every launch the ledger covers is measured from its
+ * pool hours and state (docs/LEDGER-MARKET-SERVING.md), the rest as with the
+ * switch off, and a ledger that has folded nothing yet changes no figure
+ * (`ledgerCut` returns null). One pass over the ranked launches groups by
+ * sender; the median is taken from the ordered measured volumes as exact
+ * numeric, never a float percentile. */
 export async function readCreators(
   query: ReadQuery,
   options: CreatorsOptions,
+  source: MarketSource = "broad",
 ): Promise<CreatorsResponse> {
   // The ranked statement's cost estimate sits far above
   // jit_optimize_above_cost while it executes in well under a second, so a
   // JIT-capable host would spend seconds compiling it (see explore).
   await query("SET LOCAL jit = off");
   const broadCut = await broadExploreCut(query);
+  const ledger = source === "ledger" ? await ledgerCut(query) : null;
   const coverage = await accountingCoverage(query),
     window = options.window ?? "All",
     sort = options.sort ?? "launches",
     direction = options.direction === "asc" ? "ASC" : "DESC",
     offset = options.offset ?? 0,
     limit = options.limit ?? 25;
+  // $1-$6 feed the broad and deep rules and, with the ledger, $7-$9 its
+  // cursor, the window's first hour and its start block, as explore binds
+  // them; the page's limit and offset follow.
   const values: unknown[] = [
     windowFrom(coverage, window),
     broadCut?.block ?? null,
@@ -52,6 +71,9 @@ export async function readCreators(
     broadCut?.startBlock ?? null,
     broadCut?.discoveryBatch ?? null,
     broadCut?.asOf ?? null,
+    ...(ledger
+      ? [ledger.block, ledgerWindowHour(ledger, window), ledger.startBlock]
+      : []),
   ];
   // Launch-first: the launches order lists every creator; a metric order
   // lists only creators with a measured launch, before total and paging.
@@ -66,7 +88,10 @@ export async function readCreators(
   // is odd. The best launch is the highest volume, lowest pool id on ties.
   // bought_own is null without a measured launch, since only measured
   // launches carry swap evidence.
-  const ranked = rankedFlowCtes("", { ownBuys: true });
+  const ranked = rankedFlowCtes("", {
+    ownBuys: true,
+    ledger: ledger ? window : null,
+  });
   const rows = (
     await query(
       `${ranked}, creators AS (
@@ -83,7 +108,7 @@ export async function readCreators(
       CASE WHEN measured>0 THEN div(volumes[(measured+1)/2]+volumes[(measured+2)/2],2) END AS median,
       best_pool,best_volume,bought_own
     FROM creators
-  ) SELECT *,count(*) OVER () AS total FROM figures ${filter} ORDER BY ${order} LIMIT $7 OFFSET $8`,
+  ) SELECT *,count(*) OVER () AS total FROM figures ${filter} ORDER BY ${order} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset],
     )
   ).rows;
@@ -140,7 +165,7 @@ export async function readCreators(
     direction: direction === "ASC" ? "asc" : "desc",
     attribution: "launch_transaction_initiator",
     measuredFigures,
-    note: creatorsNote,
+    note: ledger ? ledgerCreatorsNote : creatorsNote,
     items,
     total,
     nextOffset: offset + limit < total ? offset + limit : null,

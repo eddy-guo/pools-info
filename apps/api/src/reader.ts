@@ -207,7 +207,7 @@ export async function readData(
       readLeaderboard(query, request.leaderboard)
     );
   if (request.route === "creators")
-    return readCreators(query, request.creators);
+    return readCreators(query, request.creators, marketSource);
   if (request.route === "profile")
     return (
       (marketSource === "ledger" &&

@@ -209,6 +209,16 @@ test(
       assert.equal(read.data.market.trades, window === "All" ? 468000 : 9600);
       assert.equal(read.data.analytics, null);
     }
+    // The creators aggregate over the same catalog, every covered launch
+    // measured from the ledger and its own-buy evidence probed per launch.
+    for (const [name, query] of [
+      ["creatorsAll", "window=All&limit=25"],
+      ["creatorsVolume24h", "window=24h&sort=volume&limit=25"],
+    ]) {
+      const read = await timed(`/v1/creators?${query}`);
+      reads.push([name, read.ms]);
+      assert(read.data.items[0].measured > 0);
+    }
     const settings = (
       await db.query(
         "SELECT version() AS version,current_setting('jit') AS jit,current_setting('jit_above_cost') AS above",
