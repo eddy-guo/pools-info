@@ -27,7 +27,9 @@ test("every OHLC magnitude fits the library without integer truncation", () => {
     assert.ok(Number.isFinite(coordinate) && coordinate > 0);
     assert.ok(coordinate <= Number.MAX_SAFE_INTEGER / 100);
     assert.ok(Number.isInteger(Math.log10(divisor)));
-    assert.ok(Math.abs(coordinate * divisor - number) <= number * Number.EPSILON);
+    assert.ok(
+      Math.abs(coordinate * divisor - number) <= number * Number.EPSILON,
+    );
     // A shared scale must preserve the relative heights, not clamp an OHLC
     // field or round a fractional scaled coordinate down to an integer.
     const low = high / 3n || 1n;
@@ -37,7 +39,10 @@ test("every OHLC magnitude fits the library without integer truncation", () => {
     );
   }
   const high = 1_000_000_000_001n;
-  assert.equal(Number(high) / candlePriceDivisor([{ high }]), 100_000_000_000.1);
+  assert.equal(
+    Number(high) / candlePriceDivisor([{ high }]),
+    100_000_000_000.1,
+  );
 });
 
 test("the common scale follows the largest candle and can shrink on a new range", () => {

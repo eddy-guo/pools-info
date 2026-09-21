@@ -579,7 +579,9 @@ for (const sample of [
     await units.getByRole("button", { name: "USD", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(tooltip.locator(".price")).toHaveText(sample.usd);
-    await expect(tooltip.locator("span").last()).toHaveText("V$4,000.00");
+    await expect(tooltip.locator(":scope > span").last()).toHaveText(
+      "V$4,000.00",
+    );
     await expect(change).toHaveText("+300.00%");
     // The candle axis remains ETH, as before; the unit toggle converts the
     // exact source values through Price/Eth, never chart coordinates.
@@ -595,7 +597,10 @@ for (const sample of [
       }
       await page.getByRole("button", { name: "Refresh", exact: true }).click();
       await expect(tooltip.locator(".price")).toHaveText([
-        "10 ETH", "20 ETH", "10 ETH", "20 ETH",
+        "10 ETH",
+        "20 ETH",
+        "10 ETH",
+        "20 ETH",
       ]);
       await chart.focus();
       await chart.press("ArrowLeft");

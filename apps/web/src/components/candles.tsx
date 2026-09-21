@@ -28,6 +28,7 @@ import {
 } from "@pools/core";
 import { Price } from "./ui";
 import { Eth, utc } from "./live-ui";
+import { candlePriceDivisor } from "../lib/candle-scale";
 export const chartRanges = {
   "5m": 300,
   "1h": 3600,
@@ -191,6 +192,7 @@ export function Candles(
           : [],
     [market, snapshot, observed, interval],
   );
+  const priceDivisor = candlePriceDivisor(bars);
   const active = focus && bars.find((b) => b.time === focus.time);
   const viewKey = `${id}:${range}:${interval}`;
   const previousView = useRef("");
@@ -283,13 +285,21 @@ export function Candles(
     const a = api.current;
     if (!a) return;
     const previous = a.chart.timeScale().getVisibleLogicalRange();
+    a.price.applyOptions({
+      priceFormat: {
+        type: "custom",
+        minMove: 1 / priceDivisor,
+        base: priceDivisor,
+        formatter: (value: number) => axisPrice((value * priceDivisor) / 1e18),
+      },
+    });
     a.price.setData(
       bars.map((b) => ({
         time: b.time as UTCTimestamp,
-        open: Number(b.open),
-        high: Number(b.high),
-        low: Number(b.low),
-        close: Number(b.close),
+        open: Number(b.open) / priceDivisor,
+        high: Number(b.high) / priceDivisor,
+        low: Number(b.low) / priceDivisor,
+        close: Number(b.close) / priceDivisor,
       })),
     );
     a.volume.setData(
@@ -321,7 +331,7 @@ export function Candles(
       } else if (previous) a.chart.timeScale().setVisibleLogicalRange(previous);
     }
     previousView.current = viewKey;
-  }, [bars, range, interval, toTimestamp, viewKey]);
+  }, [bars, priceDivisor, range, interval, toTimestamp, viewKey]);
   return (
     <div
       className="interactive-chart"
@@ -347,7 +357,7 @@ export function Candles(
         const a = api.current;
         if (!a || !container.current) return;
         a.chart.setCrosshairPosition(
-          Number(b.close),
+          Number(b.close) / priceDivisor,
           b.time as UTCTimestamp,
           a.price,
         );

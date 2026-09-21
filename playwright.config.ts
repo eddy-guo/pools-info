@@ -21,10 +21,11 @@ function webServerPort(): number {
 
 const port = webServerPort();
 const baseURL = `http://127.0.0.1:${port}`;
+const development = process.env.PLAYWRIGHT_WEB_DEV === "1";
 // Workers evaluate this file too; only the runner announces the port.
 if (!process.env.TEST_WORKER_INDEX)
   console.log(
-    `Playwright web server: ${baseURL} (set PLAYWRIGHT_WEB_PORT to pin it)`,
+    `Playwright web server: ${baseURL} (${development ? "development" : "production"}; set PLAYWRIGHT_WEB_PORT to pin it)`,
   );
 
 export default defineConfig({
@@ -51,10 +52,10 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: `pnpm --filter @pools/web start --hostname 127.0.0.1 --port ${port}`,
+    command: `pnpm --filter @pools/web exec next ${development ? "dev" : "start"} --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 30000,
+    reuseExistingServer: !process.env.CI && !development,
+    timeout: development ? 120000 : 30000,
     /* This suite is the fixture deployment: no Postgres, no read API, and the
        committed dataset under data/ named as the source. A deployment that
        does not name it that way has no dataset to fall back on, which is the
