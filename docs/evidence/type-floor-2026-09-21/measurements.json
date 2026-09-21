@@ -1,0 +1,156 @@
+{
+  "measuredAt": "2026-09-21T20:52:14Z",
+  "viewports": {
+    "desktop": {
+      "width": 1440,
+      "height": 1000,
+      "deviceScaleFactor": 1
+    },
+    "phone": {
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 3,
+      "mobile": true,
+      "touch": true
+    }
+  },
+  "sources": {
+    "before": "https://www.poolsinfo.com/",
+    "after": "local production build using the production read API"
+  },
+  "desktop": {
+    "screener": {
+      "before": {
+        "visibleNodesAtOrBelow10px": 26,
+        "inventory": [
+          {
+            "kind": "compact chip",
+            "selector": "kbd",
+            "count": 1,
+            "fontSizePx": 10
+          },
+          {
+            "kind": "ordinary UI text",
+            "selector": ".desktop-pools .price sub",
+            "count": 25,
+            "fontSizePx": 9.5
+          }
+        ],
+        "rowHeightPx": 62,
+        "panelRect": {
+          "x": 32,
+          "y": 353.3125,
+          "width": 1376,
+          "height": 1712
+        }
+      },
+      "after": {
+        "visibleNodesAtOrBelow10px": 1,
+        "inventory": [
+          {
+            "kind": "compact chip",
+            "selector": "kbd",
+            "count": 1,
+            "fontSizePx": 10
+          }
+        ],
+        "priceSubscript": {
+          "count": 25,
+          "fontSizePx": 11.5
+        },
+        "rowHeightPx": 62,
+        "columnWidthsPx": [44, 538, 116, 98, 112, 122],
+        "panelRect": {
+          "x": 32,
+          "y": 353.3125,
+          "width": 1376,
+          "height": 1712
+        },
+        "cls": 0
+      }
+    },
+    "creators": {
+      "before": {
+        "visibleNodesAtOrBelow10px": 18,
+        "inventory": [
+          {
+            "kind": "compact chip",
+            "selector": "kbd",
+            "count": 1,
+            "fontSizePx": 10
+          },
+          {
+            "kind": "compact chip",
+            "text": "BOUGHT OWN",
+            "count": 17,
+            "fontSizePx": 9,
+            "widthPx": 71.84375,
+            "heightPx": 17.25
+          }
+        ],
+        "rowHeightPx": 62,
+        "panelRect": {
+          "x": 32,
+          "y": 211.0625,
+          "width": 1376,
+          "height": 1665
+        }
+      },
+      "after": {
+        "visibleNodesAtOrBelow10px": 18,
+        "inventory": [
+          {
+            "kind": "compact chip",
+            "selector": "kbd",
+            "count": 1,
+            "fontSizePx": 10
+          },
+          {
+            "kind": "compact chip",
+            "text": "BOUGHT OWN",
+            "count": 17,
+            "fontSizePx": 10,
+            "widthPx": 78.484375,
+            "heightPx": 18.5
+          }
+        ],
+        "rowHeightPx": 62,
+        "columnWidthsPx": [64, 566, 116, 172, 144, 144, 168],
+        "panelRect": {
+          "x": 32,
+          "y": 211.0625,
+          "width": 1376,
+          "height": 1665
+        },
+        "cls": 0
+      }
+    }
+  },
+  "phone": {
+    "screener": {
+      "before": {
+        "visibleNodesAtOrBelow10px": 0,
+        "rowHeightPx": 104
+      },
+      "after": {
+        "visibleNodesAtOrBelow10px": 0,
+        "rowHeightPx": 104,
+        "cls": 0
+      }
+    },
+    "creators": {
+      "before": {
+        "visibleNodesAtOrBelow10px": 17,
+        "boughtOwnFontSizePx": 9,
+        "rowHeightPx": 104
+      },
+      "after": {
+        "visibleNodesAtOrBelow10px": 17,
+        "boughtOwnFontSizePx": 10,
+        "rowHeightPx": 104,
+        "contentFits": true,
+        "cls": 0
+      }
+    }
+  }
+}
