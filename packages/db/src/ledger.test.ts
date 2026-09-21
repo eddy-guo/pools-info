@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import {
+  instantDeployments,
+  instantRegistryVerifiedAtBlock,
+} from "@pools/chain";
 import type { LedgerSwap, LedgerTransfer } from "@pools/core";
 import {
   acquireLedgerWriter,
@@ -15,6 +19,7 @@ import {
   ledgerRules,
   ledgerStream,
   migrate,
+  migrateLedgerTransferProvenance,
   observeLedgerHead,
   pruneLedgerLiveTrades,
   readLedgerStream,
@@ -225,6 +230,211 @@ async function snapshot(db: Client) {
 }
 const count = async (db: Client, table: string) =>
   Number((await db.query(`SELECT count(*) FROM ${table}`)).rows[0].count);
+
+test("attended provenance activation preserves old ledger bytes; writes are exact, atomic, idempotent and reorg-bound", async (t) => {
+  const db = await setup(t);
+  const first = batch(base, base + 9, [trade(base + 5, "buy", E + 123n, 100n)]);
+  await assert.rejects(
+    migrateLedgerTransferProvenance(db, "a".repeat(64), {
+      block: String(base + 9),
+      hash: hash(base + 9),
+    }),
+    /ledger_writer_required/,
+  );
+  await writer(db);
+  await applyLedgerBatch(db, first);
+  const before = await snapshot(db);
+  await migrate(db); // Normal automatic migrations never activate this feature.
+  assert.equal(
+    (await db.query("SELECT to_regclass('agg_transfer_provenance') AS table"))
+      .rows[0].table,
+    null,
+  );
+  await assert.rejects(
+    migrateLedgerTransferProvenance(db, "", null),
+    /ledger_provenance_archive_required/,
+  );
+  await assert.rejects(
+    migrateLedgerTransferProvenance(db, "a".repeat(64), null),
+    /ledger_provenance_archive_cursor_changed/,
+  );
+  assert.equal(
+    await migrateLedgerTransferProvenance(db, "a".repeat(64), {
+      block: String(base + 9),
+      hash: hash(base + 9),
+    }),
+    true,
+  );
+  assert.equal(
+    await migrateLedgerTransferProvenance(db, "b".repeat(64), null),
+    false,
+  );
+  assert.deepEqual(await snapshot(db), before);
+  const comment = JSON.parse(
+    (
+      await db.query(
+        "SELECT obj_description('agg_transfer_provenance'::regclass) AS comment",
+      )
+    ).rows[0].comment,
+  );
+  assert.equal(comment.archiveSha256, "a".repeat(64));
+  assert.equal(comment.cursor.block, String(base + 9));
+  assert.equal(
+    (await db.query("SELECT transfer_provenance_rows FROM agg_batches")).rows[0]
+      .transfer_provenance_rows,
+    null,
+  );
+  // Replaying an old hash must not claim retroactive evidence coverage.
+  assert.equal((await applyLedgerBatch(db, first)).changed, false);
+  assert.equal(
+    (await db.query("SELECT transfer_provenance_rows FROM agg_batches")).rows[0]
+      .transfer_provenance_rows,
+    null,
+  );
+  const big = 900719925474099312345n;
+  const next = batch(base + 10, base + 19, [
+    {
+      transfers: [
+        transfer(base + 11, 1, pool.launchSender, W, big, hash(999)),
+        transfer(base + 12, 2, W, V, 20n, hash(1000)),
+      ],
+    },
+  ]);
+  // A provenance write failure rolls back positions, hours, journal and cursor.
+  await db.query(
+    "ALTER TABLE agg_transfer_provenance ADD CONSTRAINT test_failure CHECK (token_raw=0)",
+  );
+  await assert.rejects(applyLedgerBatch(db, next), /test_failure/);
+  assert.deepEqual(await snapshot(db), before);
+  assert.equal(await count(db, "agg_transfer_provenance"), 0);
+  await db.query(
+    "ALTER TABLE agg_transfer_provenance DROP CONSTRAINT test_failure",
+  );
+  await applyLedgerBatch(db, next);
+  const stored = async () =>
+    (
+      await db.query(
+        "SELECT encode(from_address,'hex') AS source,encode(to_address,'hex') AS recipient,token_raw::text,from_class,to_class,context FROM agg_transfer_provenance ORDER BY block_number,log_index",
+      )
+    ).rows;
+  const evidence = await stored();
+  assert.deepEqual(evidence, [
+    {
+      source: pool.launchSender.slice(2),
+      recipient: W.slice(2),
+      token_raw: big.toString(),
+      from_class: "launch_initiator",
+      to_class: "unclassified",
+      context: "residual",
+    },
+    {
+      source: W.slice(2),
+      recipient: V.slice(2),
+      token_raw: "20",
+      from_class: "unclassified",
+      to_class: "unclassified",
+      context: "residual",
+    },
+  ]);
+  assert.equal((await applyLedgerBatch(db, next)).changed, false);
+  assert.deepEqual(await stored(), evidence);
+  const changedSource = {
+    ...next,
+    transfers: next.transfers.map((r, i) => (i ? r : { ...r, from: V })),
+  };
+  await assert.rejects(
+    applyLedgerBatch(db, changedSource),
+    /ledger_batch_conflict/,
+  );
+  assert.deepEqual(await stored(), evidence);
+  const after = await snapshot(db);
+  await walkBackLedger(db, base + 9);
+  assert.deepEqual(await snapshot(db), before);
+  assert.equal(await count(db, "agg_transfer_provenance"), 0);
+  await applyLedgerBatch(db, next);
+  assert.deepEqual(await stored(), evidence);
+  assert.deepEqual(await snapshot(db), after);
+  const exact = (
+    await db.query(
+      "SELECT invested_wei::text,realized_wei=proceeds_wei-disposed_cost_wei AS realized_identity, invested_wei=cost_wei+disposed_cost_wei+outflow_cost_wei AS basis_identity,supported,flags FROM agg_positions p JOIN agg_wallets w USING(wallet_ref) WHERE w.address=decode($1,'hex')",
+      [W.slice(2)],
+    )
+  ).rows[0];
+  assert.equal(exact.invested_wei, (E + 123n).toString());
+  assert.equal(exact.realized_identity, true);
+  assert.equal(exact.basis_identity, true);
+  assert.equal(exact.supported, false);
+  assert.ok(exact.flags.includes("zero_cost_inflow"));
+  assert.ok(exact.flags.includes("unattributed_outflow"));
+  const explained = batch(base + 20, base + 29, [
+    trade(base + 21, "buy", E, 100n, V),
+  ]);
+  await applyLedgerBatch(db, explained);
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT transfer_provenance_rows FROM agg_batches ORDER BY to_block",
+      )
+    ).rows.map((r) => r.transfer_provenance_rows),
+    [null, 2, 0],
+  );
+});
+
+test("persisted provenance uses the recorded protocol roles in both directions and preserves their activation boundary", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  await migrateLedgerTransferProvenance(db, "a".repeat(64), null);
+  const activation = instantRegistryVerifiedAtBlock;
+  const endpoints = [
+    { address: instantDeployments[0].launcher, role: "launcher" },
+    { address: instantDeployments[0].strategy, role: "protocol" },
+    { address: instantDeployments[0].feeSplitter, role: "protocol" },
+    { address: ledgerRules.manager, role: "protocol" },
+    { address: ledgerRules.router, role: "wrapper_or_router" },
+  ];
+  const transfers = endpoints.flatMap(({ address }, i) => [
+    transfer(activation, i * 2, address, W, 11n, hash(activation)),
+    transfer(activation, i * 2 + 1, W, address, 3n, hash(activation)),
+  ]);
+  await applyLedgerBatch(
+    db,
+    batch(base, activation, [
+      {
+        transfers: [
+          transfer(
+            activation - 1,
+            0,
+            ledgerRules.router,
+            V,
+            1n,
+            hash(activation - 1),
+          ),
+          ...transfers,
+        ],
+      },
+    ]),
+  );
+  const saved = (
+    await db.query(
+      "SELECT block_number::int,from_class,to_class,from_evidence,to_evidence,classification_version FROM agg_transfer_provenance ORDER BY block_number,log_index",
+    )
+  ).rows;
+  assert.equal(saved[0].from_class, "unclassified");
+  assert.equal(saved[0].from_evidence, "unclassified");
+  for (const [i, { role }] of endpoints.entries()) {
+    const incoming = saved[1 + i * 2],
+      outgoing = saved[2 + i * 2];
+    assert.equal(incoming.from_class, role);
+    assert.equal(outgoing.to_class, role);
+    assert.equal(incoming.to_class, "unclassified");
+    assert.equal(outgoing.from_class, "unclassified");
+    assert.equal(incoming.from_evidence, outgoing.to_evidence);
+    assert.notEqual(incoming.from_evidence, "unclassified");
+    assert.equal(incoming.classification_version, 1);
+    assert.equal(outgoing.classification_version, 1);
+  }
+  await migrate(db); // An attended entry must not break later ordinary startup.
+});
 
 test("applyLedgerBatch needs the writer lock, applies once per content hash, refuses a differing hash or a gap, and advances the cursor with the rows", async (t) => {
   const db = await setup(t);

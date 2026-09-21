@@ -33,6 +33,7 @@ import {
   ledgerLaunchStreamIdentity,
   ledgerRegistry,
   migrate,
+  migrateLedgerTransferProvenance,
   readLedgerStream,
   releaseLedgerWriter,
   type Client,
@@ -262,6 +263,54 @@ const runOptions = (
   log: (e: Record<string, unknown>) => log.push(e),
   ...extra,
 });
+
+test(
+  "transfer counterparties survive ingestion, fold and storage without changing exclusion",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    await migrateLedgerTransferProvenance(db, "a".repeat(64), null);
+    const { fake } = fakeChain();
+    const source = addr(0x9876);
+    const amount = 900719925474099312345n;
+    fake.logs.push(
+      fakeTransfer({
+        block: start + 220,
+        logIndex: 21,
+        token: TA,
+        from: source,
+        to: W,
+        value: amount,
+        transactionHash: word(0xe1),
+      }),
+    );
+    await runLedgerPass(db, passClient(fake), runOptions([]));
+    const position = (await positions(db)).find((p) => p.wallet === W)!;
+    assert.equal(position.supported, false);
+    assert.ok(position.flags.includes("zero_cost_inflow"));
+    assert.ok(BigInt(position.inflow) >= amount);
+    const saved = await db.query(
+      `SELECT encode(from_address,'hex') AS source,
+    encode(to_address,'hex') AS recipient,token_raw::text AS amount
+    FROM agg_transfer_provenance WHERE tx_hash=decode($1,'hex')`,
+      [word(0xe1).slice(2)],
+    );
+    assert.deepEqual(saved.rows, [
+      {
+        source: source.slice(2),
+        recipient: W.slice(2),
+        amount: amount.toString(),
+      },
+    ]);
+    const withProvenance = await ledgerRows(db);
+    await releaseLedgerWriter(db);
+    const baseline = await database(t);
+    await writer(baseline);
+    await runLedgerPass(baseline, passClient(fake), runOptions([]));
+    assert.deepEqual(await ledgerRows(baseline), withProvenance);
+  },
+);
 async function positions(db: Client) {
   const r = await db.query(
     `SELECT encode(w.address,'hex') AS wallet,p.pool_id,quantity_raw::text AS quantity,cost_wei::text AS cost,invested_wei::text AS invested,proceeds_wei::text AS proceeds,disposed_cost_wei::text AS disposed,realized_wei::text AS realized,inflow_raw::text AS inflow,outflow_raw::text AS outflow,outflow_cost_wei::text AS outflow_cost,buys,sells,supported,flags

@@ -13,6 +13,10 @@ the report and why, and what phases 4 and 5 still owe.
 
 ## What phase 1 delivers
 
+Transfer counterparty observations are an additive, attended activation described
+in `docs/TRANSFER-PROVENANCE.md`. They do not change attribution or accounting;
+the ordinary migration runner deliberately does not activate their storage.
+
 **`packages/core/src/ledger.ts`, pure functions.**
 
 - `planLedgerBatch` is the attribution rule (report 4.3). Per transaction,

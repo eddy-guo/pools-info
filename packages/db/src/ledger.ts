@@ -21,6 +21,7 @@ import {
 } from "@pools/core";
 import { getStream, type Client, type Stream } from "./index";
 import { discoveryV2Identity } from "./discovery";
+import { writeLedgerTransferProvenance } from "./ledger-provenance";
 
 export const ledgerStream = Object.freeze({
   key: "ledger:agg:v1",
@@ -463,7 +464,7 @@ export async function applyLedgerBatch(
       throw Error("ledger_noncontiguous_batch");
     // The registry: every pool a row names, resolved to its surrogate.
     const registry = await db.query(
-      "SELECT pool_ref,pool_id,token FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[]))",
+      "SELECT pool_ref,pool_id,token,launch_sender FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[]))",
       [
         [
           ...new Set([
@@ -929,6 +930,18 @@ export async function applyLedgerBatch(
           batch.to,
         ],
       );
+    await writeLedgerTransferProvenance(
+      db,
+      batch.to,
+      { swaps, transfers, registry: [...byPool.values()] },
+      events,
+      new Map([...byPool.values()].map((p) => [p.poolId, p.ref])),
+      new Map(
+        registry.rows
+          .filter((r) => r.launch_sender !== null)
+          .map((r) => [r.pool_id as string, r.launch_sender as string]),
+      ),
+    );
     // Prune: the live ring by age and size, the journal beyond the newest batches.
     await pruneLedgerLiveTrades(db, { through: batch.timestamp });
     await db.query(
