@@ -441,3 +441,47 @@ window. pools.xyz's is in USD over its rolling window, with a different
 baseline. The third parties disagree with each other as well: FRONG's 24h
 volume read USD 1.53M on Blockscout (CoinGecko's figure) and USD 1.00M on
 pools.xyz.
+
+## The old database retired, and the backup that replaces it
+
+The old Railway `Postgres` (service 479062d3, volume `postgres-volume`) was
+deleted on 21 Sep 2026 at 03:36:55Z after a read-only pass (no service but the
+stopped indexer referenced it; the indexer stays down for good and keeps its
+dangling `${{Postgres.DATABASE_URL}}` so that any attempt to start it fails
+loudly), a verified final `pg_dump` (1,038,972,561 bytes, sha256
+`eccb9e63…3ea22`, `pg_restore --list` 258 entries over 37 tables with rows)
+kept in the firstmate home under
+`data/pools-creators-ledger-measure-m1/archive/`, and the volume's deletion
+(pending 48 hours on Railway's side). Railway's own usage metrics priced the
+idle service at about USD 2.61 per 30 days. The record with every reading is
+`old-postgres-retirement.md` beside the archive.
+
+`LedgerPostgres` is now the only production database, on the Hobby plan with
+no managed backup (the captain's ruling: a demo does not need the Pro plan).
+Its backup is a **daily refresh of the local production-shaped copy**:
+
+- Cadence: once a day, at a quiet hour (production reads warm again after it;
+  a full dump reads every table once through the 128 MB `shared_buffers`, so
+  run it when nobody is looking rather than at the top of a trading hour).
+- Command, from any shell on the captain's machine with the `railway` CLI
+  logged in and the Postgres 18 test server up:
+  `bash ~/.treehouse/firstmate-7bab20/1/firstmate/data/pools-backups/ledger-backup.sh`.
+  It opens a TCP proxy on `LedgerPostgres` for the window only and deletes it
+  the moment `pg_dump` returns (also on any failure), dumps in custom format
+  with the Postgres 18 `pg_dump`, verifies the file with `pg_restore --list`
+  (a dump that cannot be listed is not a backup and the script stops there),
+  restores it into `pools_prod_backup` on `127.0.0.1:5418` (dropped and
+  recreated each run; `pools_prod_shape`, which `ledger-replay.test.ts`
+  reads, is never touched), records the size and sha256 in a `.log` beside
+  the dump, and keeps the last seven dumps in that folder. It prints no
+  credential, connection string or proxy host.
+- Last refresh: **2026-09-21T03:38:18Z to 03:40:31Z**, ledger cursor
+  68,480,859 (03:37:51Z), `ledger-20260921T033818Z.dump` of 431,178,307
+  bytes, sha256 `92c8352b…588b`, 272 entries over 38 tables with rows,
+  restored as 63,744 pools and 2,288,768 positions.
+- Nothing in this repository or in a task worktree can run it unattended: a
+  worktree is disposable and the worker that wrote the script is torn down
+  with it, so the refresh is a standing daily item in the firstmate backlog,
+  run by hand or by whatever scheduler the captain's machine offers, and the
+  date on the newest file in `data/pools-backups/` is the truth of whether it
+  happened. A missing day means no backup for that day, not a silent one.
