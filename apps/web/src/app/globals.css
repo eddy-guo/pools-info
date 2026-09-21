@@ -4980,7 +4980,8 @@ main {
 }
 .table-region[data-empty="true"] tbody,
 .table-region[data-empty="true"] .mobile-pool,
-.table-region[data-empty="true"] .mobile-launch {
+.table-region[data-empty="true"] .mobile-launch,
+.table-region[data-empty="true"] .mobile-position {
   visibility: hidden;
 }
 /* Collapsed borders are painted by the table rather than the row group, so

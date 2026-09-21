@@ -122,6 +122,14 @@ test("the wallet's empty positions use the same designed empty state", async ({
   await expect(empty).not.toContainText("Select All");
   await expect(empty.locator(".empty-symbol svg")).toBeVisible();
 
+  if (testInfo.project.name === "mobile") {
+    const reserved = page.locator(
+      '.wallet-page .mobile-position[data-row="reserved"]',
+    );
+    await expect(reserved).toHaveCount(25);
+    await expect(reserved.first()).toBeHidden();
+  }
+
   const region = (await page
     .locator(
       ".wallet-page .wallet-list-region, .wallet-page .mobile-wallet-rows",
