@@ -6380,8 +6380,8 @@ a.wallet-top-pool:hover {
      on 44px rows, then the two-column action grid. */
   .pool-page.page .page-heading {
     align-items: stretch;
-    height: 276px;
-    gap: 24px;
+    height: 274px;
+    gap: 22px;
   }
   /* The copy stacks to 156px here, so a centred 54px tile would sit a line
      and a half under the name it belongs to: the tile hangs from the top

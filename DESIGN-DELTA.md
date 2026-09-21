@@ -125,7 +125,7 @@ mode chip on a 34px row, then the short address with copy and explorer beside
 `launched <age> by <sender>` on an 18px line; the age is `since()` against the
 server's render clock, passed down as `renderedAt` so both sides of hydration
 paint the same text), the chart panel at 233px from the top on a 1440x1000
-desktop (export 224) and 531px on a 390px phone (export 529), then the stat
+desktop (export 224) and 529px on a 390px phone (export 529), then the stat
 cards and the tabs panel.
 
 The chart panel is 498px: a 98px head (18px padding, the 30/600 mono price
