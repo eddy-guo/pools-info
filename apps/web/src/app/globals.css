@@ -6146,10 +6146,14 @@ a.wallet-top-pool:hover {
 }
 .creators-page .data-table th:nth-child(3),
 .creators-page .data-table td:nth-child(3),
+.creators-page .data-table th:nth-child(4),
+.creators-page .data-table td:nth-child(4),
 .creators-page .data-table th:nth-child(5),
 .creators-page .data-table td:nth-child(5),
 .creators-page .data-table th:nth-child(6),
-.creators-page .data-table td:nth-child(6) {
+.creators-page .data-table td:nth-child(6),
+.creators-page .data-table th:nth-child(7),
+.creators-page .data-table td:nth-child(7) {
   text-align: right;
 }
 .creators-page .data-table tbody tr,
