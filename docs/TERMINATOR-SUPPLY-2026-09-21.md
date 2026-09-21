@@ -13,15 +13,15 @@ Task: `pools-terminator-supply-t1`. This is a dated, token-specific addendum to 
 
 The original report's pair gave $6,989.97 versus $48,744.29. Before chain investigation, a fresh public API/browser pair reproduced the discrepancy. Raw URLs, response bodies, statuses and client request times are in [current-pair.json](evidence/terminator-supply-2026-09-21/current-pair.json); the original token's complete comparison row is preserved in [historical-pair.json](evidence/terminator-supply-2026-09-21/historical-pair.json).
 
-| Measure | Pools Info | pools.xyz |
-| --- | --- | --- |
-| Request started, UTC | 2026-09-21 15:43:24.546 | 2026-09-21 15:43:24.811 |
-| HTTP status | 200 | 200 |
-| Price, ETH per whole token | 0.000000002557502070 | 0.0000000025563888965447133 |
-| Price, USD | 0.00000700434600670215, normalized at our rate | 0.000006998671790648079, served |
-| FDV, ETH | 2.557502070 | Not supplied |
-| FDV, USD | 7004.34600670215, normalized at our rate | 48744.28670695654, served |
-| Decimals | 18 | Not exposed by this launch response |
+| Measure                    | Pools Info                                     | pools.xyz                           |
+| -------------------------- | ---------------------------------------------- | ----------------------------------- |
+| Request started, UTC       | 2026-09-21 15:43:24.546                        | 2026-09-21 15:43:24.811             |
+| HTTP status                | 200                                            | 200                                 |
+| Price, ETH per whole token | 0.000000002557502070                           | 0.0000000025563888965447133         |
+| Price, USD                 | 0.00000700434600670215, normalized at our rate | 0.000006998671790648079, served     |
+| FDV, ETH                   | 2.557502070                                    | Not supplied                        |
+| FDV, USD                   | 7004.34600670215, normalized at our rate       | 48744.28670695654, served           |
+| Decimals                   | 18                                             | Not exposed by this launch response |
 
 The request starts are **265 ms apart**; the ETH-denominated token prices differ by **+0.0435447618%** (ours/theirs minus one). Our Coinbase ETH/USD response is **2738.745**, as of **15:43:07.434Z**. Our pool response has cutoff block **68,912,877**, hash `0x3b7b51938b2ccb69421a9539be87860e8b183b2b2dfe44e9ff776218ffe84d16`, timestamp **15:42:17Z**. These are observation times and backend cutoffs, not a claim of simultaneous backend sampling.
 
@@ -33,18 +33,18 @@ Exactly **11 bounded read-only JSON-RPC requests**, 15:43:27.054-15:43:27.768Z, 
 
 **State block:** **68,913,551** (`0x41b898f`), timestamp **2026-09-21 15:43:26 UTC**, hash **`0x9e914584459379d14baf06b6de400cdb82546710015c6cbb446b698587e5a8e3`**. Every state read used this explicit block number, not a moving `latest` tag. The receipt is separately pinned by its transaction hash.
 
-| RPC ID | Method / target | Result |
-| --- | --- | --- |
-| 1 | `eth_chainId` | `0x1237` = 4663 |
-| 2, 11 | `eth_getBlockByNumber`, initial latest and final named block | Same block hash above |
-| 3 | `eth_call`, token `totalSupply()` (`0x18160ddd`) | `1000000000000000000000000000` raw |
-| 4 | `eth_call`, token `decimals()` (`0x313ce567`) | 18 |
-| 5 | `eth_call`, canonical Multicall3 `aggregate3`, token `totalSupply()` | Successful member, identical raw word; real repository reader decodes `1000000000000000000000000000` |
-| 6 | `eth_call`, canonical Multicall3 `aggregate3`, token `decimals()` | Successful member, identical 18 |
-| 7 | `eth_getCode`, token | 7,154 bytes, retained; no claim of source verification |
-| 8 | `eth_call`, token `balanceOf(0x0000000000000000000000000000000000000000)` | 0 raw |
-| 9 | `eth_call`, token `balanceOf(0x000000000000000000000000000000000000dead)` | 17,786 raw |
-| 10 | `eth_getTransactionReceipt`, launch transaction below | Successful receipt at block 68,428,500 |
+| RPC ID | Method / target                                                           | Result                                                                                               |
+| ------ | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1      | `eth_chainId`                                                             | `0x1237` = 4663                                                                                      |
+| 2, 11  | `eth_getBlockByNumber`, initial latest and final named block              | Same block hash above                                                                                |
+| 3      | `eth_call`, token `totalSupply()` (`0x18160ddd`)                          | `1000000000000000000000000000` raw                                                                   |
+| 4      | `eth_call`, token `decimals()` (`0x313ce567`)                             | 18                                                                                                   |
+| 5      | `eth_call`, canonical Multicall3 `aggregate3`, token `totalSupply()`      | Successful member, identical raw word; real repository reader decodes `1000000000000000000000000000` |
+| 6      | `eth_call`, canonical Multicall3 `aggregate3`, token `decimals()`         | Successful member, identical 18                                                                      |
+| 7      | `eth_getCode`, token                                                      | 7,154 bytes, retained; no claim of source verification                                               |
+| 8      | `eth_call`, token `balanceOf(0x0000000000000000000000000000000000000000)` | 0 raw                                                                                                |
+| 9      | `eth_call`, token `balanceOf(0x000000000000000000000000000000000000dead)` | 17,786 raw                                                                                           |
+| 10     | `eth_getTransactionReceipt`, launch transaction below                     | Successful receipt at block 68,428,500                                                               |
 
 Multicall3 address: `0xca11bde05977b3631167028862be2a173976ca11`.
 
@@ -76,7 +76,7 @@ The last line is an explicitly defined subtraction, not a measured circulating-s
 
 ## Deployed-main implementation trace and disconfirmation
 
-GitHub main was rechecked via gh-axi at **`0a01f4b5c9b60bfd86aa0b0299f67713692c991a`**, matching this worktree's baseline. GitHub reports successful Vercel, API and ledger-tip deployment statuses for that SHA: [retained status](evidence/terminator-supply-2026-09-21/main-deploy-status.txt). This is deployment-status evidence; the public pool API does not itself expose a build SHA.
+The deployed main revision was rechecked via gh-axi at **`0a01f4b5c9b60bfd86aa0b0299f67713692c991a`**. GitHub reports successful Vercel, API and ledger-tip deployment statuses for that SHA: [retained status](evidence/terminator-supply-2026-09-21/main-deploy-status.txt). This is deployment-status evidence; the public pool API does not itself expose a build SHA.
 
 - [`packages/chain/src/hypersync-ledger.ts`](../packages/chain/src/hypersync-ledger.ts), `readLaunchMetadata`, requests name, symbol, decimals and totalSupply in schema-2 field order. It guards chain ID and pins a fresh public RPC block. `launchPools` decodes decimals with the ERC-20 ABI and supply with `BigInt`, preserving the raw amount as a decimal string. No assumed billion is substituted.
 - [`packages/chain/src/multicall.ts`](../packages/chain/src/multicall.ts), `readContracts`, decodes aggregate members by request position and preserves raw results. Failed members are reread individually. This investigation called the real `readTokenSupplies` and `readContracts` implementations for this token, then compared them with independent direct calls at the same block.
