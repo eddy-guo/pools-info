@@ -1,0 +1,1324 @@
+{
+  "ours": {
+    "url": "https://api-production-9f93.up.railway.app/v1/pools/0xbfcd32a7fe6522e0f3ac58db24c931d247d24d842674040569afd2e98018a994?window=24h",
+    "at": "2026-09-21T15:43:24.546Z",
+    "receivedAt": "2026-09-21T15:43:24.730Z",
+    "status": 200,
+    "data": {
+      "coverage": {
+        "chainId": 4663,
+        "source": "indexed_chain_events",
+        "scope": "verified_pools_launches_only",
+        "completeness": "partial",
+        "registryExhaustive": false,
+        "chainHead": null,
+        "pnlAvailable": false,
+        "note": "Recorded block cutoffs are historical coverage, not proof of current-chain freshness. Transaction initiators are not proven trade beneficiaries. Token transfers can appear once per indexed pool for the same token."
+      },
+      "generatedAt": "2026-09-21T15:43:24.659Z",
+      "pool": {
+        "poolId": "0xbfcd32a7fe6522e0f3ac58db24c931d247d24d842674040569afd2e98018a994",
+        "token": "0xf99a8228f9f4000cf501c9cb1ab8d3534485cad9",
+        "name": "TERMINATOR",
+        "symbol": "TERMINATOR",
+        "imageUrl": "ipfs://bafybeiaabybyepekya6s2t3jz4ad5rxpzr3zkr6h6rxur22hg6scqhhdoe",
+        "description": "TERMINATOR",
+        "externalUrl": "https://x.com/REK/status/2101771246962938155",
+        "metadataSources": {
+          "imageUrl": {
+            "batch": 68428628,
+            "stream": "launches:agg:v1"
+          },
+          "description": {
+            "batch": 68428628,
+            "stream": "launches:agg:v1"
+          },
+          "externalUrl": {
+            "batch": 68428628,
+            "stream": "launches:agg:v1"
+          }
+        },
+        "launch": {
+          "block": 68428500,
+          "transactionHash": "0xc5781ef671e213d78666e0083a2a40fa961251e08a62bcaff568bf283c5decb2",
+          "transactionInitiator": "0x6d1d46d7cdf2d46ca6108c6d469d1c273067400e",
+          "timestamp": 1789956596,
+          "sourceStream": "launches:agg:v1",
+          "discoverySource": "historical_discovery",
+          "sourceBatchThroughBlock": 68428628
+        },
+        "coverage": {
+          "startBlock": 68428500,
+          "throughBlock": null,
+          "throughBlockHash": null,
+          "indexedAt": "2026-09-21T02:10:38.354Z",
+          "completeTokenLifetime": false
+        }
+      },
+      "analytics": null,
+      "market": {
+        "poolId": "0xbfcd32a7fe6522e0f3ac58db24c931d247d24d842674040569afd2e98018a994",
+        "token": "0xf99a8228f9f4000cf501c9cb1ab8d3534485cad9",
+        "decimals": 18,
+        "priceWei": "2557502070",
+        "fdvWei": "2557502070000000000",
+        "window": "24h",
+        "volumeWei": "48740735866263904871",
+        "trades": 3110,
+        "change": null,
+        "observations": [
+          {
+            "id": "0x9df2542a573804f30260c0f8836eeb31e0da152bdf88fd63cd5537e63c22ef38:51",
+            "side": "buy",
+            "block": 68447889,
+            "ethWei": "1355399756163842",
+            "logIndex": 51,
+            "tokenRaw": "528925379160462678547487",
+            "blockHash": "0x69bcc2ad468a3defac6e5a519db00f9714d8ae2edbd89b592ea1ff0fb1c9447f",
+            "timestamp": 1789958565,
+            "transactionHash": "0x9df2542a573804f30260c0f8836eeb31e0da152bdf88fd63cd5537e63c22ef38"
+          },
+          {
+            "id": "0x5753653298f2c3204234ec2c4d24e71e76dc2090f3b50315a8c07257824f91e3:6",
+            "side": "sell",
+            "block": 68446147,
+            "ethWei": "2077822914267179",
+            "logIndex": 6,
+            "tokenRaw": "814678496695058312919155",
+            "blockHash": "0x3c34de9206a1c307b0702df0b3375fb34957ccc3e83cbd81120d751b099f3774",
+            "timestamp": 1789958387,
+            "transactionHash": "0x5753653298f2c3204234ec2c4d24e71e76dc2090f3b50315a8c07257824f91e3"
+          },
+          {
+            "id": "0x9b26664c1d2b954757de77528b09ac8e0354203e7e27c8eac92a4454800995f6:31",
+            "side": "sell",
+            "block": 68445141,
+            "ethWei": "9191939802031276",
+            "logIndex": 31,
+            "tokenRaw": "3588150596793120263432257",
+            "blockHash": "0xf0973f5513fdd6543484c2070771aa1718404dc038f0f2362c6d1ffbfba05781",
+            "timestamp": 1789958285,
+            "transactionHash": "0x9b26664c1d2b954757de77528b09ac8e0354203e7e27c8eac92a4454800995f6"
+          },
+          {
+            "id": "0x2d498de326fb6e68b63b0381d9295696047123edfc9eec72b21b409a363d0d43:7",
+            "side": "sell",
+            "block": 68445139,
+            "ethWei": "9899017433391947",
+            "logIndex": 7,
+            "tokenRaw": "3835486365805423981804123",
+            "blockHash": "0xef91ac555cdb7e0b5a03b7d5f02f0958e54ac9be4a5e7340a4d7757b94a9316e",
+            "timestamp": 1789958285,
+            "transactionHash": "0x2d498de326fb6e68b63b0381d9295696047123edfc9eec72b21b409a363d0d43"
+          },
+          {
+            "id": "0x1dfea21972e0ab95c46be137d886e6df7154815ecdb8cdd5c710dc25e3f840f4:26",
+            "side": "sell",
+            "block": 68445138,
+            "ethWei": "10713614105057728",
+            "logIndex": 26,
+            "tokenRaw": "4117985996024360051362528",
+            "blockHash": "0x0b16f97db322cc73b0945ff7d1065fdc5926e17b5da7e430c9c2c45ffdeeceaf",
+            "timestamp": 1789958285,
+            "transactionHash": "0x1dfea21972e0ab95c46be137d886e6df7154815ecdb8cdd5c710dc25e3f840f4"
+          },
+          {
+            "id": "0xfefca3fd155a449d91478e183b8126eb24d521539d610afb878a9cbe49f5cd0d:8",
+            "side": "sell",
+            "block": 68445138,
+            "ethWei": "10412738585786012",
+            "logIndex": 8,
+            "tokenRaw": "3969736188129669382773730",
+            "blockHash": "0x0b16f97db322cc73b0945ff7d1065fdc5926e17b5da7e430c9c2c45ffdeeceaf",
+            "timestamp": 1789958285,
+            "transactionHash": "0xfefca3fd155a449d91478e183b8126eb24d521539d610afb878a9cbe49f5cd0d"
+          },
+          {
+            "id": "0x67b4dafd0706ef8aab7d68d01f7bd63cfed827b402b92ad471b9c5b21c47e24e:15",
+            "side": "sell",
+            "block": 68445137,
+            "ethWei": "10019211406815006",
+            "logIndex": 15,
+            "tokenRaw": "3789732246024748869221000",
+            "blockHash": "0xccc8222c47741cc91887f79d75448fcc1ab766fc116101230851bd3dcc0dce06",
+            "timestamp": 1789958285,
+            "transactionHash": "0x67b4dafd0706ef8aab7d68d01f7bd63cfed827b402b92ad471b9c5b21c47e24e"
+          },
+          {
+            "id": "0x55395ffe757c00e0d89f522bed336b51beb6db5be442272122d052ceb11e11df:2",
+            "side": "sell",
+            "block": 68445137,
+            "ethWei": "11106002288952043",
+            "logIndex": 2,
+            "tokenRaw": "4166866321483958086020237",
+            "blockHash": "0xccc8222c47741cc91887f79d75448fcc1ab766fc116101230851bd3dcc0dce06",
+            "timestamp": 1789958285,
+            "transactionHash": "0x55395ffe757c00e0d89f522bed336b51beb6db5be442272122d052ceb11e11df"
+          },
+          {
+            "id": "0x8844e4a03e2f6aa454a60fc93020107644b3b35bcf0f91be5415ef25d22e1e73:0",
+            "side": "sell",
+            "block": 68445137,
+            "ethWei": "11528499219544558",
+            "logIndex": 0,
+            "tokenRaw": "4288103352060715291324007",
+            "blockHash": "0xccc8222c47741cc91887f79d75448fcc1ab766fc116101230851bd3dcc0dce06",
+            "timestamp": 1789958285,
+            "transactionHash": "0x8844e4a03e2f6aa454a60fc93020107644b3b35bcf0f91be5415ef25d22e1e73"
+          },
+          {
+            "id": "0xcc0c4560c839eae66cd2986cf470846067629785aa7a9591b8d58a84e94ed4c8:6",
+            "side": "sell",
+            "block": 68445135,
+            "ethWei": "246862635018012",
+            "logIndex": 6,
+            "tokenRaw": "91410549243049162739664",
+            "blockHash": "0xa592092dc7251d6a99855b152424662e287ef9b19ff3b8e23c7d8c1f2bea2764",
+            "timestamp": 1789958285,
+            "transactionHash": "0xcc0c4560c839eae66cd2986cf470846067629785aa7a9591b8d58a84e94ed4c8"
+          },
+          {
+            "id": "0xaaacd20c140c751d2bf433ce3a7e2fd0907152b21798b66408cf7e60c642624c:25",
+            "side": "sell",
+            "block": 68445134,
+            "ethWei": "11524552609251133",
+            "logIndex": 25,
+            "tokenRaw": "4248373769299123398363916",
+            "blockHash": "0xe2b721d405fc788d972cfc3f1312598ab1a44de606d7d58bc9860e9f8e799922",
+            "timestamp": 1789958285,
+            "transactionHash": "0xaaacd20c140c751d2bf433ce3a7e2fd0907152b21798b66408cf7e60c642624c"
+          },
+          {
+            "id": "0xf6444d40edbfdc8e932e077fdfc95448b4be73c0e6d795ab4d4eb8e605b0d96a:9",
+            "side": "sell",
+            "block": 68445134,
+            "ethWei": "11580910523421736",
+            "logIndex": 9,
+            "tokenRaw": "4231919690844869240435165",
+            "blockHash": "0xe2b721d405fc788d972cfc3f1312598ab1a44de606d7d58bc9860e9f8e799922",
+            "timestamp": 1789958285,
+            "transactionHash": "0xf6444d40edbfdc8e932e077fdfc95448b4be73c0e6d795ab4d4eb8e605b0d96a"
+          },
+          {
+            "id": "0x6356e76e9cacde350f6087c3d271f261c26b6050e3cd8acf85573bc6f939b1fc:1",
+            "side": "sell",
+            "block": 68445134,
+            "ethWei": "11160152409357543",
+            "logIndex": 1,
+            "tokenRaw": "4043308944192579004946456",
+            "blockHash": "0xe2b721d405fc788d972cfc3f1312598ab1a44de606d7d58bc9860e9f8e799922",
+            "timestamp": 1789958285,
+            "transactionHash": "0x6356e76e9cacde350f6087c3d271f261c26b6050e3cd8acf85573bc6f939b1fc"
+          },
+          {
+            "id": "0xd593741c2383cda325c992090d814cb4067535c957c2537d622e941fd2bcecbd:39",
+            "side": "sell",
+            "block": 68445133,
+            "ethWei": "11859243662160184",
+            "logIndex": 39,
+            "tokenRaw": "4259580944598727598914028",
+            "blockHash": "0x3acf029565622ca476553305c1bb25a37529e1e46a64c761e55944bfaadfccb3",
+            "timestamp": 1789958285,
+            "transactionHash": "0xd593741c2383cda325c992090d814cb4067535c957c2537d622e941fd2bcecbd"
+          },
+          {
+            "id": "0xfa887522acf1c467c4ec4f5c5fae5e14f48a5f423db14608ec1ec8555ef1a3d9:37",
+            "side": "sell",
+            "block": 68445133,
+            "ethWei": "10879254687952424",
+            "logIndex": 37,
+            "tokenRaw": "3874478536853414843132965",
+            "blockHash": "0x3acf029565622ca476553305c1bb25a37529e1e46a64c761e55944bfaadfccb3",
+            "timestamp": 1789958285,
+            "transactionHash": "0xfa887522acf1c467c4ec4f5c5fae5e14f48a5f423db14608ec1ec8555ef1a3d9"
+          },
+          {
+            "id": "0xfa27335534afc2215bf92764cb6023df17b1c8bb8da3bf908cfffd938654af7f:35",
+            "side": "sell",
+            "block": 68445133,
+            "ethWei": "12003893063051189",
+            "logIndex": 35,
+            "tokenRaw": "4238707898349877125692434",
+            "blockHash": "0x3acf029565622ca476553305c1bb25a37529e1e46a64c761e55944bfaadfccb3",
+            "timestamp": 1789958285,
+            "transactionHash": "0xfa27335534afc2215bf92764cb6023df17b1c8bb8da3bf908cfffd938654af7f"
+          },
+          {
+            "id": "0x47a933e04dd5c98caad1db15cd188d8467647a31fd0cc67af03255eae342d694:2",
+            "side": "sell",
+            "block": 68445133,
+            "ethWei": "11430110017621305",
+            "logIndex": 2,
+            "tokenRaw": "4001157030749464137015191",
+            "blockHash": "0x3acf029565622ca476553305c1bb25a37529e1e46a64c761e55944bfaadfccb3",
+            "timestamp": 1789958285,
+            "transactionHash": "0x47a933e04dd5c98caad1db15cd188d8467647a31fd0cc67af03255eae342d694"
+          },
+          {
+            "id": "0x18b67ee51740f6c1d1ecbd78df197650ff139fd5fe63519df31582d8140ad411:0",
+            "side": "sell",
+            "block": 68445133,
+            "ethWei": "11466442185587733",
+            "logIndex": 0,
+            "tokenRaw": "3980066128148196810645175",
+            "blockHash": "0x3acf029565622ca476553305c1bb25a37529e1e46a64c761e55944bfaadfccb3",
+            "timestamp": 1789958285,
+            "transactionHash": "0x18b67ee51740f6c1d1ecbd78df197650ff139fd5fe63519df31582d8140ad411"
+          },
+          {
+            "id": "0xb0356d5a7ab2e56e88e85f5db979e6da87cec2411b4ba81828a7d41c6c79733c:42",
+            "side": "sell",
+            "block": 68445131,
+            "ethWei": "10092121751248559",
+            "logIndex": 42,
+            "tokenRaw": "3475352566272387865706249",
+            "blockHash": "0x55315a5a972e488980a44789411aa3f952bc64040cdbcb587e71bbad8d215a66",
+            "timestamp": 1789958284,
+            "transactionHash": "0xb0356d5a7ab2e56e88e85f5db979e6da87cec2411b4ba81828a7d41c6c79733c"
+          },
+          {
+            "id": "0x949c6944d7024b094cbb69b9a4a713397e2829c278dc05c82b63bb002aafea3b:18",
+            "side": "sell",
+            "block": 68445131,
+            "ethWei": "11799181276831282",
+            "logIndex": 18,
+            "tokenRaw": "4030739988621592020040437",
+            "blockHash": "0x55315a5a972e488980a44789411aa3f952bc64040cdbcb587e71bbad8d215a66",
+            "timestamp": 1789958284,
+            "transactionHash": "0x949c6944d7024b094cbb69b9a4a713397e2829c278dc05c82b63bb002aafea3b"
+          },
+          {
+            "id": "0x6226dedbfcc5c443af730c38537e06a4214fb2821ee4b563bbd5cf1d9965f337:7",
+            "side": "sell",
+            "block": 68445131,
+            "ethWei": "12627285553078134",
+            "logIndex": 7,
+            "tokenRaw": "4275354489479609362811926",
+            "blockHash": "0x55315a5a972e488980a44789411aa3f952bc64040cdbcb587e71bbad8d215a66",
+            "timestamp": 1789958284,
+            "transactionHash": "0x6226dedbfcc5c443af730c38537e06a4214fb2821ee4b563bbd5cf1d9965f337"
+          },
+          {
+            "id": "0x653e17402227f40a4020c251d37124d5bd6a8cc7084c8ac7aaa15c4f2511192f:2",
+            "side": "sell",
+            "block": 68445131,
+            "ethWei": "11964548834314451",
+            "logIndex": 2,
+            "tokenRaw": "4014932881906996165696880",
+            "blockHash": "0x55315a5a972e488980a44789411aa3f952bc64040cdbcb587e71bbad8d215a66",
+            "timestamp": 1789958284,
+            "transactionHash": "0x653e17402227f40a4020c251d37124d5bd6a8cc7084c8ac7aaa15c4f2511192f"
+          },
+          {
+            "id": "0xb596fdcd815597ebcc4a7bdd210210d5ec27d3bb3e799f9403748b4596c39c00:0",
+            "side": "sell",
+            "block": 68445131,
+            "ethWei": "12229006292867605",
+            "logIndex": 0,
+            "tokenRaw": "4067925280041403916238923",
+            "blockHash": "0x55315a5a972e488980a44789411aa3f952bc64040cdbcb587e71bbad8d215a66",
+            "timestamp": 1789958284,
+            "transactionHash": "0xb596fdcd815597ebcc4a7bdd210210d5ec27d3bb3e799f9403748b4596c39c00"
+          },
+          {
+            "id": "0x5cf190380cab46015f8fd6cdff97816fe7a1c1e54e5663ac2689e5eeb22ad1bb:6",
+            "side": "sell",
+            "block": 68445130,
+            "ethWei": "11134233271460790",
+            "logIndex": 6,
+            "tokenRaw": "3672718459221104667572343",
+            "blockHash": "0x0d1fb19baea0bcf549be7e8d1c7f0917698171f775a961a1fd073eb953897fa5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x5cf190380cab46015f8fd6cdff97816fe7a1c1e54e5663ac2689e5eeb22ad1bb"
+          },
+          {
+            "id": "0xd896b4b00b49f744dcc4211acea64b84a2b3bb44d992de6b36c0d8dd1397d00f:52",
+            "side": "sell",
+            "block": 68445128,
+            "ethWei": "11946273191214718",
+            "logIndex": 52,
+            "tokenRaw": "3908095450961549095719329",
+            "blockHash": "0xe471006db4b7f484d9fee0a9e6fb96b6415443957ace99e089736681a6d58c9f",
+            "timestamp": 1789958284,
+            "transactionHash": "0xd896b4b00b49f744dcc4211acea64b84a2b3bb44d992de6b36c0d8dd1397d00f"
+          },
+          {
+            "id": "0xb2583e181b1dba43073300b1173186510946deef6d731deb705ee87c5d569480:50",
+            "side": "sell",
+            "block": 68445128,
+            "ethWei": "11558692391879565",
+            "logIndex": 50,
+            "tokenRaw": "3749691625500506071846924",
+            "blockHash": "0xe471006db4b7f484d9fee0a9e6fb96b6415443957ace99e089736681a6d58c9f",
+            "timestamp": 1789958284,
+            "transactionHash": "0xb2583e181b1dba43073300b1173186510946deef6d731deb705ee87c5d569480"
+          },
+          {
+            "id": "0x60fbe295ab8427d735c3571b7ff8d2dab60aeadd25332468d349823a75655799:5",
+            "side": "sell",
+            "block": 68445128,
+            "ethWei": "12083433825228879",
+            "logIndex": 5,
+            "tokenRaw": "3887100193128372348763149",
+            "blockHash": "0xe471006db4b7f484d9fee0a9e6fb96b6415443957ace99e089736681a6d58c9f",
+            "timestamp": 1789958284,
+            "transactionHash": "0x60fbe295ab8427d735c3571b7ff8d2dab60aeadd25332468d349823a75655799"
+          },
+          {
+            "id": "0xd9a010ff8eb94a3a528782fd5080371c05f09d46a57e47ebb0323ff087fd8df9:3",
+            "side": "sell",
+            "block": 68445128,
+            "ethWei": "11751864825946863",
+            "logIndex": 3,
+            "tokenRaw": "3748659855612170509985243",
+            "blockHash": "0xe471006db4b7f484d9fee0a9e6fb96b6415443957ace99e089736681a6d58c9f",
+            "timestamp": 1789958284,
+            "transactionHash": "0xd9a010ff8eb94a3a528782fd5080371c05f09d46a57e47ebb0323ff087fd8df9"
+          },
+          {
+            "id": "0x73b503a2d7a962f4c53ad41bc637404b331591393de288fe632b9a9bb16f26e4:2",
+            "side": "sell",
+            "block": 68445127,
+            "ethWei": "12797349501629627",
+            "logIndex": 2,
+            "tokenRaw": "4046969340532464288204936",
+            "blockHash": "0x067eebe32cba0bf2a03cbfbd7d494ce4664ca41b4778b42a97f25a674315cdc8",
+            "timestamp": 1789958284,
+            "transactionHash": "0x73b503a2d7a962f4c53ad41bc637404b331591393de288fe632b9a9bb16f26e4"
+          },
+          {
+            "id": "0xd93eba897813373c5a948ac2b5596d9125541e738cdcf73547c92d1b13898971:0",
+            "side": "sell",
+            "block": 68445127,
+            "ethWei": "12820901142695836",
+            "logIndex": 0,
+            "tokenRaw": "4018114265910419741278248",
+            "blockHash": "0x067eebe32cba0bf2a03cbfbd7d494ce4664ca41b4778b42a97f25a674315cdc8",
+            "timestamp": 1789958284,
+            "transactionHash": "0xd93eba897813373c5a948ac2b5596d9125541e738cdcf73547c92d1b13898971"
+          },
+          {
+            "id": "0xf9a7dd3ca4ec7b57e5c87d4a80cbf522036291778e123b680d1a6babc976464d:38",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "13464321795867843",
+            "logIndex": 38,
+            "tokenRaw": "4181178954287941557447569",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0xf9a7dd3ca4ec7b57e5c87d4a80cbf522036291778e123b680d1a6babc976464d"
+          },
+          {
+            "id": "0x1b974f439719f3b926ed7df8d2ef7c195b15929fd458a31e6ed025028327a101:36",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "12406318670625082",
+            "logIndex": 36,
+            "tokenRaw": "3818105323603183959103760",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x1b974f439719f3b926ed7df8d2ef7c195b15929fd458a31e6ed025028327a101"
+          },
+          {
+            "id": "0x046a0a7448ac7a3bc00f36c6321152c9a272e3235bbcd8f3f2d7ce34e960ad36:27",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "12347885492430599",
+            "logIndex": 27,
+            "tokenRaw": "3767677253667452930762726",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x046a0a7448ac7a3bc00f36c6321152c9a272e3235bbcd8f3f2d7ce34e960ad36"
+          },
+          {
+            "id": "0x965f5491c84236b5939cf7cb86a74d199a139d4d8d1438d909e841be6066d57a:23",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "13393352649066682",
+            "logIndex": 23,
+            "tokenRaw": "4050561891097841111053997",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x965f5491c84236b5939cf7cb86a74d199a139d4d8d1438d909e841be6066d57a"
+          },
+          {
+            "id": "0x138aca875989fc7dab2fbba9d897c82407d7bd47fbf40998179ac788f4ee813d:14",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "14419795391616992",
+            "logIndex": 14,
+            "tokenRaw": "4319552612488324885116029",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x138aca875989fc7dab2fbba9d897c82407d7bd47fbf40998179ac788f4ee813d"
+          },
+          {
+            "id": "0x058603e0d0fd09760a14d96a9f6f1e746471a2895126261175aea67f3be140f1:0",
+            "side": "sell",
+            "block": 68445126,
+            "ethWei": "14016090414653156",
+            "logIndex": 0,
+            "tokenRaw": "4158026700944792738220919",
+            "blockHash": "0x4c41298ec00349947d4ecd28b55d3e012744e066db09675f8678834be25fcef5",
+            "timestamp": 1789958284,
+            "transactionHash": "0x058603e0d0fd09760a14d96a9f6f1e746471a2895126261175aea67f3be140f1"
+          },
+          {
+            "id": "0xea2721af547ba4254a3a99a3192d60bd9e8b0b6653284f9e36636dd4cf9e01eb:17",
+            "side": "sell",
+            "block": 68445125,
+            "ethWei": "13840792039978871",
+            "logIndex": 17,
+            "tokenRaw": "4067315037341029722575046",
+            "blockHash": "0x8babb8dc65c873811b38acdde5d0594310ab6e313d6394813ab0d06627893c4b",
+            "timestamp": 1789958284,
+            "transactionHash": "0xea2721af547ba4254a3a99a3192d60bd9e8b0b6653284f9e36636dd4cf9e01eb"
+          },
+          {
+            "id": "0xb95c2388e5a330f525619865702dc0f68f014db58a2f9b9384b7bb6595e9bf40:0",
+            "side": "sell",
+            "block": 68445124,
+            "ethWei": "6934307172190728",
+            "logIndex": 0,
+            "tokenRaw": "2023452747097469859271373",
+            "blockHash": "0xa1ad5662deaf42cf556ac0e95f26f0c5dea3b0aa71130f2d1bacd78020fb4645",
+            "timestamp": 1789958284,
+            "transactionHash": "0xb95c2388e5a330f525619865702dc0f68f014db58a2f9b9384b7bb6595e9bf40"
+          },
+          {
+            "id": "0xf0bf0f148202ed7c49b44b033abf13bb97bf096a0fafdfe7ca68a9ebc1812fd2:2",
+            "side": "sell",
+            "block": 68445123,
+            "ethWei": "43300639200799520",
+            "logIndex": 2,
+            "tokenRaw": "12424055346053268487746305",
+            "blockHash": "0xdf3f6dede837771f78c6681e3d613e788e8b5312ef035ca357b2d089d44f73c5",
+            "timestamp": 1789958284,
+            "transactionHash": "0xf0bf0f148202ed7c49b44b033abf13bb97bf096a0fafdfe7ca68a9ebc1812fd2"
+          },
+          {
+            "id": "0xe91a8673effcaeaa967ef19146f121852449b5961b5f202c1694853b87c1ee73:0",
+            "side": "sell",
+            "block": 68445123,
+            "ethWei": "13230938413179040",
+            "logIndex": 0,
+            "tokenRaw": "3725194003000126258633213",
+            "blockHash": "0xdf3f6dede837771f78c6681e3d613e788e8b5312ef035ca357b2d089d44f73c5",
+            "timestamp": 1789958284,
+            "transactionHash": "0xe91a8673effcaeaa967ef19146f121852449b5961b5f202c1694853b87c1ee73"
+          },
+          {
+            "id": "0x1f3380d12220b5d058aefb45eaea608510a730e716ec4c1c43da00202a33ab49:16",
+            "side": "sell",
+            "block": 68445122,
+            "ethWei": "12673280052717087",
+            "logIndex": 16,
+            "tokenRaw": "3537690584001779748012887",
+            "blockHash": "0x0b8844e3fa62687fa5fe63bfe88f74f4d619424b3d12832dfe4f12ab38e63bf9",
+            "timestamp": 1789958283,
+            "transactionHash": "0x1f3380d12220b5d058aefb45eaea608510a730e716ec4c1c43da00202a33ab49"
+          },
+          {
+            "id": "0x2fb759bb95ae5c992d6bb97db0eb4e1ec5955806af618310c089549f0fcab202:10",
+            "side": "sell",
+            "block": 68445122,
+            "ethWei": "14963452192787395",
+            "logIndex": 10,
+            "tokenRaw": "4139085226815628817577545",
+            "blockHash": "0x0b8844e3fa62687fa5fe63bfe88f74f4d619424b3d12832dfe4f12ab38e63bf9",
+            "timestamp": 1789958283,
+            "transactionHash": "0x2fb759bb95ae5c992d6bb97db0eb4e1ec5955806af618310c089549f0fcab202"
+          },
+          {
+            "id": "0x0f196c5bb19be065ceabff7969d3c0ab7c67bd8335d1d2e3a02950107f327dd4:26",
+            "side": "sell",
+            "block": 68445121,
+            "ethWei": "10631802157470307",
+            "logIndex": 26,
+            "tokenRaw": "2916269364026447656802976",
+            "blockHash": "0x0da2aa42d27fbaaddb6d7e6007ccaed626bfba5bf20f5146385f407fec16c6e2",
+            "timestamp": 1789958283,
+            "transactionHash": "0x0f196c5bb19be065ceabff7969d3c0ab7c67bd8335d1d2e3a02950107f327dd4"
+          },
+          {
+            "id": "0x2f49c6b416fd9638c84ea8df20a9d0e78e042f6ada6079fad5168b19cba116d0:3",
+            "side": "sell",
+            "block": 68445121,
+            "ethWei": "14120316460921645",
+            "logIndex": 3,
+            "tokenRaw": "3841938842260023847080064",
+            "blockHash": "0x0da2aa42d27fbaaddb6d7e6007ccaed626bfba5bf20f5146385f407fec16c6e2",
+            "timestamp": 1789958283,
+            "transactionHash": "0x2f49c6b416fd9638c84ea8df20a9d0e78e042f6ada6079fad5168b19cba116d0"
+          },
+          {
+            "id": "0x74e86c0e19c04c12a48ba9d7cfbaba02f5dbd711a04d7cbc1645c726bc6deefe:21",
+            "side": "sell",
+            "block": 68445120,
+            "ethWei": "15432086722976433",
+            "logIndex": 21,
+            "tokenRaw": "4158647487006156714311722",
+            "blockHash": "0x4a5c57e64e2d681c248c235ef475a0a6afc69dd75076a0dc46c0df2d0895a5b1",
+            "timestamp": 1789958283,
+            "transactionHash": "0x74e86c0e19c04c12a48ba9d7cfbaba02f5dbd711a04d7cbc1645c726bc6deefe"
+          },
+          {
+            "id": "0xa62d0c1de712f873a5d668e7537cb5d0d90c67106f02dbac0dad0ba5619d1188:14",
+            "side": "sell",
+            "block": 68445120,
+            "ethWei": "15669435243804798",
+            "logIndex": 14,
+            "tokenRaw": "4180270782882355660796381",
+            "blockHash": "0x4a5c57e64e2d681c248c235ef475a0a6afc69dd75076a0dc46c0df2d0895a5b1",
+            "timestamp": 1789958283,
+            "transactionHash": "0xa62d0c1de712f873a5d668e7537cb5d0d90c67106f02dbac0dad0ba5619d1188"
+          },
+          {
+            "id": "0x3401390dc49d18e672abaf52076aa2dbf7d58864532e618683d2f9841ad66d22:6",
+            "side": "sell",
+            "block": 68445119,
+            "ethWei": "15108914134458757",
+            "logIndex": 6,
+            "tokenRaw": "3990935779577168604784688",
+            "blockHash": "0xbaa5c304066530b2b9960c820ed9b9a3c7c62fdb9aa402bf1e84826ae63200cd",
+            "timestamp": 1789958283,
+            "transactionHash": "0x3401390dc49d18e672abaf52076aa2dbf7d58864532e618683d2f9841ad66d22"
+          },
+          {
+            "id": "0x79400dbf3412a81400f47fe304d6ecabfe7c587d28a5817e2535d29b758d0d92:0",
+            "side": "sell",
+            "block": 68445119,
+            "ethWei": "14344638498139764",
+            "logIndex": 0,
+            "tokenRaw": "3753417449399768815952625",
+            "blockHash": "0xbaa5c304066530b2b9960c820ed9b9a3c7c62fdb9aa402bf1e84826ae63200cd",
+            "timestamp": 1789958283,
+            "transactionHash": "0x79400dbf3412a81400f47fe304d6ecabfe7c587d28a5817e2535d29b758d0d92"
+          },
+          {
+            "id": "0x4cef9bfa402d6732508d8d923e2f035b4c88c8b37e78b1aedb496f2ea81d9ef9:41",
+            "side": "sell",
+            "block": 68445118,
+            "ethWei": "15923606016944695",
+            "logIndex": 41,
+            "tokenRaw": "4126499789902393845598986",
+            "blockHash": "0x85b732996dcc6910cc650664164730c6911c1dbff36c4193bb28a6aa4fb2eeef",
+            "timestamp": 1789958283,
+            "transactionHash": "0x4cef9bfa402d6732508d8d923e2f035b4c88c8b37e78b1aedb496f2ea81d9ef9"
+          },
+          {
+            "id": "0x2ec79729ba203b0d98763e038c6171d94037d6950e37c9555add737dce037257:14",
+            "side": "sell",
+            "block": 68445118,
+            "ethWei": "63872357584930201",
+            "logIndex": 14,
+            "tokenRaw": "16140803704301372213530324",
+            "blockHash": "0x85b732996dcc6910cc650664164730c6911c1dbff36c4193bb28a6aa4fb2eeef",
+            "timestamp": 1789958283,
+            "transactionHash": "0x2ec79729ba203b0d98763e038c6171d94037d6950e37c9555add737dce037257"
+          }
+        ],
+        "coverage": {
+          "startBlock": 68428500,
+          "cutoff": {
+            "block": 68912877,
+            "hash": "0x3b7b51938b2ccb69421a9539be87860e8b183b2b2dfe44e9ff776218ffe84d16",
+            "asOf": 1790005337
+          },
+          "indexedAt": "2026-09-21T15:42:45.461Z",
+          "completeWindow": true,
+          "windowStart": 1789920000,
+          "priceBaseline": null,
+          "unitBasis": {
+            "block": 68912877,
+            "hash": "0x3b7b51938b2ccb69421a9539be87860e8b183b2b2dfe44e9ff776218ffe84d16",
+            "asOf": 1790005337,
+            "decimals": 18,
+            "source": "aggregate_ledger"
+          },
+          "unitsConflict": false,
+          "accounting": "unavailable",
+          "attribution": "transaction_initiator_only"
+        },
+        "history": {
+          "priceSemantics": "declared_cutoff_display_units",
+          "intervalSeconds": 3600,
+          "fromTimestamp": 1789956000,
+          "truncated": false,
+          "candles": [
+            {
+              "low": "2554793538",
+              "high": "46621616033",
+              "open": "8084720327",
+              "time": 1789956000,
+              "close": "2557502070",
+              "volume": "48740735866263904871"
+            }
+          ]
+        },
+        "creatorFees": true
+      },
+      "latestRecordedSwap": null
+    }
+  },
+  "xyz": {
+    "url": "https://pools.xyz/api/trpc/curve.getLaunchByAddress?batch=1&input=%7B%220%22%3A%7B%22tokenAddress%22%3A%220xf99a8228f9f4000cf501c9cb1ab8d3534485cad9%22%7D%7D",
+    "at": "2026-09-21T15:43:24.811Z",
+    "receivedAt": "2026-09-21T15:43:25.112Z",
+    "status": 200,
+    "data": [
+      {
+        "result": {
+          "data": {
+            "id": "0xbfcd32a7fe6522e0f3ac58db24c931d247d24d842674040569afd2e98018a994",
+            "poolId": "0xbfcd32a7fe6522e0f3ac58db24c931d247d24d842674040569afd2e98018a994",
+            "launchpadId": "uniswap-bonding-curve",
+            "tokenAddress": "0xf99a8228f9f4000cF501C9cb1AB8d3534485cAD9",
+            "tokenSymbol": "TERMINATOR",
+            "tokenName": "TERMINATOR",
+            "description": "TERMINATOR",
+            "xVerified": false,
+            "imageEmoji": "🔥",
+            "imageHue": 103,
+            "imageUrl": "ipfs://bafybeiaabybyepekya6s2t3jz4ad5rxpzr3zkr6h6rxur22hg6scqhhdoe",
+            "chainId": 4663,
+            "status": "curveLive",
+            "createdAt": "2026-09-21T02:09:56.000Z",
+            "fdvUsd": 48744.28670695654,
+            "graduationTargetUsd": 50000,
+            "graduationProgress": 0.9748857341391308,
+            "holderCount": 87,
+            "creatorAddress": "0x6d1d46d7cdf2d46ca6108c6d469d1c273067400e",
+            "creatorHandle": "0x6D1d…400E",
+            "feeBeneficiary": "0x6D1d46d7cdF2D46CA6108c6D469d1c273067400E",
+            "buyersLast1h": 0,
+            "tierPlan": "default",
+            "poolStats": {
+              "priceUsd": 0.000006998671790648079,
+              "priceEth": 2.5563888965447133e-9,
+              "priceChange1hPct": 0.08987176164452892,
+              "priceChange24hPct": 2.8922716439328298,
+              "price24hAgoUsd": 0.000006801941174812,
+              "volume24hUsd": 129631.82586843566,
+              "liquidityUsd": 6866.03578948633
+            },
+            "poolPriceSeries": [
+              {
+                "at": "2026-09-21T02:47:50.000Z",
+                "clearingPriceUsd": 0.000006904832284174
+              },
+              {
+                "at": "2026-09-21T04:38:36.000Z",
+                "clearingPriceUsd": 0.000006960712031711
+              },
+              {
+                "at": "2026-09-21T06:29:22.000Z",
+                "clearingPriceUsd": 0.000006944777755116
+              },
+              {
+                "at": "2026-09-21T08:20:08.000Z",
+                "clearingPriceUsd": 0.000006962285423584
+              },
+              {
+                "at": "2026-09-21T10:10:55.000Z",
+                "clearingPriceUsd": 0.000006990322768717
+              },
+              {
+                "at": "2026-09-21T12:01:41.000Z",
+                "clearingPriceUsd": 0.000006981028101955
+              },
+              {
+                "at": "2026-09-21T13:52:27.000Z",
+                "clearingPriceUsd": 0.000007017724521573
+              },
+              {
+                "at": "2026-09-21T15:43:13.000Z",
+                "clearingPriceUsd": 0.000006998690411953
+              }
+            ],
+            "recentTrades": [
+              {
+                "id": "0x9df2542a573804f30260c0f8836eeb31e0da152bdf88fd63cd5537e63c22ef38",
+                "txHash": "0x9df2542a573804f30260c0f8836eeb31e0da152bdf88fd63cd5537e63c22ef38",
+                "side": "buy",
+                "trader": "0x39df…8795",
+                "traderAddress": "0x39df39ccc7408298e4555f84efbd1d90b2c08795",
+                "amountUsd": 3.6019548312056093,
+                "tokens": 528925.3791604626,
+                "priceUsd": 0.000006792924079064818,
+                "at": "2026-09-21T02:42:45.000Z"
+              },
+              {
+                "id": "0x5753653298f2c3204234ec2c4d24e71e76dc2090f3b50315a8c07257824f91e3",
+                "txHash": "0x5753653298f2c3204234ec2c4d24e71e76dc2090f3b50315a8c07257824f91e3",
+                "side": "sell",
+                "trader": "0x4337…c271",
+                "traderAddress": "0x4337055bca06a9d578086e56546ca214a64ac271",
+                "amountUsd": 5.519645615106465,
+                "tokens": 814678.4966950584,
+                "priceUsd": 0.0000067922245841001635,
+                "at": "2026-09-21T02:39:47.000Z"
+              },
+              {
+                "id": "0x9b26664c1d2b954757de77528b09ac8e0354203e7e27c8eac92a4454800995f6",
+                "txHash": "0x9b26664c1d2b954757de77528b09ac8e0354203e7e27c8eac92a4454800995f6",
+                "side": "sell",
+                "trader": "0x8CC2…7e17",
+                "traderAddress": "0x8cc231925195fb55ee17dae8194533ccf0637e17",
+                "amountUsd": 24.417939959239472,
+                "tokens": 3588150.5967931203,
+                "priceUsd": 0.000006822215830524748,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x2d498de326fb6e68b63b0381d9295696047123edfc9eec72b21b409a363d0d43",
+                "txHash": "0x2d498de326fb6e68b63b0381d9295696047123edfc9eec72b21b409a363d0d43",
+                "side": "sell",
+                "trader": "0x877a…b0DA",
+                "traderAddress": "0x877a6d418eebd0146745b846004218ccc403b0da",
+                "amountUsd": 26.296257215546,
+                "tokens": 3835486.365805424,
+                "priceUsd": 0.0000068732254811614725,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x1dfea21972e0ab95c46be137d886e6df7154815ecdb8cdd5c710dc25e3f840f4",
+                "txHash": "0x1dfea21972e0ab95c46be137d886e6df7154815ecdb8cdd5c710dc25e3f840f4",
+                "side": "sell",
+                "trader": "0x2e93…bd20",
+                "traderAddress": "0x2e93b50b884555d618d2a65b112846835557bd20",
+                "amountUsd": 28.460193560661725,
+                "tokens": 4117985.99602436,
+                "priceUsd": 0.000006928513694345597,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xfefca3fd155a449d91478e183b8126eb24d521539d610afb878a9cbe49f5cd0d",
+                "txHash": "0xfefca3fd155a449d91478e183b8126eb24d521539d610afb878a9cbe49f5cd0d",
+                "side": "sell",
+                "trader": "0x7a1c…3cC2",
+                "traderAddress": "0x7a1c8ee98ab5155942054e8e5ed6c7f164743cc2",
+                "amountUsd": 27.660932411980326,
+                "tokens": 3969736.1881296695,
+                "priceUsd": 0.000006985415842000364,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x67b4dafd0706ef8aab7d68d01f7bd63cfed827b402b92ad471b9c5b21c47e24e",
+                "txHash": "0x67b4dafd0706ef8aab7d68d01f7bd63cfed827b402b92ad471b9c5b21c47e24e",
+                "side": "sell",
+                "trader": "0xfB26…331b",
+                "traderAddress": "0xfb269e5bc773317fd56cd4ee6cdbd35f3329331b",
+                "amountUsd": 26.615546646255506,
+                "tokens": 3789732.246024749,
+                "priceUsd": 0.000007040669510342401,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x55395ffe757c00e0d89f522bed336b51beb6db5be442272122d052ceb11e11df",
+                "txHash": "0x55395ffe757c00e0d89f522bed336b51beb6db5be442272122d052ceb11e11df",
+                "side": "sell",
+                "trader": "0x57F8…72c7",
+                "traderAddress": "0x57f8679fc649712e9e6b99051cb11318944772c7",
+                "amountUsd": 29.502553641493535,
+                "tokens": 4166866.321483958,
+                "priceUsd": 0.000007098018654017462,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x8844e4a03e2f6aa454a60fc93020107644b3b35bcf0f91be5415ef25d22e1e73",
+                "txHash": "0x8844e4a03e2f6aa454a60fc93020107644b3b35bcf0f91be5415ef25d22e1e73",
+                "side": "sell",
+                "trader": "0x1b3B…3634",
+                "traderAddress": "0x1b3b1c901e23302998afcce4e899708d9d343634",
+                "amountUsd": 30.62489614006942,
+                "tokens": 4288103.352060716,
+                "priceUsd": 0.000007159727213892732,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xcc0c4560c839eae66cd2986cf470846067629785aa7a9591b8d58a84e94ed4c8",
+                "txHash": "0xcc0c4560c839eae66cd2986cf470846067629785aa7a9591b8d58a84e94ed4c8",
+                "side": "sell",
+                "trader": "0xbC77…B82D",
+                "traderAddress": "0xbc778aa77fa9033d53c26092380594e1e43ab82d",
+                "amountUsd": 0.655778554894082,
+                "tokens": 91410.54924304917,
+                "priceUsd": 0.00000719197199462726,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xaaacd20c140c751d2bf433ce3a7e2fd0907152b21798b66408cf7e60c642624c",
+                "txHash": "0xaaacd20c140c751d2bf433ce3a7e2fd0907152b21798b66408cf7e60c642624c",
+                "side": "sell",
+                "trader": "0xA26C…d5B3",
+                "traderAddress": "0xa26cd7930448340d76021fd9ddedb82555bed5b3",
+                "amountUsd": 30.61441216222983,
+                "tokens": 4248373.769299123,
+                "priceUsd": 0.000007224208998287774,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xf6444d40edbfdc8e932e077fdfc95448b4be73c0e6d795ab4d4eb8e605b0d96a",
+                "txHash": "0xf6444d40edbfdc8e932e077fdfc95448b4be73c0e6d795ab4d4eb8e605b0d96a",
+                "side": "sell",
+                "trader": "0x09A3…9f03",
+                "traderAddress": "0x09a319d66156216152c95df8587ba49871c49f03",
+                "amountUsd": 30.76412421366664,
+                "tokens": 4231919.690844869,
+                "priceUsd": 0.0000072877628912929846,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x6356e76e9cacde350f6087c3d271f261c26b6050e3cd8acf85573bc6f939b1fc",
+                "txHash": "0x6356e76e9cacde350f6087c3d271f261c26b6050e3cd8acf85573bc6f939b1fc",
+                "side": "sell",
+                "trader": "0xfeA4…06c0",
+                "traderAddress": "0xfea437ca2c386b8b678a068258cd1705261606c0",
+                "amountUsd": 29.646400796427564,
+                "tokens": 4043308.944192579,
+                "priceUsd": 0.0000073505890751923746,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xd593741c2383cda325c992090d814cb4067535c957c2537d622e941fd2bcecbd",
+                "txHash": "0xd593741c2383cda325c992090d814cb4067535c957c2537d622e941fd2bcecbd",
+                "side": "sell",
+                "trader": "0x4FB7…A8Ed",
+                "traderAddress": "0x4fb7747ea9665ddab3118291211ade3ed937a8ed",
+                "amountUsd": 31.503502627446093,
+                "tokens": 4259580.944598728,
+                "priceUsd": 0.000007414452075251562,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xfa887522acf1c467c4ec4f5c5fae5e14f48a5f423db14608ec1ec8555ef1a3d9",
+                "txHash": "0xfa887522acf1c467c4ec4f5c5fae5e14f48a5f423db14608ec1ec8555ef1a3d9",
+                "side": "sell",
+                "trader": "0x74B0…a828",
+                "traderAddress": "0x74b0482a11dc73125330790bccb248dad22ba828",
+                "amountUsd": 28.900209693822465,
+                "tokens": 3874478.536853415,
+                "priceUsd": 0.000007477816955619198,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xfa27335534afc2215bf92764cb6023df17b1c8bb8da3bf908cfffd938654af7f",
+                "txHash": "0xfa27335534afc2215bf92764cb6023df17b1c8bb8da3bf908cfffd938654af7f",
+                "side": "sell",
+                "trader": "0x8DBa…797B",
+                "traderAddress": "0x8dba9c173e37019b04f28f418733cb6324d0797b",
+                "amountUsd": 31.887756708974774,
+                "tokens": 4238707.898349877,
+                "priceUsd": 0.000007541844511429189,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x47a933e04dd5c98caad1db15cd188d8467647a31fd0cc67af03255eae342d694",
+                "txHash": "0x47a933e04dd5c98caad1db15cd188d8467647a31fd0cc67af03255eae342d694",
+                "side": "sell",
+                "trader": "0x3Fee…B7c3",
+                "traderAddress": "0x3fee199cd8d0464a8d391ce06d260252292cb7c3",
+                "amountUsd": 30.363530021824328,
+                "tokens": 4001157.0307494644,
+                "priceUsd": 0.0000076077066859980306,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0x18b67ee51740f6c1d1ecbd78df197650ff139fd5fe63519df31582d8140ad411",
+                "txHash": "0x18b67ee51740f6c1d1ecbd78df197650ff139fd5fe63519df31582d8140ad411",
+                "side": "sell",
+                "trader": "0xF203…6b2e",
+                "traderAddress": "0xf20369f1e181869da10cf50f8bb6b21cfa336b2e",
+                "amountUsd": 30.46004465476363,
+                "tokens": 3980066.1281481967,
+                "priceUsd": 0.00000767233122154639,
+                "at": "2026-09-21T02:38:05.000Z"
+              },
+              {
+                "id": "0xb0356d5a7ab2e56e88e85f5db979e6da87cec2411b4ba81828a7d41c6c79733c",
+                "txHash": "0xb0356d5a7ab2e56e88e85f5db979e6da87cec2411b4ba81828a7d41c6c79733c",
+                "side": "sell",
+                "trader": "0x06aF…9565",
+                "traderAddress": "0x06af36f5b740cf3b10286ddb6c2c19729f469565",
+                "amountUsd": 26.809229421722836,
+                "tokens": 3475352.5662723877,
+                "priceUsd": 0.000007733437100378092,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x949c6944d7024b094cbb69b9a4a713397e2829c278dc05c82b63bb002aafea3b",
+                "txHash": "0x949c6944d7024b094cbb69b9a4a713397e2829c278dc05c82b63bb002aafea3b",
+                "side": "sell",
+                "trader": "0x1e32…2a3A",
+                "traderAddress": "0x1e32183726ea8e5b59ad18c1a8bde198e7602a3a",
+                "amountUsd": 31.3439498289774,
+                "tokens": 4030739.988621592,
+                "priceUsd": 0.000007795716464697741,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x6226dedbfcc5c443af730c38537e06a4214fb2821ee4b563bbd5cf1d9965f337",
+                "txHash": "0x6226dedbfcc5c443af730c38537e06a4214fb2821ee4b563bbd5cf1d9965f337",
+                "side": "sell",
+                "trader": "0x7Dca…cC15",
+                "traderAddress": "0x7dca09267337263d84181933aa6aa02529f2cc15",
+                "amountUsd": 33.54376846714087,
+                "tokens": 4275354.48947961,
+                "priceUsd": 0.000007865508730339164,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x653e17402227f40a4020c251d37124d5bd6a8cc7084c8ac7aaa15c4f2511192f",
+                "txHash": "0x653e17402227f40a4020c251d37124d5bd6a8cc7084c8ac7aaa15c4f2511192f",
+                "side": "sell",
+                "trader": "0xcb80…0696",
+                "traderAddress": "0xcb8073bcd822153e493a771cd2dab2662e950696",
+                "amountUsd": 31.78324068344294,
+                "tokens": 4014932.881906996,
+                "priceUsd": 0.000007936097281190288,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xb596fdcd815597ebcc4a7bdd210210d5ec27d3bb3e799f9403748b4596c39c00",
+                "txHash": "0xb596fdcd815597ebcc4a7bdd210210d5ec27d3bb3e799f9403748b4596c39c00",
+                "side": "sell",
+                "trader": "0x6936…0E4A",
+                "traderAddress": "0x6936ca41226df402e14eb94f14c5ee2522650e4a",
+                "amountUsd": 32.485759029276416,
+                "tokens": 4067925.2800414036,
+                "priceUsd": 0.000008005844436595503,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x5cf190380cab46015f8fd6cdff97816fe7a1c1e54e5663ac2689e5eeb22ad1bb",
+                "txHash": "0x5cf190380cab46015f8fd6cdff97816fe7a1c1e54e5663ac2689e5eeb22ad1bb",
+                "side": "sell",
+                "trader": "0x0ab1…96fD",
+                "traderAddress": "0x0ab1d83acf654924b5a737ddc5f57afa53bd96fd",
+                "amountUsd": 29.577547870212975,
+                "tokens": 3672718.4592211046,
+                "priceUsd": 0.000008073495802114535,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xd896b4b00b49f744dcc4211acea64b84a2b3bb44d992de6b36c0d8dd1397d00f",
+                "txHash": "0xd896b4b00b49f744dcc4211acea64b84a2b3bb44d992de6b36c0d8dd1397d00f",
+                "side": "sell",
+                "trader": "0x6677…E345",
+                "traderAddress": "0x6677578e8dd1768369cf2e9b2d92e0229f61e345",
+                "amountUsd": 31.734692328521472,
+                "tokens": 3908095.4509615493,
+                "priceUsd": 0.000008140596435647331,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xb2583e181b1dba43073300b1173186510946deef6d731deb705ee87c5d569480",
+                "txHash": "0xb2583e181b1dba43073300b1173186510946deef6d731deb705ee87c5d569480",
+                "side": "sell",
+                "trader": "0xf79A…b221",
+                "traderAddress": "0xf79a60900a82f3c552706b6a06e0f9e732cab221",
+                "amountUsd": 30.705102830401778,
+                "tokens": 3749691.6255005063,
+                "priceUsd": 0.000008209223864170793,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x60fbe295ab8427d735c3571b7ff8d2dab60aeadd25332468d349823a75655799",
+                "txHash": "0x60fbe295ab8427d735c3571b7ff8d2dab60aeadd25332468d349823a75655799",
+                "side": "sell",
+                "trader": "0xB5dc…dB98",
+                "traderAddress": "0xb5dce978e19673fb0f473587ccc87015ad79db98",
+                "amountUsd": 32.09905286593371,
+                "tokens": 3887100.1931283725,
+                "priceUsd": 0.000008278536703754301,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xd9a010ff8eb94a3a528782fd5080371c05f09d46a57e47ebb0323ff087fd8df9",
+                "txHash": "0xd9a010ff8eb94a3a528782fd5080371c05f09d46a57e47ebb0323ff087fd8df9",
+                "side": "sell",
+                "trader": "0x2A4e…68C9",
+                "traderAddress": "0x2a4ea7b437aaa8178a4a04be7c08761825df68c9",
+                "amountUsd": 31.218255983971506,
+                "tokens": 3748659.8556121704,
+                "priceUsd": 0.000008348716189916427,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x73b503a2d7a962f4c53ad41bc637404b331591393de288fe632b9a9bb16f26e4",
+                "txHash": "0x73b503a2d7a962f4c53ad41bc637404b331591393de288fe632b9a9bb16f26e4",
+                "side": "sell",
+                "trader": "0x7f69…923c",
+                "traderAddress": "0x7f697e241b1f20a92a3c711225140b36ef17923c",
+                "amountUsd": 33.995535055521266,
+                "tokens": 4046969.3405324644,
+                "priceUsd": 0.000008421298515022017,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xd93eba897813373c5a948ac2b5596d9125541e738cdcf73547c92d1b13898971",
+                "txHash": "0xd93eba897813373c5a948ac2b5596d9125541e738cdcf73547c92d1b13898971",
+                "side": "sell",
+                "trader": "0xb00A…7388",
+                "traderAddress": "0xb00acdd2dd7b5d13c2a8a99154ef5538b0637388",
+                "amountUsd": 34.058098841825554,
+                "tokens": 4018114.2659104196,
+                "priceUsd": 0.000008497383405746232,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xf9a7dd3ca4ec7b57e5c87d4a80cbf522036291778e123b680d1a6babc976464d",
+                "txHash": "0xf9a7dd3ca4ec7b57e5c87d4a80cbf522036291778e123b680d1a6babc976464d",
+                "side": "sell",
+                "trader": "0xf901…658f",
+                "traderAddress": "0xf901ccecbf52fd723210ff9d59ad633bd289658f",
+                "amountUsd": 35.76731443897479,
+                "tokens": 4181178.9542879416,
+                "priceUsd": 0.000008575800563207152,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x1b974f439719f3b926ed7df8d2ef7c195b15929fd458a31e6ed025028327a101",
+                "txHash": "0x1b974f439719f3b926ed7df8d2ef7c195b15929fd458a31e6ed025028327a101",
+                "side": "sell",
+                "trader": "0xB8E6…7678",
+                "traderAddress": "0xb8e69110356e5a86409498ec93c85d7b20547678",
+                "amountUsd": 32.956780716467556,
+                "tokens": 3818105.323603184,
+                "priceUsd": 0.000008653344097170926,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x046a0a7448ac7a3bc00f36c6321152c9a272e3235bbcd8f3f2d7ce34e960ad36",
+                "txHash": "0x046a0a7448ac7a3bc00f36c6321152c9a272e3235bbcd8f3f2d7ce34e960ad36",
+                "side": "sell",
+                "trader": "0x9624…f477",
+                "traderAddress": "0x9624719c8ea80ad4f73233327e4fe5dfef87f477",
+                "amountUsd": 32.80155582732444,
+                "tokens": 3767677.253667453,
+                "priceUsd": 0.000008727861498332026,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x965f5491c84236b5939cf7cb86a74d199a139d4d8d1438d909e841be6066d57a",
+                "txHash": "0x965f5491c84236b5939cf7cb86a74d199a139d4d8d1438d909e841be6066d57a",
+                "side": "sell",
+                "trader": "0x52c6…1C3d",
+                "traderAddress": "0x52c6acc10b13a6b10499c64d1b6d8b74be111c3d",
+                "amountUsd": 35.57878836038078,
+                "tokens": 4050561.8910978413,
+                "priceUsd": 0.000008805681585661091,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x138aca875989fc7dab2fbba9d897c82407d7bd47fbf40998179ac788f4ee813d",
+                "txHash": "0x138aca875989fc7dab2fbba9d897c82407d7bd47fbf40998179ac788f4ee813d",
+                "side": "sell",
+                "trader": "0x2C3e…674E",
+                "traderAddress": "0x2c3ed33c8ec3b125f0a6fbbc3f83e03d6415674e",
+                "amountUsd": 38.30548346489527,
+                "tokens": 4319552.612488325,
+                "priceUsd": 0.000008890153825613622,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x058603e0d0fd09760a14d96a9f6f1e746471a2895126261175aea67f3be140f1",
+                "txHash": "0x058603e0d0fd09760a14d96a9f6f1e746471a2895126261175aea67f3be140f1",
+                "side": "sell",
+                "trader": "0x6422…E78f",
+                "traderAddress": "0x642283017b8157a4b4b658cdb61c714658f3e78f",
+                "amountUsd": 37.233060874989846,
+                "tokens": 4158026.7009447925,
+                "priceUsd": 0.000008976944955296,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xea2721af547ba4254a3a99a3192d60bd9e8b0b6653284f9e36636dd4cf9e01eb",
+                "txHash": "0xea2721af547ba4254a3a99a3192d60bd9e8b0b6653284f9e36636dd4cf9e01eb",
+                "side": "sell",
+                "trader": "0xf329…2850",
+                "traderAddress": "0xf329ea81ab2203f2d9918f3fe72f6a2ad5082850",
+                "amountUsd": 36.767389288802676,
+                "tokens": 4067315.03734103,
+                "priceUsd": 0.000009062375989009842,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xb95c2388e5a330f525619865702dc0f68f014db58a2f9b9384b7bb6595e9bf40",
+                "txHash": "0xb95c2388e5a330f525619865702dc0f68f014db58a2f9b9384b7bb6595e9bf40",
+                "side": "sell",
+                "trader": "0x9f0E…cA65",
+                "traderAddress": "0x9f0e1cbc7d9a22dc8108a0728deaa305247cca65",
+                "amountUsd": 18.42064894202847,
+                "tokens": 2023452.7470974699,
+                "priceUsd": 0.000009126388549706954,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xf0bf0f148202ed7c49b44b033abf13bb97bf096a0fafdfe7ca68a9ebc1812fd2",
+                "txHash": "0xf0bf0f148202ed7c49b44b033abf13bb97bf096a0fafdfe7ca68a9ebc1812fd2",
+                "side": "sell",
+                "trader": "0x18b7…fC20",
+                "traderAddress": "0x18b701a77ac913d3ba7e45acc072fa428e33fc20",
+                "amountUsd": 115.02603704695325,
+                "tokens": 12424055.346053269,
+                "priceUsd": 0.000009281536474378326,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0xe91a8673effcaeaa967ef19146f121852449b5961b5f202c1694853b87c1ee73",
+                "txHash": "0xe91a8673effcaeaa967ef19146f121852449b5961b5f202c1694853b87c1ee73",
+                "side": "sell",
+                "trader": "0x3948…5320",
+                "traderAddress": "0x3948a992bf40778191b4173af9c08d1b7a255320",
+                "amountUsd": 35.14734286075362,
+                "tokens": 3725194.003000126,
+                "priceUsd": 0.000009458683604390739,
+                "at": "2026-09-21T02:38:04.000Z"
+              },
+              {
+                "id": "0x1f3380d12220b5d058aefb45eaea608510a730e716ec4c1c43da00202a33ab49",
+                "txHash": "0x1f3380d12220b5d058aefb45eaea608510a730e716ec4c1c43da00202a33ab49",
+                "side": "sell",
+                "trader": "0xcf11…80d6",
+                "traderAddress": "0xcf1117b097b31714e6eadf9d9fb9f9830caf80d6",
+                "amountUsd": 33.66595061311087,
+                "tokens": 3537690.58400178,
+                "priceUsd": 0.000009540214336949161,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x2fb759bb95ae5c992d6bb97db0eb4e1ec5955806af618310c089549f0fcab202",
+                "txHash": "0x2fb759bb95ae5c992d6bb97db0eb4e1ec5955806af618310c089549f0fcab202",
+                "side": "sell",
+                "trader": "0x44e3…A457",
+                "traderAddress": "0x44e3d050c2e31eb3958dd76f8d02f324231fa457",
+                "amountUsd": 39.74968125288313,
+                "tokens": 4139085.226815629,
+                "priceUsd": 0.000009627563176520114,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x0f196c5bb19be065ceabff7969d3c0ab7c67bd8335d1d2e3a02950107f327dd4",
+                "txHash": "0x0f196c5bb19be065ceabff7969d3c0ab7c67bd8335d1d2e3a02950107f327dd4",
+                "side": "sell",
+                "trader": "0x83fF…AD75",
+                "traderAddress": "0x83ff5eed5f006ac88b8422d81fe6f4911951ad75",
+                "amountUsd": 28.242864110386538,
+                "tokens": 2916269.3640264478,
+                "priceUsd": 0.000009708859058160434,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x2f49c6b416fd9638c84ea8df20a9d0e78e042f6ada6079fad5168b19cba116d0",
+                "txHash": "0x2f49c6b416fd9638c84ea8df20a9d0e78e042f6ada6079fad5168b19cba116d0",
+                "side": "sell",
+                "trader": "0xa2a7…57D7",
+                "traderAddress": "0xa2a750e2cd73152302ae2f95d5daf518d0f157d7",
+                "amountUsd": 37.5099322856806,
+                "tokens": 3841938.8422600236,
+                "priceUsd": 0.000009787751363296723,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x74e86c0e19c04c12a48ba9d7cfbaba02f5dbd711a04d7cbc1645c726bc6deefe",
+                "txHash": "0x74e86c0e19c04c12a48ba9d7cfbaba02f5dbd711a04d7cbc1645c726bc6deefe",
+                "side": "sell",
+                "trader": "0xF099…2d4d",
+                "traderAddress": "0xf099ffc70811039b7556d0a47dcf15ff96c12d4d",
+                "amountUsd": 40.994586035489895,
+                "tokens": 4158647.4870061567,
+                "priceUsd": 0.000009882378703003126,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0xa62d0c1de712f873a5d668e7537cb5d0d90c67106f02dbac0dad0ba5619d1188",
+                "txHash": "0xa62d0c1de712f873a5d668e7537cb5d0d90c67106f02dbac0dad0ba5619d1188",
+                "side": "sell",
+                "trader": "0x5bAc…9910",
+                "traderAddress": "0x5bacca79ca7e8dc0dd4144b3298e7f55a8fc9910",
+                "amountUsd": 41.62509080987067,
+                "tokens": 4180270.7828823556,
+                "priceUsd": 0.000009982466809712738,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x3401390dc49d18e672abaf52076aa2dbf7d58864532e618683d2f9841ad66d22",
+                "txHash": "0x3401390dc49d18e672abaf52076aa2dbf7d58864532e618683d2f9841ad66d22",
+                "side": "sell",
+                "trader": "0x465b…1119",
+                "traderAddress": "0x465bf310c85e88906261240cdf2a90c9877d1119",
+                "amountUsd": 40.13609380938189,
+                "tokens": 3990935.7795771686,
+                "priceUsd": 0.000010082017788683349,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x79400dbf3412a81400f47fe304d6ecabfe7c587d28a5817e2535d29b758d0d92",
+                "txHash": "0x79400dbf3412a81400f47fe304d6ecabfe7c587d28a5817e2535d29b758d0d92",
+                "side": "sell",
+                "trader": "0x3985…1bd2",
+                "traderAddress": "0x39858520d3dd1ae8b0b483cd53a7c264fd531bd2",
+                "amountUsd": 38.10583284141704,
+                "tokens": 3753417.4493997684,
+                "priceUsd": 0.000010177747798337946,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x4cef9bfa402d6732508d8d923e2f035b4c88c8b37e78b1aedb496f2ea81d9ef9",
+                "txHash": "0x4cef9bfa402d6732508d8d923e2f035b4c88c8b37e78b1aedb496f2ea81d9ef9",
+                "side": "sell",
+                "trader": "0xcD9B…3767",
+                "traderAddress": "0xcd9b584eef4178c198d771beb63987b564243767",
+                "amountUsd": 42.30028307739966,
+                "tokens": 4126499.7899023937,
+                "priceUsd": 0.000010276578452331358,
+                "at": "2026-09-21T02:38:03.000Z"
+              },
+              {
+                "id": "0x2ec79729ba203b0d98763e038c6171d94037d6950e37c9555add737dce037257",
+                "txHash": "0x2ec79729ba203b0d98763e038c6171d94037d6950e37c9555add737dce037257",
+                "side": "sell",
+                "trader": "0x5AeC…57ee",
+                "traderAddress": "0x5aece58dbe83d6c274190b455f24d31d714857ee",
+                "amountUsd": 169.67380402330804,
+                "tokens": 16140803.704301372,
+                "priceUsd": 0.000010538449929052128,
+                "at": "2026-09-21T02:38:03.000Z"
+              }
+            ],
+            "isBlocked": false,
+            "safety": {
+              "isSpam": true,
+              "isVerified": false,
+              "isBlocked": false,
+              "verdict": "Spam",
+              "features": [
+                "UNSTABLE_TOKEN_PRICE",
+                "UNVERIFIED_CONTRACT"
+              ]
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rate": {
+    "url": "https://api-production-9f93.up.railway.app/v1/prices/eth-usd",
+    "at": "2026-09-21T15:43:25.322Z",
+    "receivedAt": "2026-09-21T15:43:25.448Z",
+    "status": 200,
+    "data": {
+      "usdPerEth": 2738.745,
+      "asOf": "2026-09-21T15:43:07.434Z",
+      "source": "coinbase"
+    }
+  },
+  "xyzUI": {
+    "at": "2026-09-21T15:43:25.504Z",
+    "url": "https://pools.xyz/t/robinhood/0xf99a8228f9f4000cf501c9cb1ab8d3534485cad9",
+    "title": "TERMINATOR | $48.7K FDV | pools.xyz",
+    "text": "pools.trade is now pools.xyz\nLearn more\nOpens Pools on X in a new tab\n/\nLaunch\nConnect\nHome\nTERMINATOR\nTERMINATOR\n0xf99a…cAD9\nRobinhood Chain\nInstant Launch\nFDV\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nK\n$48.7K\n$48,744.2867069565\nup\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n%\n2.9%\n2.89227164393282%\nover the past 24 hours\nPrice\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n₅\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n$0.0₅6998\n$0.00000699867179064808\n24H volume\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nK\n$129.6K\n$129,631.825868436\nLiquidity\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nK\n$6.9K\n$6,866.03578948633\nHolders\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n87\n87\nJump to the holders table\nO\n$48.7K\nH\n$48.7K\nL\n$48.7K\nC\n$48.7K\nFDV\n5M\n\t\n\t\n\n\n\n\t\n\t\n\n\t\n\t\nVolume\n5M\n1H\n6H\nAll\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n$0.00\n$0\n0 buys\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n0\n·\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n$0.00\n$0\n0 sells\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n0\n·\n$\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n$0.00\n$0\nActivity\n87 holders\nTop traders\nAll trades\nAny size\nAny time\nBuy 528.9K\n528,925.379160463\n TERMINATOR\n0x39df…8795\n· $47.3K\n$47,311.2968850712\n FDV\n$3.60\n$3.60195483120561\nSep 20\nSell 814.7K\n814,678.496695058\n TERMINATOR\n0x4337…c271\n· $47.3K\n$47,306.4250487961\n FDV\n$5.52\n$5.51964561510647\nSep 20\nSell 3.59M\n3,588,150.59679312\n TERMINATOR\n0x8CC2…7e17\n· $47.5K\n$47,515.3078137191\n FDV\n$24.42\n$24.4179399592395\nSep 20\nSell 3.84M\n3,835,486.36580542\n TERMINATOR\n0x877a…b0DA\n· $47.9K\n$47,870.5793723569\n FDV\n$26.30\n$26.296257215546\nSep 20\nSell 4.12M\n4,117,985.99602436\n TERMINATOR\n0x2e93…bd20\n· $48.3K\n$48,255.6502251669\n FDV\n$28.46\n$28.4601935606617\nSep 20\nSell 3.97M\n3,969,736.18812967\n TERMINATOR\n0x7a1c…3cC2\n· $48.7K\n$48,651.9617943466\n FDV\n$27.66\n$27.6609324119803\nSep 20\nSell 3.79M\n3,789,732.24602475\n TERMINATOR\n0xfB26…331b\n· $49.0K\n$49,036.7920495494\n FDV\n$26.62\n$26.6155466462555\nSep 20\nSell 4.17M\n4,166,866.32148396\n TERMINATOR\n0x57F8…72c7\n· $49.4K\n$49,436.2168526143\n FDV\n$29.50\n$29.5025536414935\nSep 20\nSell 4.29M\n4,288,103.35206072\n TERMINATOR\n0x1b3B…3634\n· $49.9K\n$49,866.0040786495\n FDV\n$30.62\n$30.6248961400694\nSep 20\nSell 91.4K\n91,410.5492430492\n TERMINATOR\n0xbC77…B82D\n· $50.1K\n$50,090.5822391838\n FDV\n$0.66\n$0.655778554894082\nSep 20\nSell 4.25M\n4,248,373.76929912\n TERMINATOR\n0xA26C…d5B3\n· $50.3K\n$50,315.1062340225\n FDV\n$30.61\n$30.6144121622298\nSep 20\nSell 4.23M\n4,231,919.69084487\n TERMINATOR\n0x09A3…9f03\n· $50.8K\n$50,757.7458197406\n FDV\n$30.76\n$30.7641242136666\nSep 20\nSell 4.04M\n4,043,308.94419258\n TERMINATOR\n0xfeA4…06c0\n· $51.2K\n$51,195.3170635854\n FDV\n$29.65\n$29.6464007964276\nSep 20\nSell 4.26M\n4,259,580.94459873\n TERMINATOR\n0x4FB7…A8Ed\n· $51.6K\n$51,640.1095153491\n FDV\n$31.50\n$31.5035026274461\nSep 20\nSell 3.87M\n3,874,478.53685341\n TERMINATOR\n0x74B0…a828\n· $52.1K\n$52,081.4326675391\n FDV\n$28.90\n$28.9002096938225\nSep 20\n1\n2\n3\n4\n…\nInfo\nLaunched by\n0x6D1d…400E\nContract address\n0xf99a…cAD9\nLiquidity\nView pool\nDescription\n\nTERMINATOR\n\nBuy\nSell\nBuy TERMINATOR\n$25\n$100\n$500\nBuy amount in USD\n$\nTERMINATOR\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nM\n \nT\nE\nR\nM\nI\nN\nA\nT\nO\nR\n14.29M TERMINATOR\n14,288,425.4314689 TERMINATOR\nPay with\nETH\nMax slippage\nAuto\nMax slippage percent\n%\nAuto\n2.5%\nYou pay\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n \nE\nT\nH\n0.0365 ETH\n0.0365267721221142 ETH\nYou receive\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n.\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n0\n1\n2\n3\n4\n5\n6\n7\n8\n9\nM\n \nT\nE\nR\nM\nI\nN\nA\nT\nO\nR\n14.29M TERMINATOR\n14,288,425.4314689 TERMINATOR\nConnect a wallet\nTERMINATOR isn’t traded on leading U.S. centralized exchanges.\n\n© 2026 Uniswap Labs\n\nTerms of Service\nPrivacy Policy\n\nPools is intended for memecoins — speculative assets whose value is driven by market sentiment, not by any team’s efforts. Uniswap Labs has not independently reviewed or verified any token or project displayed. The appearance of a token on this interface does not constitute a recommendation, endorsement, or solicitation.\n\nHow Instant Launches work\n\nAll liquidity locked forever. Fees auto-compound.\n\nPriced on a bonding curve\n\nThe earlier you buy, the more TERMINATOR you get. Every purchase pushes token price higher.\n\nInstantly tradable\n\nTokens can be bought and sold onchain immediately. No graduation threshold or added fees.\n\nContinue\nLearn more\n\nUniswap Labs has not independently reviewed or verified any token or project displayed. The appearance of a token on this interface does not constitute a recommendation, endorsement, or solicitation. All token information is provided by third-party sources and is displayed for informational purposes only. Any use of Pools for an asset other than a meme coin is prohibited. CCA is available for other types of assets, subject to other applicable terms and conditions."
+  }
+}
