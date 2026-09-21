@@ -421,19 +421,23 @@ test("chart ranges from the panel head with no select", async ({
   await expect(
     control.getByRole("button", { name: "All", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
-  /* The head is one row: price, unit, change and, on the desktop, the
-     control; the phone wraps the control under the windows. */
-  const [price, unit, change, segmented] = await Promise.all(
+  /* The head is one row: price, unit and, on the desktop, the control; the
+     labelled changes stay on the window row, and the phone wraps the control
+     under them. */
+  await expect(
+    panel.locator(".live-price-heading .change"),
+  ).toHaveCount(0);
+  await expect(panel.locator(".live-changes .change").first()).toBeVisible();
+  const [price, unit, segmented] = await Promise.all(
     [
       ".pool-chart-head .price",
       ".pool-chart-head .price small",
-      ".pool-chart-head .live-price-heading .change",
       ".pool-chart-head .segmented",
     ].map((selector) => page.locator(selector).boundingBox()),
   );
   for (const box of testInfo.project.name === "desktop"
-    ? [unit, change, segmented]
-    : [unit, change])
+    ? [unit, segmented]
+    : [unit])
     expect(box!.y, "on the price's row").toBeLessThan(price!.y + price!.height);
   expect(
     await page.evaluate(

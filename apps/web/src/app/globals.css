@@ -5158,7 +5158,7 @@ main {
   }
 }
 /* The pool page laid out like the export: a 56px header, a chart panel whose
-   98px head holds the price, its unit and signed change, the windows the read
+   98px head holds the price, its unit, the labelled window changes the read
    API sent and the range control, then 95px stat cards. Every slot below is
    sized at first paint and never resized by a response. */
 .pool-page.page .page-heading {
@@ -5293,13 +5293,6 @@ main {
   font-weight: 400;
   letter-spacing: 0;
   color: var(--color-text-3);
-}
-.pool-page .live-price-heading .change {
-  font-size: 15px;
-  font-weight: 600;
-}
-.pool-page .live-price-heading > [data-pending] {
-  min-width: 6ch;
 }
 .pool-page .live-changes {
   display: flex;
