@@ -56,10 +56,11 @@ export interface CreatorFeeBackfillSummary {
   stopped: boolean;
 }
 /** Every batch still holding an unknown flag, oldest first: its retained
- * launch logs resolved and stored on the pools whose recorded launch they
- * name. A batch that fills fewer pools than it was selected for is reported
- * rather than hidden, since the difference is a pool whose catalog row does
- * not match its retained log. */
+ * launch logs are resolved, restricted to the exact pools selected for that
+ * batch, and stored on the pools whose recorded launch they name. A batch
+ * that fills fewer pools than it was selected for is reported rather than
+ * hidden, since the difference is a pool whose catalog row does not match its
+ * retained log. */
 export async function runCreatorFeeBackfill(
   deps: CreatorFeeBackfillDeps,
 ): Promise<CreatorFeeBackfillSummary> {
@@ -67,7 +68,7 @@ export async function runCreatorFeeBackfill(
   const batches = await deps.batches();
   const summary: CreatorFeeBackfillSummary = {
     batches: batches.length,
-    unresolved: batches.reduce((n, b) => n + b.pools, 0),
+    unresolved: batches.reduce((n, b) => n + b.poolIds.length, 0),
     filled: 0,
     stopped: false,
   };
@@ -76,21 +77,24 @@ export async function runCreatorFeeBackfill(
       summary.stopped = true;
       break;
     }
-    const rows = resolveCreatorFees(await deps.logs(batch.batchEnd));
+    const launches = resolveCreatorFees(await deps.logs(batch.batchEnd));
+    const selected = new Set(batch.poolIds);
+    const rows = launches.filter((row) => selected.has(row.poolId));
+    const unresolved = batch.poolIds.length;
     const filled = await deps.save(rows);
     summary.filled += filled;
     log({
       event: "creator_fees_batch",
       batchEnd: batch.batchEnd,
-      launches: rows.length,
-      unresolved: batch.pools,
+      launches: launches.length,
+      unresolved,
       filled,
     });
-    if (filled < batch.pools)
+    if (filled < unresolved)
       log({
         event: "creator_fees_batch_short",
         batchEnd: batch.batchEnd,
-        unresolved: batch.pools,
+        unresolved,
         filled,
       });
   }

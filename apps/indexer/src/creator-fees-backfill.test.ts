@@ -1,6 +1,8 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   decodeFunctionData,
   encodeFunctionResult,
@@ -25,8 +27,6 @@ import {
   creatorFeeCoverage,
   migrate,
   releaseLedgerWriter,
-  retainedLaunchLogs,
-  saveCreatorFees,
   unresolvedCreatorFeeBatches,
   type CreatorFeeRow,
   type RetainedLaunchLog,
@@ -44,6 +44,7 @@ const S = addr(0x5555),
   TA = addr(0x1111),
   TB = addr(0x2222);
 const launchTopic = toEventSelector(launchEvent);
+const execFileAsync = promisify(execFile);
 const log = (
   n: number,
   deployment: InstantDeployment = instantDeployments[0],
@@ -92,11 +93,16 @@ test("the backfill walks every batch holding an unknown flag, reports a batch th
   const events: Record<string, unknown>[] = [];
   const deps = (signal?: AbortSignal) => ({
     batches: async () => [
-      { batchEnd: 99, pools: 1 },
-      { batchEnd: 199, pools: 2 },
+      { batchEnd: 99, poolIds: [word(101)] },
+      {
+        batchEnd: 199,
+        poolIds: [word(102), word(103)],
+      },
     ],
     logs: async (batchEnd: number) =>
-      batchEnd === 99 ? [log(1)] : [log(2), log(3, instantDeployments[1])],
+      batchEnd === 99
+        ? [log(1), log(4)]
+        : [log(2), log(3, instantDeployments[1])],
     save: async (rows: CreatorFeeRow[]) => {
       let n = 0;
       for (const r of rows)
@@ -193,18 +199,39 @@ async function database(t: TestContext) {
   });
   await migrate(db);
   for (let i = 0; i < 600; i++) {
-    if (await acquireLedgerWriter(db)) return db;
+    if (await acquireLedgerWriter(db)) return { db, schema };
     await new Promise((r) => setTimeout(r, 100));
   }
   throw Error("ledger writer lock unavailable");
 }
 
+async function backfillCommand(schema: string, flags: string[] = []) {
+  const { stdout } = await execFileAsync(
+    "pnpm",
+    ["creator-fees:backfill", "run", ...flags],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        DATABASE_URL: process.env.TEST_DATABASE_URL,
+        PGOPTIONS: [process.env.PGOPTIONS, `-c search_path=${schema}`]
+          .filter(Boolean)
+          .join(" "),
+      },
+    },
+  );
+  return stdout
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 test(
-  "Postgres: the backfill restores, from the launch stream's retained logs alone, the flags the lane wrote at discovery",
+  "Postgres: the command writes only its exact scope from a shared retained batch",
   dbTest,
   async (t) => {
-    const db = await database(t);
-    // Two launches the pass records in two batches: A from a fees-on
+    const { db, schema } = await database(t);
+    // Two launches the pass records in the same batch: A from a fees-on
     // strategy, B from the fees-off strategy of the same generation.
     const a = fakeLaunch({
       block: start,
@@ -213,7 +240,7 @@ test(
       transactionHash: word(0xa1),
     });
     const b = fakeLaunch({
-      block: start + 150,
+      block: start + 50,
       token: TB,
       sender: S,
       transactionHash: word(0xb1),
@@ -255,52 +282,103 @@ test(
     assert.deepEqual(await flags(), written);
     assert.deepEqual(await unresolvedCreatorFeeBatches(db, "all"), []);
 
-    // Rows written before migration 021 hold no flag.
+    // Rows written before migration 021 hold no flag. B has a deep
+    // publication, so the default command selects only A even though both
+    // launches share the retained batch.
     await db.query("UPDATE indexed_pools SET creator_fees=NULL");
+    const batch = (
+      await db.query(
+        "SELECT block_hash FROM indexer_batches WHERE chain_id=4663 AND stream_key='launches:agg:v1' AND to_block=$1",
+        [start + 99],
+      )
+    ).rows[0];
+    await db.query(
+      "INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,snapshot,source_kind,source_stream,source_batch) VALUES(4663,$1,$2,$3,2000,$4,'indexed','launches:agg:v1',$2)",
+      [
+        b.poolId,
+        start + 99,
+        batch.block_hash,
+        {
+          schemaVersion: 1,
+          chainId: 4663,
+          toBlock: start + 99,
+          blockHash: batch.block_hash,
+          toTimestamp: 2000,
+          markets: [{ id: b.poolId }],
+        },
+      ],
+    );
     assert.deepEqual(await creatorFeeCoverage(db), {
       pools: 2,
       known: 0,
       unknown: 2,
-      unknownUnpublished: 2,
+      unknownUnpublished: 1,
     });
     assert.deepEqual(await unresolvedCreatorFeeBatches(db, "unpublished"), [
-      { batchEnd: start + 99, pools: 1 },
-      { batchEnd: start + 199, pools: 1 },
+      { batchEnd: start + 99, poolIds: [a.poolId] },
     ]);
-    const events: Record<string, unknown>[] = [];
-    const run = () =>
-      runCreatorFeeBackfill({
-        batches: () => unresolvedCreatorFeeBatches(db, "unpublished"),
-        logs: (batchEnd) => retainedLaunchLogs(db, batchEnd),
-        save: (rows) => saveCreatorFees(db, rows),
-        log: (e) => events.push(e),
-      });
-    assert.deepEqual(await run(), {
-      batches: 2,
-      unresolved: 2,
-      filled: 2,
-      stopped: false,
-    });
-    assert.deepEqual(await flags(), written);
+    const events = await backfillCommand(schema);
     assert.deepEqual(
-      events.map((e) => [e.event, e.batchEnd, e.launches, e.filled]),
-      [
-        ["creator_fees_batch", start + 99, 1, 1],
-        ["creator_fees_batch", start + 199, 1, 1],
-      ],
+      events.find((event) => event.event === "creator_fees_summary"),
+      {
+        event: "creator_fees_summary",
+        batches: 1,
+        unresolved: 1,
+        filled: 1,
+        stopped: false,
+      },
     );
-    // Idempotent: nothing left to fill, nothing rewritten.
-    assert.deepEqual(await run(), {
-      batches: 0,
-      unresolved: 0,
-      filled: 0,
-      stopped: false,
+    assert.deepEqual(await flags(), [written[0], [b.poolId, null]]);
+    assert.deepEqual(await creatorFeeCoverage(db), {
+      pools: 2,
+      known: 1,
+      unknown: 1,
+      unknownUnpublished: 0,
     });
+
+    // --all then selects and fills the published peer, without replacing A.
+    const allEvents = await backfillCommand(schema, ["--all"]);
+    assert.deepEqual(
+      allEvents.find((event) => event.event === "creator_fees_summary"),
+      {
+        event: "creator_fees_summary",
+        batches: 1,
+        unresolved: 1,
+        filled: 1,
+        stopped: false,
+      },
+    );
+    assert.deepEqual(await flags(), written);
+    assert.deepEqual(await backfillCommand(schema, ["--all"]), [
+      {
+        event: "creator_fees_coverage",
+        pools: 2,
+        known: 2,
+        unknown: 0,
+        unknownUnpublished: 0,
+      },
+      { event: "creator_fees_configured", scope: "all" },
+      {
+        event: "creator_fees_summary",
+        batches: 0,
+        unresolved: 0,
+        filled: 0,
+        stopped: false,
+      },
+      {
+        event: "creator_fees_coverage",
+        pools: 2,
+        known: 2,
+        unknown: 0,
+        unknownUnpublished: 0,
+      },
+    ]);
     assert.deepEqual(await creatorFeeCoverage(db), {
       pools: 2,
       known: 2,
       unknown: 0,
       unknownUnpublished: 0,
     });
+    assert.deepEqual(await unresolvedCreatorFeeBatches(db, "all"), []);
   },
 );

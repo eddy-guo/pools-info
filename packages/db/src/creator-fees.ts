@@ -19,7 +19,7 @@ export interface CreatorFeeRow {
 }
 export interface UnresolvedCreatorFeeBatch {
   batchEnd: number;
-  pools: number;
+  poolIds: string[];
 }
 
 const word = (v: unknown) => typeof v === "string" && /^0x[\da-f]{64}$/.test(v);
@@ -49,7 +49,7 @@ export async function creatorFeeCoverage(db: Client) {
 }
 
 /** The launch-stream batches whose retained logs can fill an unknown flag,
- * oldest first, with the count of such pools in each; a pool counts under
+ * oldest first, with the exact pools selected in each; a pool counts under
  * its oldest retained source only. `scope` "unpublished" names only pools
  * with no deep publication; "all" every unknown flag. A pool whose launch
  * reached the catalog through another source only is left out: it has no
@@ -60,7 +60,8 @@ export async function unresolvedCreatorFeeBatches(
 ): Promise<UnresolvedCreatorFeeBatch[]> {
   const rows = (
     await db.query(
-      `SELECT batch_end::text AS batch_end, count(*)::int AS pools FROM (
+      `SELECT batch_end::text AS batch_end,
+              array_agg(pool_id ORDER BY pool_id) AS pool_ids FROM (
          SELECT p.pool_id, min(s.batch_end) AS batch_end
            FROM indexed_pools p
            JOIN pool_launch_sources s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.stream_key=$1
@@ -72,7 +73,15 @@ export async function unresolvedCreatorFeeBatches(
       [ledgerLaunchStreamIdentity.key, scope === "all"],
     )
   ).rows;
-  return rows.map((r) => ({ batchEnd: Number(r.batch_end), pools: r.pools }));
+  return rows.map((r) => {
+    const poolIds = r.pool_ids;
+    if (!Array.isArray(poolIds) || poolIds.some((poolId) => !word(poolId)))
+      throw Error("Invalid unresolved creator fee pools");
+    return {
+      batchEnd: Number(r.batch_end),
+      poolIds,
+    };
+  });
 }
 
 /** The launch logs one launch-stream batch retains, read as the only part of

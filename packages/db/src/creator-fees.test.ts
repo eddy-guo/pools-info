@@ -201,10 +201,10 @@ test("Postgres: migration 021 stores the creator-fee flag an observation carries
   // Only the launch stream's own batches hold retained logs: pool 104 came
   // through discovery:v1 alone and is never selected.
   assert.deepEqual(await unresolvedCreatorFeeBatches(db, "unpublished"), [
-    { batchEnd: 9, pools: 1 },
+    { batchEnd: 9, poolIds: [word(100)] },
   ]);
   assert.deepEqual(await unresolvedCreatorFeeBatches(db, "all"), [
-    { batchEnd: 9, pools: 1 },
+    { batchEnd: 9, poolIds: [word(100)] },
   ]);
   await assert.rejects(retainedLaunchLogs(db, 9), /retains no logs/);
   await assert.rejects(retainedLaunchLogs(db, 8), /not found/);
