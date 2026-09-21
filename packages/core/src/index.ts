@@ -23,3 +23,4 @@ export * from "./visual-theme";
 export * from "./observed-market";
 export * from "./wallet-history-types";
 export * from "./eth-price-types";
+export * from "./ledger-provenance";

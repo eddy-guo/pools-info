@@ -21,6 +21,7 @@ import {
 } from "@pools/core";
 import { getStream, type Client, type Stream } from "./index";
 import { discoveryV2Identity } from "./discovery";
+import { writeLedgerTransferProvenance } from "./ledger-provenance";
 
 export const ledgerStream = Object.freeze({
   key: "ledger:agg:v1",
@@ -929,6 +930,13 @@ export async function applyLedgerBatch(
           batch.to,
         ],
       );
+    await writeLedgerTransferProvenance(
+      db,
+      batch.to,
+      { swaps, transfers, registry: [...byPool.values()] },
+      events,
+      new Map([...byPool.values()].map((p) => [p.poolId, p.ref])),
+    );
     // Prune: the live ring by age and size, the journal beyond the newest batches.
     await pruneLedgerLiveTrades(db, { through: batch.timestamp });
     await db.query(
