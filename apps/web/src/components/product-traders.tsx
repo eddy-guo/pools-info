@@ -181,6 +181,7 @@ function DesktopTraderRow({
           <AddressChip
             address={w.address}
             href={`/wallet/${w.address}/?window=${window}`}
+            avatarSize="monogram"
           />
         ) : pending ? (
           "Pending"
@@ -263,10 +264,10 @@ function DesktopTraderRow({
   );
 }
 
-/** The 97px phone row: rank, identity and a copy control on one line with
+/** The 97px phone row: rank, identity and address controls on one line with
     PnL over ROI at the right, then the win/loss bar with volume and hold on
-    a second line. The follow toggle sits over the top-right corner so it
-    never competes with the identity/PnL row for width. */
+    a second line. The follow toggle sits in the second line's free right edge
+    so it never competes with the monogram, address or PnL for width. */
 function MobileTraderCard({
   w,
   index,
@@ -296,6 +297,7 @@ function MobileTraderCard({
               <AddressChip
                 address={w.address}
                 href={`/wallet/${w.address}/?window=${window}`}
+                avatarSize="monogram"
               />
             </div>
             <div className="mobile-trader-actions">
@@ -399,6 +401,7 @@ function PodiumCard({
           <AddressChip
             address={w.address}
             href={`/wallet/${w.address}/?window=${window}`}
+            avatarSize="monogram"
           />
         ) : (
           <span className="trader-podium-card-identity" data-pending={pending}>

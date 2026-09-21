@@ -102,11 +102,11 @@ test("leaderboard leads with signed realized, ROI and W/L over secondary columns
   const cards = page.locator(".mobile-trader");
   const listPositive = positive - LIST_OFFSET,
     listNegative = negative - LIST_OFFSET;
-  await expect(cards.nth(listPositive).locator(".mobile-trader-pnl")).toBeVisible();
+  await expect(
+    cards.nth(listPositive).locator(".mobile-trader-pnl"),
+  ).toBeVisible();
   const roiUp = cards.nth(listPositive).locator(".mobile-trader-pnl .change");
-  const roiDown = cards
-    .nth(listNegative)
-    .locator(".mobile-trader-pnl .change");
+  const roiDown = cards.nth(listNegative).locator(".mobile-trader-pnl .change");
   await expect(roiUp).toHaveText(`+${payload.items[positive].roi.toFixed(2)}%`);
   await expect(roiDown).toHaveText(
     `${payload.items[negative].roi.toFixed(2)}%`,
@@ -240,18 +240,45 @@ test("the podium shows a rank medallion, chip, PnL, realized/ROI line, win/loss 
     "10px",
   );
 
-  const chip = await typography(
-    first.locator(".address-chip .mono").first(),
-  );
+  const chip = await typography(first.locator(".address-chip .mono").first());
   expect(chip.fontSize).toBe("14px");
   expect(chip.fontWeight).toBe(500);
+  const address = await first
+    .locator(".address-chip-link")
+    .getAttribute("title");
+  expect(address).toMatch(/^0x[0-9a-f]{40}$/);
+  const podiumIdentity = await first
+    .locator(".address-chip .avatar")
+    .evaluate((node) => {
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return {
+        initials: node.getAttribute("data-initials"),
+        hidden: node.getAttribute("aria-hidden"),
+        pseudo: getComputedStyle(node, "::before").content,
+        background: style.backgroundColor,
+        color: style.color,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  expect(podiumIdentity).toMatchObject({
+    initials: address!.slice(2, 4).toUpperCase(),
+    hidden: "true",
+    width: 30,
+    height: 30,
+  });
+  expect(podiumIdentity.pseudo).toContain(podiumIdentity.initials);
 
-  const pnl = await typography(first.locator(".trader-podium-card-pnl .number"));
+  const pnl = await typography(
+    first.locator(".trader-podium-card-pnl .number"),
+  );
   expect(pnl.fontSize).toBe("27px");
   expect(pnl.fontWeight).toBe(600);
-  await expect(
-    first.locator(".trader-podium-card-pnl .number"),
-  ).toHaveCSS("letter-spacing", "-0.81px"); // -0.03em of 27px
+  await expect(first.locator(".trader-podium-card-pnl .number")).toHaveCSS(
+    "letter-spacing",
+    "-0.81px",
+  ); // -0.03em of 27px
 
   const meta = await typography(first.locator(".trader-podium-card-meta"));
   expect(meta.fontSize).toBe("12.5px");
@@ -262,14 +289,31 @@ test("the podium shows a rank medallion, chip, PnL, realized/ROI line, win/loss 
     .evaluate((node) => node.getBoundingClientRect().height);
   expect(barHeight).toBe(5);
 
-  const record = await typography(
-    first.locator(".trader-podium-card-record"),
-  );
+  const record = await typography(first.locator(".trader-podium-card-record"));
   expect(record.fontSize).toBe("12px");
   expect(record.fontWeight).toBe(400);
   await expect(first.locator(".trader-podium-card-record")).toHaveText(
     /^\d+W · \d+L\d+ trades$/,
   );
+
+  // The board uses the wallet header's canonical monogram rather than a
+  // second identity algorithm.
+  await page.goto(`/wallet/${address}/?window=All`);
+  const walletIdentity = await page
+    .locator(".page-heading .avatar")
+    .evaluate((node) => {
+      const style = getComputedStyle(node);
+      return {
+        initials: node.getAttribute("data-initials"),
+        background: style.backgroundColor,
+        color: style.color,
+      };
+    });
+  expect(walletIdentity).toEqual({
+    initials: podiumIdentity.initials,
+    background: podiumIdentity.background,
+    color: podiumIdentity.color,
+  });
 });
 
 test("the flat list starts at rank 4 when the podium shows, with a bar and relative age in every row", async ({

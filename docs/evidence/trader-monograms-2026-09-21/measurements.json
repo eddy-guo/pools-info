@@ -1,0 +1,20 @@
+{
+  "viewports": {
+    "desktop": { "width": 1440, "height": 1000, "deviceScaleFactor": 1 },
+    "mobile": { "width": 390, "height": 1000, "deviceScaleFactor": 1 }
+  },
+  "before": {
+    "source": "https://www.poolsinfo.com/traders/?window=All",
+    "podiumAvatarPx": 16,
+    "rowAvatarPx": 16,
+    "pseudoContent": "none"
+  },
+  "after": {
+    "source": "built fixture deployment",
+    "podiumAvatarPx": 30,
+    "rowAvatarPx": 30,
+    "pseudoContent": "address-derived initials",
+    "mobileIdentityToPnlGapPx": 9.75,
+    "layoutShift": { "desktop": 0, "mobile": 0 }
+  }
+}

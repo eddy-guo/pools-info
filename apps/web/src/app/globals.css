@@ -4264,6 +4264,19 @@ main {
 .address-chip .avatar::before {
   content: none;
 }
+/* Trader identities need to read at a glance. This is the same shared Avatar
+   monogram as the wallet header, fitted to a list row without changing the
+   chip's address, copy or explorer controls. */
+.address-chip[data-avatar-size="monogram"] .avatar {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 11px;
+}
+.address-chip[data-avatar-size="monogram"] .avatar::before {
+  content: attr(data-initials);
+}
 .address-chip-actions {
   position: relative;
   display: inline-flex;
@@ -5798,6 +5811,7 @@ a.wallet-top-pool:hover {
     min-height: calc(22 * 101px);
   }
   .ranked-traders .leaderboard-panel .mobile-trader {
+    position: relative;
     height: 101px;
     overflow: auto;
   }
@@ -5885,10 +5899,13 @@ a.wallet-top-pool:hover {
   .mobile-trader-foot-stat .number {
     color: var(--color-text-2);
   }
-  /* A 44px touch target without growing the row: the same -14px trick the
-     launch row's sender link uses for its own 44px target. */
-  .mobile-trader-actions .follow-toggle {
-    margin: -14px 0;
+  /* Keep the 44px follow target in the second line's free right edge. The
+     readable monogram, address controls and longest PnL can then share the
+     heading without colliding or growing the reserved row. */
+  .ranked-traders .leaderboard-panel .mobile-trader-actions .follow-toggle {
+    position: absolute;
+    right: 14px;
+    bottom: 0;
   }
   .mobile-trader-heading .address-chip-link,
   .mobile-trader-heading .address-chip .icon-button {

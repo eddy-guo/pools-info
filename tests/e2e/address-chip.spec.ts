@@ -1,15 +1,14 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 /* The screener sender, leaderboard trader and creators sender cells share one
-   address chip: identicon, both-end truncation opening the address's page,
+   address chip: identity tile, both-end truncation opening the address's page,
    copy with a "Copied" confirmation and an explorer link, at the row's own
-   height on both viewports. Creators uses the chip's `size="large"` variant
-   (a 28px identicon, the short address on both the name and address lines,
+   height on both viewports. Traders opt into its readable 30px monogram.
+   Creators uses the chip's `size="large"` variant (a 28px identity tile, the
+   short address on both the name and address lines,
    since no name field exists anywhere in this app), so its shape and
-   identicon size diverge from the screener's and leaderboard's shared small
-   chip by design, matching the export's row. Its phone rows, which replace
-   the table wherever the table cannot fit, carry the shared small chip as the
-   leaderboard's phone rows do. */
+   identity size diverges from the screener's compact chip by design, matching
+   the export's row. Its phone rows keep the compact chip. */
 
 const explorer = "https://robinhoodchain.blockscout.com/address/";
 const truncated = /^0x[0-9a-f]{4}…[0-9a-f]{4}$/;
@@ -23,7 +22,7 @@ type Cell = {
   href: RegExp;
   /** Row or card height that must survive the chip, per project. */
   height: { desktop: number; mobile: number };
-  /** 16px everywhere except the creators table's 28px identity tile. */
+  /** The identity tile's rendered size. */
   identicon: { desktop: number; mobile: number };
   /** Copy/explorer tap target on mobile: 44px where the row has room for
       it, the chip's own compact size on the screener's 104px card. */
@@ -53,7 +52,7 @@ const cells: Cell[] = [
     },
     href: /^\/wallet\/0x[0-9a-f]{40}\/\?window=All$/,
     height: { desktop: 60, mobile: 101 },
-    identicon: { desktop: 16, mobile: 16 },
+    identicon: { desktop: 30, mobile: 30 },
     tapTarget: 44,
   },
   {
@@ -92,6 +91,8 @@ function measure(page: Page, rows: string) {
       const link = chip.querySelector<HTMLAnchorElement>(".address-chip-link")!;
       const copy = chip.querySelector("button")!;
       const open = chip.querySelector<HTMLAnchorElement>("a[target]")!;
+      const follow = row.querySelector(".follow-toggle");
+      const foot = row.querySelector(".mobile-trader-foot");
       const rowBox = box(row);
       const inside = (node: Element) => {
         const b = box(node);
@@ -108,10 +109,24 @@ function measure(page: Page, rows: string) {
         href: link.getAttribute("href") ?? "",
         title: link.title,
         identicon: box(chip.querySelector(".avatar")!).height,
+        initials: chip.querySelector(".avatar")!.getAttribute("data-initials"),
+        pseudo: getComputedStyle(chip.querySelector(".avatar")!, "::before")
+          .content,
+        avatarHidden: chip
+          .querySelector(".avatar")!
+          .getAttribute("aria-hidden"),
         explorer: open.href,
         copyLabel: copy.getAttribute("aria-label"),
         copyBox: box(copy),
         openBox: box(open),
+        pnlGap: row.querySelector(".mobile-trader-pnl")
+          ? box(row.querySelector(".mobile-trader-pnl")!).left - box(chip).right
+          : null,
+        followGap:
+          follow && foot
+            ? box(follow).left -
+              Math.max(...[...foot.children].map((child) => box(child).right))
+            : null,
         fits: inside(link) && inside(copy) && inside(open),
       };
     });
@@ -156,6 +171,29 @@ for (const cell of cells) {
       expect(chip.identicon, "the identity tile's size").toBe(
         cell.identicon[project],
       );
+      if (cell.name === "leaderboard trader") {
+        const initials = chip.title.slice(2, 4).toUpperCase();
+        expect(chip.initials, "initials come from the wallet address").toBe(
+          initials,
+        );
+        expect(chip.pseudo, "the monogram is visibly drawn").toContain(
+          initials,
+        );
+        expect(
+          chip.avatarHidden,
+          "the address remains the accessible name",
+        ).toBe("true");
+        if (project === "mobile")
+          expect(
+            chip.pnlGap,
+            "the address controls stay clear of the PnL",
+          ).toBeGreaterThanOrEqual(0);
+        if (project === "mobile")
+          expect(
+            chip.followGap,
+            "the footer figures stay clear of the follow control",
+          ).toBeGreaterThanOrEqual(0);
+      }
       expect(chip.copyLabel).toBe("Copy address");
       expect(chip.fits, "the chip stays inside its row").toBe(true);
       if (project === "mobile") {
@@ -215,7 +253,7 @@ for (const cell of cells) {
   });
 }
 
-test("the screener and leaderboard cells render one shared small chip, creators its own larger one", async ({
+test("the shared address chip gives only traders a readable monogram", async ({
   page,
 }, testInfo) => {
   const project = testInfo.project.name as "desktop" | "mobile";
@@ -241,8 +279,16 @@ test("the screener and leaderboard cells render one shared small chip, creators 
   }
   expect(
     shapeByCell.get("screener sender"),
-    "screener and leaderboard share the small chip markup",
+    "screener and leaderboard keep the same address and action markup",
   ).toBe(shapeByCell.get("leaderboard trader"));
+  await page.goto(cells[1].url[project]);
+  await expect(
+    page.locator(cells[1].rows[project]).first().locator(".address-chip"),
+  ).toHaveAttribute("data-avatar-size", "monogram");
+  await page.goto(cells[0].url[project]);
+  await expect(
+    page.locator(cells[0].rows[project]).first().locator(".address-chip"),
+  ).not.toHaveAttribute("data-avatar-size", "monogram");
   if (project === "desktop")
     expect(
       shapeByCell.get("creators sender"),
@@ -251,6 +297,6 @@ test("the screener and leaderboard cells render one shared small chip, creators 
   else
     expect(
       shapeByCell.get("creators sender"),
-      "the creators phone row carries the shared small chip, as the leaderboard's does",
+      "the creators phone row keeps the shared compact chip markup",
     ).toBe(shapeByCell.get("screener sender"));
 });
