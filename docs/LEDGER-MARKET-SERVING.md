@@ -294,6 +294,13 @@ is measured and not traded), and every other launch keeps the broad rule.
 `1h` is a window whole hours cannot answer, so a covered launch is unmeasured
 under it. A ledger that has folded nothing yet changes no byte.
 
+Once the ledger has folded, the response's existing `coverage` envelope is
+the ledger coverage shared with wallet and leaderboard reads: its cursor time,
+the count of pools with a trade in `agg_pool_state`, and
+`pnlScope=attributed_positions_all_pools`. `broadMarketCutoff` remains specific
+to a broad fallback cutoff and can therefore still be null. Before the ledger
+has folded, the accounting coverage envelope remains byte for byte unchanged.
+
 `boughtOwnLaunch` for a ledger-served launch is the ledger's attributed
 evidence: a position of the launch sender in that pool with `buys > 0`
 (`agg_positions`), that is, a buy attributed to that address by the

@@ -304,6 +304,13 @@ ranked population capped at 100 (rows beyond rank 100 never appear, in any
 window or sort), and `nextOffset` is null once `offset + limit` reaches 100
 even when the real population is larger.
 
+When the aggregate ledger is selected and has folded, `coverage` is the same
+ledger envelope used by the wallet and trader leaderboard routes: its cursor
+time, its `agg_pool_state` count, and
+`pnlScope=attributed_positions_all_pools`. `broadMarketCutoff` remains the
+cutoff for the broad fallback source only, so it can still be null. Before the
+ledger has folded, the legacy accounting coverage is unchanged.
+
 The statement is one pass: explore's whole-catalog rank (`rankedFlowCtes` in
 `broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`,
 here with its `ownBuys` column: deep own-buy evidence rides the deep-trades

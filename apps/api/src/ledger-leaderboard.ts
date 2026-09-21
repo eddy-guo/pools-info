@@ -65,20 +65,23 @@ export async function ledgerWindowRefresh(
     ranked: Number(refresh.ranked),
   };
 }
-/** The ledger's coverage as every wallet read serves it: the catalog's count,
- * the pools with a trade, and the window's cutoff as both cut times. */
+/** The ledger's coverage as every wallet and creator read serves it: the
+ * catalog's count, the pools with a trade, and the selected cutoff as both
+ * cut times. A caller that already read the catalog can pass its count to
+ * avoid repeating the same whole-catalog count. */
 export async function ledgerCoverage(
   query: ReadQuery,
   asOf: number,
+  catalogPools?: number,
 ): Promise<AnalyticsCoverage> {
-  const catalog = await catalogSummary(query);
+  const catalogCount = catalogPools ?? (await catalogSummary(query)).count;
   const processed = (
     await query(
       `SELECT count(*)::int AS count FROM agg_pool_state WHERE chain_id=4663`,
     )
   ).rows[0];
   return {
-    catalogPools: catalog.count,
+    catalogPools: catalogCount,
     processedPools: processed.count,
     asOf,
     oldestAsOf: asOf,

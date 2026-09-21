@@ -12,6 +12,7 @@ import {
 } from "./broad-explore";
 import { catalogCte, type ReadQuery } from "./catalog-read";
 import { catalogPool } from "./explore-read";
+import { ledgerCoverage } from "./ledger-leaderboard";
 import {
   ledgerCut,
   ledgerWindowHour,
@@ -55,7 +56,10 @@ export async function readCreators(
   await query("SET LOCAL jit = off");
   const broadCut = await broadExploreCut(query);
   const ledger = source === "ledger" ? await ledgerCut(query) : null;
-  const coverage = await accountingCoverage(query),
+  const accounting = await accountingCoverage(query),
+    coverage = ledger
+      ? await ledgerCoverage(query, ledger.asOf, accounting.catalogPools)
+      : accounting,
     window = options.window ?? "All",
     sort = options.sort ?? "launches",
     direction = options.direction === "asc" ? "ASC" : "DESC",
@@ -65,7 +69,7 @@ export async function readCreators(
   // cursor, the window's first hour and its start block, as explore binds
   // them; the page's limit and offset follow.
   const values: unknown[] = [
-    windowFrom(coverage, window),
+    windowFrom(accounting, window),
     broadCut?.block ?? null,
     broadWindowStart(broadCut, window),
     broadCut?.startBlock ?? null,

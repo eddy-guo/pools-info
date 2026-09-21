@@ -20,7 +20,8 @@ const S = 23467030,
   LB = S + 8000,
   LATER = S + 9500,
   H = 500000,
-  T = H * 3600 + 1800;
+  T = H * 3600 + 1800,
+  ACCOUNTING_T = T - 3600;
 /** pool, sender, launch block, launch batch, deep publication (window volume
  * and through block; null: never published), ledger hours (hour, trades,
  * volume). Sender 201 is the creator the ledger changes: P1 is published and
@@ -152,14 +153,14 @@ test(
             word(launch.id),
             launch.deep.through,
             word(launch.deep.through),
-            T,
+            ACCOUNTING_T,
             generatedAt,
             {
               schemaVersion: 1,
               chainId: 4663,
               toBlock: launch.deep.through,
               blockHash: word(launch.deep.through),
-              toTimestamp: T,
+              toTimestamp: ACCOUNTING_T,
               markets: [market],
             },
           ],
@@ -173,7 +174,7 @@ test(
             word(launch.deep.through),
             launch.block,
             launch.block - S + 1000,
-            T,
+            ACCOUNTING_T,
             generatedAt,
             market,
           ],
@@ -191,7 +192,7 @@ test(
             word(launch.id),
             word(1000 + launch.id),
             launch.deep.through - 1,
-            T - 100,
+            ACCOUNTING_T - 100,
             launch.deep.volume.toString(),
             wallet,
             wallet === null ? null : { flags: ["unknown_basis"] },
@@ -203,6 +204,7 @@ test(
       const before = strip(await read("broad"));
       assert.deepEqual(strip(await read("ledger")), before);
       assert.equal(before.note, creatorsNote);
+      assert.equal(before.coverage.asOf, ACCOUNTING_T);
       assert.deepEqual(
         before.items.map((r) => [
           Number(BigInt(r.address)),
@@ -283,6 +285,16 @@ test(
       assert.deepEqual(strip(await read("broad")), before);
       const all = await read("ledger");
       assert.equal(all.note, ledgerCreatorsNote);
+      assert.deepEqual(strip(all).coverage, {
+        catalogPools: launches.length,
+        processedPools: 3,
+        asOf: T,
+        oldestAsOf: T,
+        complete: false,
+        registryExhaustive: false,
+        pnlScope: "attributed_positions_all_pools",
+      });
+      assert.equal(all.broadMarketCutoff, null);
       const rows = (response: CreatorsResponse) =>
         response.items.map((r) => [
           Number(BigInt(r.address)),
@@ -301,9 +313,10 @@ test(
         [203, 1, 0, 0, null, null, null, null, null],
       ]);
       assert.equal(all.total, 3);
-      // Every other field is what the broad source serves.
-      const { items: _i, note: _n, ...rest } = strip(all);
-      const { items: _bi, note: _bn, ...beforeRest } = before;
+      // Every other field is what the broad source serves. The coverage is
+      // intentionally the ledger's own envelope once its rows are selected.
+      const { items: _i, note: _n, coverage: _c, ...rest } = strip(all);
+      const { items: _bi, note: _bn, coverage: _bc, ...beforeRest } = before;
       assert.deepEqual(rest, beforeRest);
       // A window is the whole hours ending with the newest: P2's hour is
       // outside 24h, so it is measured at zero and not traded, and 201's
