@@ -28,14 +28,14 @@ a farm, tax treatment or a missing cost basis by itself.
 Classification v1 in `packages/db/src/ledger-provenance.ts` uses only local,
 recorded evidence:
 
-| Class               | Evidence and meaning                                                                                  |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `mint_burn`         | ERC-20 zero-address endpoint, distinct from the token contract                                        |
-| `token_contract`    | Endpoint equals the registered token that emitted the log                                             |
-| `launcher`          | Launcher contract in the verified Instant deployment registry                                         |
-| `wrapper_or_router` | The existing chain router binding; no arbitrary `tx.to` is promoted to a wrapper                      |
-| `protocol`          | Verified PoolManager, Instant strategy or fee splitter                                                |
-| `unregistered`      | Address outside the fixed registry; may be a wallet, wrapper or farm. No financial class is guessed    |
+| Class               | Evidence and meaning                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `mint_burn`         | ERC-20 zero-address endpoint, distinct from the token contract                                      |
+| `token_contract`    | Endpoint equals the registered token that emitted the log                                           |
+| `launcher`          | Launcher contract in the verified Instant deployment registry                                       |
+| `wrapper_or_router` | The existing chain router binding; no arbitrary `tx.to` is promoted to a wrapper                    |
+| `protocol`          | Verified PoolManager, Instant strategy or fee splitter                                              |
+| `unregistered`      | Address outside the fixed registry; may be a wallet, wrapper or farm. No financial class is guessed |
 
 Registry roles cite `robinhood-instant-v2` and the strategy whose recorded
 getters establish the address (`docs/DEPLOYMENT-REGISTRY.md` and

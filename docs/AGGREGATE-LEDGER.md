@@ -459,8 +459,9 @@ Decision D1 (wrapper-routed wallets on the board) is a query predicate on
 `flags`; D2 (zero-cost inflows in ranking) was taken at the fold on 18 Sep
 2026, `zero_cost_inflow` and `unattributed_outflow` each excluding the
 position (migration 022 re-flagged the rows written before it, zeroed their
-hours and pre-images and rebuilt the windows in one transaction; recording
-each transfer's counterparty is a filed follow-up); D3's flip adds a
+hours and pre-images and rebuilt the windows in one transaction; transfer
+counterparty observations are described in `docs/TRANSFER-PROVENANCE.md`);
+D3's flip adds a
 per-sale table fed by `LedgerSale`; D4 and D5 belong to phases 5 and 4. The pass leaves the
 stream in mode `tip` once a fresh archive height leaves a gap under
 `ledgerPassPolicy.catchUpMargin` (2,000 blocks) past the 128-block safety lag,
