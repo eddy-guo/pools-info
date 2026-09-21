@@ -198,6 +198,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div>
           <span>Robinhood Chain · Values in ETH</span>
         </div>
+        {/* lightweight-charts' attribution notice (its NOTICE file, verbatim)
+            with the link its README requires on a page users see; the on-chart
+            logo in candles.tsx is off in its place. */}
+        <p className="footer-credit">
+          TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc.{" "}
+          <a
+            href="https://www.tradingview.com/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            https://www.tradingview.com/
+          </a>
+        </p>
       </footer>
     </div>
   );

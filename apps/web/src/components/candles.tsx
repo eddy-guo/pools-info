@@ -203,7 +203,10 @@ export function Candles(
         textColor: visualTheme.muted,
         fontFamily: "Geist, system-ui",
         fontSize: 11,
-        attributionLogo: true,
+        // The library's own on-chart mark is off: its licence's notice-and-
+        // link requirement is met by the site footer's credit line
+        // (`.footer-credit` in shell.tsx) instead.
+        attributionLogo: false,
         panes: {
           separatorColor: visualTheme.line,
           separatorHoverColor: visualTheme.lineHover,

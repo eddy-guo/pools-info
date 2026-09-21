@@ -82,6 +82,20 @@ for (const route of routes) {
     await expect(page.locator(".footer")).toContainText(
       "Independent analytics. Not affiliated with Uniswap Labs.",
     );
+    // The candle chart's library is credited here, not on the chart: its
+    // licence wants its NOTICE line and a link to tradingview.com on a page
+    // users see, so the on-chart logo is off (candles.tsx) and this plain
+    // line stands in on every route at every width - text only, no mark.
+    const credit = page.locator(".footer .footer-credit");
+    await expect(credit).toBeVisible();
+    await expect(credit).toHaveText(
+      "TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc. https://www.tradingview.com/",
+    );
+    await expect(credit.getByRole("link")).toHaveAttribute(
+      "href",
+      "https://www.tradingview.com/",
+    );
+    await expect(credit.locator("img, svg")).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
