@@ -955,8 +955,9 @@ main {
   color: var(--faint);
   font-size: 12px;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 20px;
+  gap: 8px 20px;
 }
 .footer > div {
   display: flex;
@@ -969,6 +970,18 @@ main {
 }
 .footer a:hover {
   color: var(--accent);
+}
+/* The chart library's attribution line: its own full-width row under the two
+   ends, in the footer's muted text, with the link inline in the sentence
+   rather than the block the footer's other links are. */
+.footer-credit {
+  width: 100%;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.footer-credit a {
+  display: inline;
 }
 .empty-state {
   text-align: center;

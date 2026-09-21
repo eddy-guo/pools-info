@@ -307,6 +307,9 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
     panel.locator(".interactive-chart canvas").first(),
   ).toBeVisible();
   await expect(panel.locator("select")).toHaveCount(0);
+  // The library's own attribution mark (an `a#tv-attr-logo` it lays over the
+  // volume pane) is off; the footer's credit line carries its notice and link.
+  await expect(page.locator("#tv-attr-logo")).toHaveCount(0);
   const rows = await page.evaluate(() => {
     const rect = (selector: string) =>
       document.querySelector(selector)!.getBoundingClientRect().toJSON();
