@@ -461,14 +461,11 @@ test.describe("the pool header fits the viewport", () => {
     const requested = new Promise<void>((resolve) => {
       detailRequested = resolve;
     });
-    await page.route(
-      `**/api/product/pools/${measured.id}/*`,
-      async (route) => {
-        detailRequested();
-        await gate;
-        await route.continue();
-      },
-    );
+    await page.route(`**/api/product/pools/${measured.id}/*`, async (route) => {
+      detailRequested();
+      await gate;
+      await route.continue();
+    });
 
     await page.goto(`/?view=new&q=${measured.token}`);
     const row = page
