@@ -16,7 +16,8 @@ type Listener = () => void;
 
 let sources = 0;
 let reported: LiveFeedState = "unknown";
-let snapshot: Snapshot = { hasSource: false, state: "unknown" };
+const serverSnapshot: Snapshot = { hasSource: false, state: "unknown" };
+let snapshot = serverSnapshot;
 const listeners = new Set<Listener>();
 
 function recompute() {
@@ -55,5 +56,5 @@ export function getLiveFeedSnapshot(): Snapshot {
 }
 
 export function getServerLiveFeedSnapshot(): Snapshot {
-  return { hasSource: false, state: "unknown" };
+  return serverSnapshot;
 }
