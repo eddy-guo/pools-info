@@ -457,9 +457,7 @@ test("a served wallet whose curve is not sent says so, with no Trades tab and it
       inner.y >= outer.y &&
       inner.x + inner.width <= outer.x + outer.width &&
       inner.y + inner.height <= outer.y + outer.height;
-    expect(within(boxes.time, boxes.readout), JSON.stringify(boxes)).toBe(
-      true,
-    );
+    expect(within(boxes.time, boxes.readout), JSON.stringify(boxes)).toBe(true);
     expect(within(boxes.readout, boxes.region), JSON.stringify(boxes)).toBe(
       true,
     );
@@ -536,6 +534,38 @@ async function withNoLiveData(page: Page) {
     route.fulfill({ status: 503, json: unavailable }),
   );
 }
+
+test("the page retries a warming product read after its Retry-After delay", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      await route.fulfill({
+        status: 503,
+        json: { ...unavailable, reason: "warming" },
+        headers: { "retry-after": "5", "cache-control": "no-store" },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward(4_999);
+  expect(calls).toBe(1);
+  await page.clock.fastForward(1);
+  await expect.poll(() => calls).toBe(2);
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".wallet-activity [data-row='resolved']").first(),
+  ).toBeAttached();
+});
 
 for (const [name, url, heading] of [
   ["home", "/", "Pools unavailable"],
