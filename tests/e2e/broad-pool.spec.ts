@@ -573,7 +573,12 @@ for (const sample of [
         ).candleLabels(canvas as HTMLCanvasElement),
       );
     await expect.poll(axisLabels).toContain(sample.axisClose);
-    const change = page.locator(".live-price-heading .change");
+    await expect(page.locator(".live-price-heading .change")).toHaveCount(0);
+    const changeWindow = page.locator(".live-changes > span").filter({
+      has: page.getByText("24h", { exact: true }),
+    });
+    await expect(changeWindow).toHaveCount(1);
+    const change = changeWindow.locator(".change");
     await expect(change).toHaveText("+300.00%");
     const units = page.locator(".header-actions .unit-toggle");
     await units.getByRole("button", { name: "USD", exact: true }).focus();
