@@ -159,19 +159,17 @@ export function PoolHeading({
   );
 }
 /**
- * The chart panel's head: the price with its unit and signed change, the
- * windows the read API sent, and the range control on the same row.
+ * The chart panel's head: the price with its unit, the explicitly labelled
+ * window changes the read API sent, and the range control on the same row.
  */
 export function PoolChartHead({
   price,
-  change,
   windows,
   pending = false,
   range,
   onRange,
 }: {
   price?: string | null;
-  change?: number | null;
   windows: { window: LiveWindow; change: number }[];
   pending?: boolean;
   range: ChartRange;
@@ -184,9 +182,6 @@ export function PoolChartHead({
       <div>
         <div className="live-price-heading">
           <Price wei={price} pending={pending} />
-          <PendingValue pending={pending}>
-            <Change value={change} />
-          </PendingValue>
         </div>
         <div className="live-changes">
           {pending ? (
@@ -263,7 +258,6 @@ export function ObservedPoolDetail({
       ? poolWindow(accountedMarket, snapshot, "24h")
       : null;
   const price = accountedMarket ? accountedMarket.priceWei : market?.priceWei;
-  const change = accountedMarket ? stat?.change : market?.change;
   /* The volume and the trade count under it come from one source: the
      observed market's window when there is one, else the accounted cut. */
   const volume = market ? market.volumeWei : stat?.volumeWei;
@@ -337,7 +331,6 @@ export function ObservedPoolDetail({
         {(candles || chart) && (
           <PoolChartHead
             price={price}
-            change={change}
             windows={windowChanges(accountedMarket, snapshot, market)}
             pending={pending}
             range={range}

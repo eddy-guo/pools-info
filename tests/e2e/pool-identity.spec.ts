@@ -297,7 +297,7 @@ async function expectHeaderFits(page: Page, token: string, project: Project) {
 }
 
 /** The chart panel as the export lays it out: its head holds the price, the
-    ETH unit, the signed change and the range control on one row with no
+    ETH unit and the range control on one row with no
     select anywhere in the panel; the panel opens high enough for the whole
     canvas to show without scrolling on the desktop; the stat cards under it
     are the export's 95px, and nothing follows them. */
@@ -317,7 +317,6 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
       panel: rect(".pool-chart-panel"),
       price: rect(".pool-chart-head .price"),
       unit: rect(".pool-chart-head .price small"),
-      change: rect(".pool-chart-head .live-price-heading .change"),
       windows: [...document.querySelectorAll(".live-changes > span")].map(
         (node) => ({
           text: node.textContent,
@@ -349,16 +348,12 @@ async function expectChartPanelLikeExport(page: Page, project: Project) {
   await expect(page.locator(".pool-chart-head .price")).toContainText("ETH");
   await expect(
     page.locator(".pool-chart-head .live-price-heading .change"),
-  ).toHaveText(/^[+-]\d+\.\d{2}%$/);
+  ).toHaveCount(0);
   const centre = (box: { y: number; height: number }) => box.y + box.height / 2;
-  for (const [name, box] of [
-    ["unit", rows.unit],
-    ["change", rows.change],
-  ] as const)
-    expect(
-      Math.abs(centre(box) - centre(rows.price)),
-      `the ${name} sits on the price's row`,
-    ).toBeLessThanOrEqual(4);
+  expect(
+    Math.abs(centre(rows.unit) - centre(rows.price)),
+    "the unit sits on the price's row",
+  ).toBeLessThanOrEqual(4);
   // Every window's figure is legible without sideways scrolling: on the
   // desktop the four share the price panel's one line; on a phone that line
   // cannot hold them, so they take two rows of two rather than a clipped
