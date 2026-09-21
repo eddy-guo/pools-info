@@ -87,17 +87,31 @@ Rows written before the column are filled by `pnpm creator-fees:backfill run`
 (`apps/indexer/src/creator-fees-backfill.ts`), which makes no chain request:
 the launch stream `launches:agg:v1` retains every verified launch log in its
 batch evidence, so the fill reads those logs back per batch, resolves each
-emitting strategy through the same registry, and writes the flag onto the pool
-whose recorded launch transaction and block the log names, only where the flag
-is still null. `run` fills the pools with no deep publication (the ones whose
-page shows the stat as unavailable); `run --all` fills every unknown flag;
-`status` counts both. It is idempotent and resumable, and a batch that fills
-fewer pools than it was selected for is logged as `creator_fees_batch_short`
-rather than hidden. On a copy of the production-shaped database (62,858 pools,
-716 launch batches, Postgres 18) `run --all` took 8 s, filled all 62,858 with
-no short batch, and every one of the 1,364 deep publications' flags agreed
-with the derived value: 59,392 launches from fees-on strategies, 3,466 from
-fees-off ones.
+emitting strategy through the same registry, restricts the result to the exact
+pool ids selected in that batch, and writes the flag onto the pool whose
+recorded launch transaction and block the log names, only where the flag is
+still null. `run` fills the pools with no deep publication (the ones whose page
+shows the stat as unavailable); `run --all` fills every unknown flag; `status`
+counts both. It is idempotent and resumable, and a batch that fills fewer pools
+than it was selected for is logged as `creator_fees_batch_short` rather than
+hidden. On a copy of the production-shaped database (62,858 pools, 716 launch
+batches, Postgres 18) `run --all` took 8 s, filled all 62,858 with no short
+batch, and every one of the 1,364 deep publications' flags agreed with the
+derived value: 59,392 launches from fees-on strategies, 3,466 from fees-off
+ones.
+
+The first production `run` selected 61,705 unpublished pools but the old write
+passed every launch from those retained batches, so it filled 62,807 rows. The
+extra 1,102 were published pools, and their derived flags agreed with all 1,102
+publications. The exact-pool filter above closes that scope mismatch. The 21 Sep
+daily `LedgerPostgres` backup then had 63,744 pools, 63,482 known flags and 262
+unknown flags, all published and all selectable by `run --all` across six
+retained batches (pool-id set md5 `3b4a407cc2b0977b854fa09a3e8308c3`). Before
+running it on production, confirm that `LedgerPostgres` is still the active
+target, open the proxy only for the command window, run `status`, require zero
+unpublished unknowns and an exact 262-row `--all` plan (or reconcile any drift),
+then verify `unknown=0`, no short batch and unchanged existing flags before
+closing the proxy. The retired `Postgres` service is not a target.
 
 ## What the api reads, and what came across from the old database
 
