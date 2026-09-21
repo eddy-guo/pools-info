@@ -262,10 +262,56 @@ function indexerOrigin() {
  * answer: the surface that asked shows its unavailable state and no figures,
  * exactly as the ETH price does, rather than any stored stand-in.
  */
+export type ProductUnavailableReason = "warming";
 export class ProductUnavailableError extends Error {
-  constructor(readonly retryAfter = 30) {
+  constructor(
+    readonly retryAfter = "30",
+    readonly reason?: ProductUnavailableReason,
+  ) {
     super("Live data is unavailable.");
   }
+}
+/** Only valid HTTP Retry-After values cross the public proxy boundary. */
+function validRetryAfter(value: string | null) {
+  if (value === null) return null;
+  if (/^\d+$/.test(value)) return value;
+  return Number.isNaN(Date.parse(value)) ? null : value;
+}
+/** Interpret the one transient state the browser can act on. Other upstream
+ * failures retain the existing generic 30-second unavailable contract. */
+async function productUnavailable(response: Response) {
+  if (response.status !== 503) return new ProductUnavailableError();
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null);
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    body.reason !== "warming"
+  )
+    return new ProductUnavailableError();
+  return new ProductUnavailableError(
+    validRetryAfter(response.headers.get("retry-after")) ?? "30",
+    "warming",
+  );
+}
+/** Serialize the product outage contract at the Next route boundary. */
+export function productUnavailableResponse(error: ProductUnavailableError) {
+  return Response.json(
+    {
+      error: "data_unavailable",
+      ...(error.reason ? { reason: error.reason } : {}),
+    },
+    {
+      status: 503,
+      headers: {
+        "Retry-After": error.retryAfter,
+        "Cache-Control": "no-store",
+      },
+    },
+  );
 }
 /** The read API's own 503 contract for the Coinbase-backed price, carried to
  * the browser unchanged: no cached or fabricated rate stands in for it. */
@@ -346,7 +392,7 @@ export async function readProduct<T>(
     /* The read API's own 404 is an answer, not an outage: this pool, wallet or
        sale is outside its coverage, and the page says so. */
     if (response.status === 404) throw Error("Outside available coverage");
-    if (!response.ok) throw new ProductUnavailableError();
+    if (!response.ok) throw await productUnavailable(response);
     try {
       const data = await response.json();
       if (!data || typeof data !== "object" || Array.isArray(data))

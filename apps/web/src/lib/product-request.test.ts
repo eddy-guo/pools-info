@@ -4,6 +4,7 @@ import { productRequest } from "./product-request";
 import {
   ProductUnavailableError,
   preloadedProduct,
+  productUnavailableResponse,
   readProduct,
 } from "./product-server";
 import {
@@ -292,11 +293,14 @@ test("share card options round-trip through the query the modal and the route sh
   // The export design does not honour the notional option (its headline is
   // the realized amount already), so the option never reaches its URL and a
   // hand-written one reads as off: one image, not two identical ones.
-  assert.deepEqual(parseCardOptions(cardQuery({ ...chosen, design: "export" })), {
-    ...chosen,
-    design: "export",
-    notional: false,
-  });
+  assert.deepEqual(
+    parseCardOptions(cardQuery({ ...chosen, design: "export" })),
+    {
+      ...chosen,
+      design: "export",
+      notional: false,
+    },
+  );
   assert.equal(
     cardUrl(`0x${"a".repeat(40)}`, { ...chosen, design: "export" }),
     `/cards/0x${"a".repeat(40)}.png?window=7d&theme=mint&anon=1&design=export`,
@@ -389,9 +393,7 @@ test("share card figures are signed, amount-free without notional and never plac
   const exportHero = cardExportHero(wallet);
   assert.deepEqual(exportHero, { value: "-0.02336 ETH", tone: "down" });
   assert.ok(
-    !Object.values(cardExportTrio(wallet, "ORBIT")).includes(
-      exportHero!.value,
-    ),
+    !Object.values(cardExportTrio(wallet, "ORBIT")).includes(exportHero!.value),
   );
   assert.deepEqual(
     cardExportHero({ ...wallet, realizedWei: "1046600000000000000" }),
@@ -1009,6 +1011,75 @@ test("eth/usd price keeps the read API's outage contract and never falls back", 
     return true;
   });
   assert.equal(requested, "https://index.example/v1/prices/eth-usd");
+});
+
+test("product proxy preserves warming reason and Retry-After while generic outages keep their fallback", async (t) => {
+  withIndexer(t, "https://index.example");
+  let upstream = Response.json(
+    { error: "data_temporarily_unavailable", reason: "warming" },
+    { status: 503, headers: { "Retry-After": "5" } },
+  );
+  t.mock.method(globalThis, "fetch", async () => upstream.clone());
+
+  let failure: ProductUnavailableError | undefined;
+  await assert.rejects(
+    readProduct(["explore"], new URLSearchParams("limit=25")),
+    (error: unknown) => {
+      assert.ok(error instanceof ProductUnavailableError);
+      failure = error;
+      return true;
+    },
+  );
+  const warming = productUnavailableResponse(failure!);
+  assert.equal(warming.status, 503);
+  assert.equal(warming.headers.get("retry-after"), "5");
+  assert.deepEqual(await warming.json(), {
+    error: "data_unavailable",
+    reason: "warming",
+  });
+
+  upstream = Response.json(
+    { error: "data_temporarily_unavailable" },
+    { status: 503, headers: { "Retry-After": "5" } },
+  );
+  failure = undefined;
+  await assert.rejects(
+    readProduct(["explore"], new URLSearchParams("limit=25")),
+    (error: unknown) => {
+      assert.ok(error instanceof ProductUnavailableError);
+      failure = error;
+      return true;
+    },
+  );
+  const unavailable = productUnavailableResponse(failure!);
+  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable.headers.get("retry-after"), "30");
+  assert.deepEqual(await unavailable.json(), { error: "data_unavailable" });
+});
+
+test("product proxy preserves either valid Retry-After form for warming", async (t) => {
+  withIndexer(t, "https://index.example");
+  let retryAfter = "120";
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { error: "data_temporarily_unavailable", reason: "warming" },
+      { status: 503, headers: { "Retry-After": retryAfter } },
+    ),
+  );
+  for (const expected of ["120", "Sun, 06 Nov 1994 08:49:37 GMT"]) {
+    retryAfter = expected;
+    let failure: ProductUnavailableError | undefined;
+    await assert.rejects(
+      readProduct(["explore"], new URLSearchParams("limit=25")),
+      (error: unknown) => {
+        assert.ok(error instanceof ProductUnavailableError);
+        failure = error;
+        return true;
+      },
+    );
+    const response = productUnavailableResponse(failure!);
+    assert.equal(response.headers.get("retry-after"), expected);
+  }
 });
 
 test("eth/usd price validates the upstream shape before trusting it", async (t) => {

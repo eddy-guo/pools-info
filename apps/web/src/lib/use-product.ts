@@ -19,12 +19,55 @@ const resource = (path: string) => path.split("?")[0];
 /** Request the trailing-slash form the app serves, rather than paying its 308. */
 const productUrl = (path: string) =>
   `/api/product/${resource(path)}/${path.slice(resource(path).length)}`;
+function retryAfterMilliseconds(value: string | null, now = Date.now()) {
+  if (value === null) return null;
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isSafeInteger(seconds) ? seconds * 1000 : null;
+  }
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
+}
+function waitForRetry(delay: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, delay);
+    const abort = () => {
+      window.clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
 /** One product read through the app's own proxy, on a 12s budget the caller can cut short. */
 export async function fetchProduct<T>(path: string, signal: AbortSignal) {
-  const response = await fetch(productUrl(path), {
-    signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
-    cache: "no-store",
-  });
+  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(12000)]);
+  const request = () =>
+    fetch(productUrl(path), {
+      signal: requestSignal,
+      cache: "no-store",
+    });
+  let response = await request();
+  if (response.status === 503) {
+    const body = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    const delay =
+      body &&
+      typeof body === "object" &&
+      !Array.isArray(body) &&
+      body.reason === "warming"
+        ? retryAfterMilliseconds(response.headers.get("retry-after"))
+        : null;
+    if (delay !== null) {
+      await waitForRetry(delay, requestSignal);
+      response = await request();
+    }
+  }
   /* A 503 is the proxy reporting that it has nothing live to serve; anything
      else it answers with is a real answer about this item. */
   if (!response.ok)

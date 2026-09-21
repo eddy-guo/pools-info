@@ -2,6 +2,7 @@ import { productRequest } from "@/lib/product-request";
 import {
   EthPriceUnavailableError,
   ProductUnavailableError,
+  productUnavailableResponse,
   readEthPrice,
   readProduct,
 } from "@/lib/product-server";
@@ -58,16 +59,7 @@ export async function GET(
        rather than being handed a stored answer it would paint as current. A
        404 still means the read was answered and this item is not covered. */
     if (error instanceof ProductUnavailableError)
-      return Response.json(
-        { error: "data_unavailable" },
-        {
-          status: 503,
-          headers: {
-            "Retry-After": String(error.retryAfter),
-            "Cache-Control": "no-store",
-          },
-        },
-      );
+      return productUnavailableResponse(error);
     return Response.json(
       { error: "This item is outside available saved coverage." },
       { status: 404, headers: { "Cache-Control": "no-store" } },
