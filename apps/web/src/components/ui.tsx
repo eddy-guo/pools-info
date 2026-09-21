@@ -174,18 +174,22 @@ export function AddressLabel({
     app, so the short address fills both the primary and secondary line, the
     same fallback the export itself uses for an address without an ENS name.
     Its badge follows the secondary line, as the export sets it, and stacks
-    beneath it in a column too narrow to hold both. */
+    beneath it in a column too narrow to hold both. `avatarSize="monogram"`
+    keeps the one-line chip but promotes its shared Avatar to a readable 30px
+    monogram. */
 export function AddressChip({
   address,
   href,
   stacked = false,
   size = "small",
+  avatarSize = "compact",
   badge,
 }: {
   address: string;
   href: string;
   stacked?: boolean;
   size?: "small" | "large";
+  avatarSize?: "compact" | "monogram";
   badge?: React.ReactNode;
 }) {
   return (
@@ -193,6 +197,7 @@ export function AddressChip({
       className="address-chip"
       data-stacked={stacked || undefined}
       data-size={size === "large" ? "large" : undefined}
+      data-avatar-size={avatarSize === "monogram" ? "monogram" : undefined}
     >
       <Link className="address-chip-link" href={href} title={address}>
         <Avatar address={address} />
