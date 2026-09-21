@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 /* The export's type, colour and control tokens, measured as computed styles
    on the two screens a user sees first. The counts are the design-gap
    report's acceptance for the token pass: no 900 weight anywhere, one head
-   label style, the 11px text floor outside chips, regular text under a
+   label style, the compact text floor outside chips, regular text under a
    quarter of the screener's visible text, and the unavailable mark in the
    faint token or absent. */
 
@@ -15,8 +15,8 @@ const secondary = [
   "rgb(138, 138, 148)",
   faint,
 ];
-/* Chips keep their 10px caps; the price subscript is the export's own 9.5px. */
-const chips = ".badge, .subtle-badge, kbd, sub";
+/* Compact chips keep their 10px caps; price subscripts are ordinary UI text. */
+const chips = ".badge, .subtle-badge, kbd";
 
 function measure(page: Page) {
   return page.evaluate((chips) => {
@@ -104,6 +104,14 @@ function measure(page: Page) {
           const style = getComputedStyle(el);
           return `${style.fontSize}/${style.fontWeight}`;
         }),
+      screenerSubscripts: [
+        ...document.querySelectorAll(".desktop-pools .price sub"),
+      ]
+        .filter(visible)
+        .map((el) => {
+          const style = getComputedStyle(el);
+          return `${style.fontSize}/${style.fontWeight}`;
+        }),
       avatars: [...document.querySelectorAll(".avatar")]
         .filter(visible)
         .map((el) => ({
@@ -175,6 +183,11 @@ for (const route of ["/", "/traders/?window=All"]) {
     /* The suite serves no live feed, so the rail's rows are whatever the
        first paint left; any name it shows is set like the export's. */
     for (const name of found.rail) expect(name).toBe("12.5px/400");
+    if (route === "/")
+      expect(
+        [...new Set(found.screenerSubscripts)],
+        "price subscripts use the 11.5px UI-text floor",
+      ).toEqual(desktop ? ["11.5px/400"] : []);
     expect(found.avatars.length).toBeGreaterThan(0);
     for (const avatar of found.avatars) {
       expect(avatar.initials).toMatch(/^[0-9A-F]{2}$/);

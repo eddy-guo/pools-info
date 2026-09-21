@@ -408,6 +408,7 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     const first = cards.first();
     await expect(first.locator(".address-chip .mono")).toHaveText(goldShort);
     await expect(first.getByText("BOUGHT OWN")).toBeVisible();
+    await expect(first.getByText("BOUGHT OWN")).toHaveCSS("font-size", "10px");
     await expect(cards.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
     await expect(first.locator(".mobile-creator-launches strong")).toHaveText(
       "14",
@@ -496,6 +497,10 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "500",
   );
   await expect(rowsLocator.first().getByText("BOUGHT OWN")).toBeVisible();
+  await expect(rowsLocator.first().getByText("BOUGHT OWN")).toHaveCSS(
+    "font-size",
+    "10px",
+  );
   await expect(rowsLocator.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
 
   // Launches right-aligned at 14/400.
