@@ -135,7 +135,6 @@ export async function writeLedgerTransferProvenance(
   rows: LedgerBatchRows,
   events: readonly LedgerEvent[],
   pools: ReadonlyMap<string, number>,
-  launchInitiators: ReadonlyMap<string, string>,
 ) {
   const ready = await db.query(
     "SELECT to_regclass('agg_transfer_provenance') IS NOT NULL AS enabled",
@@ -145,7 +144,6 @@ export async function writeLedgerTransferProvenance(
     rows,
     events,
     ledgerTransferProtocols,
-    launchInitiators,
   );
   const hex = (s: string) => s.slice(2);
   for (let i = 0; i < observed.length; i += 1000) {

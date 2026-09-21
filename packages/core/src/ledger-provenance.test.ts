@@ -18,11 +18,12 @@ const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const token = addr(1),
   wallet = addr(2),
-  other = addr(3),
+  otherWallet = addr(3),
   launcher = addr(4),
   router = addr(5),
   manager = addr(6),
-  creator = addr(7);
+  unregisteredWrapper = addr(7),
+  farm = addr(8);
 const poolId = hash(1);
 const rules = { manager, router };
 const registry = [{ poolId, token }];
@@ -46,7 +47,6 @@ const protocols: TransferProtocolRole[] = [
     fromBlock: 5,
   },
 ];
-const launchers = new Map([[poolId, creator]]);
 const transfer = (
   from: string,
   to: string,
@@ -89,7 +89,6 @@ function observe(rows: LedgerBatchRows) {
     rows,
     events,
     protocols,
-    launchers,
   );
   assert.deepEqual(events, before); // Annotation cannot alter the fold's plan.
   const oldState = createLedgerState(),
@@ -100,14 +99,12 @@ function observe(rows: LedgerBatchRows) {
   return { events, provenance };
 }
 
-test("observed endpoint classes distinguish mint, token, launcher, router and launch initiator without inventing an owner", () => {
+test("observed endpoint classes distinguish intrinsic and registered roles without inventing an owner", () => {
   const sources = [
     ledgerZeroAddress,
     token,
     launcher,
     router,
-    creator,
-    other,
     manager,
   ];
   const { provenance } = observe({
@@ -124,15 +121,13 @@ test("observed endpoint classes distinguish mint, token, launcher, router and la
       "token_contract",
       "launcher",
       "wrapper_or_router",
-      "launch_initiator",
-      "unclassified",
       "protocol",
     ],
   );
   assert.ok(
     provenance.every(
       (p) =>
-        p.toRole.class === "unclassified" &&
+        p.toRole.class === "unregistered" &&
         p.value === "900719925474099312345",
     ),
   );
@@ -145,21 +140,62 @@ test("observed endpoint classes distinguish mint, token, launcher, router and la
     reverse.map((p) => p.toRole),
     provenance.map((p) => p.fromRole),
   );
-  assert.ok(reverse.every((p) => p.fromRole.class === "unclassified"));
+  assert.ok(reverse.every((p) => p.fromRole.class === "unregistered"));
   const older = observe({
     registry,
     swaps: [],
     transfers: [transfer(launcher, wallet, 0, "100", 4)],
   });
-  assert.equal(older.provenance[0].fromRole.class, "unclassified");
+  assert.equal(older.provenance[0].fromRole.class, "unregistered");
+});
+
+test("unregistered counterparties retain their addresses without wallet or farm guesses", () => {
+  const endpoints = [otherWallet, unregisteredWrapper, farm];
+  const { provenance } = observe({
+    registry,
+    swaps: [],
+    transfers: [
+      ...endpoints.map((from, i) => transfer(from, wallet, i, "100", 10 + i)),
+      ...endpoints.map((to, i) => transfer(wallet, to, i, "100", 20 + i)),
+    ],
+  });
+  assert.deepEqual(
+    provenance.map((p) => ({
+      from: p.from,
+      fromClass: p.fromRole.class,
+      to: p.to,
+      toClass: p.toRole.class,
+    })),
+    [
+      ...endpoints.map((from) => ({
+        from,
+        fromClass: "unregistered",
+        to: wallet,
+        toClass: "unregistered",
+      })),
+      ...endpoints.map((to) => ({
+        from: wallet,
+        fromClass: "unregistered",
+        to,
+        toClass: "unregistered",
+      })),
+    ],
+  );
+  assert.ok(
+    provenance.every(
+      (p) =>
+        !["other_wallet", "farm"].includes(p.fromRole.class) &&
+        !["other_wallet", "farm"].includes(p.toRole.class),
+    ),
+  );
 });
 
 test("residual provenance retains the complete gross graph instead of pretending net tokens came from the first sender", () => {
   const transfers = [
     transfer(manager, router, 1),
     transfer(router, wallet, 2),
-    transfer(other, wallet, 3, "30"),
-    transfer(wallet, other, 4, "10"),
+    transfer(otherWallet, wallet, 3, "30"),
+    transfer(wallet, otherWallet, 4, "10"),
     transfer(wallet, wallet, 5, "7"),
   ];
   const { events, provenance } = observe({
@@ -186,17 +222,17 @@ test("residual provenance retains the complete gross graph instead of pretending
 
 test("ambiguous swaps retain legs even when the fold applies no net transfer; tx recipient is not a verified wrapper", () => {
   const transfers = [
-    transfer(manager, other, 1, "40"),
-    transfer(other, wallet, 2, "40"),
+    transfer(manager, otherWallet, 1, "40"),
+    transfer(otherWallet, wallet, 2, "40"),
   ];
   const { events, provenance } = observe({
     registry,
-    swaps: [swap({ txTo: other })],
+    swaps: [swap({ txTo: otherWallet })],
     transfers,
   });
   assert.equal(events[0].kind, "unattributed_swap");
   assert.equal(provenance.length, 2);
   assert.ok(provenance.every((p) => p.context === "unattributed_swap"));
-  assert.equal(provenance[0].toRole.class, "unclassified");
-  assert.equal(provenance[1].fromRole.class, "unclassified");
+  assert.equal(provenance[0].toRole.class, "unregistered");
+  assert.equal(provenance[1].fromRole.class, "unregistered");
 });

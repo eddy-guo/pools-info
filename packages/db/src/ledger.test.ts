@@ -323,16 +323,16 @@ test("attended provenance activation preserves old ledger bytes; writes are exac
       source: pool.launchSender.slice(2),
       recipient: W.slice(2),
       token_raw: big.toString(),
-      from_class: "launch_initiator",
-      to_class: "unclassified",
+      from_class: "unregistered",
+      to_class: "unregistered",
       context: "residual",
     },
     {
       source: W.slice(2),
       recipient: V.slice(2),
       token_raw: "20",
-      from_class: "unclassified",
-      to_class: "unclassified",
+      from_class: "unregistered",
+      to_class: "unregistered",
       context: "residual",
     },
   ]);
@@ -419,17 +419,17 @@ test("persisted provenance uses the recorded protocol roles in both directions a
       "SELECT block_number::int,from_class,to_class,from_evidence,to_evidence,classification_version FROM agg_transfer_provenance ORDER BY block_number,log_index",
     )
   ).rows;
-  assert.equal(saved[0].from_class, "unclassified");
-  assert.equal(saved[0].from_evidence, "unclassified");
+  assert.equal(saved[0].from_class, "unregistered");
+  assert.equal(saved[0].from_evidence, "registry:unregistered");
   for (const [i, { role }] of endpoints.entries()) {
     const incoming = saved[1 + i * 2],
       outgoing = saved[2 + i * 2];
     assert.equal(incoming.from_class, role);
     assert.equal(outgoing.to_class, role);
-    assert.equal(incoming.to_class, "unclassified");
-    assert.equal(outgoing.from_class, "unclassified");
+    assert.equal(incoming.to_class, "unregistered");
+    assert.equal(outgoing.from_class, "unregistered");
     assert.equal(incoming.from_evidence, outgoing.to_evidence);
-    assert.notEqual(incoming.from_evidence, "unclassified");
+    assert.notEqual(incoming.from_evidence, "registry:unregistered");
     assert.equal(incoming.classification_version, 1);
     assert.equal(outgoing.classification_version, 1);
   }

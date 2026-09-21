@@ -33,10 +33,9 @@ recorded evidence:
 | `mint_burn`         | ERC-20 zero-address endpoint, distinct from the token contract                                        |
 | `token_contract`    | Endpoint equals the registered token that emitted the log                                             |
 | `launcher`          | Launcher contract in the verified Instant deployment registry                                         |
-| `launch_initiator`  | Endpoint equals this pool's recorded `launch_sender`; initiator only, never creator/beneficiary proof |
 | `wrapper_or_router` | The existing chain router binding; no arbitrary `tx.to` is promoted to a wrapper                      |
 | `protocol`          | Verified PoolManager, Instant strategy or fee splitter                                                |
-| `unclassified`      | Other address; may be a wallet, contract, wrapper or farm. No verified human/EOA class is invented    |
+| `unregistered`      | Address outside the fixed registry; may be a wallet, wrapper or farm. No financial class is guessed    |
 
 Registry roles cite `robinhood-instant-v2` and the strategy whose recorded
 getters establish the address (`docs/DEPLOYMENT-REGISTRY.md` and
@@ -47,7 +46,10 @@ one already used by the ledger, `contracts.router` in `packages/chain/src/events
 also present in the retained launch receipts under `data/registry/`. There is
 no separately verified wrapper list and no new chain/explorer lookup. A future
 classification change needs a new version and its own evidence; existing rows
-are not retagged.
+are not retagged. This fixed registry is the only endpoint-classification
+evidence added by this change. Wrapper and farm detection are separate future
+attribution work, and every row retains its raw `from_address` and `to_address`
+so that work can be performed without guessing now.
 
 ## Write and compatibility boundary
 

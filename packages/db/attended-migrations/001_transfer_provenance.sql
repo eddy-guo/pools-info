@@ -19,9 +19,9 @@ CREATE TABLE agg_transfer_provenance (
   token_raw numeric NOT NULL CHECK (token_raw>=0 AND scale(token_raw)=0),
   context text NOT NULL CHECK (context IN ('residual','unattributed_swap')),
   classification_version smallint NOT NULL CHECK (classification_version=1),
-  from_class text NOT NULL CHECK (from_class IN ('mint_burn','token_contract','launcher','launch_initiator','wrapper_or_router','protocol','unclassified')),
+  from_class text NOT NULL CHECK (from_class IN ('mint_burn','token_contract','launcher','wrapper_or_router','protocol','unregistered')),
   from_evidence text NOT NULL CHECK (length(from_evidence)>0),
-  to_class text NOT NULL CHECK (to_class IN ('mint_burn','token_contract','launcher','launch_initiator','wrapper_or_router','protocol','unclassified')),
+  to_class text NOT NULL CHECK (to_class IN ('mint_burn','token_contract','launcher','wrapper_or_router','protocol','unregistered')),
   to_evidence text NOT NULL CHECK (length(to_evidence)>0),
   PRIMARY KEY (chain_id,tx_hash,log_index),
   FOREIGN KEY (chain_id,stream_key,batch_end) REFERENCES agg_batches(chain_id,stream_key,to_block) ON DELETE CASCADE

@@ -5,15 +5,17 @@ import {
   type LedgerTransfer,
 } from "./ledger";
 
-/** Address roles describe evidence, never ownership, basis or eligibility. */
+/** Address roles describe evidence, never ownership, basis or eligibility.
+ * Classification uses only intrinsic Transfer facts and the supplied fixed
+ * registry. Every other endpoint is unregistered: it may be a wallet, wrapper
+ * or farm, and distinguishing those is separate future attribution work. */
 export type TransferAddressClass =
   | "mint_burn"
   | "token_contract"
   | "launcher"
-  | "launch_initiator"
   | "wrapper_or_router"
   | "protocol"
-  | "unclassified";
+  | "unregistered";
 export interface TransferAddressRole {
   class: TransferAddressClass;
   evidence: string;
@@ -38,7 +40,6 @@ export function ledgerTransferProvenance(
   rows: LedgerBatchRows,
   events: readonly LedgerEvent[],
   protocols: readonly TransferProtocolRole[],
-  launchInitiators: ReadonlyMap<string, string>,
 ): LedgerTransferProvenance[] {
   const key = (tx: string, pool: string) =>
     `${tx.toLowerCase()}:${pool.toLowerCase()}`;
@@ -70,14 +71,7 @@ export function ledgerTransferProvenance(
       return { class: "token_contract", evidence: "transfer:emitting-token" };
     const protocol = known.get(address)?.find((r) => block >= r.fromBlock);
     if (protocol) return { class: protocol.class, evidence: protocol.evidence };
-    if (address === launchInitiators.get(poolId)?.toLowerCase())
-      return {
-        class: "launch_initiator",
-        evidence: "indexed_pools:launch_sender",
-      };
-    // A different address may be a wallet, farm, wrapper or another contract.
-    // No code/ownership evidence is available here; absence from a list is not it.
-    return { class: "unclassified", evidence: "unclassified" };
+    return { class: "unregistered", evidence: "registry:unregistered" };
   };
   return rows.transfers
     .flatMap((t) => {

@@ -464,7 +464,7 @@ export async function applyLedgerBatch(
       throw Error("ledger_noncontiguous_batch");
     // The registry: every pool a row names, resolved to its surrogate.
     const registry = await db.query(
-      "SELECT pool_ref,pool_id,token,launch_sender FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[]))",
+      "SELECT pool_ref,pool_id,token FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[]))",
       [
         [
           ...new Set([
@@ -936,11 +936,6 @@ export async function applyLedgerBatch(
       { swaps, transfers, registry: [...byPool.values()] },
       events,
       new Map([...byPool.values()].map((p) => [p.poolId, p.ref])),
-      new Map(
-        registry.rows
-          .filter((r) => r.launch_sender !== null)
-          .map((r) => [r.pool_id as string, r.launch_sender as string]),
-      ),
     );
     // Prune: the live ring by age and size, the journal beyond the newest batches.
     await pruneLedgerLiveTrades(db, { through: batch.timestamp });
