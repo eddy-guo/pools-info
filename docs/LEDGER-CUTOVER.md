@@ -159,15 +159,24 @@ hold after any change to either path:
 Rollback stays the same pair: `DATABASE_URL` referencing the old `Postgres`,
 `MARKET_SOURCE` deleted, the previous image redeployed.
 
-Two visible consequences of the empty `broad_*` rollups follow from the
-decision above and are not defects: the Live trades rail reads "Feed not
+Two visible consequences of the empty `broad_*` rollups followed from the
+decision above and were not defects: the Live trades rail reads "Feed not
 running", and the creators aggregate (`apps/api/src/creators-read.ts`), which
-measures a launch by the broad rule whatever `MARKET_SOURCE` says, now counts
+measured a launch by the broad rule whatever `MARKET_SOURCE` said, counted
 only launches with a deep publication in its still-trading, volume, median and
-best columns (one creator reads 28 of 28 launches and 207 ETH where the old
-path read 42 of 42 and 743 ETH). Launch counts and ranking are unchanged, and
-no figure is invented for an unmeasured launch. Serving creators from the
-ledger would close that gap.
+best columns (one creator read 28 of 28 launches and 207 ETH where the old
+path read 42 of 42 and 743 ETH, and 28 of the top 100 by launches had no
+measured launch at all). Launch counts and ranking were unchanged, and no
+figure was invented for an unmeasured launch. The creators read has followed
+the switch since https://github.com/eddy-guo/pools-info/pull/115 (`docs/LEDGER-MARKET-SERVING.md`, "The creators
+aggregate"): every launch the ledger covers is measured from its hours and
+state, and on the walk recorded in that PR (production's rule and data beside
+the ledger's on one copy) all 100 of the top 100 by launches are measured on
+every launch (14,727 of 14,727; that creator reads 211 of 211 and 4,154 ETH),
+the Launches column and the launch count at every rank are identical, 43 rows
+swap places within their equal-launch-count tie groups on the served-volume
+tie-break, and own-buy reads true on 85 rows against 59 under the ledger's
+attributed evidence. The live feed stays dark.
 
 ## The trader leaderboard: the old board beside the new
 
