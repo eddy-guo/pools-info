@@ -448,6 +448,57 @@ test.describe("the pool header fits the viewport", () => {
     expect(await shifts(page), "layout shift as the market lands").toBe(0);
   });
 
+  test("the phone chart starts at the export's 529px landmark before and after detail resolves", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile");
+
+    let release!: () => void;
+    let detailRequested!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const requested = new Promise<void>((resolve) => {
+      detailRequested = resolve;
+    });
+    await page.route(
+      `**/api/product/pools/${measured.id}/*`,
+      async (route) => {
+        detailRequested();
+        await gate;
+        await route.continue();
+      },
+    );
+
+    await page.goto(`/?view=new&q=${measured.token}`);
+    const row = page
+      .locator(`a.token-cell[href*="${measured.id}"]`)
+      .filter({ visible: true })
+      .first();
+    await expect(row).toBeVisible();
+    await row.click();
+    await requested;
+    await expect(page.locator(".nullable-pool-page")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    await expect(page.locator(".pool-chart-panel")).toBeVisible();
+    expect(await page.evaluate(() => window.innerWidth)).toBe(390);
+    expect(
+      (await page.locator(".pool-chart-panel").boundingBox())!.y,
+      "pending chart top",
+    ).toBe(529);
+
+    await resetShifts(page);
+    release();
+    await settled(page);
+    expect(
+      (await page.locator(".pool-chart-panel").boundingBox())!.y,
+      "resolved chart top",
+    ).toBe(529);
+    expect(await shifts(page), "layout shift as the detail lands").toBe(0);
+  });
+
   test("on a measured row whose detail is unpublished", async ({
     page,
   }, testInfo) => {
