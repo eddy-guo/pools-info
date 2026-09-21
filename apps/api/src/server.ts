@@ -21,7 +21,12 @@ export function createApi(
 ) {
   const cache = new Map<
     string,
-    { expires: number; body: string; bytes: number }
+    {
+      expires: number;
+      body: string;
+      bytes: number;
+      version: number | undefined;
+    }
   >();
   let cacheBytes = 0;
   function evict(key: string) {
@@ -69,6 +74,13 @@ export function createApi(
         send(200, '{"ok":true}');
         return;
       }
+      // Default-deny every database route, including icons and newly added
+      // routes. Container health and the two independent upstreams keep their
+      // own contracts. Check before caches, coalescing and database work.
+      const databaseRead = !["ready", "history", "eth-price"].includes(
+        request.route,
+      );
+      const version = databaseRead ? reader.assertReady?.() : undefined;
       const retryAfter = (
         request.route === "pool-image" ? imageBudget : readBudget
       )();
@@ -107,7 +119,7 @@ export function createApi(
         request.route !== "following" &&
         request.route !== "trade-share";
       const hit = cache.get(request.cacheKey);
-      if (cacheable && hit && hit.expires > now()) {
+      if (cacheable && hit && hit.expires > now() && hit.version === version) {
         res.setHeader("X-Data-Cache", "HIT");
         send(200, hit.body);
         return;
@@ -130,6 +142,7 @@ export function createApi(
                 : await reader.read(request),
             );
             const bytes = Buffer.byteLength(body);
+            if (databaseRead) reader.assertReady?.(version);
             if (bytes > 8 * 1024 * 1024) throw Error("Response exceeds bound");
             if (cacheable) {
               evict(request.cacheKey);
@@ -139,6 +152,7 @@ export function createApi(
                 expires: now() + cacheMs,
                 body,
                 bytes,
+                version,
               });
               cacheBytes += bytes;
             }
@@ -156,7 +170,9 @@ export function createApi(
         );
       }
       res.setHeader("X-Data-Cache", "MISS");
-      send(200, await result);
+      const body = await result;
+      if (databaseRead) reader.assertReady?.(version);
+      send(200, body);
     } catch (error) {
       const known = error instanceof RequestError;
       // The SQLSTATE names the failure class (57014 is the statement budget)

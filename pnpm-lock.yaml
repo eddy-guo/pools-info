@@ -57,6 +57,9 @@ importers:
 
   apps/indexer:
     dependencies:
+      '@pools/api':
+        specifier: workspace:*
+        version: link:../api
       '@pools/chain':
         specifier: workspace:*
         version: link:../../packages/chain
