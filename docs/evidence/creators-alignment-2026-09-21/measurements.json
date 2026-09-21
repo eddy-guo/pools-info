@@ -1,0 +1,89 @@
+{
+  "route": "/creators/",
+  "desktop": {
+    "viewport": {
+      "width": 1440,
+      "height": 1000,
+      "devicePixelRatio": 1
+    },
+    "before": {
+      "headers": {
+        "Launches": "right",
+        "Still trading": "left",
+        "Volume": "right",
+        "Median": "right",
+        "Best": "left"
+      },
+      "firstRowCells": {
+        "Launches": "right",
+        "Still trading": "left",
+        "Volume": "right",
+        "Median": "right",
+        "Best": "left"
+      }
+    },
+    "after": {
+      "headers": {
+        "Launches": "right",
+        "Still trading": "right",
+        "Volume": "right",
+        "Median": "right",
+        "Best": "right"
+      },
+      "firstRowCells": {
+        "Launches": "right",
+        "Still trading": "right",
+        "Volume": "right",
+        "Median": "right",
+        "Best": "right"
+      },
+      "numericVariant": "tabular-nums",
+      "panelBefore": {
+        "x": 32,
+        "y": 211.0625,
+        "width": 1376,
+        "height": 1665
+      },
+      "panelAfter": {
+        "x": 32,
+        "y": 211.0625,
+        "width": 1376,
+        "height": 1665
+      },
+      "cls": 0
+    }
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844,
+      "devicePixelRatio": 3,
+      "mobile": true,
+      "touch": true
+    },
+    "before": {
+      "rowHeight": 104,
+      "numericVariant": "tabular-nums"
+    },
+    "after": {
+      "rowHeight": 104,
+      "contentFits": true,
+      "launchesRightEdge": 361,
+      "rowContentRightEdge": 361,
+      "numericVariant": "tabular-nums",
+      "panelBefore": {
+        "x": 14,
+        "y": 313.359375,
+        "width": 384,
+        "height": 2702
+      },
+      "panelAfter": {
+        "x": 14,
+        "y": 313.359375,
+        "width": 384,
+        "height": 2702
+      },
+      "cls": 0
+    }
+  }
+}

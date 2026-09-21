@@ -465,6 +465,8 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   await expect(head).toHaveCount(7);
   await expect(head.first()).toHaveCSS("font-size", "11.5px");
   await expect(head.first()).toHaveCSS("font-weight", "400");
+  for (const column of [2, 3, 4, 5, 6])
+    await expect(head.nth(column)).toHaveCSS("text-align", "right");
 
   // Row height, and rank mono 12.5/400 in gold, silver and bronze for 1-3.
   await expect(rowsLocator.first()).toHaveCSS("height", "62px");
@@ -501,6 +503,10 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   await expect(launchesCell).toHaveText("14");
   await expect(launchesCell).toHaveCSS("text-align", "right");
   await expect(launchesCell).toHaveCSS("font-size", "14px");
+  await expect(launchesCell).toHaveCSS(
+    "font-variant-numeric",
+    "tabular-nums",
+  );
 
   // Still trading: the 132x5 bar plus "traded of measured · pct%" beneath it.
   const stillCell = rowsLocator.first().locator("td").nth(3);
@@ -518,6 +524,11 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   );
   await expect(stillCell.locator(".still-trading-label")).toHaveText(
     "9 of 14 · 64%",
+  );
+  await expect(stillCell).toHaveCSS("text-align", "right");
+  await expect(stillCell.locator(".still-trading-label")).toHaveCSS(
+    "font-variant-numeric",
+    "tabular-nums",
   );
   // A creator with no measured launch renders the cell empty, never "N/A".
   const unmeasuredCell = rowsLocator.nth(4).locator("td").nth(3);
@@ -545,12 +556,18 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   await expect(volumeCell).toHaveCSS("font-size", "14px");
   await expect(volumeCell).toHaveCSS("color", "rgb(180, 180, 190)");
   await expect(volumeCell).toHaveCSS("text-align", "right");
+  await expect(volumeCell.locator(".number")).toHaveCSS(
+    "font-variant-numeric",
+    "tabular-nums",
+  );
 
   // Best: the token symbol, mono 12.5/400 muted, linking to the pool.
-  const bestLink = rowsLocator.first().locator("td").nth(6).locator("a");
+  const bestCell = rowsLocator.first().locator("td").nth(6);
+  const bestLink = bestCell.locator("a");
   await expect(bestLink).toHaveText("ORBIT");
   await expect(bestLink).toHaveCSS("font-size", "12.5px");
   await expect(bestLink).toHaveCSS("color", "rgb(138, 138, 148)");
+  await expect(bestCell).toHaveCSS("text-align", "right");
   await expect(bestLink).toHaveAttribute(
     "href",
     poolHref(items[0].bestLaunch!),
