@@ -287,6 +287,149 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   }
 });
 
+test("wallet ETH stats fit at 1200px without moving when the read resolves", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "the 1200px desktop boundary is not a phone surface");
+  await page.setViewportSize({ width: 1200, height: 1000 });
+  await page.addInitScript(() => {
+    const state = { cls: 0 };
+    Object.assign(window, { walletStatShifts: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+
+  let releaseResponse = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await held;
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        wallet: {
+          ...body.wallet,
+          // The production wallet used for the 1200px reproduction. Keeping
+          // its exact wei values here pins the visible precision and ETH unit.
+          realizedWei: "138362590302263003435",
+          unrealizedWei: "0",
+          volumeWei: "302162590302263003435",
+          bestWei: "4743938706539225945",
+        },
+      },
+    });
+  });
+
+  await page.goto(`/wallet/${topWallet}/?window=All`);
+  const grid = page.locator(".wallet-page .live-eight-stats");
+  const workspace = page.locator(".wallet-page .workspace-grid");
+  const pending = {
+    grid: await grid.boundingBox(),
+    workspace: await workspace.boundingBox(),
+  };
+  const valueSlots = grid.locator('> .stat > strong > [data-pending="true"]');
+  await expect(valueSlots).toHaveCount(8);
+
+  releaseResponse();
+  await expect(valueSlots).toHaveCount(0);
+  await expect(
+    grid.locator(
+      ":scope > .stat:nth-child(1) .number, " +
+        ":scope > .stat:nth-child(2) .number, " +
+        ":scope > .stat:nth-child(6) .number, " +
+        ":scope > .stat:nth-child(8) .number",
+    ),
+  ).toHaveText(["+138.36 ETH", "0 ETH", "302.16 ETH", "+4.7439 ETH"]);
+
+  const cards = await grid.locator(".stat").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const value = node.querySelector("strong") as HTMLElement;
+      const number = value.querySelector(".number") as HTMLElement | null;
+      const text = number ?? value;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const valueRect = value.getBoundingClientRect();
+      const textRect = range.getBoundingClientRect();
+      const style = getComputedStyle(value);
+      const numberStyle = getComputedStyle(text);
+      return {
+        top: node.getBoundingClientRect().top,
+        clipped:
+          value.scrollWidth > value.clientWidth ||
+          textRect.left < valueRect.left - 0.5 ||
+          textRect.right > valueRect.right + 0.5,
+        fontSize: style.fontSize,
+        fontWeight: style.fontWeight,
+        lineHeight: style.lineHeight,
+        numeric: numberStyle.fontVariantNumeric,
+      };
+    }),
+  );
+  expect(cards.filter((card) => card.top === cards[0].top)).toHaveLength(6);
+  expect(cards.filter((card) => card.top !== cards[0].top)).toHaveLength(2);
+  expect(cards.map((card) => card.clipped), "every stat value fits").toEqual(
+    statLabels.map(() => false),
+  );
+  expect(
+    cards.map(({ fontSize, fontWeight, lineHeight, numeric }) => ({
+      fontSize,
+      fontWeight,
+      lineHeight,
+      numeric,
+    })),
+  ).toEqual(
+    statLabels.map(() => ({
+      fontSize: "19px",
+      fontWeight: "600",
+      lineHeight: "23px",
+      numeric: "tabular-nums",
+    })),
+  );
+
+  const resolved = {
+    grid: await grid.boundingBox(),
+    workspace: await workspace.boundingBox(),
+  };
+  expect(resolved, "the reserved grid does not move when data lands").toEqual(
+    pending,
+  );
+  const actionBottom = await page
+    .locator(".page-heading .button")
+    .evaluateAll((nodes) =>
+      Math.max(...nodes.map((node) => node.getBoundingClientRect().bottom)),
+    );
+  expect(
+    actionBottom,
+    "the wrapped heading controls end before the stat cards",
+  ).toBeLessThanOrEqual(resolved.grid!.y);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { walletStatShifts: { cls: number } })
+          .walletStatShifts.cls,
+    ),
+    "the 1200px wallet stays within the shared CLS noise allowance",
+  ).toBeLessThan(0.001);
+});
+
 test("most traded pools lists at most five pools by observed volume", async ({
   page,
 }) => {
