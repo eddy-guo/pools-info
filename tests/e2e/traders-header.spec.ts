@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 // Copy the captain removed from the leaderboard header; it must not come back.
 const removedCopy = [
@@ -55,10 +55,25 @@ test("the trader leaderboard header holds only the title and its ranking control
 // three behind the "shown" total the pagination count and URL track.
 const LIST_OFFSET = 3;
 
+// Focus follows each appended page and scrolls the test deep into the list.
+// Normalize before a reload so browser scroll-restoration timing cannot bring
+// the statically prerendered pagination foot into the measured viewport.
+async function reloadFromTop(page: Page) {
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    scrollTo(0, 0);
+  });
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
+  await page.reload();
+}
+
 test("the trader leaderboard grows with a Show more button and a running Gmail-style count", async ({
   page,
   request,
 }) => {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 8 });
+
   const total: number = (
     await (
       await request.get("/api/product/leaderboard/?window=All&limit=100")
@@ -84,6 +99,20 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   });
 
   await page.goto("/traders/?window=All");
+  const layoutShifts: Record<string, number> = {};
+  const recordLayoutShifts = async (phase: string) => {
+    layoutShifts[phase] = await page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const state = (
+        window as unknown as { clickMeasurement: { cls: number } }
+      ).clickMeasurement;
+      const value = state.cls;
+      state.cls = 0;
+      return value;
+    });
+  };
   const panel = page.locator("main .leaderboard-panel");
   const pagination = panel.locator(".pagination");
   const count = pagination.locator(".pagination-count");
@@ -114,14 +143,16 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await expect(
     rows.nth(25 - LIST_OFFSET).locator(".address-chip-link"),
   ).toBeFocused();
+  await recordLayoutShifts("initial load and first growth");
 
   // Reload restores the exact shown count from the URL, in one request.
-  await page.reload();
+  await reloadFromTop(page);
   await expect(count).toHaveText(
     `Showing ${shown50.toLocaleString()} of ${total.toLocaleString()}`,
   );
   await expect(desktopRows).toHaveCount(shown50 - LIST_OFFSET);
   await expect(mobileRows).toHaveCount(shown50 - LIST_OFFSET);
+  await recordLayoutShifts("50-row reload");
 
   // Back, after navigating away, restores the same state too.
   await rows.first().locator(".address-chip-link").click();
@@ -131,6 +162,7 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await expect(count).toHaveText(
     `Showing ${shown50.toLocaleString()} of ${total.toLocaleString()}`,
   );
+  await recordLayoutShifts("history restore");
 
   // Click through to the fixture's real ceiling: the button disappears once
   // nothing more remains, never past it, and every step keeps the layout
@@ -152,14 +184,18 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   }
   if (total <= 100) await expect(more).toHaveCount(0);
   else await expect(more).toBeVisible();
+  await recordLayoutShifts("growth to the ceiling");
 
   // Reload restores the exhausted state too: the same count, no button back.
-  await page.reload();
+  await reloadFromTop(page);
   await expect(count).toHaveText(
     `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`,
   );
   if (total <= 100) await expect(more).toHaveCount(0);
   else await expect(more).toBeVisible();
+  await expect(desktopRows).toHaveCount(shown - LIST_OFFSET);
+  await expect(mobileRows).toHaveCount(shown - LIST_OFFSET);
+  await recordLayoutShifts("ceiling reload");
 
   // A metric change is a fresh list: it resets the shown count to 25.
   const metric = page
@@ -170,16 +206,18 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await expect(count).toHaveText(`Showing 25 of ${total.toLocaleString()}`);
   await expect(desktopRows).toHaveCount(25 - LIST_OFFSET);
   await expect(mobileRows).toHaveCount(25 - LIST_OFFSET);
-
-  const measurement = await page.evaluate(
-    () =>
-      (window as unknown as { clickMeasurement: { cls: number } })
-        .clickMeasurement,
-  );
+  await recordLayoutShifts("metric reset");
   expect(
-    measurement.cls,
+    layoutShifts,
     "every non-input layout shift across the whole flow",
-  ).toBe(0);
+  ).toEqual({
+    "initial load and first growth": 0,
+    "50-row reload": 0,
+    "history restore": 0,
+    "growth to the ceiling": 0,
+    "ceiling reload": 0,
+    "metric reset": 0,
+  });
 
   expect(
     await page.evaluate(
