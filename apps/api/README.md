@@ -221,6 +221,11 @@ Repeated identical log identities are deduplicated before trade gates, net
 flows, volume, ROI and accounting; conflicting duplicates reject the capture.
 Unsupported positions expose null folded position/cost values rather than
 letting a consumer accidentally display an incomplete basis as valid.
+The wallet position's existing open `flags` string array can also contain
+`wrapper_counterparty` or `farm_counterparty` when a retained raw transfer leg
+matches the append-only positive-evidence registry for that block. These are
+advisory provenance labels only. They never make a position supported, change
+basis or alter a financial figure, and unknown flags must be ignored safely.
 
 The writer publishes normalized pool, position, trade and price rows atomically
 with each validated snapshot. The API filters, aggregates, ranks and paginates

@@ -26,16 +26,19 @@ that ambiguity. It does not establish beneficial ownership, an allocation,
 a farm, tax treatment or a missing cost basis by itself.
 
 Classification v1 in `packages/db/src/ledger-provenance.ts` uses only local,
-recorded evidence:
+recorded protocol evidence. Classification v2 adds the positive-evidence
+counterparty registry described below:
 
-| Class               | Evidence and meaning                                                                                |
-| ------------------- | --------------------------------------------------------------------------------------------------- |
-| `mint_burn`         | ERC-20 zero-address endpoint, distinct from the token contract                                      |
-| `token_contract`    | Endpoint equals the registered token that emitted the log                                           |
-| `launcher`          | Launcher contract in the verified Instant deployment registry                                       |
-| `wrapper_or_router` | The existing chain router binding; no arbitrary `tx.to` is promoted to a wrapper                    |
-| `protocol`          | Verified PoolManager, Instant strategy or fee splitter                                              |
-| `unregistered`      | Address outside the fixed registry; may be a wallet, wrapper or farm. No financial class is guessed |
+| Class               | Evidence and meaning                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `mint_burn`         | ERC-20 zero-address endpoint, distinct from the token contract                                           |
+| `token_contract`    | Endpoint equals the registered token that emitted the log                                                |
+| `launcher`          | Launcher contract in the verified Instant deployment registry                                            |
+| `wrapper_or_router` | The existing chain router binding; no arbitrary `tx.to` is promoted to a wrapper                         |
+| `wrapper`           | An address explicitly registered from authoritative wrapper evidence                                     |
+| `farm`              | An address explicitly registered from authoritative farm evidence                                        |
+| `protocol`          | Verified PoolManager, Instant strategy or fee splitter                                                   |
+| `unregistered`      | Address outside the evidence registries; may be a wallet, wrapper or farm. No financial class is guessed |
 
 Registry roles cite `robinhood-instant-v2` and the strategy whose recorded
 getters establish the address (`docs/DEPLOYMENT-REGISTRY.md` and
@@ -44,18 +47,77 @@ deployment. The manager/router bindings begin at the registry verification
 block 63,243,824; earlier unknowns remain unknown. The router binding is the
 one already used by the ledger, `contracts.router` in `packages/chain/src/events.ts`,
 also present in the retained launch receipts under `data/registry/`. There is
-no separately verified wrapper list and no new chain/explorer lookup. A future
-classification change needs a new version and its own evidence; existing rows
-are not retagged. This fixed registry is the only endpoint-classification
-evidence added by this change. Wrapper and farm detection are separate future
-attribution work, and every row retains its raw `from_address` and `to_address`
-so that work can be performed without guessing now.
+no new chain or explorer lookup. Every row retains its raw `from_address` and
+`to_address`; stored classes record the evidence available when the batch was
+written, while the wallet read can match those raw addresses against later
+positive registrations without rewriting financial history.
+
+## Wrapper and farm evidence registry
+
+`agg_transfer_counterparty_registry` is created by attended migration 002 after
+attended migration 001 has retained raw provenance. It is empty at creation. No
+wrapper or farm is seeded by this repository because it contains no
+authoritative evidence for one. Absence is deterministic: the endpoint stays
+`unregistered` and no API attribution flag appears.
+
+Each registry row stores the exact address, `wrapper` or `farm`, a block-validity
+range, label, evidence kind, authority, source locator, SHA-256 of the cited
+source, and SHA-256 of the operator manifest. Accepted evidence kinds are an
+authoritative protocol registry, verified contract source, or a signed protocol
+statement. Transfer direction, sender or beneficiary identity, activity shape,
+address labels, token metadata, and other behavioral heuristics are not accepted.
+The table rejects updates and deletes. An exact manifest replay is a no-op and a
+different assertion for an existing address is refused.
+
+Registration is a separate attended production write and is not authorized by
+merging this code. After independently archiving and verifying the cited source,
+prepare a JSON manifest with this shape:
+
+```json
+{
+  "version": 1,
+  "chainId": 4663,
+  "entries": [
+    {
+      "address": "0x0000000000000000000000000000000000000001",
+      "class": "wrapper",
+      "label": "Protocol wrapper",
+      "validFromBlock": 123,
+      "validThroughBlock": null,
+      "evidence": {
+        "kind": "protocol_registry",
+        "authority": "Protocol name",
+        "source": "https://protocol.example/registry.json",
+        "sha256": "<64 lowercase hex characters>"
+      }
+    }
+  ]
+}
+```
+
+With the production connection supplied securely in `DATABASE_URL`, and only
+after a separate exact approval and after the ledger writer has released its
+lock, run:
+
+```sh
+pnpm ledger:counterparties:register /absolute/path/manifest.json
+```
+
+The command loads no `.env.local`, takes the ledger writer lock, validates and
+hashes the manifest, inserts only new evidence, and prints the inserted count
+and manifest hash. It performs no collection, replay, backfill, cursor change,
+or financial update. One manifest should contain only new addresses; later
+evidence for an already registered address requires a new reviewed model rather
+than an overwrite.
 
 ## Write and compatibility boundary
 
 The financial event plan, supported/excluded rules, basis, cross-window sums,
-realized identity and public API response shapes are **unchanged**. The local
-ingestion regression runs the same fake HyperSync range through discovery,
+realized identity and public API response shapes are **unchanged**. The existing
+wallet-position `flags` array may additionally contain `wrapper_counterparty`
+or `farm_counterparty`; consumers already treat it as an open string list and
+need no new response field. The local ingestion regression runs the same fake
+HyperSync range through discovery,
 collection, fold and database read both with and without activation and compares
 the entire ledger. The pre-change regression retained an exact large inflow
 and its exclusion but could not read its source address.
@@ -139,17 +201,22 @@ attended pause/resume and the migration separately from the guarded code merge.
    This script loads no `.env.local`, verifies the archive bytes against the
    manifest, requires the writer lock and refuses a changed cursor. It does not
    run collection or ordinary migrations. The library also takes the migration
-   lock, executes `packages/db/attended-migrations/001_transfer_provenance.sql`
-   transactionally, records its checksum and annotates the table with archive
-   digest and activation cursor. This SQL deliberately lives outside the
-   automatic migration directory. The manifest's restore attestation remains
-   the attending operator's responsibility, not a claim inferred from a hash.
+   lock, executes each pending attended migration in order from
+   `packages/db/attended-migrations/001_transfer_provenance.sql` through
+   `002_transfer_counterparty_registry.sql`, and records each immutable
+   checksum transactionally. Migration 001 annotates the raw table with its
+   archive digest and activation cursor. These files deliberately live outside
+   the automatic migration directory. The manifest's restore attestation
+   remains the attending operator's responsibility, not a claim inferred from
+   a hash. A database that already records the immutable 001 checksum applies
+   only 002; 001 is neither rerun nor rewritten.
 
-7. Check the schema, table comment and migration checksum, unchanged financial
-   snapshots/read responses, zero provenance rows and NULL historical coverage
-   counts. Only then resume the already-authorized ledger tip on the new code.
-   Check its next committed batch's count against actual provenance rows, exact
-   endpoint evidence, unchanged API contract, writer health and storage growth.
+7. Check the schema, table comment and both migration checksums, unchanged
+   financial snapshots/read responses, zero provenance rows and NULL historical
+   coverage counts. Only then resume the already-authorized ledger tip on the
+   new code. Check its next committed batch's count against actual provenance
+   rows, exact endpoint evidence, unchanged API contract, writer health and
+   storage growth.
 
 An SQL failure rolls back the whole activation. If verification fails before
 tip resume, keep it paused and report to firstmate. Code rollback to the prior
@@ -161,9 +228,10 @@ later batches; it is not an automatic rollback command.
 
 ## Regression entry points
 
-`packages/core/src/ledger-provenance.test.ts` pins classification, ambiguous and
-multi-leg routing. `packages/db/src/ledger.test.ts` pins attended-only activation,
-archive cursor guard, unchanged financial/journal snapshots, atomic failure,
-idempotence, conflicting evidence and walk-back/replay. The ingestion regression
-is in `apps/indexer/src/ledger-pass.test.ts`. Run the full project suite as
-specified in `AGENTS.md` before shipping.
+`packages/core/src/ledger-provenance.test.ts` pins classification, positive-only
+block ranges, ambiguous and multi-leg routing. `packages/db/src/ledger.test.ts`
+pins attended-only activation, archive cursor guard, unchanged
+financial/journal snapshots, atomic failure, idempotence, conflicting evidence
+and walk-back/replay. The ingestion regression is in
+`apps/indexer/src/ledger-pass.test.ts`. Run the full project suite as specified
+in `AGENTS.md` before shipping.

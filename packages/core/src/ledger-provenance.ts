@@ -6,14 +6,17 @@ import {
 } from "./ledger";
 
 /** Address roles describe evidence, never ownership, basis or eligibility.
- * Classification uses only intrinsic Transfer facts and the supplied fixed
- * registry. Every other endpoint is unregistered: it may be a wallet, wrapper
- * or farm, and distinguishing those is separate future attribution work. */
+ * Classification uses only intrinsic Transfer facts and the supplied
+ * evidence registries. Every other endpoint is unregistered: it may be a
+ * wallet, wrapper or farm, but no financial class is inferred without
+ * positive evidence. */
 export type TransferAddressClass =
   | "mint_burn"
   | "token_contract"
   | "launcher"
   | "wrapper_or_router"
+  | "wrapper"
+  | "farm"
   | "protocol"
   | "unregistered";
 export interface TransferAddressRole {
@@ -23,6 +26,7 @@ export interface TransferAddressRole {
 export interface TransferProtocolRole extends TransferAddressRole {
   address: string;
   fromBlock: number;
+  throughBlock?: number | null;
 }
 export interface LedgerTransferProvenance extends LedgerTransfer {
   poolId: string;
@@ -69,7 +73,13 @@ export function ledgerTransferProvenance(
       return { class: "mint_burn", evidence: "erc20:zero-address" };
     if (address === token)
       return { class: "token_contract", evidence: "transfer:emitting-token" };
-    const protocol = known.get(address)?.find((r) => block >= r.fromBlock);
+    const protocol = known
+      .get(address)
+      ?.find(
+        (r) =>
+          block >= r.fromBlock &&
+          (r.throughBlock == null || block <= r.throughBlock),
+      );
     if (protocol) return { class: protocol.class, evidence: protocol.evidence };
     return { class: "unregistered", evidence: "registry:unregistered" };
   };

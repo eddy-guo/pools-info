@@ -43,7 +43,7 @@ const markSql = `CASE WHEN NOT p.supported THEN NULL WHEN p.quantity_raw=0 THEN 
  * supported position beside each row: the sum of their marks, or null while
  * any is unmarked, over the whole set rather than the 500 served. */
 const positionsSql = `WITH marked AS (
-    SELECT i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
+    SELECT p.pool_ref,i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
       p.quantity_raw::text AS quantity_raw,p.cost_wei::text AS cost_wei,p.realized_wei::text AS realized_wei,
       p.invested_wei::text AS invested_wei,p.proceeds_wei::text AS proceeds_wei,p.buys,p.sells,
       coalesce(f.realized,0)::text AS window_realized,coalesce(f.net,0)::text AS net,coalesce(f.volume,0)::text AS volume,
@@ -90,6 +90,49 @@ const positionStatsSql = `SELECT count(*) FILTER (WHERE supported AND buys+sells
     count(*) FILTER (WHERE NOT supported)::int AS excluded_count,
     (max(last_timestamp) FILTER (WHERE buys+sells>0))::text AS last
   FROM agg_positions WHERE chain_id=4663 AND wallet_ref=$1`;
+
+/** Additive read-time attribution from retained raw transfer endpoints and the
+ * append-only positive-evidence registry. The registry is optional until the
+ * attended provenance activation. No row means no classification, and these
+ * advisory flags never affect support, basis or a financial figure. */
+async function counterpartyFlags(query: ReadQuery, address: string) {
+  const ready = await query(
+    `SELECT to_regclass('agg_transfer_provenance') IS NOT NULL AS provenance,
+      to_regclass('agg_transfer_counterparty_registry') IS NOT NULL AS registry`,
+  );
+  if (!ready.rows[0].provenance || !ready.rows[0].registry)
+    return new Map<number, string[]>();
+  const rows = (
+    await query(
+      `WITH legs AS (
+         SELECT pool_ref,to_address AS counterparty,block_number
+         FROM agg_transfer_provenance
+         WHERE chain_id=4663 AND from_address=decode($1,'hex')
+           AND from_address<>to_address AND token_raw>0
+         UNION ALL
+         SELECT pool_ref,from_address AS counterparty,block_number
+         FROM agg_transfer_provenance
+         WHERE chain_id=4663 AND to_address=decode($1,'hex')
+           AND from_address<>to_address AND token_raw>0
+       )
+       SELECT l.pool_ref,array_agg(DISTINCT r.class ORDER BY r.class) AS classes
+       FROM legs l JOIN agg_transfer_counterparty_registry r
+         ON r.chain_id=4663 AND r.address=l.counterparty
+        AND l.block_number>=r.valid_from_block
+        AND (r.valid_through_block IS NULL OR l.block_number<=r.valid_through_block)
+       GROUP BY l.pool_ref`,
+      [address.slice(2)],
+    )
+  ).rows;
+  return new Map<number, string[]>(
+    rows.map((row) => [
+      Number(row.pool_ref),
+      ["wrapper", "farm"]
+        .filter((kind) => row.classes.includes(kind))
+        .map((kind) => `${kind}_counterparty`),
+    ]),
+  );
+}
 
 /** The wallet page for the window, or null when the ledger has folded
  * nothing yet (no cursor or no pool hour), in which case the accounting
@@ -143,6 +186,7 @@ export async function readLedgerWallet(
     return response(walletSummary(undefined, address), [], false, [], false);
   const positions = (await query(positionsSql, [ref, refresh.windowStart]))
     .rows;
+  const attributed = await counterpartyFlags(query, address);
   // The summary is the window's row, the board's own figures; a wallet with
   // no hour in the window has none and reads as zero activity in it, with
   // its lifetime position counts and last activity.
@@ -208,7 +252,7 @@ export async function readLedgerWallet(
       asOf: cut.asOf,
       throughBlock: cut.block,
       supported: p.supported,
-      flags: p.flags,
+      flags: [...p.flags, ...(attributed.get(Number(p.pool_ref)) ?? [])],
       realizedWei: p.supported ? p.window_realized : null,
       netWei: p.supported ? p.net : null,
       unrealizedWei: p.unrealized,

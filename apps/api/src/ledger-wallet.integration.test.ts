@@ -20,7 +20,9 @@ import {
   ledgerRules,
   ledgerStream,
   migrate,
+  migrateLedgerTransferProvenance,
   refreshLedgerWindows,
+  registerLedgerTransferCounterparties,
   releaseLedgerWriter,
   type LedgerBatch,
 } from "../../../packages/db/src/index";
@@ -84,6 +86,7 @@ const wallet = (n: number) => addr(0x10000 + n);
 const W = Object.fromEntries(
   [1, 2, 3, 4, 6, 7, 8, 9].map((n) => [n, wallet(n)]),
 ) as Record<number, `0x${string}`>;
+const WRAPPER = wallet(10);
 /** A sqrt price of 2^68: 2^192 / 2^136 = 2^56 wei per raw unit. */
 const sqrtQ = (2n ** 68n).toString();
 
@@ -162,6 +165,41 @@ class Rows {
       to,
       value: tokens.toString(),
     });
+    return this;
+  }
+  /** One transfer transaction fans inventory out through a known wrapper while
+   * preserving the receiver's exact net amount. The gross legs are what the
+   * provenance table retains; the financial fold still sees only the net. */
+  distribute(
+    block: number,
+    from: string,
+    receiver: string,
+    wrapper: string,
+    tokens: bigint,
+  ) {
+    const i = this.logs.get(block) ?? 0,
+      txHash = hash(BigInt(block) * 100000n + BigInt(i)),
+      via = tokens / 2n,
+      direct = tokens - via;
+    this.logs.set(block, i + 3);
+    const site = {
+      txHash,
+      block,
+      blockHash: hash(block),
+      timestamp: ts(block),
+      token: pools.P.token,
+    };
+    this.transfers.push(
+      { ...site, logIndex: i, from, to: receiver, value: direct.toString() },
+      { ...site, logIndex: i + 1, from, to: wrapper, value: via.toString() },
+      {
+        ...site,
+        logIndex: i + 2,
+        from: wrapper,
+        to: receiver,
+        value: via.toString(),
+      },
+    );
     return this;
   }
 }
@@ -286,6 +324,42 @@ test(
       if (!locked) await new Promise((r) => setTimeout(r, 100));
     }
     assert.ok(locked, "ledger writer lock unavailable");
+    await migrateLedgerTransferProvenance(db, "d".repeat(64), null);
+    await registerLedgerTransferCounterparties(
+      db,
+      JSON.stringify({
+        version: 1,
+        chainId: 4663,
+        entries: [
+          {
+            address: W[7],
+            class: "farm",
+            label: "Fixture distribution farm",
+            validFromBlock: base,
+            validThroughBlock: null,
+            evidence: {
+              kind: "signed_protocol_statement",
+              authority: "Fixture protocol",
+              source: "https://protocol.invalid/evidence/farm",
+              sha256: "e".repeat(64),
+            },
+          },
+          {
+            address: WRAPPER,
+            class: "wrapper",
+            label: "Fixture wrapper",
+            validFromBlock: base,
+            validThroughBlock: null,
+            evidence: {
+              kind: "verified_contract_source",
+              authority: "Fixture protocol",
+              source: "https://protocol.invalid/evidence/wrapper",
+              sha256: "f".repeat(64),
+            },
+          },
+        ],
+      }),
+    );
 
     // The cursor sits mid-hour in hour 1078, so the windows are the whole
     // hours 1055-1078 (24h), 911-1078 (7d), 359-1078 (30d) and everything
@@ -316,7 +390,7 @@ test(
       // position on arrival (zero_cost_inflow) and W8's on departure
       // (unattributed_outflow), so W7's 10 ETH of proceeds is volume only.
       .trade(blockOf(1073, 0), W[8], "buy", E, 100n)
-      .move(blockOf(1073, 1), W[8], W[7], 90n);
+      .distribute(blockOf(1073, 1), W[8], W[7], WRAPPER, 90n);
     for (let i = 0; i < 10; i++)
       rows.trade(blockOf(1073, 3), W[7], "sell", E, 9n);
     for (let hour = 1030; hour < 1078; hour++)
@@ -328,6 +402,29 @@ test(
       rows.roundTrips(blockOf(hour, 3), W[9], 1, -1000n);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
     assert.equal(applied.unattributed, 0);
+    assert.deepEqual(
+      (
+        await db.query(
+          `SELECT DISTINCT encode(to_address,'hex') AS address,to_class,classification_version
+           FROM agg_transfer_provenance
+           WHERE to_address IN (decode($1,'hex'),decode($2,'hex'))
+           ORDER BY address`,
+          [W[7].slice(2), WRAPPER.slice(2)],
+        )
+      ).rows,
+      [
+        {
+          address: W[7].slice(2),
+          to_class: "farm",
+          classification_version: 2,
+        },
+        {
+          address: WRAPPER.slice(2),
+          to_class: "wrapper",
+          classification_version: 2,
+        },
+      ].sort((a, b) => a.address.localeCompare(b.address)),
+    );
     // Folded but not yet refreshed into windows: the page has nothing to
     // stand on and says so, retryably, rather than serving the old tables.
     assert.deepEqual(await get("ledger", `/v1/wallets/${W[1]}?window=24h`), {
@@ -708,7 +805,7 @@ test(
         [
           pools.P.id,
           false,
-          ["zero_cost_inflow"],
+          ["zero_cost_inflow", "wrapper_counterparty"],
           null,
           null,
           null,
@@ -749,7 +846,7 @@ test(
         E.toString(),
         null,
         false,
-        ["unattributed_outflow"],
+        ["unattributed_outflow", "wrapper_counterparty", "farm_counterparty"],
         null,
       ],
     );

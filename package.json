@@ -32,6 +32,7 @@
     "hypersync:plan": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts plan",
     "hypersync:run": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/hypersync-main.ts run",
     "ledger:pass": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-pass-main.ts",
+    "ledger:counterparties:register": "node --import tsx scripts/ledger-counterparties-register.ts",
     "supply:read": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/token-supply-main.ts",
     "creator-fees:backfill": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/creator-fees-main.ts",
     "ledger:tip": "node --env-file-if-exists=.env.local --import tsx apps/indexer/src/ledger-tip-main.ts",

@@ -273,11 +273,10 @@ rebuild). The alternatives, a transfer-out booked as a zero-proceeds
 disposal and a rank by net, were rejected because both show a transfer to
 one's own cold wallet as a loss; this rule invents nothing, and a move costs
 that position's coverage rather than the truth. Recording each transfer's
-counterparty at the fold is implemented behind the attended activation in
-[TRANSFER-PROVENANCE.md](TRANSFER-PROVENANCE.md). Its fixed registry is the
-only endpoint-classification evidence added by that change. Every address
-outside it is retained raw as `unregistered`, never guessed to be a wallet or
-farm; wrapper and farm detection remain separate future attribution work.
+counterparty at the fold and the attended wrapper/farm evidence registry are
+specified in [TRANSFER-PROVENANCE.md](TRANSFER-PROVENANCE.md). Every address
+without positive evidence is retained raw as `unregistered`, never guessed
+from behavior.
 
 The apply, 18 Sep 2026: `ledger-tip` deployment cdcf1179 on the merge
 5550167; the old instance released the writer lock at 08:11:35Z, the new one
