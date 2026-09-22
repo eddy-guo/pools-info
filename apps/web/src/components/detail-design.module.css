@@ -162,6 +162,12 @@
   font-size: 11px;
   margin-top: 3px;
 }
+.alert:not(:disabled):hover {
+  background: var(--control-secondary-hover-bg);
+}
+.alert:not(:disabled):active {
+  background: var(--control-ghost-active-bg);
+}
 .switch {
   flex: 0 0 34px;
   height: 20px;
@@ -202,6 +208,14 @@
 }
 .tabs button[aria-selected="true"] {
   border-color: var(--ac);
+  color: var(--text);
+}
+.tabs button:not([aria-selected="true"]):not(:disabled):hover {
+  background: var(--control-secondary-hover-bg);
+  color: var(--color-text-2);
+}
+.tabs button:not(:disabled):active {
+  background: var(--control-ghost-active-bg);
   color: var(--text);
 }
 .launches {
