@@ -60,7 +60,6 @@ const LIST_OFFSET = 3;
 // the statically prerendered pagination foot into the measured viewport.
 async function reloadFromTop(page: Page) {
   await page.evaluate(() => {
-    document.documentElement.style.scrollBehavior = "auto";
     scrollTo(0, 0);
   });
   await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
@@ -71,6 +70,7 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   page,
   request,
 }) => {
+  test.slow();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 8 });
 
@@ -85,6 +85,17 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   ).toBeGreaterThan(50);
 
   await page.addInitScript(() => {
+    // Test navigation and locator actionability, not animated scrolling. This
+    // also makes every new document start at the requested position promptly
+    // under the deliberate 8x CPU throttle below.
+    const disableSmoothScroll = () => {
+      document.documentElement.style.scrollBehavior = "auto";
+    };
+    if (document.documentElement) disableSmoothScroll();
+    else
+      document.addEventListener("DOMContentLoaded", disableSmoothScroll, {
+        once: true,
+      });
     const state = { cls: 0 };
     Object.assign(window, { clickMeasurement: state });
     new PerformanceObserver((list) => {
