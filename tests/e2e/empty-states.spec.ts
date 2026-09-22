@@ -615,7 +615,7 @@ for (const [name, url, heading] of [
     ).toBe(0);
   });
 
-test("the home page's launch cards and rails report the outage instead of pending forever", async ({
+test("the home page's launch cards and Top traders report the outage instead of pending forever", async ({
   page,
 }, testInfo) => {
   const { viewport } = surface(testInfo);
@@ -625,9 +625,6 @@ test("the home page's launch cards and rails report the outage instead of pendin
   await page.goto("/");
   await expect(
     page.locator(".launch-rail").getByText("Launches unavailable"),
-  ).toBeVisible();
-  await expect(
-    page.locator(".trade-stream").getByText("Live trades unavailable"),
   ).toBeVisible();
   await expect(
     page.locator(".explore-leaders").getByText("Top traders unavailable"),

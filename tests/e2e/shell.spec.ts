@@ -24,14 +24,8 @@ for (const route of routes) {
     await expect(page.locator(".network-context")).toHaveText(
       "v4 · Robinhood Chain",
     );
-    // CHAIN_REFRESH_DISABLED=1 makes /api/live-trades/ 503 in this suite, so
-    // the strip's dot settles on the rail's own word for a read that failed:
-    // delayed, never "Paused" (nobody paused it) and never "Live".
-    await expect(page.locator(".subnav-live")).toHaveAttribute(
-      "data-state",
-      "delayed",
-    );
-    await expect(page.locator(".subnav-live")).toHaveText("Delayed");
+    await expect(page.locator(".subnav-live")).toHaveCount(0);
+    await expect(strip).not.toContainText(/Live|Delayed|Paused|Offline/);
     await expect(strip).not.toContainText("block");
     await expect(strip).not.toContainText("indexed");
     await expect(page.getByRole("link", { name: "Methodology" })).toHaveCount(
@@ -164,137 +158,26 @@ test("the H1 row carries a Trader leaderboard call to action at the right", asyn
   await expect(page).toHaveURL(/\/traders\/$/);
 });
 
-const liveFeedFixture = {
-  source: "indexed_recent_chain_events",
-  replacement: true,
-  generatedAt: "2026-09-17T00:00:00.000Z",
-  truncated: false,
-  poolId: null,
-  events: [],
-  coverage: {
-    state: "current",
-    scope: "verified_pools_launches_only",
-    registryExhaustive: false,
-    pnlAvailable: false,
-    knownPools: 10,
-    staleAfterSeconds: 60,
-    startBlock: 1,
-    headBlock: 100,
-    throughBlock: 100,
-    asOf: 1758067200,
-    lagBlocks: 0,
-    discoveryThroughBlock: 100,
-    discoveryLagBlocks: 0,
-    throughHash: `0x${"a".repeat(64)}`,
-    checkedAt: "2026-09-17T00:00:00.000Z",
-  },
-};
-
-test("the strip's Live dot turns green once the trade feed reports streaming", async ({
+test("the retired live-trades surface has no controls, polling, or web proxy", async ({
   page,
 }) => {
-  // Pinned to the fixture's own asOf: TradeStream's own staleness check
-  // compares against the real clock, so an unpinned run reads this fixture
-  // as stale once staleAfterSeconds has elapsed since the fixture was written.
-  await page.clock.install({
-    time: new Date(liveFeedFixture.coverage.asOf * 1000),
+  let requests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/live-trades/") requests++;
   });
-  await page.route("**/api/live-trades/", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.fulfill({ json: liveFeedFixture });
-  });
+  await page.clock.install();
   await page.goto("/");
-  const dot = page.locator(".subnav-live");
-  // Before the delayed read resolves, the dot claims neither state: no
-  // "Live" label, a neutral dot, and the reserved width already in place.
-  await expect(dot).toHaveAttribute("data-state", "unknown");
-  await expect(dot).toHaveText("");
-  const before = await dot.boundingBox();
-  await expect(dot).toHaveAttribute("data-state", "streaming");
-  await expect(dot).toHaveText("Live");
-  const after = await dot.boundingBox();
-  expect(after!.width, "the label's reserved width never shifts").toBe(
-    before!.width,
+  await page.waitForLoadState("networkidle");
+  await page.clock.fastForward(16000);
+  await expect(page.getByRole("heading", { name: "Live trades" })).toHaveCount(
+    0,
   );
-});
-
-test("the strip's Live dot shows Delayed, never Live or Paused, when the feed read fails", async ({
-  page,
-}) => {
-  await page.route("**/api/live-trades/", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.fulfill({ status: 503, json: { error: "unavailable" } });
-  });
-  await page.goto("/");
-  const dot = page.locator(".subnav-live");
-  await expect(dot).toHaveAttribute("data-state", "unknown");
-  await expect(dot).toHaveText("");
-  const before = await dot.boundingBox();
-  await expect(dot).toHaveAttribute("data-state", "delayed");
-  await expect(dot).toHaveText("Delayed");
-  expect((await dot.boundingBox())!.width, "the reserved width holds").toBe(
-    before!.width,
-  );
-});
-
-// Sweep s6 defect 17: the strip read "Paused" while the rail said the feed
-// was running, and still "Paused" once the reader paused it. The strip now
-// carries the rail's own word, so every state the rail can be in reads the
-// same in both places, and a page with no rail names the feed as the rail
-// would (offline for a feed that never started, never "Paused").
-test("the strip tracks the rail through streaming, paused and offline", async ({
-  page,
-}) => {
-  await page.clock.install({
-    time: new Date(liveFeedFixture.coverage.asOf * 1000),
-  });
-  let offline = false;
-  await page.route("**/api/live-trades/", (route) =>
-    route.fulfill({
-      json: offline
-        ? {
-            ...liveFeedFixture,
-            events: [],
-            coverage: {
-              ...liveFeedFixture.coverage,
-              state: "uninitialized",
-              startBlock: null,
-              headBlock: null,
-              throughBlock: null,
-              throughHash: null,
-              asOf: null,
-              checkedAt: null,
-              lagBlocks: null,
-              discoveryThroughBlock: null,
-              discoveryLagBlocks: null,
-            },
-          }
-        : liveFeedFixture,
-    }),
-  );
-  await page.goto("/");
-  const dot = page.locator(".subnav-live");
-  const rail = page.getByRole("region", { name: "Recent trades" });
-  const railState = rail.getByRole("status");
-  await expect(railState).toHaveText("streaming");
-  await expect(dot).toHaveAttribute("data-state", "streaming");
-  await expect(dot).toHaveText("Live");
-  const width = (await dot.boundingBox())!.width;
-  await rail.getByRole("button", { name: "Pause feed" }).click();
-  await expect(railState).toHaveText("paused");
-  await expect(dot).toHaveAttribute("data-state", "paused");
-  await expect(dot).toHaveText("Paused");
-  expect((await dot.boundingBox())!.width).toBe(width);
-  await rail.getByRole("button", { name: "Resume feed" }).click();
-  await expect(railState).toHaveText("streaming");
-  await expect(dot).toHaveText("Live");
-  // A page without a rail polls on its own and names a feed that never
-  // started offline, the honest state while nothing feeds the rail.
-  offline = true;
-  await page.goto("/traders/");
-  await expect(dot).toHaveAttribute("data-state", "offline");
-  await expect(dot).toHaveText("Offline");
-  expect((await dot.boundingBox())!.width).toBe(width);
+  await expect(
+    page.getByRole("button", { name: /Pause feed|Resume feed/ }),
+  ).toHaveCount(0);
+  await expect(page.locator(".subnav-live, .trade-stream")).toHaveCount(0);
+  expect(requests, "the page never polls the retired feed").toBe(0);
+  expect((await page.request.get("/api/live-trades/")).status()).toBe(404);
 });
 
 test.describe("Wallet profile entry", () => {

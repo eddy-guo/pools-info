@@ -156,11 +156,6 @@ Viewport-matched screenshots are retained in `docs/evidence/layout-2026-09-15/`
 They use the same real preloaded fixture with chain refresh disabled. Current
 live coverage counts are intentionally not hardcoded into these screenshots.
 
-Chain refresh disabled also silences the live trade rail, so
-`tests/e2e/layout-stability.spec.ts` serves `/api/live-trades/` a resolved feed
-and measures the rail as it resolves: a text run that rewraps inside a
-height-reserved box still counts as a layout shift.
-
 The design's two most-used colours are **missing entirely** from the implementation.
 
 | Design colour | Uses   | Role             | In impl?                |
