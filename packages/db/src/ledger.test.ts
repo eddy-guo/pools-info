@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
@@ -49,6 +50,17 @@ if (!url)
 const E = 10n ** 18n;
 const originalProvenanceMigrationSha256 =
   "bf7d472eac07ae1f75017911eb2f9b7f0bee3146cec81bb076474f1c134d2dac";
+
+test("counterparty registration CLI starts under the repository module mode", () => {
+  const result = spawnSync("pnpm", ["ledger:counterparties:register"], {
+    cwd: new URL("../../..", import.meta.url),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /ledger_counterparty_manifest_required/);
+  assert.doesNotMatch(result.stderr, /Top-level await/);
+});
+
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const base = ledgerStream.start;
@@ -441,10 +453,7 @@ test("counterparty registry upgrades an existing provenance schema without guess
   await db.query(originalSql);
   await db.query(
     "INSERT INTO pools_schema_migrations(name,checksum) VALUES ($1,$2)",
-    [
-      "attended/001_transfer_provenance.sql",
-      originalProvenanceMigrationSha256,
-    ],
+    ["attended/001_transfer_provenance.sql", originalProvenanceMigrationSha256],
   );
   await db.query("COMMIT");
   assert.equal(

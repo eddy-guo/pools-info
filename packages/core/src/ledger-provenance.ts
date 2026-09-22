@@ -6,9 +6,10 @@ import {
 } from "./ledger";
 
 /** Address roles describe evidence, never ownership, basis or eligibility.
- * Classification uses only intrinsic Transfer facts and the supplied fixed
- * registry. Every other endpoint is unregistered: it may be a wallet, wrapper
- * or farm, and distinguishing those is separate future attribution work. */
+ * Classification uses only intrinsic Transfer facts and the supplied
+ * evidence registries. Every other endpoint is unregistered: it may be a
+ * wallet, wrapper or farm, but no financial class is inferred without
+ * positive evidence. */
 export type TransferAddressClass =
   | "mint_burn"
   | "token_contract"
