@@ -45,6 +45,23 @@
   --rank-gold: #e0b45c;
   --rank-silver: #c9cbd4;
   --rank-bronze: #c98a5c;
+  /* Interaction roles reuse the export's lime and neutral ramps. Keep these
+     semantic so every button family moves together without page-level colour
+     patches or translucent overlays that dirty the accent. */
+  --control-primary-bg: var(--color-accent);
+  --control-primary-fg: var(--color-accent-deep);
+  --control-primary-hover-ring: var(--color-accent-deep);
+  --control-primary-active-bg: var(--color-accent-deep);
+  --control-primary-active-fg: var(--color-accent);
+  --control-secondary-bg: var(--color-panel-raised);
+  --control-secondary-hover-bg: var(--color-panel-hover);
+  --control-secondary-active-bg: var(--color-surface-6);
+  --control-border: var(--color-line-strong);
+  --control-border-hover: var(--color-line-hover);
+  --control-border-active: var(--color-line-active);
+  --control-ghost-active-bg: var(--color-surface-5);
+  --control-focus-ring: var(--color-accent);
+  --control-disabled-opacity: 0.35;
   color-scheme: dark;
 }
 * {
@@ -100,7 +117,7 @@ button {
 }
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
+  opacity: var(--control-disabled-opacity);
 }
 button,
 input,
@@ -111,7 +128,7 @@ button:focus-visible,
 a:focus-visible,
 svg:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--control-focus-ring);
   outline-offset: 4px;
 }
 input:focus-visible {
@@ -693,10 +710,6 @@ main {
   border-radius: 4px;
   flex-shrink: 0;
 }
-.icon-button:hover {
-  color: var(--text);
-  background: #302b33;
-}
 .watch.active {
   color: var(--accent);
 }
@@ -1017,9 +1030,6 @@ main {
   font-size: 12px;
   border-radius: 6px;
   cursor: pointer;
-}
-.button:hover {
-  background: #44303d;
 }
 .button.secondary {
   background: var(--panel);
@@ -3069,6 +3079,16 @@ main {
   background: transparent;
   color: var(--color-text-3);
 }
+.header-actions .search-trigger:hover {
+  border-color: var(--control-border-hover);
+  background: var(--control-secondary-hover-bg);
+  color: var(--color-text-2);
+}
+.header-actions .search-trigger:active {
+  border-color: var(--control-border-active);
+  background: var(--control-ghost-active-bg);
+  color: var(--text);
+}
 .wallet-profile-entry {
   position: relative;
   display: inline-flex;
@@ -3082,16 +3102,21 @@ main {
   height: 36px;
   min-width: 148px;
   padding: 0 12px;
-  border: 1px solid var(--color-line-strong);
+  border: 1px solid var(--control-border);
   border-radius: 10px;
-  background: #101014;
+  background: var(--control-secondary-bg);
   color: var(--color-text-2);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 .connect-button:not(:disabled):hover {
-  border-color: #33333d;
+  border-color: var(--control-border-hover);
+  background: var(--control-secondary-hover-bg);
+}
+.connect-button:not(:disabled):active {
+  border-color: var(--control-border-active);
+  background: var(--control-ghost-active-bg);
 }
 .connect-button:not(.wallet-chip) {
   color: var(--ac);
@@ -3329,14 +3354,19 @@ main {
   height: 36px;
   padding: 0 14px;
   border-radius: 10px;
-  background: var(--ac);
-  color: #06120d;
+  background: var(--control-primary-bg);
+  color: var(--control-primary-fg);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
 .leaderboard-cta:hover {
-  filter: brightness(1.08);
+  box-shadow: inset 0 0 0 2px var(--control-primary-hover-ring);
+}
+.leaderboard-cta:active {
+  background: var(--control-primary-active-bg);
+  color: var(--control-primary-active-fg);
+  box-shadow: inset 0 0 0 1px var(--control-primary-active-fg);
 }
 /* Leaderboard ranking controls sit beside the title, as in the design. */
 .traders-controls {
@@ -3352,26 +3382,67 @@ main {
   font-weight: 600;
   font-size: 13px;
   gap: 7px;
-  background: var(--ac);
-  color: #06120d;
+  background: var(--control-primary-bg);
+  color: var(--control-primary-fg);
   border: 1px solid transparent;
 }
-.button:hover {
-  filter: brightness(1.08);
+.button:not(.secondary):not(:disabled):not([aria-disabled="true"]):hover {
+  box-shadow: inset 0 0 0 2px var(--control-primary-hover-ring);
+}
+.button:not(.secondary):not(:disabled):not([aria-disabled="true"]):active {
+  background: var(--control-primary-active-bg);
+  color: var(--control-primary-active-fg);
+  box-shadow: inset 0 0 0 1px var(--control-primary-active-fg);
+}
+.button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--control-disabled-opacity);
 }
 .button.secondary {
   color: var(--text);
-  background: #101014;
-  border: 1px solid var(--color-line-strong);
+  background: var(--control-secondary-bg);
+  border: 1px solid var(--control-border);
   font-weight: 500;
 }
-.button.secondary:hover {
-  border-color: #33333d;
+.button.secondary:not(:disabled):not([aria-disabled="true"]):hover {
+  border-color: var(--control-border-hover);
+  background: var(--control-secondary-hover-bg);
+}
+.button.secondary:not(:disabled):not([aria-disabled="true"]):active {
+  border-color: var(--control-border-active);
+  background: var(--control-secondary-active-bg);
 }
 .icon-button {
   min-height: var(--ctl-min);
   min-width: var(--ctl-min);
   border-radius: 7px;
+}
+.icon-button:not(:disabled):not([aria-disabled="true"]):hover {
+  color: var(--text);
+  background: var(--control-secondary-active-bg);
+}
+.icon-button:not(:disabled):not([aria-disabled="true"]):active {
+  color: var(--text);
+  background: var(--control-ghost-active-bg);
+}
+.icon-button[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: var(--control-disabled-opacity);
+}
+button.icon-button:disabled {
+  background: transparent;
+  color: var(--color-text-3);
+}
+.text-button {
+  color: var(--color-text-3);
+  border-radius: 4px;
+}
+.text-button:not(:disabled):hover {
+  color: var(--text);
+  background: var(--control-secondary-hover-bg);
+}
+.text-button:not(:disabled):active {
+  background: var(--control-ghost-active-bg);
 }
 .mono,
 .price,
@@ -3646,7 +3717,15 @@ main {
   font-weight: 500;
 }
 .table-tabs button.active {
-  background: #1c1c22;
+  background: var(--control-ghost-active-bg);
+  color: var(--text);
+}
+.table-tabs button:not(.active):not(:disabled):hover {
+  background: var(--control-secondary-hover-bg);
+  color: var(--color-text-2);
+}
+.table-tabs button:not(.active):not(:disabled):active {
+  background: var(--control-secondary-active-bg);
   color: var(--text);
 }
 .table-tabs button.active::after {
@@ -3703,6 +3782,16 @@ main {
 .segmented button.selected,
 .segmented button[aria-pressed="true"] {
   background: var(--color-surface-6);
+  color: var(--text);
+}
+.segmented
+  button:not(.selected):not([aria-pressed="true"]):not(:disabled):hover {
+  background: var(--control-secondary-hover-bg);
+  color: var(--color-text-2);
+}
+.segmented
+  button:not(.selected):not([aria-pressed="true"]):not(:disabled):active {
+  background: var(--control-ghost-active-bg);
   color: var(--text);
 }
 .data-table {
