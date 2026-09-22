@@ -21,8 +21,10 @@ import {
   migrate,
   migrateLedgerTransferProvenance,
   observeLedgerHead,
+  parseLedgerCounterpartyManifest,
   pruneLedgerLiveTrades,
   readLedgerStream,
+  registerLedgerTransferCounterparties,
   releaseLedgerWriter,
   walkBackLedger,
   type Client,
@@ -66,6 +68,28 @@ const other = {
 };
 const W = addr(0x300),
   V = addr(0x301);
+const counterpartyManifest = (
+  entries: Array<{
+    address: string;
+    class: "wrapper" | "farm";
+    label: string;
+    validFromBlock: number;
+    validThroughBlock: number | null;
+  }>,
+) =>
+  JSON.stringify({
+    version: 1,
+    chainId: 4663,
+    entries: entries.map((entry) => ({
+      ...entry,
+      evidence: {
+        kind: "protocol_registry",
+        authority: "Fixture protocol",
+        source: `https://protocol.invalid/registry/${entry.address}`,
+        sha256: "c".repeat(64),
+      },
+    })),
+  });
 
 function swap(
   block: number,
@@ -251,6 +275,21 @@ test("attended provenance activation preserves old ledger bytes; writes are exac
     null,
   );
   await assert.rejects(
+    registerLedgerTransferCounterparties(
+      db,
+      counterpartyManifest([
+        {
+          address: V,
+          class: "farm",
+          label: "Fixture farm",
+          validFromBlock: base,
+          validThroughBlock: null,
+        },
+      ]),
+    ),
+    /ledger_counterparty_registry_not_active/,
+  );
+  await assert.rejects(
     migrateLedgerTransferProvenance(db, "", null),
     /ledger_provenance_archive_required/,
   );
@@ -269,6 +308,7 @@ test("attended provenance activation preserves old ledger bytes; writes are exac
     await migrateLedgerTransferProvenance(db, "b".repeat(64), null),
     false,
   );
+  assert.equal(await count(db, "agg_transfer_counterparty_registry"), 0);
   assert.deepEqual(await snapshot(db), before);
   const comment = JSON.parse(
     (
@@ -385,12 +425,102 @@ test("persisted provenance uses the recorded protocol roles in both directions a
   await writer(db);
   await migrateLedgerTransferProvenance(db, "a".repeat(64), null);
   const activation = instantRegistryVerifiedAtBlock;
+  const wrapper = addr(0x400),
+    farm = addr(0x401);
+  const manifest = counterpartyManifest([
+    {
+      address: wrapper,
+      class: "wrapper",
+      label: "Fixture wrapper",
+      validFromBlock: activation,
+      validThroughBlock: null,
+    },
+    {
+      address: farm,
+      class: "farm",
+      label: "Fixture farm",
+      validFromBlock: activation,
+      validThroughBlock: activation,
+    },
+  ]);
+  assert.throws(
+    () =>
+      parseLedgerCounterpartyManifest(
+        JSON.stringify({
+          version: 1,
+          chainId: 4663,
+          entries: [
+            {
+              address: addr(0x402),
+              class: "farm",
+              label: "Guessed from transfers",
+              validFromBlock: activation,
+              validThroughBlock: null,
+              evidence: {
+                kind: "activity_pattern",
+                authority: "Heuristic",
+                source: "transfer direction",
+                sha256: "c".repeat(64),
+              },
+            },
+          ],
+        }),
+      ),
+    /ledger_counterparty_manifest_invalid/,
+  );
+  assert.throws(
+    () =>
+      parseLedgerCounterpartyManifest(
+        counterpartyManifest([
+          {
+            address: ledgerRules.router,
+            class: "farm",
+            label: "Conflicting protocol role",
+            validFromBlock: activation,
+            validThroughBlock: null,
+          },
+        ]),
+      ),
+    /ledger_counterparty_manifest_invalid/,
+  );
+  assert.deepEqual(await registerLedgerTransferCounterparties(db, manifest), {
+    inserted: 2,
+    manifestSha256: parseLedgerCounterpartyManifest(manifest).sha256,
+  });
+  assert.equal(
+    (await registerLedgerTransferCounterparties(db, manifest)).inserted,
+    0,
+  );
+  await assert.rejects(
+    registerLedgerTransferCounterparties(
+      db,
+      counterpartyManifest([
+        {
+          address: wrapper,
+          class: "farm",
+          label: "Conflicting farm",
+          validFromBlock: activation,
+          validThroughBlock: null,
+        },
+      ]),
+    ),
+    /ledger_counterparty_registry_conflict/,
+  );
+  await assert.rejects(
+    db.query(
+      "UPDATE agg_transfer_counterparty_registry SET label='changed' WHERE address=decode($1,'hex')",
+      [wrapper.slice(2)],
+    ),
+    /append-only/,
+  );
   const endpoints = [
     { address: instantDeployments[0].launcher, role: "launcher" },
     { address: instantDeployments[0].strategy, role: "protocol" },
     { address: instantDeployments[0].feeSplitter, role: "protocol" },
     { address: ledgerRules.manager, role: "protocol" },
     { address: ledgerRules.router, role: "wrapper_or_router" },
+    { address: wrapper, role: "wrapper" },
+    { address: farm, role: "farm" },
   ];
   const transfers = endpoints.flatMap(({ address }, i) => [
     transfer(activation, i * 2, address, W, 11n, hash(activation)),
@@ -430,8 +560,8 @@ test("persisted provenance uses the recorded protocol roles in both directions a
     assert.equal(outgoing.from_class, "unregistered");
     assert.equal(incoming.from_evidence, outgoing.to_evidence);
     assert.notEqual(incoming.from_evidence, "registry:unregistered");
-    assert.equal(incoming.classification_version, 1);
-    assert.equal(outgoing.classification_version, 1);
+    assert.equal(incoming.classification_version, 2);
+    assert.equal(outgoing.classification_version, 2);
   }
   await migrate(db); // An attended entry must not break later ordinary startup.
 });

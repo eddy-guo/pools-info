@@ -832,4 +832,10 @@ export {
   type LedgerWindowRefresh,
   type LedgerWindowsRefreshed,
 } from "./ledger-windows";
-export { migrateLedgerTransferProvenance } from "./ledger-provenance";
+export {
+  migrateLedgerTransferProvenance,
+  parseLedgerCounterpartyManifest,
+  registerLedgerTransferCounterparties,
+  type LedgerCounterpartyEvidence,
+  type LedgerCounterpartyManifest,
+} from "./ledger-provenance";

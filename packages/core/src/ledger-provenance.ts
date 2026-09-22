@@ -14,6 +14,8 @@ export type TransferAddressClass =
   | "token_contract"
   | "launcher"
   | "wrapper_or_router"
+  | "wrapper"
+  | "farm"
   | "protocol"
   | "unregistered";
 export interface TransferAddressRole {
@@ -23,6 +25,7 @@ export interface TransferAddressRole {
 export interface TransferProtocolRole extends TransferAddressRole {
   address: string;
   fromBlock: number;
+  throughBlock?: number | null;
 }
 export interface LedgerTransferProvenance extends LedgerTransfer {
   poolId: string;
@@ -69,7 +72,13 @@ export function ledgerTransferProvenance(
       return { class: "mint_burn", evidence: "erc20:zero-address" };
     if (address === token)
       return { class: "token_contract", evidence: "transfer:emitting-token" };
-    const protocol = known.get(address)?.find((r) => block >= r.fromBlock);
+    const protocol = known
+      .get(address)
+      ?.find(
+        (r) =>
+          block >= r.fromBlock &&
+          (r.throughBlock == null || block <= r.throughBlock),
+      );
     if (protocol) return { class: protocol.class, evidence: protocol.evidence };
     return { class: "unregistered", evidence: "registry:unregistered" };
   };

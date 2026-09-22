@@ -82,14 +82,13 @@ const swap = (fields: Partial<LedgerSwap> = {}): LedgerSwap => ({
   tick: 0,
   ...fields,
 });
-function observe(rows: LedgerBatchRows) {
+function observe(
+  rows: LedgerBatchRows,
+  roles: readonly TransferProtocolRole[] = protocols,
+) {
   const events = planLedgerBatch(rows, rules);
   const before = structuredClone(events);
-  const provenance = ledgerTransferProvenance(
-    rows,
-    events,
-    protocols,
-  );
+  const provenance = ledgerTransferProvenance(rows, events, roles);
   assert.deepEqual(events, before); // Annotation cannot alter the fold's plan.
   const oldState = createLedgerState(),
     newState = createLedgerState();
@@ -100,13 +99,7 @@ function observe(rows: LedgerBatchRows) {
 }
 
 test("observed endpoint classes distinguish intrinsic and registered roles without inventing an owner", () => {
-  const sources = [
-    ledgerZeroAddress,
-    token,
-    launcher,
-    router,
-    manager,
-  ];
+  const sources = [ledgerZeroAddress, token, launcher, router, manager];
   const { provenance } = observe({
     registry,
     swaps: [],
@@ -188,6 +181,58 @@ test("unregistered counterparties retain their addresses without wallet or farm 
         !["other_wallet", "farm"].includes(p.toRole.class),
     ),
   );
+});
+
+test("positive evidence classifies wrappers and farms only inside its block range", () => {
+  const roles: TransferProtocolRole[] = [
+    ...protocols,
+    {
+      address: unregisteredWrapper,
+      class: "wrapper",
+      evidence: "protocol-registry:wrapper",
+      fromBlock: 20,
+      throughBlock: 29,
+    },
+    {
+      address: farm,
+      class: "farm",
+      evidence: "signed-protocol-statement:farm",
+      fromBlock: 20,
+    },
+  ];
+  const at = (block: number, endpoint: string) =>
+    observe(
+      {
+        registry,
+        swaps: [],
+        transfers: [transfer(endpoint, wallet, 0, "1", block)],
+      },
+      roles,
+    ).provenance[0].fromRole;
+  assert.deepEqual(at(19, unregisteredWrapper), {
+    class: "unregistered",
+    evidence: "registry:unregistered",
+  });
+  assert.deepEqual(at(20, unregisteredWrapper), {
+    class: "wrapper",
+    evidence: "protocol-registry:wrapper",
+  });
+  assert.deepEqual(at(29, unregisteredWrapper), {
+    class: "wrapper",
+    evidence: "protocol-registry:wrapper",
+  });
+  assert.deepEqual(at(30, unregisteredWrapper), {
+    class: "unregistered",
+    evidence: "registry:unregistered",
+  });
+  assert.deepEqual(at(20, farm), {
+    class: "farm",
+    evidence: "signed-protocol-statement:farm",
+  });
+  assert.deepEqual(at(20, otherWallet), {
+    class: "unregistered",
+    evidence: "registry:unregistered",
+  });
 });
 
 test("residual provenance retains the complete gross graph instead of pretending net tokens came from the first sender", () => {
