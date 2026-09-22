@@ -41,16 +41,7 @@ const removedCopy = [
   "Backtested",
 ];
 /** The export's stat labels: a name for each value, never a method note. */
-const statLabels = [
-  "Realized PnL",
-  "Unrealized",
-  "ROI",
-  "Win rate",
-  "Trades",
-  "Volume",
-  "Avg hold",
-  "Best trade",
-];
+const statLabels = ["Realized PnL", "ROI", "Win rate", "Trades", "Volume"];
 
 async function settled(page: import("@playwright/test").Page, url: string) {
   await page.goto(url);
@@ -59,27 +50,6 @@ async function settled(page: import("@playwright/test").Page, url: string) {
   });
   await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
 }
-/** The behaviour panel's five rows: label, value and the bar's filled share. */
-async function expectBehaviour(
-  page: import("@playwright/test").Page,
-  rows: [label: string, value: string, width: string][],
-) {
-  const region = page.locator(".wallet-behaviour-row");
-  await expect(region.locator("> span:first-child")).toHaveText(
-    rows.map((row) => row[0]),
-  );
-  await expect(region.locator("> .number")).toHaveText(
-    rows.map((row) => row[1]),
-  );
-  expect(
-    await region
-      .locator(".wallet-behaviour-bar > i")
-      .evaluateAll((nodes) =>
-        nodes.map((node) => (node as HTMLElement).style.width),
-      ),
-  ).toEqual(rows.map((row) => row[2]));
-}
-
 test("a ranked wallet shows profile content without coverage or preview copy", async ({
   page,
   context,
@@ -94,35 +64,16 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   await expect(main.locator("dialog.feature-dialog")).toHaveCount(0);
 
-  // The right column as the export draws it: alerts, behaviour, most traded.
+  // The condensed right column keeps only the existing pool ranking.
   const sidebar = page.locator(".market-sidebar");
-  await expect(sidebar.locator("h2")).toHaveText([
-    "Alerts",
-    "Behaviour",
-    "Most traded pools",
-  ]);
+  await expect(sidebar.locator("h2")).toHaveText(["Most traded pools"]);
   await expect(sidebar.locator("> *").first()).toHaveClass(/panel/);
-  const alerts = sidebar.locator(".wallet-alerts button");
-  await expect(alerts).toHaveText([
-    /^Every trade/,
-    /^First launch/,
-    /^Large exit/,
-    /^Leaderboard move/,
-  ]);
-  for (const toggle of await alerts.all()) {
-    await expect(toggle).toBeDisabled();
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  }
   await expect(
-    sidebar.locator(".panel", { hasText: "Alerts" }).locator(".panel-footnote"),
-  ).toHaveText("Alerts are not available yet.");
-  await expectBehaviour(page, [
-    ["Win rate", "100%", "100%"],
-    ["Wins", "1", "100%"],
-    ["Losses", "0", "0%"],
-    ["Still held", "0 of 1", "0%"],
-    ["Volume in top pool", "100%", "100%"],
-  ]);
+    sidebar.locator(".wallet-alerts, .wallet-behaviour"),
+  ).toHaveCount(0);
+  await expect(sidebar).not.toContainText("Alerts are not available yet.");
+  for (const label of ["Wins", "Losses", "Volume in top pool"])
+    await expect(sidebar.getByText(label, { exact: true })).toHaveCount(0);
   await expect(sidebar.locator(".wallet-top-pool")).toHaveCount(1);
   await expect(sidebar.locator(".wallet-top-pool").first()).toHaveAttribute(
     "href",
@@ -216,8 +167,23 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   ]);
 
   const stats = main.locator(".live-eight-stats .stat");
+  await expect(stats).toHaveCount(5);
   await expect(stats.locator("> span")).toHaveText(statLabels);
-  await expect(stats.locator("small")).toHaveCount(0);
+  const record = stats
+    .filter({ has: page.getByText("Win rate", { exact: true }) })
+    .locator("small .wl-record");
+  await expect(record.locator(".wl-text")).toHaveText("1W · 0L");
+  await expect(record.locator(".wl-bar > i")).toHaveAttribute(
+    "style",
+    "width: 100%;",
+  );
+  await expect(record.locator(".wl-bar > b")).toHaveAttribute(
+    "style",
+    "width: 0%;",
+  );
+  await expect(main.locator(".wallet-positions-context")).toHaveText(
+    "Still held0 of 1",
+  );
   // The window tabs sit in the chart panel head, as the export draws them,
   // rather than in a controls row of their own above the stat cards.
   await expect(main.locator(".live-controls")).toHaveCount(0);
@@ -287,148 +253,154 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   }
 });
 
-test("wallet ETH stats fit at 1200px without moving when the read resolves", async ({
-  page,
-  isMobile,
-}) => {
-  test.skip(isMobile, "the 1200px desktop boundary is not a phone surface");
-  await page.setViewportSize({ width: 1200, height: 1000 });
-  await page.addInitScript(() => {
-    const state = { cls: 0 };
-    Object.assign(window, { walletStatShifts: state });
-    new PerformanceObserver((list) => {
-      for (const raw of list.getEntries()) {
-        const shift = raw as PerformanceEntry & {
-          hadRecentInput: boolean;
-          value: number;
-        };
-        if (!shift.hadRecentInput) state.cls += shift.value;
-      }
-    }).observe({ type: "layout-shift", buffered: true });
-  });
-
-  let releaseResponse = () => {};
-  const held = new Promise<void>((resolve) => {
-    releaseResponse = resolve;
-  });
-  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    await held;
-    await route.fulfill({
-      response,
-      json: {
-        ...body,
-        wallet: {
-          ...body.wallet,
-          // The production wallet used for the 1200px reproduction. Keeping
-          // its exact wei values here pins the visible precision and ETH unit.
-          realizedWei: "138362590302263003435",
-          unrealizedWei: "0",
-          volumeWei: "302162590302263003435",
-          bestWei: "4743938706539225945",
-        },
-      },
+for (const width of [1440, 1280, 1200, 390]) {
+  test(`wallet summary geometry is stable at ${width}px`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "one desktop project measures the four exact widths");
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    await page.addInitScript(() => {
+      const state = { cls: 0 };
+      Object.assign(window, { walletStatShifts: state });
+      new PerformanceObserver((list) => {
+        for (const raw of list.getEntries()) {
+          const shift = raw as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!shift.hadRecentInput) state.cls += shift.value;
+        }
+      }).observe({ type: "layout-shift", buffered: true });
     });
-  });
 
-  await page.goto(`/wallet/${topWallet}/?window=All`);
-  const grid = page.locator(".wallet-page .live-eight-stats");
-  const workspace = page.locator(".wallet-page .workspace-grid");
-  const pending = {
-    grid: await grid.boundingBox(),
-    workspace: await workspace.boundingBox(),
-  };
-  const valueSlots = grid.locator('> .stat > strong > [data-pending="true"]');
-  await expect(valueSlots).toHaveCount(8);
+    let releaseResponse = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      await held;
+      await route.fulfill({
+        response,
+        json: {
+          ...body,
+          wallet: {
+            ...body.wallet,
+            // The production wallet used for the 1200px reproduction. Keeping
+            // its exact wei values here pins the visible precision and ETH unit.
+            realizedWei: "138362590302263003435",
+            volumeWei: "302162590302263003435",
+          },
+        },
+      });
+    });
 
-  releaseResponse();
-  await expect(valueSlots).toHaveCount(0);
-  await expect(
-    grid.locator(
-      ":scope > .stat:nth-child(1) .number, " +
-        ":scope > .stat:nth-child(2) .number, " +
-        ":scope > .stat:nth-child(6) .number, " +
-        ":scope > .stat:nth-child(8) .number",
-    ),
-  ).toHaveText(["+138.36 ETH", "0 ETH", "302.16 ETH", "+4.7439 ETH"]);
+    await page.goto(`/wallet/${topWallet}/?window=All`);
+    expect(await page.evaluate(() => innerWidth)).toBe(width);
+    const grid = page.locator(".wallet-page .wallet-stats");
+    const workspace = page.locator(".wallet-page .workspace-grid");
+    const activity = page.locator(".wallet-page .wallet-activity");
+    const pending = {
+      grid: await grid.boundingBox(),
+      workspace: await workspace.boundingBox(),
+      activity: await activity.boundingBox(),
+    };
+    const valueSlots = grid.locator('> .stat > strong > [data-pending="true"]');
+    await expect(grid.locator("> .stat")).toHaveCount(5);
+    await expect(valueSlots).toHaveCount(5);
 
-  const cards = await grid.locator(".stat").evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const value = node.querySelector("strong") as HTMLElement;
-      const number = value.querySelector(".number") as HTMLElement | null;
-      const text = number ?? value;
-      const range = document.createRange();
-      range.selectNodeContents(text);
-      const valueRect = value.getBoundingClientRect();
-      const textRect = range.getBoundingClientRect();
-      const style = getComputedStyle(value);
-      const numberStyle = getComputedStyle(text);
-      return {
-        top: node.getBoundingClientRect().top,
-        clipped:
-          value.scrollWidth > value.clientWidth ||
-          textRect.left < valueRect.left - 0.5 ||
-          textRect.right > valueRect.right + 0.5,
-        fontSize: style.fontSize,
-        fontWeight: style.fontWeight,
-        lineHeight: style.lineHeight,
-        numeric: numberStyle.fontVariantNumeric,
-      };
-    }),
-  );
-  expect(cards.filter((card) => card.top === cards[0].top)).toHaveLength(6);
-  expect(cards.filter((card) => card.top !== cards[0].top)).toHaveLength(2);
-  expect(cards.map((card) => card.clipped), "every stat value fits").toEqual(
-    statLabels.map(() => false),
-  );
-  expect(
-    cards.map(({ fontSize, fontWeight, lineHeight, numeric }) => ({
-      fontSize,
-      fontWeight,
-      lineHeight,
-      numeric,
-    })),
-  ).toEqual(
-    statLabels.map(() => ({
-      fontSize: "19px",
-      fontWeight: "600",
-      lineHeight: "23px",
-      numeric: "tabular-nums",
-    })),
-  );
+    releaseResponse();
+    await expect(valueSlots).toHaveCount(0);
+    if (width === 1200) {
+      await expect(
+        grid.locator(
+          ":scope > .stat:nth-child(1) .number, " +
+            ":scope > .stat:nth-child(5) .number",
+        ),
+      ).toHaveText(["+138.36 ETH", "302.16 ETH"]);
+    }
 
-  const resolved = {
-    grid: await grid.boundingBox(),
-    workspace: await workspace.boundingBox(),
-  };
-  expect(resolved, "the reserved grid does not move when data lands").toEqual(
-    pending,
-  );
-  const actionBottom = await page
-    .locator(".page-heading .button")
-    .evaluateAll((nodes) =>
-      Math.max(...nodes.map((node) => node.getBoundingClientRect().bottom)),
+    const cards = await grid.locator(".stat").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const value = node.querySelector("strong") as HTMLElement;
+        const number = value.querySelector(".number") as HTMLElement | null;
+        const text = number ?? value;
+        const style = getComputedStyle(value);
+        const numberStyle = getComputedStyle(text);
+        return {
+          top: Math.round(node.getBoundingClientRect().top),
+          clipped: [
+            ...node.querySelectorAll<HTMLElement>("strong, small"),
+          ].some((part) => part.scrollWidth > part.clientWidth),
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
+          numeric: numberStyle.fontVariantNumeric,
+        };
+      }),
     );
-  expect(
-    actionBottom,
-    "the wrapped heading controls end before the stat cards",
-  ).toBeLessThanOrEqual(resolved.grid!.y);
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      ),
-  );
-  expect(
+    const rowCounts = [...new Set(cards.map((card) => card.top))].map(
+      (top) => cards.filter((card) => card.top === top).length,
+    );
+    expect(rowCounts, "every stat row is complete").toEqual(
+      width === 390 ? [3, 2] : [5],
+    );
+    expect(
+      cards.map((card) => card.clipped),
+      "every stat value fits",
+    ).toEqual(statLabels.map(() => false));
+    expect(
+      cards.map(({ fontWeight, lineHeight, numeric }) => ({
+        fontWeight,
+        lineHeight,
+        numeric,
+      })),
+    ).toEqual(
+      statLabels.map(() => ({
+        fontWeight: "600",
+        lineHeight: "23px",
+        numeric: "tabular-nums",
+      })),
+    );
+    expect(cards.map((card) => card.fontSize)).toEqual(
+      statLabels.map(() => (width === 390 ? "17px" : "19px")),
+    );
+
+    const resolved = {
+      grid: await grid.boundingBox(),
+      workspace: await workspace.boundingBox(),
+      activity: await activity.boundingBox(),
+    };
+    expect(resolved, "the reserved wallet regions do not move").toEqual(
+      pending,
+    );
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBe(width);
+    const actionBottom = await page
+      .locator(".page-heading .button")
+      .evaluateAll((nodes) =>
+        Math.max(...nodes.map((node) => node.getBoundingClientRect().bottom)),
+      );
+    expect(actionBottom).toBeLessThanOrEqual(resolved.grid!.y);
     await page.evaluate(
       () =>
-        (window as unknown as { walletStatShifts: { cls: number } })
-          .walletStatShifts.cls,
-    ),
-    "the 1200px wallet stays within the shared CLS noise allowance",
-  ).toBeLessThan(0.001);
-});
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { walletStatShifts: { cls: number } })
+            .walletStatShifts.cls,
+      ),
+      `${width}px wallet CLS`,
+    ).toBeLessThan(0.001);
+  });
+}
 
 test("most traded pools lists at most five pools by observed volume", async ({
   page,
@@ -444,15 +416,10 @@ test("most traded pools lists at most five pools by observed volume", async ({
     );
   for (let i = 1; i < volumes.length; i++)
     expect(volumes[i] <= volumes[i - 1]).toBe(true);
-  // Every bar is a share of a real denominator: one win in three closed
-  // cycles, five of eight positions still held, PEPE's share of the volume.
-  await expectBehaviour(page, [
-    ["Win rate", "33%", "33%"],
-    ["Wins", "1", "33%"],
-    ["Losses", "2", "67%"],
-    ["Still held", "5 of 8", "63%"],
-    ["Volume in top pool", "22%", "22%"],
-  ]);
+  await expect(page.locator(".wallet-stats .wl-text")).toHaveText("1W · 2L");
+  await expect(page.locator(".wallet-positions-context")).toHaveText(
+    "Still held5 of 8",
+  );
 });
 
 test("marking a wallet as mine reframes its page as the portfolio", async ({
@@ -607,16 +574,10 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
   await expect(page.locator(".market-sidebar h2").last()).toHaveText(
     "Most traded pools",
   );
-  // A figure with no denominator leaves its value and bar empty, and so do
-  // the two counts the accounting never took for this wallet.
-  await expectBehaviour(page, [
-    ["Win rate", "", "0%"],
-    ["Wins", "", "0%"],
-    ["Losses", "", "0%"],
-    ["Still held", "", "0%"],
-    ["Volume in top pool", "", "0%"],
-  ]);
-  await expect(page.locator(".wallet-behaviour .unavailable")).toHaveCount(0);
+  await expect(page.locator(".wallet-stats .wl-record")).toHaveCount(0);
+  await expect(page.locator(".wallet-positions-context > strong")).toHaveText(
+    "",
+  );
   await expect(page.locator(".market-sidebar")).not.toContainText("N/A");
   // The PnL chart's seven axis ticks keep their line boxes but print
   // nothing for a series with no points: the note under the chart already
