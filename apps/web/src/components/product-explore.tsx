@@ -12,10 +12,12 @@ import {
   poolHref,
   shortAddress,
   since,
+  windows,
   type AnalyticsLeaderboardResponse,
   type AnalyticsExploreResponse,
   type AnalyticsExploreOptions,
   type AnalyticsPoolRow,
+  type LiveWindow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { useExploreRows } from "@/lib/use-explore-rows";
@@ -154,6 +156,39 @@ function LaunchLine({
       >
         {shortAddress(pool.launchSender)}
       </Link>
+    </span>
+  );
+}
+/**
+ * A missing comparison is only labelled as new when the launch timestamp
+ * proves that the pool did not exist at the selected window's baseline.
+ * Older rows keep Change's unavailable state because their missing value can
+ * have another cause. The API remains the only source of percentage figures.
+ */
+function PoolChange({
+  pool,
+  window,
+  now,
+}: {
+  pool: AnalyticsPoolRow;
+  window: LiveWindow;
+  now: number | null;
+}) {
+  if (pool.stats.change !== null) return <Change value={pool.stats.change} />;
+  const span = windows[window];
+  const asOf = now;
+  if (asOf === null || !Number.isFinite(span)) return <Change value={null} />;
+  const ageSeconds = asOf - pool.launchedAt;
+  if (ageSeconds < 0 || ageSeconds >= span) return <Change value={null} />;
+  const age = since(pool.launchedAt, asOf);
+  return (
+    <span
+      className="number change-age muted"
+      aria-label={`No ${window} change yet; launched ${age} ago`}
+      title={`Launched ${age} ago - no ${window} baseline yet`}
+    >
+      new<span aria-hidden="true"> · </span>
+      <span key={age}>{age}</span>
     </span>
   );
 }
@@ -616,10 +651,15 @@ export function ProductExplore() {
                               </td>
                               <td data-pending={skeleton}>
                                 {p || skeleton ? (
-                                  <Change
-                                    value={p?.stats.change}
-                                    pending={skeleton}
-                                  />
+                                  p ? (
+                                    <PoolChange
+                                      pool={p}
+                                      window={window}
+                                      now={now}
+                                    />
+                                  ) : (
+                                    <Change pending />
+                                  )
                                 ) : (
                                   "\u00a0"
                                 )}
@@ -639,7 +679,6 @@ export function ProductExplore() {
                                   <AddressChip
                                     address={p.launchSender}
                                     href={`/wallet/${p.launchSender.toLowerCase()}/`}
-                                    stacked
                                   />
                                 ) : skeleton ? (
                                   "Pending"
@@ -683,7 +722,11 @@ export function ProductExplore() {
                             {!launchOnly(p) && (
                               <div className="mobile-pool-price">
                                 <Price wei={p.stats.priceWei} />
-                                <Change value={p.stats.change} />
+                                <PoolChange
+                                  pool={p}
+                                  window={window}
+                                  now={now}
+                                />
                               </div>
                             )}
                             <WatchButton id={p.id} />

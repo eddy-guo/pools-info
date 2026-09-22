@@ -1,0 +1,56 @@
+{
+  "capturedAt": "2026-09-22",
+  "path": "/",
+  "columns": ["TOKEN", "PRICE", "24H", "VOLUME", "LAUNCH SENDER"],
+  "before": {
+    "1440": {
+      "widthsPx": [538, 116, 98, 112, 122],
+      "senderControlsWrap": true
+    },
+    "1280": {
+      "widthsPx": [410.56, 116, 98, 112, 122],
+      "senderControlsWrap": true
+    },
+    "1163": {
+      "widthsPx": [299.19, 116, 98, 112, 122],
+      "senderControlsWrap": true
+    },
+    "390": {
+      "presentation": "mobile cards",
+      "columns": null,
+      "cardWidthPx": 360,
+      "cardHeightPx": 104,
+      "horizontalOverflowPx": 0
+    }
+  },
+  "after": {
+    "1440": {
+      "widthsPx": [412, 132, 112, 140, 190],
+      "senderControlsWrap": false,
+      "horizontalOverflowPx": 0
+    },
+    "1280": {
+      "widthsPx": [284.56, 132, 112, 140, 190],
+      "senderControlsWrap": false,
+      "horizontalOverflowPx": 0
+    },
+    "1163": {
+      "widthsPx": [173.19, 132, 112, 140, 190],
+      "senderControlsWrap": false,
+      "horizontalOverflowPx": 0
+    },
+    "390": {
+      "presentation": "mobile cards",
+      "columns": null,
+      "cardWidthPx": 360,
+      "cardHeightPx": 104,
+      "horizontalOverflowPx": 0
+    }
+  },
+  "frames": {
+    "before1440": "docs/evidence/screener-columns-2026-09-22/before-1440.png",
+    "after1440": "docs/evidence/screener-columns-2026-09-22/after-1440.png",
+    "before390": "docs/evidence/screener-columns-2026-09-22/before-390.png",
+    "after390": "docs/evidence/screener-columns-2026-09-22/after-390.png"
+  }
+}
