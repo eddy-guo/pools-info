@@ -53,9 +53,8 @@ export function createWarmSet(
     let cancellation: Promise<void> | null = null;
     const disconnect = () => {
       if (cancellation) return;
-      cancellation = (backendPid
-        ? cancelBackend(url, backendPid)
-        : Promise.resolve()
+      cancellation = (
+        backendPid ? cancelBackend(url, backendPid) : Promise.resolve()
       )
         .catch(() => {})
         .then(() => client.end())

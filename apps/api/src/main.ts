@@ -13,7 +13,10 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
   throw Error("Invalid PORT");
 // Read once at startup: an unset MARKET_SOURCE serves the broad rollups.
 const marketSource = marketSourceSetting(process.env.MARKET_SOURCE);
-const reader = createReader(undefined, undefined, { marketSource, warmup: true });
+const reader = createReader(undefined, undefined, {
+  marketSource,
+  warmup: true,
+});
 const images = createTokenImageService(createTokenImageStore(), {
   settings: tokenImageSettings(),
 });

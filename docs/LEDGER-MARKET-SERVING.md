@@ -279,7 +279,7 @@ summed in one window pass: 3,176 shared buffers and 4 ms warm for that
 busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
 `min(hour)` over the same ranges on All. Warm on the production-shape copy
 (Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
-warm set for a cutover adds the four windows of the board's top rows.
+current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
 
 ## The creators aggregate
 

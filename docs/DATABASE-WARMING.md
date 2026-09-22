@@ -11,7 +11,9 @@ own behavior. Icons refuse with the database routes.
 The website's existing unavailable behavior is a prerequisite: live failures
 must never substitute the committed preloaded dataset. `PRODUCT_FIXTURES=1`
 is an explicit test deployment, not a fallback. The current website proxy
-normalizes product failures to its existing `data_unavailable` contract.
+normalizes the API error code to its existing `data_unavailable` contract while
+preserving `reason: "warming"` and a valid `Retry-After`. The browser retries
+that warming response once within its existing 12-second request budget.
 
 `apps/api/src/database-warmth.ts` owns the policy and readiness state.
 `apps/api/src/warm-set.ts` invokes the current serving readers in order:

@@ -163,12 +163,11 @@ hold after any change to either path:
   the old path they were byte-identical for every pool (the broad rollups
   closed on 31 July), so identical figures mean the ledger is not being served
   whatever else looks right.
-- No `read_failed` with `57014` on any product read. A slow first pass after a
-  redeploy is the fresh api process warming and settles; the cold database
-  fails loudly instead, and the page cache goes cold on its own after about
-  ninety idle minutes with no restart, so the flip was preceded by a hand-warm
-  through a temporary api in ledger mode confirmed under half a second twice
-  in a row (the reads are the warm-up; nothing can inspect residency).
+- No `read_failed` with `57014` on any product read. At the original cutover,
+  the page cache could go cold after about ninety idle minutes, so the flip was
+  preceded by a hand-warm through a temporary API in ledger mode, confirmed
+  under half a second twice in a row. That historical procedure is superseded
+  by the fail-closed automation in `docs/DATABASE-WARMING.md`.
 
 Rollback stays the same pair: `DATABASE_URL` referencing the old `Postgres`,
 `MARKET_SOURCE` deleted, the previous image redeployed.
