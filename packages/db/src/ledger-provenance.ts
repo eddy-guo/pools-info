@@ -15,7 +15,16 @@ import {
 import type { Client } from "./index";
 import { assertLedgerWriter, ledgerStream } from "./ledger";
 
-const migrationName = "attended/001_transfer_provenance.sql";
+const provenanceMigrations = [
+  {
+    name: "attended/001_transfer_provenance.sql",
+    file: "../attended-migrations/001_transfer_provenance.sql",
+  },
+  {
+    name: "attended/002_transfer_counterparty_registry.sql",
+    file: "../attended-migrations/002_transfer_counterparty_registry.sql",
+  },
+] as const;
 /** Classification v1 is evidence-backed and deliberately incomplete. A tx.to
  * different from the router is not evidence that the address is a wrapper. */
 export const ledgerTransferProtocols: readonly TransferProtocolRole[] = [
@@ -306,25 +315,34 @@ export async function migrateLedgerTransferProvenance(
 ) {
   if (!/^[a-f0-9]{64}$/.test(archiveSha256))
     throw Error("ledger_provenance_archive_required");
-  const sql = await readFile(
-    new URL(
-      "../attended-migrations/001_transfer_provenance.sql",
-      import.meta.url,
-    ),
-    "utf8",
+  const migrations = await Promise.all(
+    provenanceMigrations.map(async ({ name, file }) => {
+      const sql = await readFile(new URL(file, import.meta.url), "utf8");
+      return {
+        name,
+        sql,
+        checksum: createHash("sha256").update(sql).digest("hex"),
+      };
+    }),
   );
-  const checksum = createHash("sha256").update(sql).digest("hex");
   await db.query("BEGIN");
   try {
     await assertLedgerWriter(db);
     await db.query("SELECT pg_advisory_xact_lock(4663,19001)");
-    const prior = await db.query(
-      "SELECT checksum FROM pools_schema_migrations WHERE name=$1",
-      [migrationName],
+    const priorRows = await db.query(
+      "SELECT name,checksum FROM pools_schema_migrations WHERE name=ANY($1::text[])",
+      [migrations.map(({ name }) => name)],
     );
-    if (prior.rowCount) {
-      if (prior.rows[0].checksum !== checksum)
+    const prior = new Map(
+      priorRows.rows.map((row) => [row.name as string, row.checksum as string]),
+    );
+    for (const migration of migrations) {
+      const checksum = prior.get(migration.name);
+      if (checksum !== undefined && checksum !== migration.checksum)
         throw Error("ledger_provenance_migration_changed");
+    }
+    const pending = migrations.filter(({ name }) => !prior.has(name));
+    if (!pending.length) {
       await db.query("COMMIT");
       return false;
     }
@@ -344,22 +362,26 @@ export async function migrateLedgerTransferProvenance(
       current?.hash !== archivedCursor?.hash
     )
       throw Error("ledger_provenance_archive_cursor_changed");
-    await db.query(sql);
-    const comment = await db.query(
-      "SELECT format('COMMENT ON TABLE agg_transfer_provenance IS %L', $1::text) AS sql",
-      [
-        JSON.stringify({
-          archiveSha256,
-          classificationVersion: 2,
-          cursor: current,
-        }),
-      ],
-    );
-    await db.query(comment.rows[0].sql);
-    await db.query(
-      "INSERT INTO pools_schema_migrations(name,checksum) VALUES ($1,$2)",
-      [migrationName, checksum],
-    );
+    for (const migration of pending) {
+      await db.query(migration.sql);
+      if (migration.name === provenanceMigrations[0].name) {
+        const comment = await db.query(
+          "SELECT format('COMMENT ON TABLE agg_transfer_provenance IS %L', $1::text) AS sql",
+          [
+            JSON.stringify({
+              archiveSha256,
+              classificationVersion: 1,
+              cursor: current,
+            }),
+          ],
+        );
+        await db.query(comment.rows[0].sql);
+      }
+      await db.query(
+        "INSERT INTO pools_schema_migrations(name,checksum) VALUES ($1,$2)",
+        [migration.name, migration.checksum],
+      );
+    }
     await db.query("COMMIT");
     return true;
   } catch (error) {

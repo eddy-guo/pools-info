@@ -54,9 +54,9 @@ positive registrations without rewriting financial history.
 
 ## Wrapper and farm evidence registry
 
-`agg_transfer_counterparty_registry` is created by the same attended activation
-as the raw provenance table. It is empty at creation. No wrapper or farm is
-seeded by this repository because it contains no authoritative evidence for one.
+`agg_transfer_counterparty_registry` is created by attended migration 002 after
+attended migration 001 has retained raw provenance. It is empty at creation. No
+wrapper or farm is seeded by this repository because it contains no authoritative evidence for one.
 Absence is deterministic: the endpoint stays `unregistered` and no API
 attribution flag appears.
 
@@ -201,13 +201,17 @@ attended pause/resume and the migration separately from the guarded code merge.
    This script loads no `.env.local`, verifies the archive bytes against the
    manifest, requires the writer lock and refuses a changed cursor. It does not
    run collection or ordinary migrations. The library also takes the migration
-   lock, executes `packages/db/attended-migrations/001_transfer_provenance.sql`
-   transactionally, records its checksum and annotates the table with archive
-   digest and activation cursor. This SQL deliberately lives outside the
-   automatic migration directory. The manifest's restore attestation remains
-   the attending operator's responsibility, not a claim inferred from a hash.
+   lock, executes each pending attended migration in order from
+   `packages/db/attended-migrations/001_transfer_provenance.sql` through
+   `002_transfer_counterparty_registry.sql`, and records each immutable
+   checksum transactionally. Migration 001 annotates the raw table with its
+   archive digest and activation cursor. These files deliberately live outside
+   the automatic migration directory. The manifest's restore attestation
+   remains the attending operator's responsibility, not a claim inferred from
+   a hash. A database that already records the immutable 001 checksum applies
+   only 002; 001 is neither rerun nor rewritten.
 
-7. Check the schema, table comment and migration checksum, unchanged financial
+7. Check the schema, table comment and both migration checksums, unchanged financial
    snapshots/read responses, zero provenance rows and NULL historical coverage
    counts. Only then resume the already-authorized ledger tip on the new code.
    Check its next committed batch's count against actual provenance rows, exact

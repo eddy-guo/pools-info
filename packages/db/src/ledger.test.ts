@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   instantDeployments,
   instantRegistryVerifiedAtBlock,
@@ -46,6 +47,8 @@ if (!url)
     "Set TEST_DATABASE_URL to a dedicated test Postgres instance; DATABASE_URL is never used by these tests",
   );
 const E = 10n ** 18n;
+const originalProvenanceMigrationSha256 =
+  "bf7d472eac07ae1f75017911eb2f9b7f0bee3146cec81bb076474f1c134d2dac";
 const hash = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const base = ledgerStream.start;
@@ -417,6 +420,103 @@ test("attended provenance activation preserves old ledger bytes; writes are exac
       )
     ).rows.map((r) => r.transfer_provenance_rows),
     [null, 2, 0],
+  );
+});
+
+test("counterparty registry upgrades an existing provenance schema without guessing unknowns", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  const originalSql = await readFile(
+    new URL(
+      "../attended-migrations/001_transfer_provenance.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  assert.equal(
+    createHash("sha256").update(originalSql).digest("hex"),
+    originalProvenanceMigrationSha256,
+  );
+  await db.query("BEGIN");
+  await db.query(originalSql);
+  await db.query(
+    "INSERT INTO pools_schema_migrations(name,checksum) VALUES ($1,$2)",
+    [
+      "attended/001_transfer_provenance.sql",
+      originalProvenanceMigrationSha256,
+    ],
+  );
+  await db.query("COMMIT");
+  assert.equal(
+    (
+      await db.query(
+        "SELECT to_regclass('agg_transfer_counterparty_registry') AS table",
+      )
+    ).rows[0].table,
+    null,
+  );
+  assert.equal(
+    await migrateLedgerTransferProvenance(db, "a".repeat(64), null),
+    true,
+  );
+  assert.equal(
+    await migrateLedgerTransferProvenance(db, "b".repeat(64), null),
+    false,
+  );
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT name FROM pools_schema_migrations WHERE name LIKE 'attended/%transfer_%' ORDER BY name",
+      )
+    ).rows.map((row) => row.name),
+    [
+      "attended/001_transfer_provenance.sql",
+      "attended/002_transfer_counterparty_registry.sql",
+    ],
+  );
+  const wrapper = addr(0x410);
+  await registerLedgerTransferCounterparties(
+    db,
+    counterpartyManifest([
+      {
+        address: wrapper,
+        class: "wrapper",
+        label: "Fixture wrapper",
+        validFromBlock: base,
+        validThroughBlock: null,
+      },
+    ]),
+  );
+  const txHash = hash(0x410);
+  await applyLedgerBatch(
+    db,
+    batch(base, base + 9, [
+      {
+        transfers: [
+          transfer(base + 1, 1, wrapper, W, 11n, txHash),
+          transfer(base + 1, 2, V, W, 7n, txHash),
+        ],
+      },
+    ]),
+  );
+  assert.deepEqual(
+    (
+      await db.query(
+        "SELECT encode(from_address,'hex') AS address,from_class,classification_version FROM agg_transfer_provenance ORDER BY log_index",
+      )
+    ).rows,
+    [
+      {
+        address: wrapper.slice(2),
+        from_class: "wrapper",
+        classification_version: 2,
+      },
+      {
+        address: V.slice(2),
+        from_class: "unregistered",
+        classification_version: 2,
+      },
+    ],
   );
 });
 
