@@ -1822,7 +1822,8 @@ main {
   .mobile-pool-top .price {
     font-size: 12px;
   }
-  .mobile-pool-top .change {
+  .mobile-pool-top .change,
+  .mobile-pool-top .change-age {
     font-size: 12px;
   }
   .mobile-pool-top .watch {
@@ -4663,7 +4664,8 @@ button.icon-button:disabled {
     gap: 2px;
   }
   .mobile-pool-price .price,
-  .mobile-pool-price .change {
+  .mobile-pool-price .change,
+  .mobile-pool-price .change-age {
     /* The span itself, not just the column: a right-aligned value that
        replaces a placeholder in place still moves its own start, which
        Chrome scores as a shift even when the column around it does not. */
@@ -5092,17 +5094,12 @@ button.icon-button:disabled {
 .explore-page .pool-table tbody td {
   height: 62px;
 }
-/* Six columns share the panel on the export's grid, each measured against
-   its widest real value plus the cell padding: a six-significant-digit
-   volume, a four-digit signed change, a mono price with its subscript, the
-   sender chip. The token column takes the remainder, 538px at the 1030px the
-   panel gives a 1440px viewport; the table holds 742px, where that column is
-   250px and still holds page one's longest `SYMBOL · age · N trades`
-   subtitle with room to spare. The 11.5px head sizes the launch sender
-   column: it holds its label without reaching into the next column, with
-   half a pixel per glyph to spare for a renderer that rounds glyph advances
-   to whole pixels: Linux Chromium, where CI runs the browser suite, sets
-   "Launch sender" 2px wider than macOS. */
+/* Six columns share the panel on the export's grid. Token takes the remainder
+   after deliberate tracks for the four figures to its right: enough for the
+   mono subscript-zero price, a signed four-digit change, a six-significant-
+   digit volume and the sender's address plus both actions on one line. At
+   the reported 1163px viewport Token is 173px and truncates its two text
+   lines; at 1440px it is 412px instead of consuming two thirds of the table. */
 .explore-page .pool-table {
   min-width: 742px;
 }
@@ -5115,16 +5112,16 @@ button.icon-button:disabled {
   width: 44px;
 }
 .explore-page .col-price {
-  width: 116px;
+  width: 132px;
 }
 .explore-page .col-change {
-  width: 98px;
-}
-.explore-page .col-volume {
   width: 112px;
 }
+.explore-page .col-volume {
+  width: 140px;
+}
 .explore-page .col-sender {
-  width: 122px;
+  width: 190px;
 }
 /* The table fits the list's own width rather than scrolling sideways: under
    its 742px it drops Launch sender. The token and every figure stay; a phone
@@ -6411,7 +6408,8 @@ a.wallet-top-pool:hover {
 }
 .number,
 .price,
-.change {
+.change,
+.change-age {
   font-variant-numeric: tabular-nums;
 }
 .data-table .number {
@@ -6425,6 +6423,10 @@ a.wallet-top-pool:hover {
 .data-table .change {
   display: inline-block;
   min-width: 8ch;
+}
+.change-age {
+  white-space: nowrap;
+  font-weight: 500;
 }
 @container site (max-width: 767px) {
   /* The readout's three parts stack: the 16ch value slot and the 30ch time

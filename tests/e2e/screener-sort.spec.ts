@@ -11,10 +11,10 @@ const plain = ["Token", "Price", "Launch sender"];
 /* With no sort in the URL the screener reads by volume, highest first. */
 const defaultColumn = 5;
 /* The export's grid at the 1030px the panel gives a 1440px viewport: watch,
-   token, price, 24h, volume, launch sender. Liquidity, holders and a per-row
-   price trend are not served, so their columns are gone and the token column
-   takes the room. */
-const columns = [44, 538, 116, 98, 112, 122];
+   token, price, 24h, volume, launch sender. The four tracks to Token's right
+   deliberately hold their content, including the sender and both actions on
+   one line; Token takes the smaller remainder and truncates its text. */
+const columns = [44, 412, 132, 112, 140, 190];
 /* Price through volume read from the right, as do their heads. */
 const rightAligned = [3, 4, 5];
 
@@ -363,6 +363,9 @@ test.describe("a stale crowd view in the URL", () => {
     const changed = exploreRequest(page);
     await page.getByRole("button", { name: "7d", exact: true }).click();
     expect(new URL((await changed).url()).searchParams.get("view")).toBe("all");
-    expect(search(page).get("view"), "the stale view leaves the URL").toBeNull();
+    expect(
+      search(page).get("view"),
+      "the stale view leaves the URL",
+    ).toBeNull();
   });
 });
