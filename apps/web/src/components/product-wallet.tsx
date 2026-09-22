@@ -24,6 +24,7 @@ import {
   Chart,
   EmptyState,
   UnavailableState,
+  WinLossRecord,
 } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
@@ -77,69 +78,13 @@ function holding(p: AnalyticsWalletResponse["positions"][number]) {
       )
     : null;
 }
-/** The export's four alert toggles, drawn off until alerts exist. */
-const alerts = (creator: boolean) => [
-  ["Every trade", "Buy or sell, within the block"],
-  creator
-    ? ["New launch", "When this wallet launches a pool"]
-    : ["First launch", "If this wallet ever launches a pool"],
-  ["Large exit", "Sells over 25% of a position"],
-  ["Leaderboard move", "Enters or leaves the top 100"],
-];
-/**
- * The export's five behaviour bars from the figures the wallet read carries:
- * a bar is a share of a real denominator, and a figure the read does not
- * have leaves its bar and value empty rather than inventing one.
- */
-function behaviour(data: AnalyticsWalletResponse | undefined) {
-  const w = data?.wallet;
-  const wins = w?.wins ?? 0,
-    losses = w?.losses ?? 0,
-    closed = wins + losses;
+/** The existing Behaviour-panel figure, now presented with the positions it describes. */
+function stillHeld(data: AnalyticsWalletResponse | undefined) {
   const known = (data?.positions ?? []).flatMap((p) =>
     p.position ? [p.position] : [],
   );
   const held = known.filter((p) => BigInt(p.quantity) > 0n).length;
-  const total = w ? BigInt(w.volumeWei) : 0n;
-  const top = (data?.positions ?? []).reduce(
-    (best, p) => (BigInt(p.volumeWei) > best ? BigInt(p.volumeWei) : best),
-    0n,
-  );
-  const topShare = total > 0n ? Number((top * 10000n) / total) / 10000 : null;
-  const pct = (share: number | null) =>
-    share === null ? null : `${Math.round(share * 100)}%`;
-  return [
-    {
-      label: "Win rate",
-      value: pct(w?.winRate == null ? null : w.winRate / 100),
-      share: w?.winRate == null ? 0 : w.winRate / 100,
-      tone: "up",
-    },
-    {
-      label: "Wins",
-      value: w && !unindexed(data) ? String(wins) : null,
-      share: closed ? wins / closed : 0,
-      tone: "up",
-    },
-    {
-      label: "Losses",
-      value: w && !unindexed(data) ? String(losses) : null,
-      share: closed ? losses / closed : 0,
-      tone: "down",
-    },
-    {
-      label: "Still held",
-      value: known.length ? `${held} of ${known.length}` : null,
-      share: known.length ? held / known.length : 0,
-      tone: "accent",
-    },
-    {
-      label: "Volume in top pool",
-      value: pct(topShare),
-      share: topShare ?? 0,
-      tone: "muted",
-    },
-  ];
+  return known.length ? `${held} of ${known.length}` : null;
 }
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
@@ -203,6 +148,7 @@ export function ProductWallet({ address }: { address: string }) {
     /* Both layouts hold the row; the one the container query shows has a box. */
     [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
   }, [data, shown]);
+  const held = stillHeld(data);
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -295,12 +241,9 @@ export function ProductWallet({ address }: { address: string }) {
       {failed && <UnavailableState subject="Wallet" onRetry={refresh} />}
       {!failed && (
         <>
-          <div className="stats-grid live-eight-stats">
+          <div className="stats-grid live-eight-stats wallet-stats">
             <Stat pending={loading && !data} label="Realized PnL">
               <Eth pending={!data} wei={w?.realizedWei} signed digits={5} />
-            </Stat>
-            <Stat pending={loading && !data} label="Unrealized">
-              <Eth pending={!data} wei={w?.unrealizedWei} signed digits={5} />
             </Stat>
             <Stat pending={loading && !data} label="ROI">
               {w?.roi == null ? (
@@ -309,7 +252,15 @@ export function ProductWallet({ address }: { address: string }) {
                 <Change value={w.roi} digits={1} />
               )}
             </Stat>
-            <Stat pending={loading && !data} label="Win rate">
+            <Stat
+              pending={loading && !data}
+              label="Win rate"
+              note={
+                data && !unindexed(data) ? (
+                  <WinLossRecord wins={w?.wins ?? 0} losses={w?.losses ?? 0} />
+                ) : undefined
+              }
+            >
               {pct(w?.winRate)}
             </Stat>
             <Stat pending={loading && !data} label="Trades">
@@ -327,16 +278,6 @@ export function ProductWallet({ address }: { address: string }) {
                 wei={unindexed(data) ? null : w?.volumeWei}
                 digits={5}
               />
-            </Stat>
-            <Stat pending={loading && !data} label="Avg hold">
-              {w?.avgHold == null ? (
-                <Unavailable />
-              ) : (
-                `${Math.round(w.avgHold)}s`
-              )}
-            </Stat>
-            <Stat pending={loading && !data} label="Best trade">
-              <Eth pending={!data} wei={w?.bestWei} signed digits={5} />
             </Stat>
           </div>
           <div className="workspace-grid">
@@ -394,6 +335,16 @@ export function ProductWallet({ address }: { address: string }) {
                 </div>
                 {tab === "positions" && (
                   <>
+                    <div className="wallet-positions-context">
+                      <span>Still held</span>
+                      <strong data-pending={!data}>
+                        {!data ? (
+                          "Pending"
+                        ) : held === null ? null : (
+                          <Fragment key={held}>{held}</Fragment>
+                        )}
+                      </strong>
+                    </div>
                     <div
                       className="table-region"
                       data-empty={!!data && !data.positions.length}
@@ -673,61 +624,6 @@ export function ProductWallet({ address }: { address: string }) {
               </section>
             </div>
             <aside className="market-sidebar">
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>Alerts</h2>
-                </div>
-                <div className="wallet-alerts">
-                  {alerts(!!data?.launches.length).map(([label, note]) => (
-                    <button
-                      type="button"
-                      className={styles.alert}
-                      key={label}
-                      aria-pressed={false}
-                      disabled
-                    >
-                      <span>
-                        {label}
-                        <small>{note}</small>
-                      </span>
-                      <span className={styles.switch} aria-hidden="true" />
-                    </button>
-                  ))}
-                </div>
-                <p className="panel-footnote">Alerts are not available yet.</p>
-              </section>
-              <section className="panel">
-                <div className="panel-heading">
-                  <h2>Behaviour</h2>
-                </div>
-                <div className="wallet-behaviour" aria-busy={!data || stale}>
-                  {behaviour(data).map((b) => (
-                    <div className="wallet-behaviour-row" key={b.label}>
-                      <span>{b.label}</span>
-                      <span className="number" data-pending={!data}>
-                        {/* Keyed so a value replaces its node: rewriting
-                          right-aligned text in place moves its start. */}
-                        {!data ? (
-                          "Pending"
-                        ) : b.value === null ? null : (
-                          <Fragment key={b.value}>{b.value}</Fragment>
-                        )}
-                      </span>
-                      <span
-                        className="wallet-behaviour-bar"
-                        data-tone={b.tone}
-                        aria-hidden="true"
-                      >
-                        <i
-                          style={{
-                            width: `${Math.round(Math.min(1, Math.max(0, b.share)) * 100)}%`,
-                          }}
-                        />
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
               <section className="panel">
                 <div className="panel-heading">
                   <h2>Most traded pools</h2>

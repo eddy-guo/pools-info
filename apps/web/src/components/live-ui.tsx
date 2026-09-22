@@ -79,7 +79,7 @@ export function Stat({
 }: {
   label: string;
   children: React.ReactNode;
-  note?: string;
+  note?: React.ReactNode;
   pending?: boolean;
 }) {
   return (

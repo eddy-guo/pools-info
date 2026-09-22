@@ -14,7 +14,14 @@ import { useFollowedLeaderboard } from "@/lib/use-followed-leaderboard";
 import { useQuery } from "./state";
 import { useFollowing, FollowRowButton } from "./following";
 import { Eth, Unavailable, WindowTabs, useWindow, utc } from "./live-ui";
-import { AddressChip, Avatar, Change, UnavailableState } from "./ui";
+import {
+  AddressChip,
+  Avatar,
+  Change,
+  UnavailableState,
+  WinLossBar,
+  WinLossRecord,
+} from "./ui";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
 
@@ -43,26 +50,6 @@ function relativeAge(seconds: number, now: number) {
   if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
   return `${Math.floor(delta / 86400)}d`;
 }
-function WinLossBar({ wins, losses }: { wins: number; losses: number }) {
-  const total = wins + losses;
-  return (
-    <span className="wl-bar" aria-hidden="true">
-      <i style={{ width: `${total ? (wins / total) * 100 : 0}%` }} />
-      <b style={{ width: `${total ? (losses / total) * 100 : 0}%` }} />
-    </span>
-  );
-}
-function WinLossRecord({ wins, losses }: { wins: number; losses: number }) {
-  return (
-    <span className="wl-record">
-      <WinLossBar wins={wins} losses={losses} />
-      <span className="wl-text">
-        {wins}W · {losses}L
-      </span>
-    </span>
-  );
-}
-
 /** The leaderboard never requests past its top 100, whatever the API allows. */
 const CAP = 100;
 /** Followed wallets are already capped by the local follow store itself. */

@@ -4826,22 +4826,22 @@ main {
     transition: opacity 150ms ease-out;
   }
 }
-/* Keep the wallet's ETH values whole at the 1200px desktop boundary. The
-   164px floor matches the export's six-card first row there, while auto-fit
-   keeps using the available width at every wider desktop size. */
+/* The condensed wallet summary is one complete row on desktop. Fixed tracks
+   keep all five cards together at the 1200px boundary rather than letting an
+   auto-fit count leave a partial second row as the viewport changes. */
 @container site (min-width: 768px) {
-  .wallet-page .live-eight-stats {
-    grid-template-columns: repeat(auto-fit, minmax(164px, 1fr));
+  .wallet-page .wallet-stats {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 /* The export's 112px card: label, one-line value, and a fact line only where
    the read already sends one (otherwise the reserved space stays blank). */
-.wallet-page .live-eight-stats .stat {
+.wallet-page .wallet-stats .stat {
   height: 112px;
   padding: 16px 18px;
   overflow: hidden;
 }
-.wallet-page .live-eight-stats .stat > strong {
+.wallet-page .wallet-stats .stat > strong {
   height: 23px;
   font-size: 19px;
   line-height: 23px;
@@ -4852,13 +4852,46 @@ main {
 }
 /* The shared card lets a value wrap onto a second line at this width; this
    card ellipsises the line instead, so the unit never disappears silently. */
-.wallet-page .live-eight-stats .stat > strong .number {
+.wallet-page .wallet-stats .stat > strong .number {
   white-space: nowrap;
 }
-.wallet-page .live-eight-stats .stat > small {
+.wallet-page .wallet-stats .stat > small {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+@container site (max-width: 767px) {
+  /* Three compact summary cards followed by two wider financial cards: every
+     row is complete at 390px, while the record under Win rate keeps the same
+     bar-and-count treatment as the traders board. */
+  .wallet-page .wallet-stats {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    column-gap: 6px;
+  }
+  .wallet-page .wallet-stats .stat {
+    padding: 13px 12px;
+  }
+  .wallet-page .wallet-stats .stat:nth-child(1) {
+    grid-column: span 5;
+  }
+  .wallet-page .wallet-stats .stat:nth-child(2) {
+    grid-column: span 3;
+  }
+  .wallet-page .wallet-stats .stat:nth-child(3) {
+    grid-column: span 4;
+  }
+  .wallet-page .wallet-stats .stat:nth-child(n + 4) {
+    grid-column: span 6;
+  }
+  .wallet-page .wallet-stats .stat > strong {
+    font-size: 17px;
+  }
+  .wallet-page .wallet-stats .wl-record {
+    gap: 6px;
+  }
+  .wallet-page .wallet-stats .wl-bar {
+    width: 40px;
+  }
 }
 .wallet-list-region .data-table,
 .leaderboard-panel .data-table {
@@ -5404,7 +5437,7 @@ main {
     margin-bottom: 12px;
   }
 }
-.wallet-page .live-eight-stats {
+.wallet-page .wallet-stats {
   margin-top: 12px;
   margin-bottom: 8px;
 }
@@ -5545,6 +5578,26 @@ main {
 .wallet-page .live-section > .table-tabs button[aria-selected="true"] {
   background: #1c1c22;
   color: var(--text);
+}
+.wallet-positions-context {
+  height: 31px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-surface-4);
+  color: var(--color-text-3);
+  font-size: 11.5px;
+}
+.wallet-positions-context > strong {
+  display: inline-block;
+  min-width: 8ch;
+  color: var(--color-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .wallet-list-region {
   min-height: calc(25 * 62px + 44px);
@@ -6576,82 +6629,6 @@ a.wallet-top-pool:hover {
   .my-rank-link > span {
     display: none;
   }
-}
-/* The wallet's right column as the export draws it: alerts, behaviour, then
-   the most traded pools. Every row is sized so a resolving value moves nothing. */
-.wallet-alerts button {
-  height: 54px;
-  padding: 0 16px;
-  color: var(--color-text-2);
-  cursor: default;
-}
-.wallet-alerts button:disabled {
-  opacity: 1;
-}
-.wallet-alerts button:last-child {
-  border-bottom: 0;
-}
-.wallet-alerts button > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.wallet-alerts button small {
-  font-size: 11.5px;
-  color: var(--muted);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The value column is a fixed track: a right-aligned box that resized with
-   its text would move, and Chrome scores the move as a shift. */
-.wallet-behaviour-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px;
-  align-items: baseline;
-  column-gap: 10px;
-  height: 53px;
-  padding: 12px 16px 0;
-  border-bottom: 1px solid var(--color-surface-3);
-}
-.wallet-behaviour-row:last-child {
-  border-bottom: 0;
-}
-.wallet-behaviour-row > span:first-child {
-  font-size: 12.5px;
-  color: var(--muted);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.wallet-behaviour-row > .number {
-  font-size: 13px;
-  font-weight: 600;
-  text-align: right;
-}
-.wallet-behaviour-bar {
-  grid-column: 1 / -1;
-  display: block;
-  height: 4px;
-  margin-top: 7px;
-  border-radius: 3px;
-  background: var(--color-surface-5);
-  overflow: hidden;
-}
-.wallet-behaviour-bar > i {
-  display: block;
-  height: 100%;
-  background: var(--muted);
-}
-.wallet-behaviour-bar[data-tone="up"] > i {
-  background: var(--color-up);
-}
-.wallet-behaviour-bar[data-tone="down"] > i {
-  background: var(--color-down);
-}
-.wallet-behaviour-bar[data-tone="accent"] > i {
-  background: var(--ac);
 }
 .wallet-top-pools {
   height: calc(5 * 47px);

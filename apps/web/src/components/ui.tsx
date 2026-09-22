@@ -69,6 +69,31 @@ export function Avatar({
     />
   );
 }
+export function WinLossBar({ wins, losses }: { wins: number; losses: number }) {
+  const total = wins + losses;
+  return (
+    <span className="wl-bar" aria-hidden="true">
+      <i style={{ width: `${total ? (wins / total) * 100 : 0}%` }} />
+      <b style={{ width: `${total ? (losses / total) * 100 : 0}%` }} />
+    </span>
+  );
+}
+export function WinLossRecord({
+  wins,
+  losses,
+}: {
+  wins: number;
+  losses: number;
+}) {
+  return (
+    <span className="wl-record">
+      <WinLossBar wins={wins} losses={losses} />
+      <span className="wl-text">
+        {wins}W · {losses}L
+      </span>
+    </span>
+  );
+}
 export function CopyButton({
   value,
   label = "Copy address",

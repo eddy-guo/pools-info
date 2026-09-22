@@ -149,7 +149,7 @@ export function DetailSkeleton({
       aria-busy="true"
       data-skeleton={kind}
     >
-      {kind === "wallet" && <StatsSkeleton count={8} />}
+      {kind === "wallet" && <StatsSkeleton count={5} />}
       <div className="workspace-grid">
         <div>
           <section className="panel">

@@ -213,14 +213,9 @@ const launches = Array.from({ length: 129 }, (_, i) => ({
 
 const tile = (page: Page, label: string) =>
   page
-    .locator(".wallet-page .live-eight-stats .stat")
+    .locator(".wallet-page .wallet-stats .stat")
     .filter({ has: page.locator("span", { hasText: label }) })
     .locator("strong");
-const behaviourValue = (page: Page, label: string) =>
-  page
-    .locator(".wallet-page .wallet-behaviour-row")
-    .filter({ has: page.locator("span", { hasText: label }) })
-    .locator(".number");
 
 test("a wallet the accounting has never observed reads as not indexed, not as zeros", async ({
   page,
@@ -262,13 +257,15 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(page.locator(".wallet-page .page-heading")).not.toContainText(
     "RANK",
   );
-  // The unmeasured figures carry the quiet mark the six honest tiles use.
-  for (const label of ["Trades", "Volume"]) {
+  // The unmeasured figures carry the quiet mark the five honest tiles use.
+  for (const label of ["Win rate", "Trades", "Volume"]) {
     await expect(tile(page, label)).toHaveText("\u2013");
     await expect(tile(page, label).locator(".unavailable")).toHaveCount(1);
   }
-  for (const label of ["Wins", "Losses"])
-    await expect(behaviourValue(page, label)).toHaveText("");
+  await expect(page.locator(".wallet-stats .wl-record")).toHaveCount(0);
+  await expect(page.locator(".wallet-positions-context > strong")).toHaveText(
+    "",
+  );
   const tabs = page.getByRole("tablist", { name: "Wallet activity" });
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions",
@@ -330,8 +327,10 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   );
   await expect(tile(page, "Trades")).toHaveText("0");
   await expect(tile(page, "Volume")).toHaveText("0 ETH");
-  for (const label of ["Wins", "Losses"])
-    await expect(behaviourValue(page, label)).toHaveText("0");
+  await expect(page.locator(".wallet-stats .wl-text")).toHaveText("0W · 0L");
+  await expect(page.locator(".wallet-positions-context > strong")).toHaveText(
+    "",
+  );
   const tabs = page.getByRole("tablist", { name: "Wallet activity" });
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions0",
