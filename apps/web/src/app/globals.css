@@ -3223,63 +3223,6 @@ main {
   color: var(--color-text-3);
   font-size: 12px;
 }
-.subnav-live {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-.subnav-live > i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-faint);
-  flex-shrink: 0;
-}
-.subnav-live-label {
-  display: grid;
-}
-/* Hidden pseudo-element ghosts of the two widest labels ("Delayed" and
-   "Paused"; "Live" and "Offline" are narrower) size this grid cell from
-   first paint, so a poll resolving later never shifts what sits after it in
-   the strip. Generated content never enters textContent, so it never leaks
-   into the dot's accessible name or a toHaveText assert. */
-.subnav-live-label::before,
-.subnav-live-label::after {
-  visibility: hidden;
-  grid-area: 1 / 1;
-}
-.subnav-live-label::before {
-  content: "Delayed";
-}
-.subnav-live-label::after {
-  content: "Paused";
-}
-.subnav-live-value {
-  grid-area: 1 / 1;
-}
-.subnav-live[data-state="streaming"] > i {
-  background: var(--color-up);
-  animation: subnav-live-pulse 1.6s ease-in-out infinite;
-}
-.subnav-live[data-state="delayed"] > i {
-  background: var(--color-warn);
-}
-@keyframes subnav-live-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .subnav-live[data-state="streaming"] > i {
-    animation: none;
-  }
-}
 .subnav-divider {
   width: 1px;
   height: 12px;
@@ -4415,6 +4358,9 @@ main {
   .market-sidebar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .explore-sidebar {
+    display: flex;
   }
 }
 @container site (max-width: 767px) {

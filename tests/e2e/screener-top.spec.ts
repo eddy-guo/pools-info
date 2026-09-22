@@ -27,6 +27,9 @@ const removedCopy = [
   "temporarily unavailable",
   "No swaps in the saved",
   "Tx initiator",
+  "Live trades",
+  "Feed not running",
+  "Pause feed",
 ];
 
 for (const [name, url] of [
@@ -47,7 +50,12 @@ for (const [name, url] of [
     const firstPaint = await page.evaluate(() => {
       const top = (selector: string) =>
         document.querySelector(selector)?.getBoundingClientRect().top ?? null;
-      const rail = document.querySelector(".trade-stream")!;
+      const workspace = document.querySelector(
+        ".explore-page .workspace-grid",
+      )!;
+      const mainPanel = workspace.querySelector(":scope > div > .panel")!;
+      const sidebar = workspace.querySelector(".explore-sidebar")!;
+      const leaders = sidebar.querySelector(".explore-leaders")!;
       return {
         tableHead: top(".explore-page .desktop-pools thead"),
         firstCard: top(".explore-page .mobile-pools .mobile-pool"),
@@ -55,13 +63,12 @@ for (const [name, url] of [
           ...document.querySelectorAll(".explore-page .desktop-pools tbody tr"),
         ].filter((row) => row.getBoundingClientRect().bottom <= innerHeight)
           .length,
-        /* The rail's head is followed by its rows, not by a status box. */
-        railHeadBottom: rail
-          .querySelector(".panel-heading")!
-          .getBoundingClientRect().bottom,
-        railRowsTop: rail
-          .querySelector(".panel-heading + .activity-list")
-          ?.getBoundingClientRect().top,
+        mainPanelTop: mainPanel.getBoundingClientRect().top,
+        leadersTop: leaders.getBoundingClientRect().top,
+        sidebarWidth: sidebar.getBoundingClientRect().width,
+        leadersWidth: leaders.getBoundingClientRect().width,
+        sidebarChildren: sidebar.childElementCount,
+        leadersAreFirst: sidebar.firstElementChild === leaders,
       };
     });
     await testInfo.attach("first-paint", {
@@ -71,12 +78,22 @@ for (const [name, url] of [
     if (testInfo.project.name === "desktop") {
       expect(firstPaint.tableHead, "table head top").toBeLessThanOrEqual(420);
       expect(firstPaint.rowsVisible, "rows visible").toBeGreaterThanOrEqual(8);
+      expect(
+        Math.abs(firstPaint.leadersTop - firstPaint.mainPanelTop),
+        "Top traders starts alongside the screener with no retired-panel hole",
+      ).toBeLessThanOrEqual(1);
     } else {
       expect(firstPaint.firstCard, "first card top").toBeLessThanOrEqual(600);
     }
-    expect(firstPaint.railRowsTop, "trade rows start under the head").toBe(
-      firstPaint.railHeadBottom,
-    );
+    expect(firstPaint.sidebarChildren, "only Top traders remains").toBe(1);
+    expect(
+      firstPaint.leadersAreFirst,
+      "Top traders is the first rail panel",
+    ).toBe(true);
+    expect(
+      Math.abs(firstPaint.leadersWidth - firstPaint.sidebarWidth),
+      "Top traders fills the remaining rail",
+    ).toBeLessThanOrEqual(1);
     await expect(page.locator(".explore-page .launch-rail")).toBeVisible();
     await expect(page.locator(".explore-page .stats-grid")).toHaveCount(0);
     const resolved = page.locator(".explore-page [data-row='resolved']");
@@ -99,9 +116,7 @@ for (const [name, url] of [
         });
       expect(Math.abs(fit), "no hole under the card's stats").toBeLessThan(1);
     }
-    await expect(page.locator(".trade-stream").getByRole("status")).toHaveText(
-      /^(streaming|paused|delayed)$/,
-    );
+    await expect(page.locator(".trade-stream, .subnav-live")).toHaveCount(0);
     for (const text of removedCopy)
       await expect(page.locator("main"), text).not.toContainText(text);
   });

@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import { RefreshCw, Search, Star } from "lucide-react";
-import { TradeStream } from "./trade-stream";
 import {
   poolHref,
   shortAddress,
@@ -804,8 +803,7 @@ export function ProductExplore() {
             />
           </section>
         </div>
-        <aside className="market-sidebar">
-          <TradeStream />
+        <aside className="market-sidebar explore-sidebar">
           <section className="panel explore-leaders">
             <div className="panel-heading">
               <h2>Top traders · 24h</h2>

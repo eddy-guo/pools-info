@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import chain from "../../data/snapshots/chain.json";
 import captures from "../../data/pools/index.json";
-import { poolHref, type LiveTradeFeedResponse } from "@pools/core";
+import { poolHref } from "@pools/core";
 import {
   creatorAddress,
   creatorLaunches,
@@ -14,58 +14,6 @@ const savedPool = Object.values(captures.snapshots).find(
     !chain.markets.some((market) => market.id === snapshot.markets[0].id),
 )!.markets[0];
 const unknownPool = `0x${"f".repeat(64)}`;
-// Chain refresh is disabled in the suite, so the live rail would never resolve;
-// serve it the shape production serves so its rows and status are measured.
-const liveFeed = (poolId: string | null): LiveTradeFeedResponse => {
-  // The rail reads the cutoff against the device clock to judge staleness, so a
-  // live capture is dated from now rather than from the fixture's capture time.
-  const asOf = Math.floor(Date.now() / 1000) - 30;
-  return {
-    source: "indexed_recent_chain_events",
-    generatedAt: new Date(asOf * 1000).toISOString(),
-    poolId,
-    truncated: false,
-    replacement: true,
-    events: chain.markets
-      .filter((market) => !poolId || market.id === poolId)
-      .slice(0, 3)
-      .map((market, index) => ({
-        id: `0x${(index + 1).toString(16).padStart(64, "0")}:0`,
-        poolId: market.id,
-        token: market.token,
-        name: market.name,
-        symbol: market.symbol,
-        launchTx: market.launchTx,
-        transactionHash: `0x${(index + 1).toString(16).padStart(64, "0")}`,
-        logIndex: 0,
-        block: chain.toBlock,
-        blockHash: chain.blockHash,
-        timestamp: asOf,
-        side: index % 2 ? "sell" : "buy",
-        ethWei: "100000000000000000",
-        tokenRaw: "1000000",
-        transactionInitiator: wallet,
-        attribution: "transaction_initiator_only",
-      })),
-    coverage: {
-      state: "current",
-      scope: "verified_pools_launches_only",
-      registryExhaustive: false,
-      pnlAvailable: false,
-      startBlock: chain.fromBlock,
-      headBlock: chain.toBlock + 128,
-      throughBlock: chain.toBlock,
-      throughHash: chain.blockHash,
-      asOf,
-      checkedAt: new Date(asOf * 1000).toISOString(),
-      lagBlocks: 128,
-      discoveryThroughBlock: chain.toBlock,
-      discoveryLagBlocks: 128,
-      knownPools: 62324,
-      staleAfterSeconds: 180,
-    },
-  };
-};
 const routes = [
   { name: "screener", url: "/", sentinel: ".explore-page .workspace-grid" },
   {
@@ -151,15 +99,6 @@ for (const entry of routes) {
     await page.route("**/_next/static/**/*.js", async (route) => {
       await scripts;
       await route.continue();
-    });
-    await page.route("**/api/live-trades/**", async (route) => {
-      await gate;
-      responses.push(route.request().url());
-      await route.fulfill({
-        json: liveFeed(
-          new URL(route.request().url()).searchParams.get("poolId"),
-        ),
-      });
     });
     const manyLaunches = creatorLaunches(60, 3);
     await page.route("**/api/product/**", async (route) => {
