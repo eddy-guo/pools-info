@@ -9,7 +9,24 @@ import { parseRequest } from "./request";
 import { warmPolicy, type WarmAttempt } from "./database-warmth";
 
 export const databaseIdentitySql =
-  "SELECT pg_postmaster_start_time()::text AS identity";
+  "SELECT pg_postmaster_start_time()::text AS identity, pg_backend_pid() AS backend_pid";
+
+async function cancelBackend(url: string, pid: number) {
+  const client = new pg.Client({
+    connectionString: url,
+    connectionTimeoutMillis: 1000,
+    statement_timeout: 1000,
+    query_timeout: 2000,
+    application_name: "pools-reader-warmup-cancel",
+  });
+  client.on("error", () => {});
+  try {
+    await client.connect();
+    await client.query("SELECT pg_cancel_backend($1)", [pid]);
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
 
 /** The production readers, in the approved order. No alternate SQL summaries,
  * accounting snapshots, cached responses or writes are used to warm them. */
@@ -32,11 +49,23 @@ export function createWarmSet(
         "-c default_transaction_read_only=on -c jit=off" +
         (testSchema ? ` -c search_path=${testSchema}` : ""),
     });
+    let backendPid: number | null = null;
+    let cancellation: Promise<void> | null = null;
+    const disconnect = () => {
+      if (cancellation) return;
+      cancellation = (backendPid
+        ? cancelBackend(url, backendPid)
+        : Promise.resolve()
+      )
+        .catch(() => {})
+        .then(() => client.end())
+        .catch(() => {});
+    };
     const timeout = setTimeout(() => {
-      void client.end();
+      disconnect();
     }, warmPolicy.attemptMs);
     const abort = () => {
-      void client.end();
+      disconnect();
     };
     context.signal.addEventListener("abort", abort, { once: true });
     client.on("error", () => {});
@@ -44,9 +73,9 @@ export function createWarmSet(
       context.signal.throwIfAborted();
       await client.connect();
       context.signal.throwIfAborted();
-      context.identity(
-        (await client.query(databaseIdentitySql)).rows[0].identity,
-      );
+      const identity = (await client.query(databaseIdentitySql)).rows[0];
+      backendPid = Number(identity.backend_pid);
+      context.identity(identity.identity);
       // Autocommit is intentional: the tip's idle warmer must never hold a
       // transaction across a writer cycle. Serving readers' local planner
       // settings apply to this disposable read-only session instead.
@@ -126,7 +155,8 @@ export function createWarmSet(
     } finally {
       clearTimeout(timeout);
       context.signal.removeEventListener("abort", abort);
-      await client.end();
+      if (cancellation) await cancellation;
+      else await client.end();
     }
   };
 }

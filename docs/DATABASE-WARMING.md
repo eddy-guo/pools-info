@@ -38,11 +38,12 @@ figures is absolute.
 
 The ledger tip service reuses these readers and credentials. It reads database
 identity once per cycle, starts due warming only in its idle polling window,
-and disconnects the warm connection as soon as the next cycle wins. It never
-waits for the warm set to finish, writes through that connection, or holds a
-warm transaction across loop writes. An interrupted set remains due for the
-next idle window. Its existing service supervisor reconnects after a database
-restart; no new service or deployment setting is required.
+and cancels the warm backend before disconnecting its connection as soon as
+the next cycle wins. It never waits for the warm set to finish, writes through
+that connection, or holds a warm transaction across loop writes. An
+interrupted set remains due for the next idle window. Its existing service
+supervisor reconnects after a database restart; no new service or deployment
+setting is required.
 
 Regression coverage: `database-warmth.test.ts`, `warming-http.test.ts`,
 `warmup.integration.test.ts` and the idle-preemption case in
