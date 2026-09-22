@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { RefreshCw, Search, Star } from "lucide-react";
+import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
 import {
   poolHref,
   shortAddress,
@@ -383,8 +383,9 @@ export function ProductExplore() {
         <h1>
           Pools<span className="title-dot">.</span>
         </h1>
-        <Link href="/traders/" className="leaderboard-cta">
-          Trader leaderboard →
+        <Link href="/traders/" className="button leaderboard-cta">
+          Trader leaderboard
+          <ArrowRight aria-hidden="true" />
         </Link>
       </div>
       <section className="launch-section" aria-label="Just launched">

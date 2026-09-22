@@ -451,7 +451,7 @@ function MyRank({ window }: { window: LiveWindow }) {
         <span className="my-rank-chip">YOU</span>
       </span>
       <span className="my-rank-summary">
-        Mark your wallet on its page to see your rank here
+        Set your wallet in the header to see your rank here
       </span>
       <span className="my-rank-link">
         <span>Find your wallet</span> →

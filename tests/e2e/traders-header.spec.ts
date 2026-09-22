@@ -252,7 +252,7 @@ test("without a wallet the leaderboard's you row is the quiet prompt", async ({
   await expect(row).toHaveAttribute("href", "/wallet/");
   await expect(row.locator(".my-rank-chip")).toHaveText("YOU");
   await expect(row.locator(".my-rank-summary")).toHaveText(
-    "Mark your wallet on its page to see your rank here",
+    "Set your wallet in the header to see your rank here",
   );
   await expect(row.locator(".my-rank-link")).toHaveText("Find your wallet →");
   await expect(row, "no rank is invented").not.toContainText(/RANK|\d/);

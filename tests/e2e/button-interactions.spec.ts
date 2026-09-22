@@ -20,19 +20,36 @@ function visual(control: Locator) {
   return control.evaluate((element) => {
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
+    const icon = element.querySelector("svg");
+    const iconRect = icon?.getBoundingClientRect();
+    const iconStyle = icon ? getComputedStyle(icon) : null;
     return {
       background: style.backgroundColor,
       border: style.borderColor,
+      borderRadius: style.borderRadius,
       borderWidth: style.borderWidth,
       boxShadow: style.boxShadow,
       color: style.color,
       cursor: style.cursor,
       filter: style.filter,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
       fontWeight: style.fontWeight,
+      gap: style.gap,
+      lineHeight: style.lineHeight,
       opacity: style.opacity,
       outlineColor: style.outlineColor,
       outlineStyle: style.outlineStyle,
       outlineWidth: style.outlineWidth,
+      padding: style.padding,
+      icon:
+        iconRect && iconStyle
+          ? {
+              height: iconRect.height,
+              strokeWidth: iconStyle.strokeWidth,
+              width: iconRect.width,
+            }
+          : null,
       rect: {
         height: rect.height,
         width: rect.width,
@@ -113,6 +130,29 @@ function expectTextContrast(state: Visual) {
     contrast(state.color, state.background),
     `${state.color} on ${state.background}`,
   ).toBeGreaterThanOrEqual(4.5);
+}
+
+function primaryActionSignature(state: Visual) {
+  return {
+    background: state.background,
+    border: state.border,
+    borderRadius: state.borderRadius,
+    borderWidth: state.borderWidth,
+    boxShadow: state.boxShadow,
+    color: state.color,
+    filter: state.filter,
+    fontFamily: state.fontFamily,
+    fontSize: state.fontSize,
+    fontWeight: state.fontWeight,
+    gap: state.gap,
+    height: state.rect.height,
+    icon: state.icon,
+    lineHeight: state.lineHeight,
+    outlineColor: state.outlineColor,
+    outlineStyle: state.outlineStyle,
+    outlineWidth: state.outlineWidth,
+    padding: state.padding,
+  };
 }
 
 test("primary, secondary and ghost controls share deliberate interaction states", async ({
@@ -229,7 +269,7 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
   await page.goto("/");
   await page.evaluate(() => document.fonts.ready);
 
-  const cta = page.getByRole("link", { name: "Trader leaderboard →" });
+  const cta = page.getByRole("link", { name: "Trader leaderboard" });
   const ctaRest = await visual(cta);
   expect(ctaRest).toMatchObject({
     background: colors.accent,
@@ -307,6 +347,108 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
     color: colors.text,
   });
   expectTextContrast(selectedSegmentStyle);
+});
+
+for (const width of [1440, 390]) {
+  test(`Trader leaderboard and Copy trade are one primary action at ${width}px`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, "one project measures both exact viewport widths");
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+
+    await page.goto("/");
+    await page.evaluate(() => document.fonts.ready);
+    const leaderboard = page.getByRole("link", {
+      name: "Trader leaderboard",
+      exact: true,
+    });
+    await expect(leaderboard.locator("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    const leaderboardRest = await visual(leaderboard);
+    await leaderboard.hover();
+    const leaderboardHover = await visual(leaderboard);
+    const leaderboardActive = await pressed(page, leaderboard);
+    const leaderboardFocus = await focusVisible(page, leaderboard);
+
+    await page.goto(
+      "/wallet/0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1/?window=All",
+    );
+    await page.evaluate(() => document.fonts.ready);
+    const copy = page.getByRole("button", { name: "Copy trade", exact: true });
+    await expect(copy.locator("svg")).toHaveAttribute("aria-hidden", "true");
+    const copyRest = await visual(copy);
+    await copy.hover();
+    const copyHover = await visual(copy);
+    const copyActive = await pressed(page, copy);
+    const copyFocus = await focusVisible(page, copy);
+
+    expect(primaryActionSignature(copyRest), "rest").toEqual(
+      primaryActionSignature(leaderboardRest),
+    );
+    expect(primaryActionSignature(copyHover), "hover").toEqual(
+      primaryActionSignature(leaderboardHover),
+    );
+    expect(primaryActionSignature(copyActive), "active").toEqual(
+      primaryActionSignature(leaderboardActive),
+    );
+    expect(primaryActionSignature(copyFocus), "focus-visible").toEqual(
+      primaryActionSignature(leaderboardFocus),
+    );
+    expect(copyRest.rect.height).toBe(width === 390 ? 44 : 38);
+    expect(copyRest.icon).toEqual({
+      height: 15,
+      strokeWidth: "2px",
+      width: 15,
+    });
+
+    await copy.focus();
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("dialog", { name: "Copy trading" }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.goto("/");
+    const keyboardLeaderboard = page.getByRole("link", {
+      name: "Trader leaderboard",
+      exact: true,
+    });
+    await keyboardLeaderboard.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/traders\/$/);
+  });
+}
+
+test("wallet and traders buttons use only shared control families", async ({
+  page,
+}) => {
+  for (const url of [
+    "/wallet/0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1/?window=All",
+    "/traders/?window=All&limit=5",
+  ]) {
+    await page.goto(url);
+    await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    const oneOffs = await page
+      .locator("main button:visible")
+      .evaluateAll((buttons) =>
+        buttons
+          .filter(
+            (button) =>
+              !button.matches(".button, .icon-button, .text-button") &&
+              !button.closest(".segmented, .table-tabs"),
+          )
+          .map((button) => ({
+            className: button.className,
+            label: button.getAttribute("aria-label") ?? button.textContent,
+          })),
+      );
+    expect(oneOffs, url).toEqual([]);
+  }
 });
 
 test("copy, explorer and star icon buttons keep geometry and visible states", async ({

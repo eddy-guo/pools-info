@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import {
   shortAddress,
   poolHref,
@@ -28,7 +29,7 @@ import {
 } from "./ui";
 import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
-import { MyWalletButton, useMyWallet } from "./my-wallet";
+import { useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
 import { SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useQuery } from "./state";
@@ -218,13 +219,14 @@ export function ProductWallet({ address }: { address: string }) {
             Share PnL card
           </button>
           <FollowButton address={address} />
-          <MyWalletButton address={address} />
           <button
+            type="button"
             className="button"
             aria-haspopup="dialog"
             onClick={() => setCopyTrade(true)}
           >
             Copy trade
+            <ArrowRight aria-hidden="true" />
           </button>
         </div>
       </div>
