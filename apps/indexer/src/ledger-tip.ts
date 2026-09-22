@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { databaseIdentitySql, type DatabaseWarmth } from "@pools/api/warmup";
 import {
   HyperSyncBudgetExceeded,
   HyperSyncClient,
@@ -311,6 +312,8 @@ export const ledgerTipExitCodes: Record<LedgerTipStop, number> = {
 const inspection =
   /^ledger_(walkback_unavailable|batch_conflict|pass_streams_diverged|tip_requires_pass|tip_ledger_incomplete|stream_missing|unknown_ancestor|launch_stream_identity)$/;
 export interface LedgerTipOptions {
+  /** Read-only reader warming, allowed only in the idle time between cycles. */
+  warmth?: DatabaseWarmth;
   /** A fresh client per cycle, sharing the loop's pacer. */
   client: () => HyperSyncClient;
   rpc: () => Rpc;
@@ -447,6 +450,11 @@ export async function runLedgerTip(
     const client = options.client();
     let cycle: LedgerTipCycle;
     try {
+      options.warmth?.cancel();
+      if (options.warmth) {
+        const identity = await db.query(databaseIdentitySql);
+        options.warmth.observeIdentity(identity.rows[0].identity);
+      }
       cycle = await runLedgerTipCycle(db, client, {
         rangeBlocks,
         maxPages: options.maxPages,
@@ -578,7 +586,24 @@ export async function runLedgerTip(
     if (options.maxCycles !== undefined && summary.cycles >= options.maxCycles)
       return finish("cycles");
     if (cycle.atTip) {
-      await wait(options.pollMs, options.signal);
+      const idle = new AbortController();
+      const abort = () => idle.abort();
+      options.signal?.addEventListener("abort", abort, { once: true });
+      if (options.signal?.aborted) idle.abort();
+      const warmth = options.warmth;
+      if (warmth)
+        void sleep(warmth.delayMs, undefined, { signal: idle.signal }).then(
+          () => warmth.refresh(idle.signal),
+          () => {}, // The next indexing cycle cancelled the idle timer.
+        );
+      try {
+        await wait(options.pollMs, options.signal);
+      } finally {
+        // This abort destroys an active warm connection immediately. Do not
+        // await the warm set: indexing owns the deadline, even mid-statement.
+        idle.abort();
+        options.signal?.removeEventListener("abort", abort);
+      }
       catchUp.at = performance.now();
       catchUp.blocks = 0;
     }

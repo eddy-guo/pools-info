@@ -1,4 +1,6 @@
 import pg from "pg";
+import { DatabaseWarmth } from "./database-warmth";
+import { createWarmSet, databaseIdentitySql } from "./warm-set";
 import {
   readLeaderboard,
   readWallet,
@@ -34,6 +36,8 @@ type Row = Record<string, any>; // PostgreSQL projections are mapped explicitly 
 type Query = (sql: string, values?: unknown[]) => Promise<{ rows: Row[] }>;
 export interface Reader {
   read(request: ReadRequest): Promise<unknown>;
+  /** Checks before HTTP caches, and again before publishing an in-flight read. */
+  assertReady?(expected?: number): number;
   close(): Promise<void>;
 }
 export const limitations = {
@@ -467,11 +471,25 @@ export async function readData(
 export function createReader(
   url = process.env.DATABASE_URL,
   testSchema?: string,
-  { marketSource = "broad" as MarketSource } = {},
+  {
+    marketSource = "broad" as MarketSource,
+    warmup = false as boolean | DatabaseWarmth,
+  } = {},
 ): Reader {
   if (!url) throw Error("DATABASE_URL is required");
   if (testSchema && !/^api_test_[a-z0-9_]+$/.test(testSchema))
     throw Error("Invalid test schema");
+  const log = (event: Record<string, unknown>) =>
+    process.stdout.write(JSON.stringify(event) + "\n");
+  const warmth =
+    warmup instanceof DatabaseWarmth
+      ? warmup
+      : warmup
+        ? new DatabaseWarmth(
+            createWarmSet(url, marketSource, testSchema, log),
+            { log },
+          )
+        : null;
   const pool = new pg.Pool({
     connectionString: url,
     max: 4,
@@ -485,14 +503,36 @@ export function createReader(
       (testSchema ? ` -c search_path=${testSchema}` : ""),
   });
   // Idle connection errors must not terminate the server or expose credentials.
-  pool.on("error", () =>
-    process.stderr.write('{"event":"idle_database_connection_error"}\n'),
-  );
+  pool.on("error", () => {
+    warmth?.invalidate("database_disconnected");
+    process.stderr.write('{"event":"idle_database_connection_error"}\n');
+  });
+  // pg's connect event is synchronous, but its listener is not awaited. Keep
+  // the identity promise per physical connection and await it before any read.
+  // This check runs once per new connection, never once per product request.
+  const initialized = new WeakMap<pg.PoolClient, Promise<void>>();
+  if (warmth)
+    pool.on("connect", (client) => {
+      const identity = client
+        .query(databaseIdentitySql)
+        .then((r) => warmth.observeIdentity(r.rows[0].identity, true));
+      initialized.set(client, identity);
+      void identity.catch(() => warmth.invalidate("database_identity_failed"));
+    });
+  warmth?.start();
   return {
+    assertReady: (expected) => warmth?.assertReady(expected) ?? 0,
     async read(request) {
-      const client = await pool.connect();
+      const product = request.route !== "ready";
+      const version = product ? warmth?.assertReady() : undefined;
+      const client = await pool.connect().catch((error) => {
+        warmth?.invalidate("database_connect_failed");
+        throw error;
+      });
       let broken = false;
       try {
+        await initialized.get(client);
+        if (product) warmth?.assertReady(version);
         await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
         await client.query("SET LOCAL statement_timeout = '3000ms'");
         const result = await readData(
@@ -501,12 +541,16 @@ export function createReader(
           marketSource,
         );
         await client.query("COMMIT");
+        if (product) warmth?.assertReady(version);
         return result;
       } catch (error) {
+        if (product && (error as { code?: string })?.code === "57014")
+          warmth?.invalidate("product_statement_cancelled");
         try {
           await client.query("ROLLBACK");
         } catch {
           broken = true;
+          warmth?.invalidate("database_disconnected");
         }
         throw error;
       } finally {
@@ -514,6 +558,7 @@ export function createReader(
       }
     },
     async close() {
+      await warmth?.close();
       await pool.end();
     },
   };

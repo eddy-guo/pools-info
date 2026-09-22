@@ -6,6 +6,12 @@ Product endpoints aggregate the published, supported pool positions using the
 same exact average-cost rules as the frontend. Indexer migrations, evidence
 verification, holder reconstruction and publication remain separate.
 
+Database-backed product routes refuse immediately while the database is warming
+with `503`, `reason: "warming"` and `Retry-After: 5`; `/ready` remains independent
+of warming. Startup/reconnect and five-minute reader warming are automatic in
+the API and ledger tip service. See [Database reader warming](../../docs/DATABASE-WARMING.md)
+for the scope, bounds, cancellation and residual eviction window.
+
 ## Running
 
 From the repository root, install workspace dependencies, then:

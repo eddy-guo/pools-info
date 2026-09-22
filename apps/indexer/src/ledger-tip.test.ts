@@ -979,3 +979,69 @@ test("ranges grow while behind, shrink to what a cut range covered, and hold at 
   assert.equal(nextLedgerTipRange(range(700, true), 64000, bounds), 2000);
   assert.equal(nextLedgerTipRange(range(640, false), 8000, bounds), 8000);
 });
+
+test(
+  "reader warming yields to every indexing cycle and retries an interrupted set in the next idle window",
+  dbTest,
+  async (t) => {
+    const { DatabaseWarmth } = await import("@pools/api/warmup");
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    let active = false,
+      started = 0,
+      cancelled = 0,
+      waits = 0;
+    const starts = Array.from({ length: 2 }, () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      return { promise, resolve };
+    });
+    const warmth = new DatabaseWarmth(async ({ signal }) => {
+      assert.equal(active, false);
+      active = true;
+      started++;
+      starts[started - 1].resolve();
+      await new Promise<void>((resolve) =>
+        signal.addEventListener(
+          "abort",
+          () => {
+            active = false;
+            cancelled++;
+            resolve();
+          },
+          { once: true },
+        ),
+      );
+    });
+    t.after(() => warmth.close());
+    const options = tipOptions(fake, log, {
+      warmth,
+      client: () => {
+        assert.equal(
+          active,
+          false,
+          "warm connection cancelled before next chain cycle",
+        );
+        return passClient(fake);
+      },
+      wait: async () => {
+        // Let the warmer enter its statement, but deliberately never complete.
+        await starts[waits].promise;
+        assert.equal(active, true);
+        if (++waits === 2) options.controller.abort();
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    await warmth.close();
+    assert.equal(summary.stopped, "aborted");
+    assert.equal(summary.through, start + 499);
+    assert.equal(started, 2);
+    assert.equal(cancelled, 2);
+    assert.equal(active, false);
+  },
+);

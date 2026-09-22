@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { HyperSyncPacer } from "@pools/chain";
+import { DatabaseWarmth, createWarmSet } from "@pools/api/warmup";
 import {
   acquireLedgerWriter,
   acquireWriter,
@@ -144,21 +145,30 @@ async function main() {
       } finally {
         await migrator.end();
       }
-      const summary = await runLedgerTip(db, {
-        client,
-        rpc: () => createLedgerPassRpc(config, stop.signal),
-        rangeBlocks: config.rangeBlocks,
-        maxRangeBlocks: config.maxRangeBlocks,
-        maxPages: config.maxPages,
-        pollMs: config.pollMs,
-        windowRefreshMs: config.windowRefreshMs,
-        signal: stop.signal,
-        log: emit,
-        throttled: () => throttled,
-        ...(mode === "once" ? { maxCycles: 1 } : {}),
-      });
-      emit({ event: "ledger_tip_summary", ...summary });
-      process.exitCode = ledgerTipExitCodes[summary.stopped];
+      const warmth = new DatabaseWarmth(
+        createWarmSet(process.env.DATABASE_URL!, "ledger", undefined, emit),
+        { log: emit },
+      );
+      try {
+        const summary = await runLedgerTip(db, {
+          warmth,
+          client,
+          rpc: () => createLedgerPassRpc(config, stop.signal),
+          rangeBlocks: config.rangeBlocks,
+          maxRangeBlocks: config.maxRangeBlocks,
+          maxPages: config.maxPages,
+          pollMs: config.pollMs,
+          windowRefreshMs: config.windowRefreshMs,
+          signal: stop.signal,
+          log: emit,
+          throttled: () => throttled,
+          ...(mode === "once" ? { maxCycles: 1 } : {}),
+        });
+        emit({ event: "ledger_tip_summary", ...summary });
+        process.exitCode = ledgerTipExitCodes[summary.stopped];
+      } finally {
+        await warmth.close();
+      }
     } finally {
       await releaseLedgerWriter(db);
     }
