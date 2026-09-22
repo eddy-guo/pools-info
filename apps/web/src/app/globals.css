@@ -3289,28 +3289,11 @@ main {
 .page-heading .eyebrow {
   margin-bottom: 10px;
 }
-/* The screener's H1-row call to action: same accent fill as .button, held to
-   the H1's own 36px so it never grows the reserved heading row. */
+/* The screener CTA and wallet Copy trade action are the same primary action.
+   Their shared primitive owns every visual and interaction token; this class
+   only gives tests and layout rules a stable semantic hook. */
 .leaderboard-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 10px;
-  background: var(--control-primary-bg);
-  color: var(--control-primary-fg);
-  font-size: 13px;
-  font-weight: 600;
   white-space: nowrap;
-}
-.leaderboard-cta:hover {
-  box-shadow: inset 0 0 0 2px var(--control-primary-hover-ring);
-}
-.leaderboard-cta:active {
-  background: var(--control-primary-active-bg);
-  color: var(--control-primary-active-fg);
-  box-shadow: inset 0 0 0 1px var(--control-primary-active-fg);
 }
 /* Leaderboard ranking controls sit beside the title, as in the design. */
 .traders-controls {
@@ -3329,6 +3312,12 @@ main {
   background: var(--control-primary-bg);
   color: var(--control-primary-fg);
   border: 1px solid transparent;
+}
+.button > svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  stroke-width: 2;
 }
 .button:not(.secondary):not(:disabled):not([aria-disabled="true"]):hover {
   box-shadow: inset 0 0 0 2px var(--control-primary-hover-ring);
@@ -4547,9 +4536,6 @@ button.icon-button:disabled {
   .page-heading .button {
     min-height: 44px;
   }
-  .leaderboard-cta {
-    height: 44px;
-  }
   .traders-controls {
     flex-basis: 100%;
   }
@@ -5608,7 +5594,7 @@ button.icon-button:disabled {
   font-size: 12.5px;
 }
 .wallet-page .live-section > .table-tabs button[aria-selected="true"] {
-  background: #1c1c22;
+  background: var(--control-ghost-active-bg);
   color: var(--text);
 }
 .wallet-positions-context {
@@ -6683,14 +6669,6 @@ a.wallet-top-pool:hover {
 }
 .wallet-top-pool > .number {
   font-weight: 600;
-}
-/* Marked as this browser's own: the check icon and a lit border say so. */
-.my-wallet-button[aria-pressed="true"] {
-  border-color: var(--color-line-bright);
-  background: rgba(255, 255, 255, 0.05);
-}
-.my-wallet-button[aria-pressed="true"] svg {
-  color: var(--ac);
 }
 /* A three-digit slot beside a tab's label, filled once the read answers. */
 .tab-count {

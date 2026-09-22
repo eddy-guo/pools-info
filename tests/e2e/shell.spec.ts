@@ -147,7 +147,8 @@ test("the H1 row carries a Trader leaderboard call to action at the right", asyn
 }) => {
   await page.goto("/");
   const cta = page.locator(".page-heading .leaderboard-cta");
-  await expect(cta).toHaveText("Trader leaderboard →");
+  await expect(cta).toHaveText("Trader leaderboard");
+  await expect(cta.locator("svg")).toHaveCount(1);
   await expect(cta).toHaveAttribute("href", "/traders/");
   const heading = await page.locator(".page-heading h1").boundingBox();
   const button = await cta.boundingBox();

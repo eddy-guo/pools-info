@@ -212,7 +212,6 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     "Explorer ↗",
     "Share PnL card",
     "Follow wallet",
-    "This is my wallet",
     "Copy trade",
   ]);
   await expect(actions.last()).not.toHaveClass(/secondary/);
@@ -231,16 +230,10 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   if (testInfo.project.name === "mobile") {
     for (const box of boxes) expect(box.h, "44px tap targets").toBe(44);
-    expect(
-      new Set(boxes.slice(0, 4).map((box) => box.w)).size,
-      "equal widths",
-    ).toBe(1);
+    expect(new Set(boxes.map((box) => box.w)).size, "equal widths").toBe(1);
     expect(boxes[0].y).toBe(boxes[1].y);
     expect(boxes[2].y).toBe(boxes[3].y);
     expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
-    // The odd fifth action takes the whole row rather than leaving a hole.
-    expect(boxes[4].y).toBeGreaterThan(boxes[2].y);
-    expect(boxes[4].w).toBeGreaterThan(boxes[0].w * 2);
     for (const label of await actions.allInnerTexts())
       expect(label.split("\n").length).toBeLessThanOrEqual(2);
   } else {
@@ -422,37 +415,20 @@ test("most traded pools lists at most five pools by observed volume", async ({
   );
 });
 
-test("marking a wallet as mine reframes its page as the portfolio", async ({
+test("the wallet profile has no local identity action or unique stored state", async ({
   page,
 }) => {
   await settled(page, `/wallet/${topWallet}/?window=All`);
-  const crumb = page.locator("nav[aria-label=Breadcrumb] > span").last();
-  const title = page.locator(".page-heading h1");
-  const mine = page.getByRole("button", { name: "This is my wallet" });
-  await expect(crumb).toHaveText("0x4745…bce1");
-  await expect(title).toHaveText("0x4745…bce1");
-  await expect(mine).toHaveAttribute("aria-pressed", "false");
-  const width = (await mine.boundingBox())!.width;
-  await mine.click();
-  await expect(mine).toHaveAttribute("aria-pressed", "true");
-  expect((await mine.boundingBox())!.width, "the label holds its width").toBe(
-    width,
-  );
-  await expect(crumb).toHaveText("Portfolio");
-  await expect(title).toHaveText("Portfolio");
-  await expect(page.locator(".page-heading h1 + span")).toHaveText("RANK 1");
-  // Saved in this browser: the framing survives a reload and stays on this
-  // address alone.
-  await settled(page, `/wallet/${topWallet}/?window=All`);
-  await expect(title).toHaveText("Portfolio");
-  await settled(page, `/wallet/${activeWallet}/?window=All`);
-  await expect(title).toHaveText("0x9909…d1f8");
-  await expect(mine).toHaveAttribute("aria-pressed", "false");
-  await settled(page, `/wallet/${topWallet}/?window=All`);
-  await expect(mine).toHaveAttribute("aria-pressed", "true");
-  await mine.click();
-  await expect(title).toHaveText("0x4745…bce1");
-  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByRole("button", { name: "This is my wallet" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("dialog", { name: "This is my wallet" }),
+  ).toHaveCount(0);
+  expect(
+    await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
+    "opening a profile does not write the shared header identity",
+  ).toBeNull();
 });
 
 test("the header's wallet menu sets and forgets the browser wallet, reframing the wallet page and the traders YOU row with it", async ({
@@ -460,9 +436,10 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
 }) => {
   await settled(page, `/wallet/${topWallet}/?window=All`);
   const control = page.locator(".header-actions .connect-button");
-  const mine = page.getByRole("button", { name: "This is my wallet" });
   const title = page.locator(".page-heading h1");
-  await expect(mine).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.getByRole("button", { name: "This is my wallet" }),
+  ).toHaveCount(0);
   await expect(title).toHaveText("0x4745…bce1");
 
   await control.click();
@@ -471,7 +448,9 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   await expect(
     page.getByRole("dialog", { name: "Set my wallet" }),
   ).toBeHidden();
-  await expect(mine).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
+  ).toBe(topWallet);
   await expect(title).toHaveText("Portfolio");
 
   await settled(page, "/traders/?window=All");
@@ -482,11 +461,10 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   await control.click();
   await page.getByRole("menuitem", { name: "Forget this wallet" }).click();
   await expect(myRank).toContainText(
-    "Mark your wallet on its page to see your rank here",
+    "Set your wallet in the header to see your rank here",
   );
 
   await settled(page, `/wallet/${topWallet}/?window=All`);
-  await expect(mine).toHaveAttribute("aria-pressed", "false");
   await expect(title).toHaveText("0x4745…bce1");
 });
 
@@ -516,7 +494,7 @@ test("a stored wallet's page paints as the portfolio with no layout shift", asyn
   ).toHaveText("Portfolio");
   await expect(
     page.getByRole("button", { name: "This is my wallet" }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toHaveCount(0);
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
