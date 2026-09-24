@@ -3,6 +3,7 @@ import test from "node:test";
 import { availableParallelism } from "node:os";
 import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
+import { readCreators } from "./creators-read";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
@@ -17,6 +18,16 @@ import {
 // 2026). A serial phase of `pnpm test:db`, like the broad explore scale test,
 // so the bound measures the reads rather than other fixtures' seeding.
 const readBudgetMs = 2000;
+// Every launch sender holds a ledger wallet, so the creators page's own-buy
+// evidence probes a position for each of the launches it reaches, exactly as
+// production does. That probe is what took the creators read to 2.5-2.8 s of
+// its 3,000 ms budget on a cold production copy (62,896 pools, 2.18M
+// positions) while the traders and pool reads stayed at 19-22 ms and 78 ms,
+// and what production cancelled with 57014 on a first load.
+const senders = 26000,
+  // A creator with a position in every third launch, so boughtOwnLaunch is a
+  // real mix rather than uniformly true or false.
+  ownEvery = 3;
 const H = 500000,
   cursorBlock = 23600000,
   cursorTime = H * 3600 + 1800,
@@ -25,7 +36,7 @@ const H = 500000,
 const poolId = (i: number) => "0x" + (i + 200000).toString(16).padStart(64, "0");
 
 test(
-  "ledger market serving: every explore order and the busiest pool page at production shape stay inside the read budget",
+  "ledger market serving: every explore order, every creators window and sort, the trader board and the busiest pool page at production shape stay inside the read budget",
   { skip: !process.env.TEST_DATABASE_URL },
   async (t) => {
     const fixture = await marketDatabase(),
@@ -127,8 +138,53 @@ test(
       FROM generate_series(0,79) n JOIN indexed_pools p ON p.chain_id=4663 AND p.pool_id=$3`,
       [cursorBlock, cursorTime, poolId(1)],
     );
+    // The wallets behind the catalog: every ledger launch sender, and the
+    // broad fixture's own sender, whose 31 launches top the launches order.
     await db.query(
-      "ANALYZE indexed_pools,pool_launch_sources,indexer_batches,agg_streams,agg_batches,agg_pool_hours,agg_pool_state,agg_live_trades,analytics_accounting_pools,broad_market_summaries,broad_market_buckets",
+      `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE
+      SELECT m+1,decode(lpad(to_hex(1000+m),40,'0'),'hex'),23467030 FROM generate_series(0,$1::integer-1) m`,
+      [senders],
+    );
+    await db.query(
+      `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE VALUES($1,decode(lpad(to_hex(99),40,'0'),'hex'),23467030)`,
+      [senders + 1],
+    );
+    // An even-indexed sender bought into every third launch of its own and
+    // an odd-indexed one into none, so the page's own-buy flags are a real
+    // mix and most probes find nothing, as production's do. Closed at a
+    // profit, so the row satisfies the ledger's own accounting constraints
+    // (realized = proceeds - disposed cost, invested = cost + disposed +
+    // outflow cost) rather than standing outside them.
+    await seedBatches(1, scalePools, 4000, (lo, hi) =>
+      db.query(
+        `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,
+          inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,first_block,last_block,last_timestamp,supported,flags,closed_cycles,flash_cycles,shortest_cycle_seconds)
+        SELECT 4663,p.pool_ref,mod(i,$3::integer)+1,0,0,1000,1200,1000,200,0,0,0,1,1,0,0,23467030+i,23467030+i,$4::bigint,true,'{}',1,0,120
+        FROM generate_series($1::integer,$2::integer) i
+        JOIN indexed_pools p ON p.chain_id=4663 AND p.pool_id='0x'||lpad(to_hex(i+200000),64,'0')
+        WHERE mod(i,$5::integer)=0 AND mod(mod(i,$3::integer),2)=0`,
+        [lo, hi, senders, H * 3600, ownEvery],
+      ),
+    );
+    // The trader leaderboard's own source, so this phase carries the control
+    // the creators bound is read against: the board the tip loop ranked.
+    for (const window of ["7d", "All"]) {
+      await db.query(
+        `INSERT INTO agg_wallet_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
+          wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,rank,window_start,refreshed_at)
+        SELECT 4663,$1,m+1,(5000-m)::numeric,(5000-m)::numeric,100000,1000,12,12,1,0,1,600,(5000-m)::numeric,$2::bigint,1,0,
+          CASE WHEN m<100 THEN m+1 END,$3::integer,now()
+        FROM generate_series(0,4999) m`,
+        [window, H * 3600, window === "All" ? 0 : H - 168],
+      );
+      await db.query(
+        `INSERT INTO agg_window_refreshes(chain_id,stream_key,"window",through_block,through_timestamp,window_start,wallets,ranked,refreshed_at)
+        VALUES(4663,'ledger:agg:v1',$1,$2,$3,$4,5000,100,now())`,
+        [window, cursorBlock, cursorTime, window === "All" ? 0 : H - 168],
+      );
+    }
+    await db.query(
+      "ANALYZE indexed_pools,pool_launch_sources,indexer_batches,agg_streams,agg_batches,agg_pool_hours,agg_pool_state,agg_live_trades,analytics_accounting_pools,broad_market_summaries,broad_market_buckets,agg_wallets,agg_positions,agg_wallet_windows,agg_window_refreshes",
     );
     const counts = (
       await db.query(
@@ -151,10 +207,80 @@ test(
       assert(ms < readBudgetMs, `${path} exceeded ${readBudgetMs}ms: ${ms.toFixed(1)}ms`);
       return { data, ms };
     };
+    const reads: [string, number][] = [];
+    // The creators page first, on the caches the seeding left cold and before
+    // the warm-up read below: production's first load after a restart is what
+    // failed, and a reload is what worked. Every window and sort the route
+    // serves, since the page offers all of them and the whole-catalog probe
+    // cost the same in each.
+    for (const window of ["1h", "6h", "24h", "7d", "30d", "All"])
+      for (const sort of ["launches", "volume", "median"]) {
+        const read = await timed(
+          `/v1/creators?window=${window}&sort=${sort}&limit=25`,
+        );
+        reads.push([`creators${sort}${window}`, read.ms]);
+      }
+    const creators = (await timed("/v1/creators?window=All&limit=25")).data;
+    assert.equal(creators.total, 100);
+    assert(creators.items[0].measured > 0);
+    // Its own-buy evidence is served, and it is neither uniformly true nor
+    // uniformly false: a flag no launch can disagree with proves nothing.
+    const flags = creators.items.map(
+      (c: { boughtOwnLaunch: boolean | null }) => c.boughtOwnLaunch,
+    );
+    assert(flags.includes(true) && flags.includes(false), JSON.stringify(flags));
+    // The regression: that evidence is a position probe per launch, so the
+    // read must probe the page's own launches and no others. Over the whole
+    // catalog the same probe was 260k buffers and 2.1 s of a cold read's
+    // 2.4 s. Counted from the plan of the statement that carries it rather
+    // than from its text, so a plan that reached the whole table by another
+    // shape fails here too.
+    const pageLaunches = creators.items.reduce(
+      (sum: number, c: { launches: number }) => sum + c.launches,
+      0,
+    );
+    let probes = -1,
+      sequential = false;
+    await db.query("BEGIN");
+    await readCreators(
+      async (sql: string, values?: unknown[]) => {
+        if (sql.includes("ledger_own")) {
+          const walk = (node: Record<string, any>) => {
+            if (node["Relation Name"] === "agg_positions") {
+              probes = Math.max(probes, 0) + (node["Actual Loops"] ?? 1);
+              sequential ||= String(node["Node Type"]).includes("Seq Scan");
+            }
+            for (const child of node.Plans ?? []) walk(child);
+          };
+          const plan = (
+            await db.query(
+              "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql,
+              values as unknown[],
+            )
+          ).rows[0]["QUERY PLAN"][0];
+          walk(plan.Plan);
+        }
+        return db.query(sql, values as unknown[]) as any;
+      },
+      { window: "All", sort: "launches", limit: 25, offset: 0 },
+      "ledger",
+    );
+    await db.query("COMMIT");
+    assert(probes >= 0, "no statement carried the own-buy evidence");
+    assert(!sequential, "the own-buy probe scanned the whole position table");
+    assert(
+      probes <= pageLaunches,
+      `own-buy probes ${probes} exceeded the page's ${pageLaunches} launches (catalog ${counts.pools})`,
+    );
+    // The controls, on the same cold fixture: the board the tip loop ranked
+    // and, further down, the busiest pool's page.
+    const board = await timed("/v1/leaderboard?window=7d&limit=25&minTrades=10");
+    reads.push(["traders7d", board.ms]);
+    assert.equal(board.data.total, 100);
+    assert.equal(board.data.items.length, 25);
     // One untimed read loads the relation caches the seeding left cold, so
     // the timings below measure the statements rather than a first touch.
     assert.equal((await fetch(`${base}/v1/explore?window=All&limit=1`)).status, 200);
-    const reads: [string, number][] = [];
     const explore = async (name: string, query: string) => {
       const read = await timed(`/v1/explore?${query}`);
       reads.push([name, read.ms]);
@@ -209,11 +335,10 @@ test(
       assert.equal(read.data.market.trades, window === "All" ? 468000 : 9600);
       assert.equal(read.data.analytics, null);
     }
-    // The creators aggregate over the same catalog, every covered launch
-    // measured from the ledger and its own-buy evidence probed per launch.
+    // The creators aggregate warm, beside the cold reads above.
     for (const [name, query] of [
-      ["creatorsAll", "window=All&limit=25"],
-      ["creatorsVolume24h", "window=24h&sort=volume&limit=25"],
+      ["creatorsAllWarm", "window=All&limit=25"],
+      ["creatorsVolume24hWarm", "window=24h&sort=volume&limit=25"],
     ]) {
       const read = await timed(`/v1/creators?${query}`);
       reads.push([name, read.ms]);

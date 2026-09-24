@@ -128,11 +128,15 @@ export function broadFlowCte(source: "catalog" | "page") {
 // one rule. `where` filters the catalog rows; $1-$6 bind as above. The CTE is
 // materialized so its CASE expressions, each carrying the coverage subplan,
 // evaluate once per launch however many aggregates read the columns.
-// With `ownBuys` every launch also carries `own`: whether the selected
+// With `ownBuys` (the SQL expression naming a `text[]` of launch senders)
+// every launch of those senders also carries `own`: whether the selected
 // source holds a buy whose transaction sender is the launch sender, over that
-// source's whole covered history rather than the window. Deep evidence rides
-// the flow scan the rank already pays for; broad evidence is one hash
-// semi-join over broad_swaps at or below the served cutoff.
+// source's whole covered history rather than the window. It names senders
+// rather than taking a flag because the evidence costs a probe per launch:
+// the creators page needs it only for the creators it serves, and asking for
+// it over the whole catalog is what put that read past its statement budget.
+// Deep evidence rides the flow scan the rank already pays for; broad evidence
+// is one hash semi-join over broad_swaps at or below the served cutoff.
 // With `ledger` (the served window), the ledger's flow comes first for every
 // launch it covers whose deep publication, if any, is no newer than its
 // cursor ($7-$9 below), so the broad and deep rules only ever evaluate for
@@ -143,16 +147,19 @@ export function broadFlowCte(source: "catalog" | "page") {
 // initiator when it received the tokens, else the one address that did),
 // over the pool's whole folded history, found by one primary-key probe per
 // launch after the senders are matched to their wallet rows: the LATERAL
-// with its LIMIT keeps the planner on that probe (about 260k buffers at
-// production shape) rather than the wallet index's every position of every
-// launching wallet (1.3M buffers, two parallel workers and a temp spill).
+// with its LIMIT keeps the planner on that probe rather than the wallet
+// index's every position of every launching wallet (1.3M buffers, two
+// parallel workers and a temp spill). Those probes read the position heap at
+// random, so they cost what the named senders launched; over the whole
+// catalog they were 260k buffers and 2.1s of the 2.4s a cold
+// production-shaped creators read spent inside its 3s budget.
 export function rankedFlowCtes(
   where = "",
-  {
-    ownBuys = false,
-    ledger = null as LiveWindow | null,
-  } = {},
+  { ownBuys = null as string | null, ledger = null as LiveWindow | null } = {},
 ) {
+  // Own-buy evidence is only ever carried for the senders `ownBuys` names.
+  const ofSenders = (column: string) =>
+    ownBuys ? ` AND ${column}=ANY(${ownBuys}::text[])` : "";
   const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
   const ledgerSelected = (value: string) =>
     ledger
@@ -164,7 +171,7 @@ export function rankedFlowCtes(
     FROM analytics_accounting_trades t LEFT JOIN indexed_pools p ON p.chain_id=t.chain_id AND p.pool_id=t.pool_id WHERE t.chain_id=4663 GROUP BY t.pool_id
   ), broad_own AS (
     SELECT DISTINCT bs.pool_id FROM broad_swaps bs JOIN indexed_pools p ON p.chain_id=bs.chain_id AND p.pool_id=bs.pool_id AND p.launch_sender=bs.transaction_sender
-    WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2`
+    WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2${ofSenders("p.launch_sender")}`
     : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
   const ledgerOwn = ownBuys && ledger;
   return `${catalogCte}, flow AS (
@@ -181,7 +188,7 @@ export function rankedFlowCtes(
     SELECT ip.pool_id FROM indexed_pools ip
     JOIN agg_wallets w ON w.address=decode(substr(ip.launch_sender,3),'hex')
     JOIN LATERAL (SELECT 1 FROM agg_positions ap WHERE ap.chain_id=4663 AND ap.pool_ref=ip.pool_ref AND ap.wallet_ref=w.wallet_ref AND ap.buys>0 LIMIT 1) ap ON true
-    WHERE ip.chain_id=4663
+    WHERE ip.chain_id=4663${ofSenders("ip.launch_sender")}
   )`
       : ""
   }, ranked AS MATERIALIZED (
