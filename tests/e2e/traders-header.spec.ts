@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 // Copy the captain removed from the leaderboard header; it must not come back.
 const removedCopy = [
@@ -55,22 +55,15 @@ test("the trader leaderboard header holds only the title and its ranking control
 // three behind the "shown" total the pagination count and URL track.
 const LIST_OFFSET = 3;
 
-// Focus follows each appended page and scrolls the test deep into the list.
-// Normalize before a reload so browser scroll-restoration timing cannot bring
-// the statically prerendered pagination foot into the measured viewport.
-async function reloadFromTop(page: Page) {
-  await page.evaluate(() => {
-    scrollTo(0, 0);
-  });
-  await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
-  await page.reload();
-}
-
 test("the trader leaderboard grows with a Show more button and a running Gmail-style count", async ({
   page,
   request,
 }) => {
   test.slow();
+  // The flow's reloads restore a scroll position deep in the list, where the
+  // served shell's pagination foot and the site footer are on screen. Only a
+  // paint that lands before hydration can shift them, so the throttle is what
+  // makes this test exercise the case at all rather than win a race with it.
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 8 });
 
@@ -96,33 +89,69 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
       document.addEventListener("DOMContentLoaded", disableSmoothScroll, {
         once: true,
       });
-    const state = { cls: 0 };
+    // Each shift is kept with the nodes that moved and the rectangles they
+    // moved between: a CI failure then names the culprit in its own message,
+    // which a retained trace of an aggregate score cannot.
+    const state: { cls: number; sources: string[] } = { cls: 0, sources: [] };
     Object.assign(window, { clickMeasurement: state });
+    const describe = (node: Node | null) => {
+      const element = node as Element | null;
+      if (!element?.tagName) return String(node?.nodeName ?? "(detached)");
+      const classes =
+        typeof element.className === "string" && element.className.trim()
+          ? `.${element.className.trim().split(/\s+/).join(".")}`
+          : "";
+      return `${element.tagName.toLowerCase()}${classes}`;
+    };
+    const box = (rect: DOMRectReadOnly) =>
+      `[${Math.round(rect.x)},${Math.round(rect.y)} ${Math.round(rect.width)}x${Math.round(rect.height)}]`;
     new PerformanceObserver((list) => {
       for (const raw of list.getEntries()) {
         const shift = raw as PerformanceEntry & {
           hadRecentInput: boolean;
           value: number;
+          sources?: {
+            node: Node | null;
+            previousRect: DOMRectReadOnly;
+            currentRect: DOMRectReadOnly;
+          }[];
         };
-        if (!shift.hadRecentInput) state.cls += shift.value;
+        if (shift.hadRecentInput) continue;
+        state.cls += shift.value;
+        state.sources.push(
+          `${shift.value} at scrollY ${Math.round(scrollY)}: ` +
+            (shift.sources ?? [])
+              .map(
+                (source) =>
+                  `${describe(source.node)} ${box(source.previousRect)} to ${box(source.currentRect)}`,
+              )
+              .join(", "),
+        );
       }
     }).observe({ type: "layout-shift", buffered: true });
   });
 
   await page.goto("/traders/?window=All");
   const layoutShifts: Record<string, number> = {};
+  const shiftSources: string[] = [];
   const recordLayoutShifts = async (phase: string) => {
-    layoutShifts[phase] = await page.evaluate(async () => {
+    const measured = await page.evaluate(async () => {
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       );
       const state = (
-        window as unknown as { clickMeasurement: { cls: number } }
+        window as unknown as {
+          clickMeasurement: { cls: number; sources: string[] };
+        }
       ).clickMeasurement;
-      const value = state.cls;
+      const taken = { cls: state.cls, sources: state.sources };
       state.cls = 0;
-      return value;
+      state.sources = [];
+      return taken;
     });
+    layoutShifts[phase] = measured.cls;
+    for (const source of measured.sources)
+      shiftSources.push(`${phase}: ${source}`);
   };
   const panel = page.locator("main .leaderboard-panel");
   const pagination = panel.locator(".pagination");
@@ -157,7 +186,7 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await recordLayoutShifts("initial load and first growth");
 
   // Reload restores the exact shown count from the URL, in one request.
-  await reloadFromTop(page);
+  await page.reload();
   await expect(count).toHaveText(
     `Showing ${shown50.toLocaleString()} of ${total.toLocaleString()}`,
   );
@@ -198,7 +227,7 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await recordLayoutShifts("growth to the ceiling");
 
   // Reload restores the exhausted state too: the same count, no button back.
-  await reloadFromTop(page);
+  await page.reload();
   await expect(count).toHaveText(
     `Showing ${shown.toLocaleString()} of ${total.toLocaleString()}`,
   );
@@ -220,7 +249,7 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   await recordLayoutShifts("metric reset");
   expect(
     layoutShifts,
-    "every non-input layout shift across the whole flow",
+    `every non-input layout shift across the whole flow${shiftSources.length ? `\n  ${shiftSources.join("\n  ")}` : ""}`,
   ).toEqual({
     "initial load and first growth": 0,
     "50-row reload": 0,
@@ -236,6 +265,44 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
     ),
     "the show-more bar fits the viewport",
   ).toBe(true);
+});
+
+// `/traders/` is statically prerendered, so the served HTML always paints the
+// default 25-row shell whatever the URL asks for. A reader deep in a grown
+// list who reloads has the pagination foot and the site footer on screen, and
+// growing the list under them at hydration moved both off it: a real,
+// input-free 0.1498375 shift on this viewport, and their place in the list
+// lost with it. The served shell now reserves the rows the URL names before
+// first paint, so the foot lands where it will stay.
+test("the served leaderboard reserves the rows its URL names before hydration", async ({
+  page,
+}) => {
+  const url = "/traders/?window=All&limit=50";
+  const footTop = () =>
+    page
+      .locator("main .leaderboard-panel .pagination")
+      .evaluate((node) => Math.round(node.getBoundingClientRect().top + scrollY));
+
+  // The shell alone: every client script refused, so nothing hydrates and the
+  // reservation is whatever the served paint itself holds. The stylesheets
+  // ride in the same `chunks` directory, so the pattern names the scripts.
+  const scripts = "**/_next/static/**/*.js";
+  await page.route(scripts, (route) => route.abort());
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  const served = await footTop();
+  await page.unroute(scripts);
+
+  await page.goto(url);
+  const panel = page.locator("main .leaderboard-panel");
+  await expect(panel.locator(".pagination .pagination-count")).toHaveText(
+    /^Showing 50 of /,
+  );
+  await expect(panel.locator(".desktop-traders tbody tr")).toHaveCount(47);
+  await expect(panel.locator(".mobile-trader")).toHaveCount(47);
+  expect(
+    await footTop(),
+    "the pagination foot sits where the served shell already put it",
+  ).toBe(served);
 });
 
 // The count line reads the same top-100 ceiling the button stops at, never

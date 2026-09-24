@@ -4598,9 +4598,15 @@ button.icon-button:disabled {
     flex-basis: 100%;
     min-width: 0;
   }
-  /* The count takes its own 15px line above the button here. */
+  /* The count takes its own 15px line above the button here. `align-content`
+     holds that line at the top of the reserved box: stretched (the default)
+     it fills the whole box once the button goes, which re-centres the count
+     27px lower - a real shift of the count line even though the foot itself
+     never moves. The desktop foot keeps the default, where count and button
+     share one line and the count is already still. */
   .pagination:has(> .pagination-count) {
     min-height: calc(31px + 15px + 10px + max(38px, var(--ctl-min)));
+    align-content: flex-start;
   }
   .segmented button {
     min-height: 40px;
@@ -5853,6 +5859,18 @@ a.wallet-top-pool:hover {
   ) {
   min-height: calc(22 * 60px + 44px);
 }
+/* The ranked board alone grows with its URL: `--ranked-rows` is the row count
+   `limit` names, set before first paint by rankedRowsScript, so a served
+   shell under a restored scroll reserves the list the reader is returning to.
+   AuditLeaderboard shares the selector above and keeps the fixed 22 rows,
+   since a `limit` left in the URL beside `?pool=` is not its own count. This
+   rule is more specific than the one above, so it must repeat that one's
+   failed-read exclusion or a failed board reserves rows again. */
+.ranked-traders .leaderboard-panel .desktop-traders:not(.following-traders):not(
+    [data-failed="true"]
+  ) {
+  min-height: calc(var(--ranked-rows, 22) * 60px + 44px);
+}
 .leaderboard-panel .data-table tbody tr,
 .leaderboard-panel .data-table tbody td {
   height: 60px;
@@ -5916,7 +5934,7 @@ a.wallet-top-pool:hover {
   .ranked-traders
     .leaderboard-panel
     .mobile-traders:not(.following-traders):not([data-failed="true"]) {
-    min-height: calc(22 * 101px);
+    min-height: calc(var(--ranked-rows, 22) * 101px);
   }
   .ranked-traders .leaderboard-panel .mobile-trader {
     position: relative;
