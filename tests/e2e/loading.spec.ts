@@ -49,7 +49,7 @@ test("Explore retains saved rows during refresh", async ({ page, request }) => {
   ).toBeEnabled();
 });
 
-test("Explore swaps to skeleton rows, never a dimmed redraw, while a sort change loads", async ({
+test("Explore keeps the previous order's own rows on show, dimmed, never a skeleton flash, while a sort change loads", async ({
   page,
   request,
 }) => {
@@ -75,11 +75,14 @@ test("Explore swaps to skeleton rows, never a dimmed redraw, while a sort change
     await route.fulfill({ json: byChange });
   });
   await page.goto("/");
-  const rows = page.locator(".desktop-pools, .mobile-pools"),
-    previousFirst = rows
-      .getByText(byVolume.items[0].name, { exact: true })
-      .filter({ visible: true });
-  await expect(previousFirst).toBeVisible();
+  const busy = page
+      .locator(".desktop-pools, .mobile-pools")
+      .filter({ visible: true })
+      .first(),
+    firstRow = () => busy.locator('[data-row-index="0"]');
+  await expect(
+    firstRow().filter({ hasText: byVolume.items[0].name }),
+  ).toBeVisible();
   // Sorting lives on the desktop column headers, where the change column's
   // head names the window it is measured over; the phone layout renders
   // cards with no header row, so drive its re-query the way the app does.
@@ -97,24 +100,22 @@ test("Explore swaps to skeleton rows, never a dimmed redraw, while a sort change
       dispatchEvent(new PopStateEvent("popstate"));
     });
   await expect.poll(() => gated).toBe(true);
-  const busy = rows.filter({ visible: true }).first();
   await expect(busy).toHaveAttribute("aria-busy", "true");
-  await expect(busy).not.toHaveAttribute("data-stale-rows", /.*/);
-  /* No intermediate render of the previous view's rows: the old order is
-     gone the instant the new one is requested, replaced by skeleton rows of
-     the same geometry, never dimmed in place. */
-  await expect(previousFirst).toHaveCount(0);
-  await expect(busy.locator('[data-row="skeleton"]').first()).toBeVisible();
-  await expect(busy.locator('[data-pending="true"]').first()).toBeVisible();
-  release();
-  await expect(
-    rows
-      .getByText(byChange.items[0].name, { exact: true })
-      .filter({ visible: true })
-      .first(),
-  ).toBeVisible();
-  await expect(busy).toHaveAttribute("aria-busy", "false");
+  await expect(busy).toHaveAttribute("data-stale-rows", "true");
+  /* The previous order's own rows keep filling the region, dimmed, rather
+     than being replaced by a shimmering skeleton: no full-table flash, and
+     no fabricated stand-in for the order that has not resolved yet. */
   await expect(busy.locator('[data-row="skeleton"]')).toHaveCount(0);
+  await expect(
+    firstRow().filter({ hasText: byVolume.items[0].name }),
+  ).toBeVisible();
+  release();
+  await expect(busy).toHaveAttribute("aria-busy", "false");
+  await expect(busy).toHaveAttribute("data-stale-rows", "false");
+  await expect(busy.locator('[data-row="skeleton"]')).toHaveCount(0);
+  await expect(
+    firstRow().filter({ hasText: byChange.items[0].name }),
+  ).toBeVisible();
 });
 
 test("wallet and leaderboard show structured loading instead of empty analytics", async ({
