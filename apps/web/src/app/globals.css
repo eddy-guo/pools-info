@@ -4657,6 +4657,14 @@ button.icon-button:disabled {
        Chrome scores as a shift even when the column around it does not. */
     display: inline-block;
     min-width: 90px;
+    /* One line box whether or not the value has text. A change with no
+       opening price observation renders as an empty span (`Change` in
+       ui.tsx keeps the unavailable state wordless), and an empty
+       inline-block is zero pixels tall: without this the column loses its
+       second line as the read resolves and, centred in the row, re-centres
+       itself ~8px down - a real shift Chrome scores whenever the card sits
+       inside the viewport when the skeleton resolves. */
+    min-height: 1lh;
     text-align: right;
     font-size: 12.5px;
   }
