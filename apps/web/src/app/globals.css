@@ -5769,6 +5769,17 @@ button.icon-button:disabled {
 .wallet-positions-table td:nth-child(n + 2) {
   text-align: right;
 }
+/* The figure fills its own fixed column rather than keeping the shared 12ch
+   track `.data-table .number` gives it: a signed six-significant-digit ETH
+   value runs past 12ch (95.472px reserved against a measured 98.34px for
+   `+0.0114711 ETH`), and because the cell right-aligns it, the overflow moves
+   the span's own start while the cell holds still - a shift Chrome scores
+   against the `td` with rectangles that read byte-identical. The column is
+   fixed by the `<colgroup>`, so filling it reserves the figure's box at first
+   paint whatever text lands in it. */
+.wallet-positions-table td:nth-child(n + 2) .number {
+  min-width: 100%;
+}
 .wallet-token-cell {
   display: flex;
   align-items: center;

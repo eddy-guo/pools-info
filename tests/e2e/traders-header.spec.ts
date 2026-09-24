@@ -59,14 +59,6 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   page,
   request,
 }) => {
-  test.slow();
-  // The flow's reloads restore a scroll position deep in the list, where the
-  // served shell's pagination foot and the site footer are on screen. Only a
-  // paint that lands before hydration can shift them, so the throttle is what
-  // makes this test exercise the case at all rather than win a race with it.
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 8 });
-
   const total: number = (
     await (
       await request.get("/api/product/leaderboard/?window=All&limit=100")
@@ -78,9 +70,8 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
   ).toBeGreaterThan(50);
 
   await page.addInitScript(() => {
-    // Test navigation and locator actionability, not animated scrolling. This
-    // also makes every new document start at the requested position promptly
-    // under the deliberate 8x CPU throttle below.
+    // Test navigation and locator actionability, not animated scrolling, and
+    // let every new document start at the requested position at once.
     const disableSmoothScroll = () => {
       document.documentElement.style.scrollBehavior = "auto";
     };
@@ -268,7 +259,10 @@ test("the trader leaderboard grows with a Show more button and a running Gmail-s
 });
 
 // `/traders/` is statically prerendered, so the served HTML always paints the
-// default 25-row shell whatever the URL asks for. A reader deep in a grown
+// default 25-row shell whatever the URL asks for. This is the deterministic
+// guard for that: refusing the client scripts fixes the paint order outright,
+// where CPU throttling only makes it likely and starves every other wait in
+// the flow along the way. A reader deep in a grown
 // list who reloads has the pagination foot and the site footer on screen, and
 // growing the list under them at hydration moved both off it: a real,
 // input-free 0.1498375 shift on this viewport, and their place in the list
