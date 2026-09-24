@@ -141,18 +141,32 @@ export async function readCreators(
         ledger: ledger ? window : null,
       },
     );
+  // Its plan gathers two parallel workers over a parallel hash join, and a
+  // page of 50 senders or more grows that hash past the shared memory the
+  // database container gives parallel query: production answered 53100
+  // (`could not resize shared memory segment ... to 8388608 bytes`) for
+  // every window=All page of 50 or 100 rows while the same page of 25 and
+  // every shorter window served. Parallelism is off for this statement and
+  // no other, restored before the catalog lookup below, so the probe plans
+  // inside one backend's work_mem and asks the container for no segment at
+  // all. A failed read rolls the transaction back, which discards the
+  // setting with it.
+  let probed: Record<string, any>[] = [];
+  if (senders.length) {
+    await query("SET LOCAL max_parallel_workers_per_gather = 0");
+    probed = (
+      await query(
+        `${ownRanked} SELECT launch_sender,bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own FROM ranked GROUP BY launch_sender`,
+        [...values, senders],
+      )
+    ).rows;
+    await query("SET LOCAL max_parallel_workers_per_gather = DEFAULT");
+  }
   const own = new Map<string, boolean | null>(
-    senders.length
-      ? (
-          await query(
-            `${ownRanked} SELECT launch_sender,bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own FROM ranked GROUP BY launch_sender`,
-            [...values, senders],
-          )
-        ).rows.map((r) => [
-          r.launch_sender,
-          r.bought_own === null ? null : Boolean(r.bought_own),
-        ])
-      : [],
+    probed.map((r) => [
+      r.launch_sender,
+      r.bought_own === null ? null : Boolean(r.bought_own),
+    ]),
   );
   // The page's best launches carry their catalog identity; a single
   // reference inlines the catalog CTE into two primary-key lookups.

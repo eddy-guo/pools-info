@@ -229,18 +229,27 @@ test(
       (c: { boughtOwnLaunch: boolean | null }) => c.boughtOwnLaunch,
     );
     assert(flags.includes(true) && flags.includes(false), JSON.stringify(flags));
-    // The regression: that evidence is a position probe per launch, so the
-    // read must probe the page's own launches and no others. Over the whole
-    // catalog the same probe was 260k buffers and 2.1 s of a cold read's
-    // 2.4 s. Counted from the plan of the statement that carries it rather
-    // than from its text, so a plan that reached the whole table by another
-    // shape fails here too.
-    const pageLaunches = creators.items.reduce(
+    // The whole board in one request, which a reload asks for once the page
+    // has grown: production answered 53100 for every window=All page of 50
+    // rows or more, `could not resize shared memory segment ... to 8388608
+    // bytes`, while the same page of 25 and every shorter window served.
+    const whole = await timed("/v1/creators?window=All&limit=100");
+    reads.push(["creatorsAll100", whole.ms]);
+    assert.equal(whole.data.items.length, 100);
+    // The regression, read from the plan of the statement that carries the
+    // own-buy evidence rather than from its text, on the page shape that
+    // failed. The probe must reach the page's own launches and no others
+    // (over the whole catalog the same probe was 260k buffers and 2.1 s of a
+    // cold read's 2.4 s), and it must plan no parallel worker: the shared
+    // memory a parallel hash asks its container for is what this page had
+    // none of, and a plan that asks for none can never be refused it.
+    const pageLaunches = whole.data.items.reduce(
       (sum: number, c: { launches: number }) => sum + c.launches,
       0,
     );
     let probes = -1,
-      sequential = false;
+      sequential = false,
+      parallel = "";
     await db.query("BEGIN");
     await readCreators(
       async (sql: string, values?: unknown[]) => {
@@ -250,6 +259,8 @@ test(
               probes = Math.max(probes, 0) + (node["Actual Loops"] ?? 1);
               sequential ||= String(node["Node Type"]).includes("Seq Scan");
             }
+            if (node["Parallel Aware"] || node["Workers Planned"] !== undefined)
+              parallel ||= String(node["Node Type"]);
             for (const child of node.Plans ?? []) walk(child);
           };
           const plan = (
@@ -262,12 +273,13 @@ test(
         }
         return db.query(sql, values as unknown[]) as any;
       },
-      { window: "All", sort: "launches", limit: 25, offset: 0 },
+      { window: "All", sort: "launches", limit: 100, offset: 0 },
       "ledger",
     );
     await db.query("COMMIT");
     assert(probes >= 0, "no statement carried the own-buy evidence");
     assert(!sequential, "the own-buy probe scanned the whole position table");
+    assert.equal(parallel, "", `the own-buy probe planned a parallel ${parallel}`);
     assert(
       probes <= pageLaunches,
       `own-buy probes ${probes} exceeded the page's ${pageLaunches} launches (catalog ${counts.pools})`,

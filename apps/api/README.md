@@ -339,7 +339,12 @@ statements read one snapshot inside the reader's `REPEATABLE READ` transaction.
 The page's best launches are then looked up by primary key. Like explore both
 ranked statements run with `jit = off`, because the planner prices the rank's
 per-launch coverage subplan far above `jit_optimize_above_cost` while each
-executes in well under a second. On the production-shaped copy (62,393
+executes in well under a second. The own-buy statement additionally runs with
+`max_parallel_workers_per_gather = 0`, set `LOCAL` around it alone and
+restored before the identity lookup: its `Gather` of two workers over a
+`Parallel Hash Left Join` grew past the shared memory the database container
+gives parallel query at 50 senders or more, and answered 53100 rather than a
+page (`docs/LEDGER-MARKET-SERVING.md`, "The creators aggregate"). On the production-shaped copy (62,393
 launches, 25,718 senders, 1,364 deep publications, 1,853 broad summaries,
 165,417 broad swaps; Postgres 18) the ranking statement is the shape measured
 at 94-111 ms for every sort, first and last page, with a sub-millisecond
