@@ -5088,9 +5088,13 @@ button.icon-button:disabled {
 /* Six columns share the panel on the export's grid. Token takes the remainder
    after deliberate tracks for the four figures to its right: enough for the
    mono subscript-zero price, a signed four-digit change, a six-significant-
-   digit volume and the sender's address plus both actions on one line. At
-   the reported 1163px viewport Token is 173px and truncates its two text
-   lines; at 1440px it is 412px instead of consuming two thirds of the table. */
+   digit volume and the sender's address plus both actions on one line. This
+   geometry is the accepted layout contract (PR #141) and stays fixed; at
+   1440px Token is 412px, consuming two thirds of the table, but it narrows
+   with the table down to 173px at 1163px. Rather than let that narrowing
+   truncate the subtitle's trailing figure mid-number, `.row-subtitle-trades`
+   (product-explore.tsx's `RowSubtitle`) drops out as a whole unit below the
+   width it needs - see the `pool-list (width < 868px)` query below. */
 .explore-page .pool-table {
   min-width: 742px;
 }
@@ -5130,6 +5134,22 @@ button.icon-button:disabled {
     width: 0;
   }
   .explore-page .pool-table :is(th, td):nth-child(6) {
+    display: none;
+  }
+}
+/* Token crosses back over 250px (its pre-#141 floor) at a table width of
+   868px, roughly a 1245px viewport - above that every page-one subtitle
+   already measures whole. Below it, down through 1163px where Launch sender
+   is still deliberately full width, the trailing " · N trades" segment (with
+   its leading separator) drops as a unit rather than clipping: the worst
+   case on page one is a long symbol with a short count ("MONKIILABS · 10d ·
+   7 trades"), where abbreviating the count buys nothing, so dropping the
+   whole segment is the one rule that is correct for every row, not just the
+   ones with a large count to shorten. Symbol and age are never touched. The
+   full line still reaches assistive tech and a hover as `.row-subtitle`'s
+   title/aria-label. */
+@container pool-list (width < 868px) {
+  .row-subtitle-trades {
     display: none;
   }
 }

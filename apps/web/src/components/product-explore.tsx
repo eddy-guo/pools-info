@@ -1,12 +1,6 @@
 "use client";
 import Link from "next/link";
-import {
-  Fragment,
-  useEffect,
-  useRef,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
 import {
   poolHref,
@@ -75,6 +69,20 @@ const integers = new Intl.NumberFormat("en-US");
  * launch line carries the age), and a figure the read API does not send is
  * left out rather than marked. The phone row keeps only the age (`trades`
  * false) to hold its identity tile to `SYMBOL · age`.
+ *
+ * Symbol and age never truncate: PR #141's deliberate 132/112/140/190px
+ * right-hand tracks (kept as designed, never narrowed back) leave the Token
+ * column under the trade count's own width across roughly 1163-1245px of
+ * table width. Rather than let the browser's ellipsis cut the trailing
+ * segment off mid-number, `.row-subtitle-trades` drops out there as a whole
+ * unit (its leading " · " with it) - the same compact `SYMBOL · age` shape
+ * the phone row already uses, not a half-abbreviated count: a pool with a
+ * short trade count (page one's actual worst case, a long symbol with a
+ * single-digit count) gains nothing from abbreviating "7" to anything
+ * shorter, so only dropping the segment is correct for every row, not just
+ * the ones with a large count to abbreviate. The full line still reaches
+ * assistive tech and a mouse hover as this span's title/aria-label, so
+ * nothing is lost, only not shown at every width.
  */
 function RowSubtitle({
   pool,
@@ -85,24 +93,30 @@ function RowSubtitle({
   now: number | null;
   trades?: boolean;
 }) {
-  const facts = launchOnly(pool)
-    ? []
-    : [
-        now === null ? null : since(pool.launchedAt, now),
-        !trades || pool.stats.trades === null
-          ? null
-          : `${integers.format(pool.stats.trades)} trades`,
-      ].filter((fact) => fact !== null);
+  const age = launchOnly(pool) || now === null ? null : since(pool.launchedAt, now);
+  const tradeCount =
+    launchOnly(pool) || !trades || pool.stats.trades === null
+      ? null
+      : `${integers.format(pool.stats.trades)} trades`;
+  const full = [pool.symbol, age, tradeCount].filter(Boolean).join(" · ");
   return (
-    <>
-      <span className="mono">{pool.symbol}</span>
-      {facts.map((fact) => (
-        <Fragment key={fact}>
+    <span className="row-subtitle" title={full} aria-label={full}>
+      <span className="mono" aria-hidden="true">
+        {pool.symbol}
+      </span>
+      {age && (
+        <span aria-hidden="true">
           {" · "}
-          {fact}
-        </Fragment>
-      ))}
-    </>
+          {age}
+        </span>
+      )}
+      {tradeCount && (
+        <span className="row-subtitle-trades" aria-hidden="true">
+          {" · "}
+          {tradeCount}
+        </span>
+      )}
+    </span>
   );
 }
 function PoolCell({
