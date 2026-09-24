@@ -90,12 +90,7 @@ export async function readCreators(
   // middle element, or the floor of the two middle elements' mean for an
   // even count; both index expressions name the same element when the count
   // is odd. The best launch is the highest volume, lowest pool id on ties.
-  // bought_own is null without a measured launch, since only measured
-  // launches carry swap evidence.
-  const ranked = rankedFlowCtes("", {
-    ownBuys: true,
-    ledger: ledger ? window : null,
-  });
+  const ranked = rankedFlowCtes("", { ledger: ledger ? window : null });
   const rows = (
     await query(
       `${ranked}, creators AS (
@@ -104,13 +99,12 @@ export async function readCreators(
       sum(volume) AS volume,
       array_agg(volume ORDER BY volume) FILTER (WHERE volume IS NOT NULL) AS volumes,
       (array_agg(pool_id ORDER BY volume DESC,pool_id) FILTER (WHERE volume IS NOT NULL))[1] AS best_pool,
-      max(volume) AS best_volume,
-      bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own
+      max(volume) AS best_volume
     FROM ranked GROUP BY launch_sender
   ), figures AS (
     SELECT launch_sender,launches,measured,traded,volume,
       CASE WHEN measured>0 THEN div(volumes[(measured+1)/2]+volumes[(measured+2)/2],2) END AS median,
-      best_pool,best_volume,bought_own
+      best_pool,best_volume
     FROM creators
   ) SELECT *,count(*) OVER () AS total FROM figures ${filter} ORDER BY ${order} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset],
@@ -131,6 +125,34 @@ export async function readCreators(
             )
           ).rows[0].count,
         ),
+  );
+  // Own-buy evidence for the page's creators and no others. It costs a
+  // position probe per launch, so over the whole catalog it was 2.1s of a
+  // cold production-shaped read's 2.4s, inside a 3s statement budget; the
+  // page's creators are the only ones whose flag is served, and the orders
+  // above never read it. bought_own is null without a measured launch, since
+  // only measured launches carry swap evidence.
+  const senders = rows.map((r) => r.launch_sender),
+    ownParam = `$${values.length + 1}`,
+    ownRanked = rankedFlowCtes(
+      `WHERE p.launch_sender=ANY(${ownParam}::text[])`,
+      {
+        ownBuys: ownParam,
+        ledger: ledger ? window : null,
+      },
+    );
+  const own = new Map<string, boolean | null>(
+    senders.length
+      ? (
+          await query(
+            `${ownRanked} SELECT launch_sender,bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own FROM ranked GROUP BY launch_sender`,
+            [...values, senders],
+          )
+        ).rows.map((r) => [
+          r.launch_sender,
+          r.bought_own === null ? null : Boolean(r.bought_own),
+        ])
+      : [],
   );
   // The page's best launches carry their catalog identity; a single
   // reference inlines the catalog CTE into two primary-key lookups.
@@ -159,7 +181,7 @@ export async function readCreators(
             ...catalogPool(best.get(r.best_pool)!),
             volumeWei: String(r.best_volume),
           },
-    boughtOwnLaunch: r.bought_own === null ? null : Boolean(r.bought_own),
+    boughtOwnLaunch: own.get(r.launch_sender) ?? null,
   }));
   return {
     coverage,

@@ -311,7 +311,24 @@ rule, and the response's `note` says which rule applies. The set is found by
 one `agg_wallets` lookup per launch sender and one `agg_positions`
 primary-key probe per launch, held on that probe by a `LATERAL ... LIMIT 1`:
 the wallet index's plan read 1.3M buffers with two parallel workers and a
-temp spill where this reads about 260k.
+temp spill where this reads one index page and one heap page per launch.
+
+Those probes read the position heap at random, so the read carries them for
+the creators it serves and no others: the ranking statement measures the whole
+catalog without the flag, and a second statement, bound to the page's launch
+senders, answers `bool_or(own) FILTER (WHERE volume IS NOT NULL)` for them.
+The orders the route offers never read the flag, so the page is the same page
+either way; asking for it over the whole catalog is what took the read past
+its budget. On the restored production copy (62,896 launches, 2.18M positions,
+ledger cursor 65,409,776, Postgres 18, `shared_buffers` 128 MB) with the
+page cache dropped and the server restarted before every read, the
+whole-catalog probe cost 2.1 s of the ranking statement's 2.4 s (260k buffers,
+43,070 probes, `EXPLAIN (ANALYZE, BUFFERS)`) and the read took 2,481-2,818 ms
+of its 3,000 ms statement budget on every window and sort; the page-scoped
+probe takes 351-906 ms cold and 211-411 ms warm for the same eighteen, with
+the two statements 284 ms and 457 ms of a cold 842 ms. Every window, sort,
+direction and the second page answer byte for byte what the whole-catalog
+probe answered.
 
 Response shape, ranking rule, the Launches column and every other field are
 unchanged, and no row goes empty that was not empty before: under `broad` on
@@ -321,10 +338,12 @@ top 100 by launches had no measured launch; under `ledger` every one of the
 volume (`volumeWei DESC NULLS LAST`), so rows on an equal launch count may
 swap places when their volumes change; the launch count at each rank does
 not. On the production-shaped copy (62,896 launches, 2.18M positions, ledger
-cursor 65,409,776) the ranked statement executed in about 570 ms warm for All
-and 470 ms for 24h, 290k shared buffers, and the read answered over HTTP in
-0.5-1.0 s; `ledger-market.scale.test.ts` bounds the read at 2,000 ms and
-prints `creatorsAllMs` and `creatorsVolume24hMs`. The population walk (the
+cursor 65,409,776) the read answers over HTTP in 351-906 ms cold and
+211-411 ms warm across every window and sort. `ledger-market.scale.test.ts`
+bounds every one of them at 2,000 ms on caches its own seeding left cold,
+before its warm-up read, and asserts from the served statement's plan that the
+own-buy probe never reaches past the page's own launches (62,031 probes against
+the page's 103 before this rule). The population walk (the
 old and new top 100 by launches and by volume side by side) is
 `scripts/creators-walk.mjs <old api origin> <new api origin>`, recorded in the
 pull request that made the change.
