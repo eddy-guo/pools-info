@@ -170,5 +170,5 @@ test("unstarring on the Watchlist view removes the row at once: no refetch, no s
   expect(
     await cls(page),
     "three removals and the empty state cost the page no layout shift",
-  ).toBeLessThan(0.001);
+  ).toBe(0);
 });
