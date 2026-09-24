@@ -437,14 +437,25 @@ export function ModeBadge({ mode }: { mode: "instant" | "crowd" }) {
 export function WatchButton({ id }: { id: string }) {
   const { ids, toggle } = useWatchlist();
   const active = ids.includes(id);
+  /* The control itself is always the current storage state - there is no
+     separate optimistic flag to roll back, since `ids` reads localStorage
+     directly. A failed write leaves the icon exactly where it was; this
+     status only names that failure for assistive tech, off-screen so it
+     costs the row no layout. */
+  const [saveFailed, setSaveFailed] = useState(false);
   return (
     <button
       className={`icon-button watch ${active ? "active" : ""}`}
       aria-label={active ? "Remove from watchlist" : "Add to watchlist"}
       aria-pressed={active}
-      onClick={() => toggle(id)}
+      onClick={() => setSaveFailed(!toggle(id))}
     >
       <Star size={16} fill={active ? "currentColor" : "none"} />
+      {saveFailed && (
+        <span className="sr-only" role="status">
+          This browser could not save your watchlist change.
+        </span>
+      )}
     </button>
   );
 }
