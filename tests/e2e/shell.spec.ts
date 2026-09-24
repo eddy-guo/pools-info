@@ -73,14 +73,16 @@ for (const route of routes) {
     await expect(setWalletDialog).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(setWalletDialog).toBeHidden();
-    await expect(page.locator(".footer")).toContainText(
-      "Independent analytics. Not affiliated with Uniswap Labs.",
-    );
-    // The candle chart's library is credited here, not on the chart: its
-    // licence wants its NOTICE line and a link to tradingview.com on a page
-    // users see, so the on-chart logo is off (candles.tsx) and this plain
-    // line stands in on every route at every width - text only, no mark.
-    const credit = page.locator(".footer .footer-credit");
+    // The product footer was removed. Only the chart library's required
+    // attribution survives it: its licence wants its NOTICE line and a link
+    // to tradingview.com on a page users see, so the on-chart logo is off
+    // (candles.tsx) and this plain line stands in on every route at every
+    // width - text only, no mark - with nothing else left in the footer.
+    const footer = page.locator(".footer");
+    await expect(footer).not.toContainText("Independent analytics");
+    await expect(footer).not.toContainText("Not affiliated with Uniswap");
+    await expect(footer).not.toContainText("Robinhood Chain · Values in ETH");
+    const credit = footer.locator(".footer-credit");
     await expect(credit).toBeVisible();
     await expect(credit).toHaveText(
       "TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc. https://www.tradingview.com/",
@@ -90,6 +92,21 @@ for (const route of routes) {
       "https://www.tradingview.com/",
     );
     await expect(credit.locator("img, svg")).toHaveCount(0);
+    await expect(footer.locator("> *")).toHaveCount(1);
+    // The footer directly follows the page's content: no blank region is
+    // reserved where the removed disclaimer/chain-context lines used to be.
+    // (.site-shell's own min-height:100vh can still leave space *below* the
+    // footer on a short page; that is unrelated and untouched here.)
+    const gap = await page.evaluate(() => {
+      const mainBottom = document
+        .querySelector("main")!
+        .getBoundingClientRect().bottom;
+      const footerTop = document
+        .querySelector(".footer")!
+        .getBoundingClientRect().top;
+      return footerTop - mainBottom;
+    });
+    expect(gap, "no gap between the content and the footer").toBe(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
