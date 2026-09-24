@@ -330,6 +330,30 @@ the two statements 284 ms and 457 ms of a cold 842 ms. Every window, sort,
 direction and the second page answer byte for byte what the whole-catalog
 probe answered.
 
+That second statement runs with `max_parallel_workers_per_gather = 0`, set
+`LOCAL` around it and restored to the server's value before the identity
+lookup, so it is the only statement of the read the setting reaches. Its
+planned shape was a `Gather` of two workers over a `Parallel Hash Left Join`,
+and a page of 50 senders or more grew that hash past the shared memory the
+`LedgerPostgres` container gives parallel query: production answered 53100
+(`could not resize shared memory segment "/PostgreSQL.NNN" to 8388608 bytes:
+No space left on device`, the proxy's `data_temporarily_unavailable`) for
+`window=All` at `limit=50` and `limit=100`, failing at about 0.8 s, while the
+same page at `limit=25` served in 855 ms cold and 173 ms warm and `limit=100`
+on 1h, 24h, 7d and 30d served in 0.68-0.94 s. Serial, the probe plans inside
+one backend's `work_mem` and asks the container for no segment at all, so the
+page can no longer be refused one. It costs throughput, not correctness: on
+the production-shaped ledger copy (62,657 launches, 2.18M positions, migration
+022, Postgres 18.6, `shared_buffers` 128 MB), with the server restarted and
+the 4.4 GB database evicted from the page cache before each round, the read
+goes from 741 ms to 756 ms cold and 338 ms to 382 ms warm at `limit=25`, from
+588 ms to 602 ms cold at `limit=50`, and from 621-1,322 ms to 716-1,323 ms
+cold and 386 ms to 437 ms warm at `limit=100`; `limit=100` on 1h, 24h, 7d and
+30d goes from 320-401 ms to 367-465 ms cold. The trader board (19 ms) and an
+explore page (59-61 ms) are unmoved, and every response is byte for byte what
+the parallel plan answered. The worst reading, 1.3 s, is 44% of the 3,000 ms
+statement budget.
+
 The failure evidence is a three-part causal chain. At
 2026-09-24T12:58:21Z production logged
 `event=database_warming reason=product_statement_cancelled`, immediately
@@ -352,6 +376,8 @@ page-scoped query:
 | Alternative                                                                          | Measured result                                      | Tradeoff and decision                                                                                                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Page-scoped own-buy evidence                                                         | 351-906 ms cold; 211-411 ms warm                     | No new storage or migration, scales with the served page, and was chosen.                                                                                                                                                                                                                            |
+| Raising the database container's shared memory                                       | Not measured                                         | A plan and money decision on Railway; the captain's, and not taken here.                                                                                                                                                                                                                             |
+| Chunking a large first paint into `limit<=25` requests in the website               | Not measured                                         | The fallback if the serial probe had been slow; it was not, so the read API keeps answering the page the URL asks for.                                                                                                                                                                              |
 | Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
 | Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
 
