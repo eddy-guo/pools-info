@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   identityTint,
   shortAddress,
@@ -24,11 +24,7 @@ import {
 } from "./ui";
 import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
-
-/** The podium always holds ranks 1-3; the flat list starts past them when the
-    podium shows, and shows every rank (including 1-3, coloured) when it does
-    not - a window with fewer than three wallets, or the Following tab. */
-const PODIUM_SIZE = 3;
+import { PODIUM_SIZE, RANKED_CAP as CAP, rankedShown } from "@/lib/ranked-rows";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
     by the wallet's actual rank rather than row position so the Following
     tab's out-of-order rows never pick up a colour that isn't theirs. */
@@ -50,8 +46,6 @@ function relativeAge(seconds: number, now: number) {
   if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
   return `${Math.floor(delta / 86400)}d`;
 }
-/** The leaderboard never requests past its top 100, whatever the API allows. */
-const CAP = 100;
 /** Followed wallets are already capped by the local follow store itself. */
 const FOLLOWED_CAP = 200;
 
@@ -281,8 +275,14 @@ function MobileTraderCard({
       data-row-index={index}
       data-row={w ? "resolved" : "reserved"}
     >
+      {/* The two states are keyed apart so the read that resolves a row
+          remounts its heading instead of rewriting one in place: the pending
+          heading's PnL box and the resolved heading's actions box are the
+          same element in the same slot, and React reusing it is a node that
+          moves and resizes, which Chrome scores even inside this row's own
+          fixed height. New nodes it never scores. */}
       {w ? (
-        <>
+        <Fragment key="resolved">
           <div className="mobile-trader-heading">
             <div className="mobile-trader-identity">
               <span className={`rank-number ${rankTierClass(w.rank) ?? ""}`}>
@@ -326,9 +326,9 @@ function MobileTraderCard({
               )}
             </span>
           </div>
-        </>
+        </Fragment>
       ) : pending ? (
-        <>
+        <Fragment key="pending">
           <div className="mobile-trader-heading">
             <div className="mobile-trader-identity">
               <span className="rank-number" data-pending="true">
@@ -347,7 +347,7 @@ function MobileTraderCard({
           <div className="mobile-trader-foot">
             <span data-pending="true">Pending</span>
           </div>
-        </>
+        </Fragment>
       ) : null}
     </div>
   );
@@ -517,11 +517,9 @@ export function ProductTraders() {
     { window, setWindow } = useWindow("7d");
   const metric = (params.get("metric") ?? "realized") as Metric;
   const view = params.get("view") === "following" ? "following" : "leaderboard";
-  const rawShown = Number(params.get("limit"));
-  const shown =
-    Number.isInteger(rawShown) && rawShown > 0 && rawShown <= CAP
-      ? rawShown
-      : 25;
+  /* The same reading the pre-paint script makes of this URL, so the reserved
+     row area it sized before first paint is the one this list then fills. */
+  const shown = rankedShown(params.get("limit"));
   const key = `${window}:${metric}`;
   const state = useLeaderboard(key, window, metric, shown);
   const forKey = state.key === key;

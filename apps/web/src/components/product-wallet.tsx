@@ -87,6 +87,20 @@ function stillHeld(data: AnalyticsWalletResponse | undefined) {
   const held = known.filter((p) => BigInt(p.quantity) > 0n).length;
   return known.length ? `${held} of ${known.length}` : null;
 }
+/**
+ * A reserved position row's two text states, as separate keyed nodes. Left as
+ * bare strings they are one text run that React rewrites in place, and Chrome
+ * scores a rewritten run whose start moves - which every right-aligned cell
+ * here does - reporting it against the `td` with rectangles that read
+ * byte-identical in the observer's own log. Remounted nodes it never scores.
+ */
+function RowFiller({ blank }: { blank: boolean }) {
+  return blank ? (
+    <span key="blank">{"\u00a0"}</span>
+  ) : (
+    <span key="pending">Pending</span>
+  );
+}
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
   const { params, set } = useQuery();
@@ -398,10 +412,8 @@ export function ProductWallet({ address }: { address: string }) {
                                       <Avatar address={p.token} />
                                       <span>{p.symbol}</span>
                                     </Link>
-                                  ) : data ? (
-                                    "\u00a0"
                                   ) : (
-                                    "Pending"
+                                    <RowFiller blank={!!data} />
                                   )}
                                 </td>
                                 <td data-pending={!p && !data}>
@@ -413,10 +425,8 @@ export function ProductWallet({ address }: { address: string }) {
                                         `${holding(p)} ${p.symbol}`
                                       )}
                                     </>
-                                  ) : data ? (
-                                    "\u00a0"
                                   ) : (
-                                    "Pending"
+                                    <RowFiller blank={!!data} />
                                   )}
                                 </td>
                                 <td data-pending={!p && !data}>
@@ -426,7 +436,7 @@ export function ProductWallet({ address }: { address: string }) {
                                       wei={p?.position?.costWei}
                                     />
                                   ) : (
-                                    "\u00a0"
+                                    <RowFiller blank />
                                   )}
                                 </td>
                                 <td data-pending={!p && !data}>
@@ -437,7 +447,7 @@ export function ProductWallet({ address }: { address: string }) {
                                       signed
                                     />
                                   ) : (
-                                    "\u00a0"
+                                    <RowFiller blank />
                                   )}
                                 </td>
                                 <td data-pending={!p && !data}>
@@ -448,7 +458,7 @@ export function ProductWallet({ address }: { address: string }) {
                                       signed
                                     />
                                   ) : (
-                                    "\u00a0"
+                                    <RowFiller blank />
                                   )}
                                 </td>
                               </tr>
