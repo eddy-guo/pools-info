@@ -146,27 +146,36 @@ for (const c of cases) {
 test("wallet: a failed first read reports unavailable immediately, with no positions reservation left showing", async ({
   page,
 }) => {
+  // Reassigning a resolver inside the route handler itself races page.goto():
+  // goto() can resolve before the client's own wallet fetch ever reaches
+  // this interceptor, so releasing "the" held promise before that request
+  // arrives is a no-op, and the request that arrives afterwards is held on
+  // a promise nothing ever resolves again - the page then sits in its
+  // pending state forever instead of reaching "Wallet unavailable". A single
+  // promise created up front, and a `mode` flag read fresh on every
+  // invocation, has no such ordering dependency (matching the loop-based
+  // cases above).
   let calls = 0;
-  let releaseHold: () => void = () => {};
+  let mode: "hold" | "fail" | "pass" = "hold";
+  let releaseHeld = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseHeld = resolve;
+  });
   await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
     calls++;
-    if (calls === 1) {
-      await new Promise<void>((resolve) => {
-        releaseHold = resolve;
-      });
-      await route.fulfill({
-        status: 503,
-        json: { error: "data_unavailable" },
-      });
+    if (mode === "hold") await held;
+    if (mode === "pass") {
+      await route.fallback();
       return;
     }
-    await route.fallback();
+    await route.fulfill({ status: 503, json: { error: "data_unavailable" } });
   });
 
   await page.goto(`/wallet/${wallet}/?window=All`);
   const heading = page.getByRole("heading", { name: "Wallet unavailable" });
   await expect(heading).toHaveCount(0);
-  releaseHold();
+  mode = "fail";
+  releaseHeld();
   await expect(heading).toBeVisible();
   const retry = page.getByRole("button", { name: "Try again" });
   await expect(retry).toBeVisible();
@@ -175,6 +184,7 @@ test("wallet: a failed first read reports unavailable immediately, with no posit
   await expect(page.locator(".wallet-positions-table")).toHaveCount(0);
   await expect(page.locator(".mobile-position")).toHaveCount(0);
 
+  mode = "pass";
   await retry.click();
   await expect(heading).toHaveCount(0);
   await expect(
