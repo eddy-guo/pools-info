@@ -8,7 +8,6 @@ import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
 import {
-  marketAddress,
   marketDatabase,
   marketUnits,
   seedBatches,
@@ -166,13 +165,6 @@ test(
         WHERE mod(i,$5::integer)=0 AND mod(mod(i,$3::integer),2)=0`,
         [lo, hi, senders, H * 3600, ownEvery],
       ),
-    );
-    await db.query(
-      `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,
-        inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,first_block,last_block,last_timestamp,supported,flags,closed_cycles,flash_cycles,shortest_cycle_seconds)
-      SELECT 4663,p.pool_ref,$1,0,0,1000,1200,1000,200,0,0,0,1,1,0,0,p.launch_block,p.launch_block,$2::bigint,true,'{}',1,0,120
-      FROM indexed_pools p WHERE p.chain_id=4663 AND p.launch_sender=$3 AND mod(p.pool_ref,2)=0`,
-      [senders + 1, H * 3600, marketAddress(99)],
     );
     // The trader leaderboard's own source, so this phase carries the control
     // the creators bound is read against: the board the tip loop ranked.
