@@ -101,14 +101,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main id="main">{children}</main>
+      {/* The product footer was removed (captain's call); this line is the
+          one thing that survives it. lightweight-charts' Apache-2.0 licence
+          (via its README's licence clause) requires its attribution notice
+          (its NOTICE file, verbatim) and a link to tradingview.com on a page
+          users see, and the on-chart logo that could satisfy it instead
+          (attributionLogo in candles.tsx) is off under the repo's
+          no-third-party-mark rule, so this stays as the smallest compliant
+          form. */}
       <footer className="footer">
-        <span>Independent analytics. Not affiliated with Uniswap Labs.</span>
-        <div>
-          <span>Robinhood Chain · Values in ETH</span>
-        </div>
-        {/* lightweight-charts' attribution notice (its NOTICE file, verbatim)
-            with the link its README requires on a page users see; the on-chart
-            logo in candles.tsx is off in its place. */}
         <p className="footer-credit">
           TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc.{" "}
           <a

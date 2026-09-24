@@ -960,35 +960,20 @@ main {
   color: var(--muted);
   margin-top: 10px;
 }
+/* The product footer is gone; this is the smallest compliant shell left for
+   lightweight-charts' required attribution line (see shell.tsx). */
 .footer {
   max-width: 1540px;
-  padding: 22px 34px;
+  padding: 18px 34px;
   margin: auto;
   border-top: 1px solid var(--line);
   color: var(--faint);
   font-size: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px 20px;
-}
-.footer > div {
-  display: flex;
-  gap: 24px;
-}
-.footer a {
-  display: flex;
-  align-items: center;
-  gap: 5px;
 }
 .footer a:hover {
   color: var(--accent);
 }
-/* The chart library's attribution line: its own full-width row under the two
-   ends, in the footer's muted text, with the link inline in the sentence
-   rather than the block the footer's other links are. */
 .footer-credit {
-  width: 100%;
   margin: 0;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -1642,10 +1627,7 @@ main {
     margin-bottom: 24px;
   }
   .footer {
-    padding: 20px 24px;
-  }
-  .footer > div > span {
-    display: none;
+    padding: 16px 24px;
   }
   .detail-stats {
     padding: 18px 0;
@@ -1862,13 +1844,8 @@ main {
     font-size: 18px;
   }
   .footer {
-    padding: 20px 16px;
-    flex-direction: column;
-    gap: 10px;
+    padding: 16px 16px;
     font-size: 12px;
-  }
-  .footer > div {
-    justify-content: space-between;
   }
   .detail-heading {
     align-items: flex-start;
@@ -4403,13 +4380,10 @@ button.icon-button:disabled {
 .footer {
   max-width: 1560px;
   margin: 0 auto;
-  padding: 22px clamp(14px, 2.4vw, 32px);
+  padding: 18px clamp(14px, 2.4vw, 32px);
   font-size: 11px;
   border-color: var(--line);
   color: var(--muted);
-}
-.footer > div {
-  gap: 20px;
 }
 .footer a {
   color: var(--color-text-2);
@@ -4769,18 +4743,7 @@ button.icon-button:disabled {
     padding: 11px 12px;
   }
   .footer {
-    padding: 20px 14px;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .footer > div {
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .footer a {
-    min-height: 44px;
+    padding: 16px 14px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
