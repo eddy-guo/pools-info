@@ -253,11 +253,11 @@ test("a reload and Back bring back the rows on show", async ({
   await expect(rowName(page, rows, PAGE + 5)).toHaveText(name!);
 });
 
-test("a view change starts over at the first page, brings the head back and swaps to skeleton rows", async ({
+test("a view change starts over at the first page, brings the head back and keeps the previous rows on show, dimmed, until the new view resolves", async ({
   page,
 }, testInfo) => {
   const shown = layout(testInfo),
-    { wrapper, list, rows } = shown;
+    { wrapper, rows } = shown;
   let release = () => {},
     gated = false;
   await page.route("**/api/product/explore/?**", async (route) => {
@@ -294,21 +294,25 @@ test("a view change starts over at the first page, brings the head back and swap
   await page.keyboard.press("Enter");
   await expect.poll(() => gated).toBe(true);
   const busy = page.locator(wrapper);
-  await expect(busy).not.toHaveAttribute("data-stale-rows", /.*/);
+  await expect(busy).toHaveAttribute("data-stale-rows", "true");
   await expect(busy).toHaveAttribute("aria-busy", "true");
-  /* No dim-then-redraw: the previous view's rows are gone the instant the
-     new one is requested, replaced in the same frame by one page of skeleton
-     rows of the same row height and column layout, with the classic shimmer. */
+  /* The row region resets to one page (the URL drops `limit`, as before),
+     but that page is filled by the previous view's own rows, dimmed in
+     place, rather than by a shimmering skeleton: no full-table flash. */
   await expect(page).not.toHaveURL(/limit=/);
   await expect(page.locator(rows)).toHaveCount(PAGE);
   await expect(
-    resolvedRows(page, rows),
-    "the previous rows are gone, not dimmed in place",
+    page.locator(`${rows}[data-row='skeleton']`),
+    "no skeleton flash while the previous view's rows fill the page",
   ).toHaveCount(0);
-  await expect(page.locator(`${rows}[data-row='skeleton']`)).toHaveCount(PAGE);
   await expect(
-    page.locator(`${list} [data-pending="true"]`).first(),
-  ).toBeVisible();
+    resolvedRows(page, rows),
+    "the previous view's own rows keep the page filled, dimmed",
+  ).toHaveCount(PAGE);
+  expect(
+    await rowName(page, rows, 0).textContent(),
+    "the dimmed row is still the previous view's own row, not a fabricated stand-in",
+  ).toBe(first);
   const padding = await page.evaluate(() =>
     parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
   );
@@ -319,6 +323,7 @@ test("a view change starts over at the first page, brings the head back and swap
     .toBe(Math.round(padding));
   release();
   await expect(busy).toHaveAttribute("aria-busy", "false", { timeout: 15000 });
+  await expect(busy).toHaveAttribute("data-stale-rows", "false");
   await expect(page.locator(`${rows}[data-row='skeleton']`)).toHaveCount(0);
   await expect(resolvedRows(page, rows).first()).toBeVisible();
   expect(
@@ -326,4 +331,106 @@ test("a view change starts over at the first page, brings the head back and swap
     "the new view leads with a different pool",
   ).not.toBe(first);
   expect(new URL(page.url()).searchParams.get("view")).toBe("gainers");
+});
+
+test("New, Watchlist and All each read the server exactly once on their own tab, keep the previous tab's rows on show (dimmed) while pending, and settle to their own resolved rows with no full-table skeleton", async ({
+  page,
+}, testInfo) => {
+  const shown = layout(testInfo),
+    { wrapper, rows } = shown;
+  const reads: string[] = [];
+  let gatedView: string | null = null,
+    release = () => {};
+  await page.route("**/api/product/explore/?**", async (route) => {
+    const url = new URL(route.request().url());
+    if (listRead(route.request().url()) === null) return route.continue();
+    const view = url.searchParams.get("view") ?? "all";
+    reads.push(view);
+    if (view === gatedView) {
+      gatedView = null;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    await route.continue();
+  });
+  await page.goto("/?window=24h");
+  await expect(page.locator(rows)).toHaveCount(PAGE);
+  await expect(resolvedRows(page, rows).first()).toBeVisible();
+  const initialShown = await resolvedRows(page, rows).count();
+  expect(reads).toEqual(["all"]);
+
+  /* Two of the "All" tab's own rows, starred so the Watchlist tab has real
+     rows of its own without a shared link. */
+  for (const index of [0, 1])
+    await page
+      .locator(`${rows}[data-row-index='${index}']`)
+      .getByRole("button", { name: "Add to watchlist" })
+      .click();
+  const watchedNames = await Promise.all(
+    [0, 1].map((index) => rowName(page, rows, index).textContent()),
+  );
+
+  const tabs = ["New", "Watchlist", "All"] as const;
+  const targetView: Record<(typeof tabs)[number], string> = {
+    New: "new",
+    Watchlist: "watchlist",
+    All: "all",
+  };
+  let previousResolvedCount = initialShown;
+  for (const label of tabs) {
+    gatedView = targetView[label];
+    const before = reads.length;
+    await page
+      .locator(".explore-toolbar .table-tabs")
+      .getByRole("button", { name: label, exact: true })
+      .click();
+    await expect.poll(() => reads.length).toBe(before + 1);
+    /* The row region's bounds hold at one page throughout every transition:
+       no full-table skeleton, no collapse, no growth past what the URL's
+       `limit` (reset to the default page here) reserves. */
+    await expect(page.locator(rows)).toHaveCount(PAGE);
+    await expect(
+      page.locator(`${rows}[data-row='skeleton']`),
+      `no skeleton flash switching to ${label}`,
+    ).toHaveCount(0);
+    await expect(
+      resolvedRows(page, rows),
+      `the previous tab's rows keep the page filled while ${label} is pending`,
+    ).toHaveCount(previousResolvedCount);
+    await expect(page.locator(wrapper)).toHaveAttribute(
+      "data-stale-rows",
+      "true",
+    );
+    await expect(page.locator(wrapper)).toHaveAttribute("aria-busy", "true");
+    release();
+    await expect(page.locator(wrapper)).toHaveAttribute(
+      "data-stale-rows",
+      "false",
+    );
+    await expect(page.locator(wrapper)).toHaveAttribute("aria-busy", "false");
+    await expect(page.locator(rows)).toHaveCount(PAGE);
+    previousResolvedCount = await resolvedRows(page, rows).count();
+    expect(
+      previousResolvedCount,
+      `${label} resolves with its own rows`,
+    ).toBeGreaterThan(0);
+    if (label === "Watchlist") {
+      expect(previousResolvedCount, "only the two starred pools").toBe(2);
+      const namesNow = await Promise.all(
+        [0, 1].map((index) => rowName(page, rows, index).textContent()),
+      );
+      for (const name of watchedNames)
+        expect(
+          namesNow,
+          "the watchlist tab shows exactly the starred pools",
+        ).toContain(name);
+    }
+  }
+  expect(reads, "one read per transition, none repeated or dropped").toEqual([
+    "all",
+    "new",
+    "watchlist",
+    "all",
+  ]);
 });

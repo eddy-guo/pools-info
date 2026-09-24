@@ -378,43 +378,58 @@ export function ProductExplore() {
       "ids",
       queryWatched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","),
     );
-  const { list, loading, settled, error, refresh } = useExploreRows(
+  const { list, stale, loading, settled, error, refresh } = useExploreRows(
     query.toString(),
     shown,
   );
   /* Pools the fetch above still carries but this browser has since
      unstarred: hidden from every derived view below without asking the
-     server again, since `queryWatchedIds` (and so `query`) did not move. */
+     server again, since `queryWatchedIds` (and so `query`) did not move.
+     Scoped to `list`, this query's own rows - a stale row below belongs to a
+     query this filter was never computed against. */
   const removedFromWatch =
     view === "watchlist" && !shared
       ? queryWatchedIds.filter((id) => !ids.includes(id))
       : [];
-  const rows = removedFromWatch.length
-    ? list?.rows.filter((row) => !removedFromWatch.includes(row.id))
-    : list?.rows;
-  const total =
-    removedFromWatch.length && list
+  /* Every tab and sort here names a genuinely different server-side filter
+     or order over the whole catalog (see `useExploreRows`), so a tab, sort,
+     window or filter change always reads again rather than re-deriving from
+     what is already on hand. While that read is pending, the previous
+     query's rows (`stale`) keep the table's rendered rows and geometry in
+     place instead of collapsing to a full-table skeleton; `isStale` is what
+     dims them and marks the region busy without presenting them as this
+     query's own answer. */
+  const isStale = !list && !!stale;
+  const displayList = list ?? stale;
+  const rows = list
+    ? removedFromWatch.length
+      ? list.rows.filter((row) => !removedFromWatch.includes(row.id))
+      : list.rows
+    : displayList?.rows;
+  const total = list
+    ? removedFromWatch.length
       ? Math.max(0, list.total - removedFromWatch.length)
-      : list?.total;
+      : list.total
+    : displayList?.total;
   const launchPage = !!rows?.length && rows.every(launchOnly);
   const empty = settled && total === 0;
-  /* Nothing was served for this query. The reserved rows stay reserved and
-     stay blank: a shimmer would read as "still loading" and the previous
-     query's rows would read as this query's answer. */
+  /* Nothing was served for this query, stale or otherwise. The reserved rows
+     stay reserved and stay blank: a shimmer would read as "still loading"
+     and another query's rows would read as this query's answer. */
   const failed = !!error && !list;
   /* The rows on show, reserved from the URL before any data so a read that
      lands never resizes the table. A view, sort, window or filter change
-     swaps straight to skeleton rows instead of dimming the previous view's,
-     which the hook drops with the query; a same-query refresh keeps showing
-     the rows it already has while it quietly reloads them; a Show more adds
-     its rows as skeletons under the ones on show, and a row past the list's
-     end is left blank rather than shimmering for nothing. */
+     keeps showing the previous query's rows, dimmed, instead of swapping to
+     skeletons; a same-query refresh keeps showing the rows it already has,
+     undimmed, while it quietly reloads them; a Show more adds its rows as
+     skeletons under the ones on show, and a row past the list's end is left
+     blank rather than shimmering for nothing. */
   const shownRows = Array.from(
     { length: reservedRowCount(shown, failed) },
     (_, index) => rows?.[index],
   );
   const skeletonAt = (index: number) =>
-    !failed && (!list || (loading && index < list.total));
+    !failed && (!displayList || (loading && index < displayList.total));
   /* Show more keeps the reader where they are and lands them on the first
      new row once it arrives, rather than bringing the panel's head back. It
      asks for no more than the list holds, so the last page reserves the rows
@@ -638,7 +653,11 @@ export function ProductExplore() {
                 renders right under the toolbar with nothing reserved past
                 it. */}
             <div className="table-region" data-empty={empty}>
-              <div className="table-scroll desktop-pools" aria-busy={loading}>
+              <div
+                className="table-scroll desktop-pools"
+                aria-busy={loading}
+                data-stale-rows={isStale}
+              >
                 <table className="data-table pool-table">
                   {/* Column widths live here so a row that spans the metric
                       columns cannot move the ones before it. */}
@@ -764,7 +783,11 @@ export function ProductExplore() {
                   </tbody>
                 </table>
               </div>
-              <div className="mobile-pools" aria-busy={loading}>
+              <div
+                className="mobile-pools"
+                aria-busy={loading}
+                data-stale-rows={isStale}
+              >
                 {shownRows.map((p, index) => {
                   const skeleton = !p && skeletonAt(index);
                   return (
