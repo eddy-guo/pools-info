@@ -22,7 +22,7 @@ import {
   WinLossBar,
   WinLossRecord,
 } from "./ui";
-import { SHOW_MORE_STEP, ShowMore } from "./product-common";
+import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
 
 /** The podium always holds ranks 1-3; the flat list starts past them when the
@@ -59,6 +59,7 @@ type Metric = "realized" | "net";
 
 type LeaderboardState = {
   key: string;
+  attempt: number;
   items: AnalyticsWalletSummary[];
   total: number;
   loadedShown: number;
@@ -71,7 +72,9 @@ type LeaderboardState = {
  * Grows a leaderboard window/metric pair page by page: a metric or window
  * change (a new `key`) replaces the list from scratch, while a growing
  * `shown` target on the same key fetches only the rows not already held and
- * appends them, so an already-loaded row is never requested twice.
+ * appends them, so an already-loaded row is never requested twice. The
+ * returned `refresh` reruns the same key from its top, for the failed
+ * state's retry control.
  */
 function useLeaderboard(
   key: string,
@@ -79,8 +82,10 @@ function useLeaderboard(
   metric: string,
   shown: number,
 ) {
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<LeaderboardState>({
     key: "",
+    attempt: 0,
     items: [],
     total: 0,
     loadedShown: 0,
@@ -88,7 +93,7 @@ function useLeaderboard(
     settled: false,
   });
   useEffect(() => {
-    const isReset = state.key !== key;
+    const isReset = state.key !== key || state.attempt !== attempt;
     if (!isReset && shown <= state.loadedShown) return;
     const baseItems = isReset ? [] : state.items;
     const baseLoaded = isReset ? 0 : state.loadedShown;
@@ -110,6 +115,7 @@ function useLeaderboard(
         if (controller.signal.aborted) return;
         setState({
           key,
+          attempt,
           items: [...baseItems, ...data.items],
           total: data.total,
           loadedShown: baseLoaded + data.items.length,
@@ -121,6 +127,7 @@ function useLeaderboard(
         setState((s) => ({
           ...s,
           key,
+          attempt,
           loading: false,
           error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
         }));
@@ -128,8 +135,8 @@ function useLeaderboard(
     })();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, window, metric, shown]);
-  return state;
+  }, [key, window, metric, shown, attempt]);
+  return { ...state, refresh: () => setAttempt((n) => n + 1) };
 }
 
 /** Shared row markup for the ranked list and the Following tab: `pending`
@@ -532,7 +539,7 @@ export function ProductTraders() {
   // paint; a settled total under 3 wallets is the one case it disappears.
   const showPodium = !failed && (total === null || total >= PODIUM_SIZE);
   const listOffset = showPodium ? PODIUM_SIZE : 0;
-  const listCount = failed ? 0 : Math.max(0, shown - listOffset);
+  const listCount = reservedRowCount(Math.max(0, shown - listOffset), failed);
   // Frozen at mount so a later re-render (a Show more click) never rewrites
   // an already-painted "Last" cell's relative age out from under it.
   const [now] = useState(() => Math.floor(Date.now() / 1000));
@@ -551,9 +558,12 @@ export function ProductTraders() {
     rawFollowedShown <= FOLLOWED_CAP
       ? rawFollowedShown
       : SHOW_MORE_STEP;
-  const followedReserved = Math.min(followedShown, followedTotal);
-  const followedPending = !following.settled;
   const followingFailed = !!following.error && following.items.length === 0;
+  const followedReserved = reservedRowCount(
+    Math.min(followedShown, followedTotal),
+    followingFailed,
+  );
+  const followedPending = !following.settled;
 
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -669,7 +679,7 @@ export function ProductTraders() {
                   ))}
                 </div>
               )}
-              <div className="table-scroll desktop-traders">
+              <div className="table-scroll desktop-traders" data-failed={failed}>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -706,7 +716,7 @@ export function ProductTraders() {
                   </tbody>
                 </table>
               </div>
-              <div className="mobile-traders">
+              <div className="mobile-traders" data-failed={failed}>
                 {Array.from(
                   { length: listCount },
                   (_, i) => listOffset + i,
@@ -722,7 +732,9 @@ export function ProductTraders() {
                 ))}
               </div>
             </>
-            {failed && <UnavailableState subject="Leaderboard" />}
+            {failed && (
+              <UnavailableState subject="Leaderboard" onRetry={state.refresh} />
+            )}
             {settled && total === 0 && (
               <div className="empty-state">
                 <h3>No qualifying traders in this window</h3>
@@ -744,7 +756,12 @@ export function ProductTraders() {
                 {following.error}
               </p>
             )}
-            {followingFailed && <UnavailableState subject="Following" />}
+            {followingFailed && (
+              <UnavailableState
+                subject="Following"
+                onRetry={following.refresh}
+              />
+            )}
             {followedTotal > 0 && !followingFailed && (
               <>
                 <div className="table-scroll desktop-traders following-traders">

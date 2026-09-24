@@ -24,6 +24,21 @@ export function PendingValue({
   );
 }
 
+/**
+ * The rows a growable list reserves right now: the pending or already-
+ * resolved count while a first read could still land or already has, and
+ * zero once that read has failed with nothing on screen. A pending list
+ * reserves its target row count for CLS 0; a failed one collapses that
+ * reservation entirely rather than holding a screen (or several, on a
+ * narrow viewport) of blank rows behind the retry control its
+ * `UnavailableState` renders in their place. Shared by every list with this
+ * pending-then-failed shape: the creators board, the trader leaderboard, the
+ * screener and a creator's own launches.
+ */
+export function reservedRowCount(shown: number, failed: boolean) {
+  return failed ? 0 : shown;
+}
+
 /** The running-total step every "Show more" list grows by. */
 export const SHOW_MORE_STEP = 25;
 /** The most rows a list over the explore read shows at once: forty pages of

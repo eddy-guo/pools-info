@@ -5043,11 +5043,16 @@ button.icon-button:disabled {
 }
 /* A view that resolves to no rows keeps its reserved table geometry, so nothing
    below the panel moves; the empty state overlays the top of that area, under
-   the header row, instead of rendering a screen and a half further down. */
+   the header row, instead of rendering a screen and a half further down. A
+   failed first read is different: its rows never reserved in the first
+   place (the row array is already length zero), so the region has nothing
+   to overlay - its UnavailableState renders in normal flow instead, right
+   where the collapsed region left off, or the overlay would paint on top of
+   (and behind, in stacking order) whatever follows the now-empty region. */
 .table-region {
   position: relative;
 }
-.table-region > .empty-state {
+.table-region[data-empty="true"] > .empty-state {
   position: absolute;
   inset: 44px 0 auto;
 }
@@ -5811,8 +5816,13 @@ a.wallet-top-pool:hover {
    reservation. */
 /* Ranks 1-3 sit in the podium above, so the reservation below covers only
    the flat list's default 25-3=22 rows; the podium's own band (below) is
-   reserved separately and additively. */
-.leaderboard-panel .desktop-traders:not(.following-traders) {
+   reserved separately and additively. A failed first read carries no rows
+   (`listCount` is zero) and drops this reservation, so its compact
+   UnavailableState sits right under the toolbar instead of a screen below
+   a blank, still-reserved board. */
+.leaderboard-panel .desktop-traders:not(.following-traders):not(
+    [data-failed="true"]
+  ) {
   min-height: calc(22 * 60px + 44px);
 }
 .leaderboard-panel .data-table tbody tr,
@@ -5875,7 +5885,9 @@ a.wallet-top-pool:hover {
   .leaderboard-results .mobile-trader-heading {
     justify-content: flex-start;
   }
-  .ranked-traders .leaderboard-panel .mobile-traders:not(.following-traders) {
+  .ranked-traders
+    .leaderboard-panel
+    .mobile-traders:not(.following-traders):not([data-failed="true"]) {
     min-height: calc(22 * 101px);
   }
   .ranked-traders .leaderboard-panel .mobile-trader {
@@ -6083,7 +6095,11 @@ a.wallet-top-pool:hover {
 .creators-page .page-heading p {
   max-width: 560px;
 }
-.creators-page .table-scroll {
+/* A failed first read carries no rows (the board's `shown` array collapses
+   to zero) and drops this reservation, so its compact UnavailableState sits
+   right under the heading instead of a screen below a blank, still-reserved
+   board. */
+.creators-page .table-scroll:not([data-failed="true"]) {
   min-height: calc(25 * 62px + 44px);
 }
 /* Column widths follow the export's grid, which keeps the creator column at its
@@ -6143,6 +6159,8 @@ a.wallet-top-pool:hover {
   }
   .mobile-creators {
     display: block;
+  }
+  .mobile-creators:not([data-failed="true"]) {
     min-height: calc(25 * 104px);
   }
 }
@@ -6442,7 +6460,7 @@ a.wallet-top-pool:hover {
     height: 192px;
   }
   /* Mobile pools are cards with no header row, so the message starts flush. */
-  .explore-page .table-region > .empty-state {
+  .explore-page .table-region[data-empty="true"] > .empty-state {
     inset: 0 0 auto;
   }
   /* Identity + price row held to the 44px token-cell target, then the one

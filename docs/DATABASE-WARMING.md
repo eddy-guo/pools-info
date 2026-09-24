@@ -12,8 +12,13 @@ The website's existing unavailable behavior is a prerequisite: live failures
 must never substitute the committed preloaded dataset. `PRODUCT_FIXTURES=1`
 is an explicit test deployment, not a fallback. The current website proxy
 normalizes the API error code to its existing `data_unavailable` contract while
-preserving `reason: "warming"` and a valid `Retry-After`. The browser retries
-that warming response once within its existing 12-second request budget.
+preserving `reason: "warming"` and a valid `Retry-After`. `fetchProduct`
+(`apps/web/src/lib/use-product.ts`) keeps honoring that guidance across
+repeated warming responses, one 12-second request at a time, as long as the
+next retry lands within 60 seconds of the first request - matching this
+page's own one-minute warm-attempt budget above. A database still warming
+past that ceiling, or a warming response with no usable `Retry-After`, is
+finally reported unavailable rather than retried forever.
 
 `apps/api/src/database-warmth.ts` owns the policy and readiness state.
 `apps/api/src/warm-set.ts` invokes the current serving readers in order:

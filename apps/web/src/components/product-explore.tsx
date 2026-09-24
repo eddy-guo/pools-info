@@ -38,7 +38,12 @@ import {
 } from "./ui";
 import { PoolImage } from "./pool-image";
 import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
-import { EXPLORE_ROWS_CAP, SHOW_MORE_STEP, ShowMore } from "./product-common";
+import {
+  EXPLORE_ROWS_CAP,
+  reservedRowCount,
+  SHOW_MORE_STEP,
+  ShowMore,
+} from "./product-common";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -344,7 +349,7 @@ export function ProductExplore() {
      its rows as skeletons under the ones on show, and a row past the list's
      end is left blank rather than shimmering for nothing. */
   const shownRows = Array.from(
-    { length: shown },
+    { length: reservedRowCount(shown, failed) },
     (_, index) => list?.rows[index],
   );
   const skeletonAt = (index: number) =>
@@ -567,8 +572,12 @@ export function ProductExplore() {
             {/* The reserved row geometry stays put when a filter matches
                 nothing; the empty state overlays the top of that area so the
                 message reads directly under the toolbar instead of below a
-                screen and a half of blank rows. */}
-            <div className="table-region" data-empty={empty || failed}>
+                screen and a half of blank rows. A failed first read is
+                different: `shownRows` above is already length zero, so this
+                region collapses on its own and the failed state below
+                renders right under the toolbar with nothing reserved past
+                it. */}
+            <div className="table-region" data-empty={empty}>
               <div className="table-scroll desktop-pools" aria-busy={loading}>
                 <table className="data-table pool-table">
                   {/* Column widths live here so a row that spans the metric
