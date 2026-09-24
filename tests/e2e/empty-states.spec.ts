@@ -569,6 +569,128 @@ test("the page retries a warming product read after its Retry-After delay", asyn
   ).toBeAttached();
 });
 
+test("repeated warming responses are each retried at their own Retry-After delay", async ({
+  page,
+}) => {
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  let calls = 0;
+  const delays = [5, 3, 8];
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    if (calls <= delays.length) {
+      await route.fulfill({
+        status: 503,
+        json: { ...unavailable, reason: "warming" },
+        headers: {
+          "retry-after": String(delays[calls - 1]),
+          "cache-control": "no-store",
+        },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect.poll(() => calls).toBe(1);
+  for (const [index, delay] of delays.entries()) {
+    await page.clock.fastForward(delay * 1000);
+    await expect.poll(() => calls).toBe(index + 2);
+  }
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".wallet-activity [data-row='resolved']").first(),
+  ).toBeAttached();
+});
+
+test("a database still warming past the retry ceiling is finally reported unavailable", async ({
+  page,
+}) => {
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  let calls = 0;
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    await route.fulfill({
+      status: 503,
+      json: { ...unavailable, reason: "warming" },
+      // A 20s delay repeated past the client's 60s warming ceiling: the
+      // fourth wait (at 60s elapsed) would land past the ceiling, so the
+      // loop gives up there rather than retrying forever.
+      headers: { "retry-after": "20", "cache-control": "no-store" },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward(20_000);
+  await expect.poll(() => calls).toBe(2);
+  await page.clock.fastForward(20_000);
+  await expect.poll(() => calls).toBe(3);
+  await page.clock.fastForward(20_000);
+  await expect.poll(() => calls).toBe(4);
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toBeVisible();
+  // The ceiling stops the loop for good, not just until the next tick: a
+  // further wait must not resume retrying.
+  await page.clock.fastForward(60_000);
+  expect(calls).toBe(4);
+});
+
+test("a non-warming outage is never retried on a timer", async ({ page }) => {
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  let calls = 0;
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    await route.fulfill({
+      status: 503,
+      json: unavailable,
+      headers: { "retry-after": "5", "cache-control": "no-store" },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toBeVisible();
+  await page.clock.fastForward(60_000);
+  expect(calls).toBe(1);
+});
+
+test("warming with no usable Retry-After guidance is not retried in a tight loop", async ({
+  page,
+}) => {
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  let calls = 0;
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    await route.fulfill({
+      status: 503,
+      json: { ...unavailable, reason: "warming" },
+      // No Retry-After header at all: malformed or missing guidance must
+      // not spin the client into refetching immediately.
+      headers: { "cache-control": "no-store" },
+    });
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toBeVisible();
+  await page.clock.fastForward(60_000);
+  expect(calls).toBe(1);
+});
+
 for (const [name, url, heading] of [
   ["home", "/", "Pools unavailable"],
   ["leaderboard", "/traders/", "Leaderboard unavailable"],

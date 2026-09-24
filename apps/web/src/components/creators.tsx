@@ -14,7 +14,12 @@ import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
 import { AddressChip, AddressLabel, EmptyState, UnavailableState } from "./ui";
-import { EXPLORE_ROWS_CAP, SHOW_MORE_STEP, ShowMore } from "./product-common";
+import {
+  EXPLORE_ROWS_CAP,
+  reservedRowCount,
+  SHOW_MORE_STEP,
+  ShowMore,
+} from "./product-common";
 import { useExploreRows } from "@/lib/use-explore-rows";
 
 /** Mapped onto the read API's own sort keys. */
@@ -137,6 +142,7 @@ export function Creators({ address }: { address?: string }) {
 
 type CreatorsState = {
   key: string;
+  attempt: number;
   items: CreatorRow[];
   total: number;
   loadedShown: number;
@@ -149,7 +155,9 @@ type CreatorsState = {
  * Grows a creators leaderboard window/sort pair page by page: a window or
  * sort change (a new `key`) replaces the list from scratch, while a growing
  * `shown` target on the same key fetches only the rows not already held and
- * appends them, so an already-loaded row is never requested twice.
+ * appends them, so an already-loaded row is never requested twice. The
+ * returned `refresh` reruns the same key from its top, for the failed
+ * state's retry control.
  */
 function useCreatorsBoard(
   key: string,
@@ -157,8 +165,10 @@ function useCreatorsBoard(
   sort: string,
   shown: number,
 ) {
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<CreatorsState>({
     key: "",
+    attempt: 0,
     items: [],
     total: 0,
     loadedShown: 0,
@@ -166,7 +176,7 @@ function useCreatorsBoard(
     settled: false,
   });
   useEffect(() => {
-    const isReset = state.key !== key;
+    const isReset = state.key !== key || state.attempt !== attempt;
     if (!isReset && shown <= state.loadedShown) return;
     const baseItems = isReset ? [] : state.items;
     const baseLoaded = isReset ? 0 : state.loadedShown;
@@ -188,6 +198,7 @@ function useCreatorsBoard(
         if (controller.signal.aborted) return;
         setState({
           key,
+          attempt,
           items: [...baseItems, ...data.items],
           total: data.total,
           loadedShown: baseLoaded + data.items.length,
@@ -199,6 +210,7 @@ function useCreatorsBoard(
         setState((s) => ({
           ...s,
           key,
+          attempt,
           loading: false,
           error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
         }));
@@ -206,8 +218,8 @@ function useCreatorsBoard(
     })();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, window, sort, shown]);
-  return state;
+  }, [key, window, sort, shown, attempt]);
+  return { ...state, refresh: () => setAttempt((n) => n + 1) };
 }
 
 function CreatorDirectory() {
@@ -300,7 +312,7 @@ function CreatorDirectory() {
             {state.error}
           </p>
         )}
-        <div className="table-scroll desktop-creators">
+        <div className="table-scroll desktop-creators" data-failed={failed}>
           <table className="data-table">
             <thead>
               <tr>
@@ -315,7 +327,7 @@ function CreatorDirectory() {
             </thead>
             <tbody>
               {Array.from(
-                { length: failed ? 0 : shown },
+                { length: reservedRowCount(shown, failed) },
                 (_, index) => items[index],
               ).map((r, index) => {
                 const absent = knownAbsent(index);
@@ -396,9 +408,9 @@ function CreatorDirectory() {
             </tbody>
           </table>
         </div>
-        <div className="mobile-creators">
+        <div className="mobile-creators" data-failed={failed}>
           {Array.from(
-            { length: failed ? 0 : shown },
+            { length: reservedRowCount(shown, failed) },
             (_, index) => items[index],
           ).map((r, index) => (
             <MobileCreatorRow
@@ -409,7 +421,9 @@ function CreatorDirectory() {
             />
           ))}
         </div>
-        {failed && <UnavailableState subject="Creators" />}
+        {failed && (
+          <UnavailableState subject="Creators" onRetry={state.refresh} />
+        )}
         {settled && total === 0 && (
           <div className="empty-state">
             <h3>No creators in this window</h3>
@@ -466,7 +480,10 @@ function CreatorProfile({ address }: { address: string }) {
      on for ever, and the panel says what happened. */
   const failed = !!error && !list;
   const total = list ? list.total : null;
-  const rows = Array.from({ length: shown }, (_, index) => list?.rows[index]);
+  const rows = Array.from(
+    { length: reservedRowCount(shown, failed) },
+    (_, index) => list?.rows[index],
+  );
   const skeletonAt = (index: number) =>
     !failed && (!list || (loading && index < list.total));
   const empty = settled && total === 0;
@@ -534,8 +551,12 @@ function CreatorProfile({ address }: { address: string }) {
         )}
         {/* The reserved row geometry stays put when the creator has fewer
             launches than a page, or none: the empty state overlays the top
-            of that area rather than sitting under a screen of blank rows. */}
-        <div className="table-region" data-empty={empty || failed}>
+            of that area rather than sitting under a screen of blank rows. A
+            failed first read is different: `rows` above is already length
+            zero, so this region collapses on its own and the failed state
+            below renders right under the heading with nothing reserved
+            past it. */}
+        <div className="table-region" data-empty={empty}>
           <div className="table-scroll desktop-creator-launches">
             <table className="data-table creator-launches-table">
               {/* Fixed widths so a row streamed in later, with a longer

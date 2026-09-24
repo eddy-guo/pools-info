@@ -23,12 +23,13 @@ export function useFollowedLeaderboard(
   window: LiveWindow,
   active: boolean,
 ) {
+  const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
     key: string;
     items: AnalyticsWalletSummary[];
     error: string;
   }>({ key: "", items: [], error: "" });
-  const key = `${window}:${addresses.join(",")}`;
+  const key = `${window}:${attempt}:${addresses.join(",")}`;
   useEffect(() => {
     if (!active || !addresses.length) return;
     const controller = new AbortController();
@@ -78,5 +79,8 @@ export function useFollowedLeaderboard(
     stale: loading && state.items.length > 0,
     error: hasAddresses && fetched ? state.error : "",
     settled: !hasAddresses || fetched,
+    /** Reruns every followed wallet's read, for the failed state's retry
+        control. */
+    refresh: () => setAttempt((n) => n + 1),
   };
 }

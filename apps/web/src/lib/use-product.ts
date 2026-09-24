@@ -42,31 +42,55 @@ function waitForRetry(delay: number, signal: AbortSignal) {
     signal.addEventListener("abort", abort, { once: true });
   });
 }
-/** One product read through the app's own proxy, on a 12s budget the caller can cut short. */
+/** How long a single request to the proxy is given before it is cut short,
+    warming or not. */
+const REQUEST_TIMEOUT_MS = 12000;
+/** The read API's warming gate runs one warm attempt for up to a minute
+    (`docs/DATABASE-WARMING.md`); the client keeps honoring the server's own
+    Retry-After guidance for as many warming responses as land inside that
+    same ceiling, so warming stays a loading state rather than surfacing as
+    an error after one retry. A database still warming past it is finally
+    reported unavailable instead of retried forever. */
+const WARMING_CEILING_MS = 60000;
+/** Whether a 503 body is the warming reason the proxy documents, as opposed
+    to a generic outage with no useful Retry-After to honor. */
+async function isWarming(response: Response) {
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null);
+  return (
+    !!body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    (body as { reason?: unknown }).reason === "warming"
+  );
+}
+/** One product read through the app's own proxy. Each request is cut short
+    at `REQUEST_TIMEOUT_MS`; a warming 503 is retried after its own
+    Retry-After delay, repeatedly, as long as the database keeps reporting
+    warming and the retry stays inside `WARMING_CEILING_MS` of the first
+    request - malformed or missing Retry-After guidance stops the loop
+    immediately rather than retrying blindly. */
 export async function fetchProduct<T>(path: string, signal: AbortSignal) {
-  const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(12000)]);
-  const request = () =>
-    fetch(productUrl(path), {
+  const deadline = Date.now() + WARMING_CEILING_MS;
+  const request = () => {
+    const requestSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    ]);
+    return fetch(productUrl(path), {
       signal: requestSignal,
       cache: "no-store",
     });
+  };
   let response = await request();
-  if (response.status === 503) {
-    const body = await response
-      .clone()
-      .json()
-      .catch(() => null);
-    const delay =
-      body &&
-      typeof body === "object" &&
-      !Array.isArray(body) &&
-      body.reason === "warming"
-        ? retryAfterMilliseconds(response.headers.get("retry-after"))
-        : null;
-    if (delay !== null) {
-      await waitForRetry(delay, requestSignal);
-      response = await request();
-    }
+  while (response.status === 503 && (await isWarming(response))) {
+    const delay = retryAfterMilliseconds(response.headers.get("retry-after"));
+    if (delay === null) break;
+    if (Date.now() + delay > deadline) break;
+    await waitForRetry(delay, signal);
+    response = await request();
   }
   /* A 503 is the proxy reporting that it has nothing live to serve; anything
      else it answers with is a real answer about this item. */
