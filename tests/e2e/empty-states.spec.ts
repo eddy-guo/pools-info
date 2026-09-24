@@ -534,6 +534,44 @@ async function withNoLiveData(page: Page) {
   );
 }
 
+/*
+ * Playwright's emulated clock only fires the timers that were already armed
+ * when it moved. The client arms its warming wait after it has received and
+ * parsed the 503, so a fast-forward taken on the strength of the *request*
+ * alone can land past that arming point: the wait is then scheduled beyond a
+ * frozen now and can never fire, and the test goes red while the product did
+ * exactly what it promised. Every fast-forward below therefore waits for the
+ * wait itself. `warmingWaits` records what the page asked its timer for; the
+ * wrapper is installed after clock.install() so it wraps the emulated timer.
+ */
+async function recordWarmingWaits(page: Page) {
+  await page.addInitScript(() => {
+    const waits: number[] = [];
+    Object.assign(window, { warmingWaits: waits });
+    const schedule = window.setTimeout;
+    window.setTimeout = function (this: unknown, ...args: unknown[]) {
+      if (typeof args[1] === "number") waits.push(args[1]);
+      return (schedule as (...a: unknown[]) => number).apply(this, args);
+    } as unknown as typeof window.setTimeout;
+  });
+}
+/** Resolves once the page has armed its `attempt`-th wait of a length this
+    test served as Retry-After guidance. A product that stopped retrying never
+    arms the next one, so this times out rather than passing quietly. */
+function warmingWaitArmed(page: Page, servedMs: number[], attempt: number) {
+  return page.waitForFunction(
+    ([served, nth]: [number[], number]) =>
+      (window as unknown as { warmingWaits: number[] }).warmingWaits.filter(
+        (wait) => served.includes(wait),
+      ).length >= nth,
+    [servedMs, attempt] as [number[], number],
+    /* Arming is immediate once the response lands; a client that has stopped
+       retrying never arms it, and this should say so without burning the
+       whole test timeout. */
+    { timeout: 10_000 },
+  );
+}
+
 test("the page retries a warming product read after its Retry-After delay", async ({
   page,
 }) => {
@@ -542,6 +580,7 @@ test("the page retries a warming product read after its Retry-After delay", asyn
   await page.clock.install({ time: clockStart });
   await page.clock.pauseAt(clockStart.getTime() + 1_000);
   let calls = 0;
+  await recordWarmingWaits(page);
   await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
     calls += 1;
     if (calls === 1) {
@@ -557,6 +596,7 @@ test("the page retries a warming product read after its Retry-After delay", asyn
 
   await page.goto(`/wallet/${wallet}/?window=All`);
   await expect.poll(() => calls).toBe(1);
+  await warmingWaitArmed(page, [5_000], 1);
   await page.clock.fastForward(4_999);
   expect(calls).toBe(1);
   await page.clock.fastForward(1);
@@ -575,6 +615,7 @@ test("repeated warming responses are each retried at their own Retry-After delay
   const clockStart = new Date("2026-09-21T00:00:00Z");
   await page.clock.install({ time: clockStart });
   await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  await recordWarmingWaits(page);
   let calls = 0;
   const delays = [5, 3, 8];
   await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
@@ -593,10 +634,16 @@ test("repeated warming responses are each retried at their own Retry-After delay
     await route.fallback();
   });
 
+  const served = delays.map((delay) => delay * 1000);
   await page.goto(`/wallet/${wallet}/?window=All`);
   await expect.poll(() => calls).toBe(1);
   for (const [index, delay] of delays.entries()) {
-    await page.clock.fastForward(delay * 1000);
+    await warmingWaitArmed(page, served, index + 1);
+    await page.clock.fastForward(delay * 1000 - 1);
+    expect(calls, "no retry before this response's own Retry-After").toBe(
+      index + 1,
+    );
+    await page.clock.fastForward(1);
     await expect.poll(() => calls).toBe(index + 2);
   }
   await expect(
@@ -613,6 +660,7 @@ test("a database still warming past the retry ceiling is finally reported unavai
   const clockStart = new Date("2026-09-21T00:00:00Z");
   await page.clock.install({ time: clockStart });
   await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  await recordWarmingWaits(page);
   let calls = 0;
   await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
     calls += 1;
@@ -628,12 +676,11 @@ test("a database still warming past the retry ceiling is finally reported unavai
 
   await page.goto(`/wallet/${wallet}/?window=All`);
   await expect.poll(() => calls).toBe(1);
-  await page.clock.fastForward(20_000);
-  await expect.poll(() => calls).toBe(2);
-  await page.clock.fastForward(20_000);
-  await expect.poll(() => calls).toBe(3);
-  await page.clock.fastForward(20_000);
-  await expect.poll(() => calls).toBe(4);
+  for (const attempt of [1, 2, 3]) {
+    await warmingWaitArmed(page, [20_000], attempt);
+    await page.clock.fastForward(20_000);
+    await expect.poll(() => calls).toBe(attempt + 1);
+  }
   await expect(
     page.getByRole("heading", { name: "Wallet unavailable" }),
   ).toBeVisible();
