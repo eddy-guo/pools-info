@@ -330,6 +330,34 @@ the two statements 284 ms and 457 ms of a cold 842 ms. Every window, sort,
 direction and the second page answer byte for byte what the whole-catalog
 probe answered.
 
+The failure evidence is a three-part causal chain. At
+2026-09-24T12:58:21Z production logged
+`event=database_warming reason=product_statement_cancelled`, immediately
+followed by `event=read_failed route=creators code=57014 ms=3044`. On the
+fully cold local production-shaped copy, creators took 2,481-2,818 ms while
+the precomputed trader board took 19-22 ms and the busiest pool page took
+78-88 ms. The disconfirming result was that a host-wide cold penalty would
+have taken the two controls into seconds too; neither did, cold-first or after
+creators. The creators ranking spent 2,436 ms of one 2,537 ms read in one
+statement, with 2,180 ms in its `ledger_own` hash alone. Finally, the
+deterministic scale regression fails before this rule with 62,031 own-buy
+probes for a page containing 103 launches, and passes when the served plan can
+probe no more than those page launches. That plan-scope assertion, rather than
+a machine-speed or cache-temperature wall-clock assertion, prevents the
+root-cause mechanism consistently across runners.
+
+The alternatives were measured on that same cold copy before choosing the
+page-scoped query:
+
+| Alternative                                                                          | Measured result                                      | Tradeoff and decision                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page-scoped own-buy evidence                                                         | 351-906 ms cold; 211-411 ms warm                     | No new storage or migration, scales with the served page, and was chosen.                                                                                                                                                                                                                            |
+| Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
+| Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
+
+No index, migration, precompute path, cache, timeout increase or production
+change is part of this rule.
+
 Response shape, ranking rule, the Launches column and every other field are
 unchanged, and no row goes empty that was not empty before: under `broad` on
 production's data (empty `broad_*` rollups, 1,364 deep publications) 28 of the
