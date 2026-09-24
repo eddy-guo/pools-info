@@ -1,6 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
 import {
   poolHref,
@@ -343,14 +349,55 @@ export function ProductExplore() {
   });
   const shared = view === "watchlist" ? parseSharedWatchlist(params) : null;
   const watched = shared?.ids ?? ids;
+  /* The ids that drove the last fetch for this view, frozen against a bare
+     star toggle: unstarring never changes this, so the query below stays
+     the same and the row leaves through the client-side filter underneath
+     instead of a refetch. A newly starred pool the fetch has never seen
+     (`ids` growing past this set), or any other query change (the base
+     string below), still updates it and reads through as a normal new
+     fetch. Adjusted during render, as `useDebouncedInput` above corrects
+     its own state when the URL moves on its own: the correction lands
+     before this render commits, so nothing downstream ever reads a stale
+     value. */
+  const [fetchedWatch, setFetchedWatch] = useState({
+    base: "",
+    ids: [] as string[],
+  });
+  let queryWatchedIds = fetchedWatch.ids;
+  if (view === "watchlist" && !shared) {
+    const base = query.toString();
+    const grew = ids.some((id) => !fetchedWatch.ids.includes(id));
+    if (fetchedWatch.base !== base || grew) {
+      queryWatchedIds = ids;
+      setFetchedWatch({ base, ids });
+    }
+  }
+  const queryWatched = shared?.ids ?? queryWatchedIds;
   if (view === "watchlist")
-    query.set("ids", watched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","));
+    query.set(
+      "ids",
+      queryWatched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","),
+    );
   const { list, loading, settled, error, refresh } = useExploreRows(
     query.toString(),
     shown,
   );
-  const launchPage = !!list?.rows.length && list.rows.every(launchOnly);
-  const empty = settled && list?.total === 0;
+  /* Pools the fetch above still carries but this browser has since
+     unstarred: hidden from every derived view below without asking the
+     server again, since `queryWatchedIds` (and so `query`) did not move. */
+  const removedFromWatch =
+    view === "watchlist" && !shared
+      ? queryWatchedIds.filter((id) => !ids.includes(id))
+      : [];
+  const rows = removedFromWatch.length
+    ? list?.rows.filter((row) => !removedFromWatch.includes(row.id))
+    : list?.rows;
+  const total =
+    removedFromWatch.length && list
+      ? Math.max(0, list.total - removedFromWatch.length)
+      : list?.total;
+  const launchPage = !!rows?.length && rows.every(launchOnly);
+  const empty = settled && total === 0;
   /* Nothing was served for this query. The reserved rows stay reserved and
      stay blank: a shimmer would read as "still loading" and the previous
      query's rows would read as this query's answer. */
@@ -364,7 +411,7 @@ export function ProductExplore() {
      end is left blank rather than shimmering for nothing. */
   const shownRows = Array.from(
     { length: reservedRowCount(shown, failed) },
-    (_, index) => list?.rows[index],
+    (_, index) => rows?.[index],
   );
   const skeletonAt = (index: number) =>
     !failed && (!list || (loading && index < list.total));
@@ -385,7 +432,6 @@ export function ProductExplore() {
       ),
     });
   };
-  const rows = list?.rows;
   useEffect(() => {
     const index = focusAt.current;
     if (index === null || !rows || rows.length <= index) return;
@@ -863,7 +909,7 @@ export function ProductExplore() {
             </div>
             <ShowMore
               shown={shown}
-              total={failed ? 0 : (list?.total ?? null)}
+              total={failed ? 0 : (total ?? null)}
               cap={EXPLORE_ROWS_CAP}
               loading={loading}
               onMore={showMore}
