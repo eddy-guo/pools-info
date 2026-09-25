@@ -638,7 +638,11 @@ export function ProductWallet({ address }: { address: string }) {
                     </div>
                     <div
                       className="table-region"
-                      data-empty={tradesLoaded && !tradeHistory.trades.length}
+                      data-empty={
+                        tradesLoaded &&
+                        !tradeHistory.trades.length &&
+                        !tradeHistory.hasMore
+                      }
                     >
                       <div
                         className="table-scroll wallet-list-region"
@@ -804,12 +808,14 @@ export function ProductWallet({ address }: { address: string }) {
                           </div>
                         ))}
                       </div>
-                      {tradesLoaded && !tradeHistory.trades.length && (
-                        <EmptyState
-                          title="No trade history"
-                          description="This wallet has no explorer trade history yet."
-                        />
-                      )}
+                      {tradesLoaded &&
+                        !tradeHistory.trades.length &&
+                        !tradeHistory.hasMore && (
+                          <EmptyState
+                            title="No trade history"
+                            description="This wallet has no explorer trade history yet."
+                          />
+                        )}
                     </div>
                     {tradeHistory.failed && (
                       <UnavailableState

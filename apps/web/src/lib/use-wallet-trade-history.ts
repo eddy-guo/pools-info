@@ -11,12 +11,21 @@ import {
  * The rows revealed per "Load more" click, and the desktop/mobile row area's
  * fixed reservation while the first page is pending. Every other growable
  * list in the app sizes its reservation against a known `total`; this one
- * never learns one (a page covers 25-150 trades depending on unrelated
- * transfer noise), so growth always keys off rows already on hand and
- * `nextCursor`, never a count, and the reservation never exceeds this step
- * until the caller has actually revealed more than it.
+ * never learns one (a response reads exactly one 50-transfer explorer page,
+ * so it holds 0 to 50 trades beside its own `nextCursor`), so growth always
+ * keys off rows already on hand and `nextCursor`, never a count, and the
+ * reservation never exceeds this step until the caller has actually revealed
+ * more than it.
  */
 export const REVEAL_STEP = 25;
+/** A page crowded with other transfers or off-registry trades can read empty
+    with real trades still behind it (docs/WALLET-TRADE-HISTORY.md): the first
+    load chains through empty pages on its own, up to this many beyond the
+    first, rather than showing a wall of blank reserved rows over an
+    unexplained "Load more" for what is really still loading. Bounded so a
+    wallet with no trades in the registry at all still settles in one page
+    load's worth of explorer credits, not an unbounded chain. */
+const MAX_EMPTY_CONTINUATIONS = 3;
 
 function historyUrl(address: string, cursor: string | null) {
   const url = new URL(
@@ -135,26 +144,41 @@ export function useWalletTradeHistory(
     cursorRef.current = null;
     setNextCursor(null);
     void (async () => {
-      const result = await fetchPage(address, null, controller.signal);
-      if (controller.signal.aborted) return;
-      setLoading(false);
-      if (!result.ok) {
-        setFailed(true);
-        if (result.retryAfterMs && result.retryAfterMs > 0) {
-          setCanRetry(false);
-          retryTimer.current = setTimeout(
-            () => setCanRetry(true),
-            result.retryAfterMs,
-          );
-        } else {
-          setCanRetry(true);
+      let cursor: string | null = null;
+      for (let page = 0; ; page++) {
+        const result = await fetchPage(address, cursor, controller.signal);
+        if (controller.signal.aborted) return;
+        if (!result.ok) {
+          setLoading(false);
+          setFailed(true);
+          if (result.retryAfterMs && result.retryAfterMs > 0) {
+            setCanRetry(false);
+            retryTimer.current = setTimeout(
+              () => setCanRetry(true),
+              result.retryAfterMs,
+            );
+          } else {
+            setCanRetry(true);
+          }
+          return;
         }
+        setFetchedAt(Math.floor(Date.parse(result.data.fetchedAt) / 1000));
+        // An empty page with more behind it is still loading, not the wallet's
+        // answer: chain forward rather than surfacing a blank, unexplained gap.
+        if (
+          result.data.items.length === 0 &&
+          result.data.nextCursor !== null &&
+          page < MAX_EMPTY_CONTINUATIONS
+        ) {
+          cursor = result.data.nextCursor;
+          continue;
+        }
+        setLoading(false);
+        setHeld(result.data.items);
+        cursorRef.current = result.data.nextCursor;
+        setNextCursor(result.data.nextCursor);
         return;
       }
-      setHeld(result.data.items);
-      cursorRef.current = result.data.nextCursor;
-      setNextCursor(result.data.nextCursor);
-      setFetchedAt(Math.floor(Date.parse(result.data.fetchedAt) / 1000));
     })();
   }, [address, clearRetryTimer]);
 
@@ -190,20 +214,35 @@ export function useWalletTradeHistory(
     moreControllerRef.current = controller;
     const heldCount = held.length;
     void (async () => {
-      const result = await fetchPage(address, cursor, controller.signal);
-      if (controller.signal.aborted) return;
-      setLoadingMore(false);
-      if (!result.ok) {
-        setMoreFailed(true);
+      let next: string | null = cursor;
+      for (let page = 0; ; page++) {
+        const result = await fetchPage(address, next, controller.signal);
+        if (controller.signal.aborted) return;
+        if (!result.ok) {
+          setLoadingMore(false);
+          setMoreFailed(true);
+          return;
+        }
+        setFetchedAt(Math.floor(Date.parse(result.data.fetchedAt) / 1000));
+        // Same chain-through-empty-pages rule the first load uses: an empty
+        // page with more behind it is not this click's answer yet.
+        if (
+          result.data.items.length === 0 &&
+          result.data.nextCursor !== null &&
+          page < MAX_EMPTY_CONTINUATIONS
+        ) {
+          next = result.data.nextCursor;
+          continue;
+        }
+        setLoadingMore(false);
+        setHeld((prior) => [...prior, ...result.data.items]);
+        setShown((s) =>
+          Math.min(s + REVEAL_STEP, heldCount + result.data.items.length),
+        );
+        cursorRef.current = result.data.nextCursor;
+        setNextCursor(result.data.nextCursor);
         return;
       }
-      setHeld((prior) => [...prior, ...result.data.items]);
-      setShown((s) =>
-        Math.min(s + REVEAL_STEP, heldCount + result.data.items.length),
-      );
-      cursorRef.current = result.data.nextCursor;
-      setNextCursor(result.data.nextCursor);
-      setFetchedAt(Math.floor(Date.parse(result.data.fetchedAt) / 1000));
     })();
   }, [address, held.length, shown, loadingMore]);
 

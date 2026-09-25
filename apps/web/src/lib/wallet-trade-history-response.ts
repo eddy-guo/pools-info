@@ -1,49 +1,21 @@
+import type { WalletHistoryResponse, WalletHistoryTrade } from "@pools/core";
+
 /**
  * The wallet's explorer-backed trade history (`GET /v1/wallets/:address/history
  * ?kind=trades`), a Blockscout PRO read served for display only - never
  * accounting or PnL evidence, and never the wallet's real trade count (a page
  * covers pools the ledger does not register, so its length reads high or low
- * against the ledger-sourced Trades stat by design; see AGENTS.md). It shares
- * the existing wallet-history envelope (`source`, `chainId`, `wallet`, `kind`,
- * `items`, `nextCursor`, `fetchedAt`, `stale`, `note`) with the transactions
- * and token-transfers kinds served today, this file's validator standing in
- * for the shared one those already have in `apps/api/src/blockscout-client.ts`.
+ * against the ledger-sourced Trades stat by design; see AGENTS.md and
+ * `docs/WALLET-TRADE-HISTORY.md`). `WalletHistoryTrade` and the envelope are
+ * `@pools/core`'s own wire types; this file only narrows the kind union and
+ * validates a response against it, standing in for the shared validator the
+ * api side already has in `apps/api/src/blockscout-client.ts`.
  */
-export interface WalletTradeHistoryToken {
-  address: string;
-  symbol: string | null;
-  name: string | null;
-  decimals: number | null;
-  type: string | null;
-}
-export interface WalletHistoryTrade {
-  transactionHash: string;
-  logIndex: number;
-  block: number;
-  /** Unix seconds; null only if the explorer has not attached a block time. */
-  timestamp: number | null;
-  side: "buy" | "sell";
-  token: WalletTradeHistoryToken;
-  /** Raw integer token amount, exact decimal string - never derived from a
-      float, so a display value must divide it by `10 ** token.decimals`
-      itself in bigint arithmetic. */
-  tokenRaw: string;
-  method: string | null;
-}
-export interface WalletTradeHistoryResponse {
-  source: "blockscout";
-  chainId: 4663;
-  wallet: string;
-  kind: "trades";
-  items: WalletHistoryTrade[];
-  /** Opaque; pass back as `cursor` to fetch the next page, null at the end.
-      The only signal a caller may use to decide whether more pages exist - a
-      page can hold anywhere from 25 to 150 trades, so its length never is. */
-  nextCursor: string | null;
-  fetchedAt: string;
-  stale: boolean;
-  note: string;
-}
+export type WalletTradeHistoryResponse = Extract<
+  WalletHistoryResponse,
+  { kind: "trades" }
+>;
+export type { WalletHistoryTrade };
 
 const txHash = /^0x[0-9a-f]{64}$/i;
 const address = /^0x[0-9a-f]{40}$/i;

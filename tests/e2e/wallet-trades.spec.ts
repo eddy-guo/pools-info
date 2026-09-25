@@ -112,6 +112,26 @@ test("a wallet with no explorer trade history shows a designed empty state", asy
   await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
 });
 
+test("a page crowded with other transfers reads empty with more behind it, and chains through rather than showing empty", async ({
+  page,
+}) => {
+  // docs/WALLET-TRADE-HISTORY.md: a response reads exactly one 50-transfer
+  // explorer page, so a page can hold zero trades beside a non-null
+  // nextCursor - "more exists" is only ever nextCursor !== null.
+  let calls = 0;
+  await page.route(historyPath, (route: Route) => {
+    calls++;
+    if (calls === 1) return route.fulfill({ json: envelope([], "page2") });
+    return route.fulfill({ json: envelope([trade(), trade({ logIndex: 1 })]) });
+  });
+  await openTrades(page);
+  await expect(resolvedRows(page)).toHaveCount(2);
+  await expect(page.getByRole("heading", { name: "No trade history" })).toHaveCount(
+    0,
+  );
+  expect(calls).toBe(2);
+});
+
 test("a failed read shows a compact retry banner and honors Retry-After", async ({
   page,
 }) => {
