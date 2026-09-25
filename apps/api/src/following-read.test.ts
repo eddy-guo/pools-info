@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { parseFollowingWallets } from "@pools/core";
 import type { WalletHistoryTrade } from "@pools/core";
-import { createCreditBudget, type PageParams } from "./blockscout-client";
+import {
+  createBlockscoutClient,
+  createCreditBudget,
+  type PageParams,
+} from "./blockscout-client";
 import {
   createFollowing,
   followingPolicy,
@@ -257,6 +261,7 @@ test("following reads a wallet again only on newer ledger activity or age, withi
     now: () => now,
   });
   const wallets = Array.from({ length: 25 }, (_, i) => address(100 + i));
+  for (const wallet of wallets) ledger.set(wallet, 0);
   // The most recently active wallets are read first; the rest wait.
   ledger.set(address(124), seconds() - 10);
   ledger.set(address(123), seconds() - 20);
@@ -326,6 +331,25 @@ test("following reads a wallet again only on newer ledger activity or age, withi
   now += 1_000;
   await following.read(wallets, 50);
   assert.equal(fake.reads.length, 8);
+});
+
+test("a wallet missing from ledger activity refreshes after ten minutes", async () => {
+  let now = 1_790_000_000_000;
+  const fake = fakeHistory(() => now);
+  const wallet = address(1);
+  const following = createFollowing({
+    history: fake.history,
+    registry: registryOf([1]),
+    activity: async () => new Map([[address(2), Math.floor(now / 1000)]]),
+    now: () => now,
+  });
+  await following.read([wallet], 50);
+  now += followingPolicy.unsignalledRefreshMs - 1;
+  await following.read([wallet], 50);
+  assert.deepEqual(fake.reads, [wallet]);
+  now += 1;
+  await following.read([wallet], 50);
+  assert.deepEqual(fake.reads, [wallet, wallet]);
 });
 
 test("following discloses a failed or spent explorer per wallet and never fills it", async () => {
@@ -410,10 +434,10 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
   const history = createWalletHistory({
     client: {
       budget,
-      async readPage(kind: string) {
+      async readPage(kind: string, _wallet: string, _page: unknown, reserveShare = 0) {
         assert.equal(kind, "trades");
+        budget.spend(30, Math.ceil(budget.snapshot().dailyCap * reserveShare));
         calls++;
-        budget.spend(30);
         await new Promise((resolve) => setImmediate(resolve));
         return {
           items: [trade(90, 1), trade(80, 1, 9)],
@@ -457,6 +481,39 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
     scope: "s",
   });
   assert.equal(calls, 9);
+});
+
+test("concurrent following refreshes keep the wallet-page credit reserve", async () => {
+  let calls = 0;
+  const client = createBlockscoutClient({
+    key: "test-key",
+    baseUrl: "https://example.test/api/v2",
+    dailyCreditCap: 300,
+    limiter: { acquire: async () => new Promise<void>((resolve) => setImmediate(resolve)) },
+    fetchImpl: async () => {
+      calls++;
+      return new Response(JSON.stringify({ items: [], next_page_params: null }), {
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+  const history = createWalletHistory({
+    client,
+    registry: createTokenRegistry(async () => [
+      { ref: 1, poolId: hash(1), token: token(1) },
+    ]),
+  });
+  const results = await Promise.allSettled(
+    Array.from({ length: 9 }, (_, i) =>
+      history.refreshTrades(address(i + 1), { reserveShare: 0.2 }),
+    ),
+  );
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 8);
+  assert.equal(results.filter((r) => r.status === "rejected").length, 1);
+  assert.equal(client.budget.snapshot().spent, 240);
+  assert.equal(calls, 8);
+  await history.read({ wallet: address(10), kind: "trades", page: null, scope: "s" });
+  assert.equal(client.budget.snapshot().spent, 270);
 });
 
 test("following HTTP answers are never served from the response cache, and 503 without the explorer", async (t) => {

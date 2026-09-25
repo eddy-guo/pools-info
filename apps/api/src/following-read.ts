@@ -172,13 +172,13 @@ export function createFollowing({
     if (!snapshot) return true;
     const age = now() - snapshot.fetchedAt;
     if (age >= policy.maxAgeMs) return true;
-    if (!ledger) return age >= policy.unsignalledRefreshMs;
-    const last = ledger.get(wallet);
+    const last = ledger?.get(wallet);
+    if (last === undefined) return age >= policy.unsignalledRefreshMs;
     const listed = Math.max(
       -1,
       ...snapshot.items.map((t) => t.timestamp ?? -1),
     );
-    if (last === undefined || last <= listed) return false;
+    if (last <= listed) return false;
     const mark = marks.get(wallet);
     if (mark === undefined || mark === null || last > mark)
       return age >= policy.activityRefreshMs;

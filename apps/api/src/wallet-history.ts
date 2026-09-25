@@ -7,7 +7,6 @@ import type {
 import {
   BlockscoutError,
   createBlockscoutClient,
-  creditCost,
   type BlockscoutClient,
   type PageParams,
 } from "./blockscout-client";
@@ -117,13 +116,14 @@ export function createWalletHistory({
     wallet: string,
     kind: WalletHistoryKind,
     page: PageParams | null,
+    reserveShare = 0,
   ): Promise<Entry> {
     const key = JSON.stringify([wallet, kind, page]);
     let result = pending.get(key);
     if (!result) {
       result = (async () => {
         const registered = kind === "trades" ? await registry!.current() : null;
-        const read = await client!.readPage(kind, wallet, page);
+        const read = await client!.readPage(kind, wallet, page, reserveShare);
         const items = registered
           ? (read.items as { token: { address: string } }[]).filter((i) =>
               registered.has(i.token.address),
@@ -210,12 +210,11 @@ export function createWalletHistory({
       assertConfigured("trades");
       const key = JSON.stringify([wallet, "trades", null]);
       try {
-        if (reserveShare > 0 && !pending.has(key))
-          client!.budget.assertAvailable(
-            creditCost.trades +
-              Math.ceil(client!.budget.snapshot().dailyCap * reserveShare),
-          );
-        return trades(await fetchEntry(wallet, "trades", null), false, null);
+        return trades(
+          await fetchEntry(wallet, "trades", null, reserveShare),
+          false,
+          null,
+        );
       } catch (error) {
         if (!(error instanceof BlockscoutError)) throw error;
         const last = cached(key);

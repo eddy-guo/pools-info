@@ -51,7 +51,7 @@ export function createTokenRegistry(
       const held = nextPools.get(row.token);
       nextPools.set(
         row.token,
-        held === undefined || held === row.poolId ? row.poolId : null,
+        held === undefined ? row.poolId : held === row.poolId ? held : null,
       );
       if (row.ref > max) max = row.ref;
     }

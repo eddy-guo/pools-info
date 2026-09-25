@@ -73,3 +73,21 @@ test("concurrent callers share one load, a failed refresh keeps the last set, an
   });
   await assert.rejects(cold.current(), /database_unavailable/);
 });
+
+test("a token with multiple pools stays ambiguous through later incremental rows", async () => {
+  let now = 0;
+  const rows: RegistryToken[] = [
+    { ref: 1, poolId: "0xpa", token: "0xa" },
+    { ref: 2, poolId: "0xpb", token: "0xa" },
+  ];
+  const registry = createTokenRegistry(
+    async (afterRef) => rows.filter((row) => row.ref > afterRef),
+    { now: () => now },
+  );
+  await registry.current();
+  assert.equal(registry.poolOf("0xa"), null);
+  rows.push({ ref: 3, poolId: "0xpc", token: "0xa" });
+  now += 30000;
+  await registry.current();
+  assert.equal(registry.poolOf("0xa"), null);
+});
