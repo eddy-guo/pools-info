@@ -442,12 +442,12 @@ test(
       W[3],
       wallet(99),
     ]);
+    // W[3]'s All row has no timed trade, so like an unseen wallet it gives
+    // no signal rather than a zero.
+    assert.equal((await profile(W[3], "All")).wallet!.last, null);
     assert.deepEqual(
       activity,
-      new Map([
-        [W[1], (await profile(W[1], "All")).wallet!.last],
-        [W[3], (await profile(W[3], "All")).wallet!.last],
-      ]),
+      new Map([[W[1], (await profile(W[1], "All")).wallet!.last]]),
     );
     assert.ok(activity!.get(W[1])! > 0);
     // The registry the explorer's trades are checked against names each
