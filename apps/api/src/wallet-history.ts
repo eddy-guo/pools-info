@@ -10,6 +10,45 @@ import { RequestError } from "./request";
 
 const note =
   "Explorer history for display only; not accounting or PnL evidence." as const;
+/** A trades response keeps reading whole explorer pages until it holds this
+ * many trades, the explorer runs out, or it has read `tradesMaxPages` pages.
+ * Most pages are nearly all trades; a wallet whose page is crowded by
+ * spoofed-token poisoning logs still gets a list rather than an empty page
+ * beside a cursor, at no more than 90 credits for the request. */
+export const tradesPageTarget = 25;
+export const tradesMaxPages = 3;
+
+/** Reads one response's worth of explorer pages. Whole pages only, so the
+ * cursor is always the explorer's own; a later page that fails ends the
+ * response early with a cursor pointing at that page. */
+async function readPages(
+  client: BlockscoutClient,
+  kind: WalletHistoryKind,
+  wallet: string,
+  page: PageParams | null,
+) {
+  const items: unknown[] = [];
+  let next = page;
+  for (let read = 1; ; read++) {
+    let result;
+    try {
+      result = await client.readPage(kind, wallet, next);
+    } catch (error) {
+      if (read === 1 || !(error instanceof BlockscoutError)) throw error;
+      break;
+    }
+    items.push(...result.items);
+    next = result.nextPageParams;
+    if (
+      kind !== "trades" ||
+      !next ||
+      items.length >= tradesPageTarget ||
+      read >= tradesMaxPages
+    )
+      break;
+  }
+  return { items, nextPageParams: next };
+}
 
 export interface WalletHistory {
   read(input: {
@@ -81,7 +120,7 @@ export function createWalletHistory({
         return hit.body;
       }
       try {
-        const result = await client.readPage(kind, wallet, page);
+        const result = await readPages(client, kind, wallet, page);
         const fetchedAt = now();
         const body = {
           source: "blockscout",

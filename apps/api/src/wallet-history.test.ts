@@ -11,8 +11,10 @@ import {
   createRateLimiter,
   defaultBlockscoutTimeoutMs,
   normalizeTokenTransfer,
+  normalizeTrade,
   normalizeTransaction,
   pageParams,
+  poolManager,
 } from "./blockscout-client";
 import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
 import { parseRequest, RequestError } from "./request";
@@ -20,6 +22,8 @@ import { createApi } from "./server";
 import {
   createWalletHistory,
   createWalletHistoryFromEnv,
+  tradesMaxPages,
+  tradesPageTarget,
 } from "./wallet-history";
 
 const wallet = "0x42a68318a6d78644870d3a37ec9e708e3ea904f5";
@@ -175,6 +179,51 @@ test("recorded pages normalize to the stable display shape", async () => {
   );
 });
 
+test("trades keep only the wallet's ERC-20 legs against the PoolManager, sided by direction", async () => {
+  const launcher = "0x78cc2ff0a2127c1bbb96b99124fadc8c41f89388";
+  const rows = JSON.parse(await fixture("trades-page1")).items;
+  const trades = rows.map((row: unknown) => normalizeTrade(row, launcher));
+  // The two spoofed-token poisoning logs are the wallet's transfers but no
+  // trade; the sell and the launch's own buy are.
+  assert.deepEqual(
+    trades.map((t: { side: string } | null) => t?.side ?? null),
+    [null, null, "sell", "buy"],
+  );
+  assert.deepEqual(trades[2], {
+    transactionHash:
+      "0xc2157c941eeed5d29cdc94fcfb8350f62225500b1c99e8d3765952cb86533f16",
+    logIndex: 30,
+    block: 67951067,
+    timestamp: 1789908571,
+    side: "sell",
+    token: {
+      address: "0xecff71414f3803d6d936c4b40b19feab060e38e7",
+      symbol: "FOMOEGG",
+      name: "fomoegg",
+      decimals: 18,
+      type: "ERC-20",
+    },
+    tokenRaw: "261603454168184627578164308",
+    method: "0x3593564c",
+  });
+  assert.equal(trades[3].tokenRaw, "373719220240263753683091868");
+  // The same legs seen from the PoolManager or a stranger are no trade.
+  assert.equal(normalizeTrade(rows[2], poolManager), null);
+  assert.equal(normalizeTrade(rows[2], wallet), null);
+  // A malformed row that is no trade never fails the page; a malformed or
+  // non-fungible PoolManager leg does.
+  assert.equal(normalizeTrade({ ...rows[0], log_index: "x" }, launcher), null);
+  assert.equal(normalizeTrade({ from: null, to: 7 }, launcher), null);
+  assert.throws(
+    () => normalizeTrade({ ...rows[2], log_index: "x" }, launcher),
+    /invalid_item/,
+  );
+  assert.throws(
+    () => normalizeTrade({ ...rows[2], total: { token_id: "1" } }, launcher),
+    /invalid_item/,
+  );
+});
+
 test("display strings map an empty upstream value to null and clip past 256 characters, the website validator's exact bound", () => {
   const over = "x".repeat(300);
   const emptyTx = normalizeTransaction({
@@ -279,6 +328,43 @@ test("client authenticates with the key, passes page parameters through and read
     c.readPage("transactions", "not-an-address", null),
     /Invalid wallet/,
   );
+});
+
+test("client reads trades from the ERC-20 transfer page with a filter no cursor can replace", async (t) => {
+  const launcher = "0x78cc2ff0a2127c1bbb96b99124fadc8c41f89388";
+  const { baseUrl, seen } = await upstream(t, async (req) => ({
+    body: await fixture(
+      req.url!.includes("index=") ? "trades-page2" : "trades-page1",
+    ),
+  }));
+  const c = client(baseUrl);
+  const first = await c.readPage("trades", launcher, null);
+  assert.equal(
+    seen[0].url,
+    `/addresses/${launcher}/token-transfers?type=ERC-20`,
+  );
+  assert.deepEqual(
+    first.items.map((i) => [i.side, i.logIndex]),
+    [
+      ["sell", 30],
+      ["buy", 47],
+    ],
+  );
+  assert.deepEqual(first.nextPageParams, {
+    block_number: "67884997",
+    index: "14",
+  });
+  const second = await c.readPage("trades", launcher, {
+    ...first.nextPageParams!,
+    type: "ERC-721",
+  });
+  assert.equal(
+    seen[1].url,
+    `/addresses/${launcher}/token-transfers?block_number=67884997&index=14&type=ERC-20`,
+  );
+  assert.equal(second.items.length, 3);
+  assert(second.items.every((i) => i.side === "sell"));
+  assert.equal(c.budget.snapshot().spent, 30 + 30);
 });
 
 test("client maps upstream failures, bounds time and size, and never logs the key", async (t) => {
@@ -487,6 +573,26 @@ test("history cursors bind to scope and kind and round-trip through the parser",
     `/v1/wallets/${wallet}/history?kind=token-transfers`,
   );
   assert.equal(transfers.kind, "token-transfers");
+  const trades = parseRequest(`/v1/wallets/${wallet}/history?kind=trades`);
+  assert.equal(trades.kind, "trades");
+  assert.notEqual(trades.cacheKey, transfers.cacheKey);
+  const tradesCursor = encodeHistoryCursor(trades.scope, "trades", {
+    block_number: "1",
+    index: "2",
+  });
+  assert.deepEqual(
+    parseRequest(
+      `/v1/wallets/${wallet}/history?kind=trades&cursor=${tradesCursor}`,
+    ).page,
+    { block_number: "1", index: "2" },
+  );
+  assert.throws(
+    () =>
+      parseRequest(
+        `/v1/wallets/${wallet}/history?kind=token-transfers&cursor=${tradesCursor}`,
+      ),
+    RequestError,
+  );
   for (const url of [
     `/v1/wallets/${wallet}/history?kind=logs`,
     `/v1/wallets/${wallet}/history?limit=5`,
@@ -639,6 +745,102 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   );
 });
 
+test("a trades response reads whole explorer pages until it holds enough trades, and ends early at a failing page", async () => {
+  assert.equal(tradesPageTarget, 25);
+  assert.equal(tradesMaxPages, 3);
+  const trade = (n: number) => ({ logIndex: n }) as never;
+  let script: ({ items: number; next: boolean } | BlockscoutError)[] = [];
+  const pages: unknown[] = [];
+  const readPage = async (kind: string, _wallet: string, page: unknown) => {
+    assert.equal(kind, "trades");
+    pages.push(page);
+    const step = script.shift()!;
+    if (step instanceof BlockscoutError) throw step;
+    const at = pages.length;
+    return {
+      items: Array.from({ length: step.items }, (_, i) => trade(at * 100 + i)),
+      nextPageParams: step.next
+        ? { block_number: String(at), index: "0" }
+        : null,
+    };
+  };
+  const history = createWalletHistory({
+    client: { readPage, budget: createCreditBudget({ dailyCap: 1 }) } as never,
+  });
+  const read = (w: string, page: Record<string, string> | null = null) =>
+    history.read({ wallet: w, kind: "trades", page, scope: "s" });
+  const cursorPage = (cursor: string | null) =>
+    cursor && decodeHistoryCursor(cursor, "s", "trades");
+  // A page crowded by poisoning logs keeps reading, up to three pages.
+  script = [
+    { items: 4, next: true },
+    { items: 0, next: true },
+    { items: 9, next: true },
+    { items: 50, next: true },
+  ];
+  let body = await read("0x" + "a".repeat(40));
+  assert.equal(body.items.length, 13);
+  assert.deepEqual(pages, [
+    null,
+    { block_number: "1", index: "0" },
+    { block_number: "2", index: "0" },
+  ]);
+  assert.deepEqual(cursorPage(body.nextCursor), {
+    block_number: "3",
+    index: "0",
+  });
+  // A full page, or the explorer's last page, stops at once.
+  pages.length = 0;
+  script = [{ items: 25, next: true }];
+  body = await read("0x" + "b".repeat(40));
+  assert.equal(body.items.length, 25);
+  assert.equal(pages.length, 1);
+  pages.length = 0;
+  script = [{ items: 2, next: false }];
+  body = await read("0x" + "c".repeat(40));
+  assert.deepEqual(
+    [body.items.length, body.nextCursor, pages.length],
+    [2, null, 1],
+  );
+  // A later page that fails ends the response with what was read and a
+  // cursor at the page that failed; a first page that fails is the 503.
+  pages.length = 0;
+  script = [
+    { items: 3, next: true },
+    new BlockscoutError("upstream_unavailable", 30),
+  ];
+  body = await read("0x" + "d".repeat(40), { block_number: "9", index: "1" });
+  assert.equal(body.items.length, 3);
+  assert.equal(body.stale, false);
+  assert.deepEqual(cursorPage(body.nextCursor), {
+    block_number: "1",
+    index: "0",
+  });
+  script = [new BlockscoutError("budget_exhausted", 60)];
+  await assert.rejects(
+    read("0x" + "e".repeat(40)),
+    (e: RequestError) => e.reason === "budget_exhausted",
+  );
+  // Other kinds still read exactly one page.
+  const once: string[] = [];
+  const single = createWalletHistory({
+    client: {
+      readPage: async (kind: string) => {
+        once.push(kind);
+        return { items: [], nextPageParams: { block_number: "1" } };
+      },
+      budget: createCreditBudget({ dailyCap: 1 }),
+    } as never,
+  });
+  await single.read({
+    wallet,
+    kind: "token-transfers",
+    page: null,
+    scope: "s",
+  });
+  assert.deepEqual(once, ["token-transfers"]);
+});
+
 test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503 when unconfigured", async (t) => {
   let outcome: WalletHistoryResponse | RequestError | Error = new RequestError(
     503,
@@ -704,6 +906,23 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
   res = await fetch(urlOf(server) + `?kind=token-transfers&cursor=${cursor}`);
   assert.equal(res.headers.get("x-data-cache"), "MISS");
   assert.equal(seen.length, 3);
+  // Two kinds of one wallet read at once are two reads, never one coalesced.
+  const kindOf = history.read;
+  history.read = async (input: unknown) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const { kind } = input as { kind: string };
+    return { ...(outcome as WalletHistoryResponse), kind } as never;
+  };
+  const both = await Promise.all(
+    ["trades", "token-transfers"].map((kind) =>
+      fetch(urlOf(server) + `?kind=${kind}`).then((r) => r.json()),
+    ),
+  );
+  assert.deepEqual(
+    both.map((b) => b.kind),
+    ["trades", "token-transfers"],
+  );
+  history.read = kindOf;
   res = await fetch(urlOf(server) + "?kind=logs");
   assert.equal(res.status, 400);
   assert.deepEqual(await res.json(), { error: "invalid_kind" });

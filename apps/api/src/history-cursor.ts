@@ -1,7 +1,11 @@
 import type { WalletHistoryKind } from "@pools/core";
 import { pageParams, type PageParams } from "./blockscout-client";
 
-export const historyKinds = ["transactions", "token-transfers"] as const;
+export const historyKinds = [
+  "transactions",
+  "token-transfers",
+  "trades",
+] as const;
 
 /** Cursors bind to the request scope and kind like every other route; the
  * page parameters inside are the explorer's own, validated on the way back. */

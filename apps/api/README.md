@@ -462,7 +462,7 @@ ordinary catalog response caching can still add up to five seconds of delay.
 
 ## Explorer wallet history (Blockscout)
 
-`GET /v1/wallets/:address/history?kind=transactions|token-transfers&cursor=`
+`GET /v1/wallets/:address/history?kind=transactions|token-transfers|trades&cursor=`
 serves one page of a wallet's complete on-chain activity on demand from the
 Blockscout PRO API (`https://api.blockscout.com/4663/api/v2`, the chain's
 official explorer). This is display data only: it never joins accounting or
@@ -486,12 +486,30 @@ logs exist only in successful transactions, so they carry no status. Addresses
 and hashes are lowercase. Cursors bind to the wallet and kind, wrap Blockscout's
 own `next_page_params`, and are validated before they reach the explorer.
 
+`kind=trades` is the wallet page's trade list. It reads the wallet's ERC-20
+transfer pages (`token-transfers?type=ERC-20`, a filter no cursor can replace)
+and keeps only the legs the wallet settled directly with the v4 PoolManager
+(`0x8366…0951`): a trade item has `transactionHash`, `logIndex`, `block`,
+`timestamp`, `side` (`buy` when the token left the PoolManager for the wallet,
+`sell` when the wallet paid it in), `token` (as above), `tokenRaw` (exact raw
+amount) and `method`. Everything else on those pages, such as spoofed-token
+address-poisoning logs, airdrops and plain sends, is dropped. There is no ETH
+figure: the ETH side of a swap is often paid or received by a router or bot
+contract rather than the wallet, so the exact amount lives only in the Swap
+log, one explorer call per trade. A trade routed so that a contract other than
+the PoolManager hands the wallet its tokens is not listed. One response reads
+whole explorer pages until it holds 25 trades, the explorer runs out, or it has
+read three pages (at most 90 credits); a later page that fails ends the response
+early with a cursor at that page, so a page can hold 0 to 150 trades beside a
+non-null cursor. The contract, an example payload and the credit arithmetic for
+one wallet page load are in `docs/WALLET-TRADE-HISTORY.md`.
+
 Configuration, read from the environment at startup:
 
 | Variable                            | Default  | Meaning                                                                                                         |
 | ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
 | `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs. |
-| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers page).             |
+| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers or trades page).   |
 | `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                           |
 | `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                             |
 | `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                            |

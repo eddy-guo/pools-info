@@ -1,6 +1,7 @@
 import type {
   WalletHistoryKind,
   WalletHistoryTokenTransfer,
+  WalletHistoryTrade,
   WalletHistoryTransaction,
 } from "@pools/core";
 
@@ -12,7 +13,24 @@ export const blockscoutBaseUrl = "https://api.blockscout.com/4663/api/v2";
 export const creditCost: Record<WalletHistoryKind, number> = {
   transactions: 20,
   "token-transfers": 30,
+  trades: 30,
 };
+/** Each kind's explorer path under the address, and the filters it always
+ * sends. Trades read the wallet's ERC-20 transfers: the explorer's own
+ * advanced filter can select the PoolManager legs upstream, but it answered
+ * in 13-18 s (2026-09-25), past the timeout below, while this page answers in
+ * about 2 s and drops the NFT mints that crowd a launcher's page. */
+const upstream: Record<
+  WalletHistoryKind,
+  { path: string; query: Record<string, string> }
+> = {
+  transactions: { path: "transactions", query: {} },
+  "token-transfers": { path: "token-transfers", query: {} },
+  trades: { path: "token-transfers", query: { type: "ERC-20" } },
+};
+/** The Uniswap v4 PoolManager every catalog pool swaps through, the same
+ * address as `contracts.manager` in `packages/chain/src/events.ts`. */
+export const poolManager = "0x8366a39cc670b4001a1121b8f6a443a643e40951";
 export const freeTierRequestsPerSecond = 5;
 /** Blockscout PRO answers wallet address pages in 2.0-4.6 s from Railway
  * (scout measurement, 2026-09-16); this leaves headroom for a slow page
@@ -255,9 +273,47 @@ export function normalizeTokenTransfer(
   };
 }
 
+/** The wallet's ERC-20 leg against the PoolManager as a trade, or null for
+ * any other transfer: a spoofed-token poisoning log, an airdrop, a plain send.
+ * Only the direction is read from a row that is not a trade, so a malformed
+ * row the list would never show cannot fail the page. */
+export function normalizeTrade(
+  value: unknown,
+  wallet: string,
+): WalletHistoryTrade | null {
+  const t = item(value);
+  const hashOf = (party: unknown) =>
+    typeof party === "object" && party !== null
+      ? String((party as { hash?: unknown }).hash).toLowerCase()
+      : null;
+  const from = hashOf(t.from),
+    to = hashOf(t.to);
+  const side =
+    from === poolManager && to === wallet
+      ? "buy"
+      : from === wallet && to === poolManager
+        ? "sell"
+        : null;
+  if (!side) return null;
+  const transfer = normalizeTokenTransfer(value);
+  if (transfer.token.type !== "ERC-20" || transfer.value === null) invalid();
+  return {
+    transactionHash: transfer.transactionHash,
+    logIndex: transfer.logIndex,
+    block: transfer.block,
+    timestamp: transfer.timestamp,
+    side,
+    token: transfer.token,
+    tokenRaw: transfer.value,
+    method: transfer.method,
+  };
+}
+
 export type HistoryItem<K extends WalletHistoryKind> = K extends "transactions"
   ? WalletHistoryTransaction
-  : WalletHistoryTokenTransfer;
+  : K extends "trades"
+    ? WalletHistoryTrade
+    : WalletHistoryTokenTransfer;
 export interface BlockscoutPage<K extends WalletHistoryKind> {
   items: HistoryItem<K>[];
   nextPageParams: PageParams | null;
@@ -321,10 +377,15 @@ export function createBlockscoutClient({
       budget.assertAvailable(cost);
       await limiter.acquire();
       budget.spend(cost);
+      const address = wallet.toLowerCase();
       const url = new URL(
-        `${baseUrl.replace(/\/+$/, "")}/addresses/${wallet.toLowerCase()}/${kind}`,
+        `${baseUrl.replace(/\/+$/, "")}/addresses/${address}/${upstream[kind].path}`,
       );
-      for (const [k, v] of Object.entries(page ?? {}))
+      // The kind's own filters go last, so a cursor can never replace them.
+      for (const [k, v] of Object.entries({
+        ...page,
+        ...upstream[kind].query,
+      }))
         url.searchParams.set(k, v);
       let response: Response;
       const started = now();
@@ -369,9 +430,13 @@ export function createBlockscoutClient({
         const normalize: (value: unknown) => unknown =
           kind === "transactions"
             ? normalizeTransaction
-            : normalizeTokenTransfer;
+            : kind === "trades"
+              ? (value) => normalizeTrade(value, address)
+              : normalizeTokenTransfer;
         return {
-          items: body.items.map(normalize) as HistoryItem<typeof kind>[],
+          items: body.items
+            .map(normalize)
+            .filter((i) => i !== null) as HistoryItem<typeof kind>[],
           nextPageParams: pageParams(body.next_page_params),
         };
       } catch (error) {
