@@ -97,7 +97,7 @@ test.describe("persisted broad market explore", () => {
       page.getByRole("heading", { name: "No pools match these filters" }),
     ).toBeVisible();
     // Launch order keeps the launch the market cutoff leaves unmeasured.
-    await page.getByRole("button", { name: "All launches →" }).click();
+    await page.getByRole("link", { name: "All launches" }).click();
     await expect(page).toHaveURL(/view=new/);
     await expect(
       page

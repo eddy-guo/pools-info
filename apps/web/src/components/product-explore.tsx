@@ -58,13 +58,23 @@ const LAUNCH_VIEW = "new";
  */
 const launchOnly = (pool: AnalyticsPoolRow) =>
   !pool.processed && !pool.marketCoverage;
-/** Brings the panel's head back under the site header when it has scrolled away. */
-function headIntoView(panel: HTMLElement | null) {
-  const padding =
-    parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) ||
-    0;
-  if (panel && panel.getBoundingClientRect().top < padding)
-    panel.scrollIntoView({ block: "start" });
+/** How far under the sticky site header a panel's head lands. */
+const HEAD_GAP = 12;
+/**
+ * Brings the panel's head to just under the sticky site header: once it has
+ * scrolled away under or above the header, or, with `always`, from wherever
+ * it is. The header is measured rather than read from `scroll-padding-top`,
+ * a single figure for a header that is 95px tall on desktop and 151px on a
+ * phone. The scroll follows the page's own `scroll-behavior`, which reduced
+ * motion turns off.
+ */
+function headIntoView(panel: HTMLElement | null, always = false) {
+  if (!panel) return;
+  const header =
+    document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0;
+  const offset = panel.getBoundingClientRect().top - header - HEAD_GAP;
+  if (always ? offset !== 0 : offset < -HEAD_GAP)
+    window.scrollTo({ top: window.scrollY + offset });
 }
 /** Whole counts with the export's thousands separators: `1,284 trades`. */
 const integers = new Intl.NumberFormat("en-US");
@@ -276,12 +286,13 @@ export function ProductExplore() {
       (staleSort ? null : requested) ??
       (view === LAUNCH_VIEW ? "launch" : "volume"),
     direction = (staleSort ? null : params.get("dir")) ?? "desc";
+  const cleaned = (updates: Record<string, string | null>) => ({
+    ...(staleView ? { view: null } : null),
+    ...(staleSort ? { sort: null, dir: null } : null),
+    ...updates,
+  });
   const write = (updates: Record<string, string | null>) =>
-    setQuery({
-      ...(staleView ? { view: null } : null),
-      ...(staleSort ? { sort: null, dir: null } : null),
-      ...updates,
-    });
+    setQuery(cleaned(updates));
   /* A new query reads from the top: the panel's head comes back under the
      site header while the rows swap to skeletons, and the rows on show go
      back to the first page. */
@@ -289,6 +300,32 @@ export function ProductExplore() {
   const set = (updates: Record<string, string | null>) => {
     write({ ...updates, limit: null });
     headIntoView(panelRef.current);
+  };
+  /* All launches is the New tab reached from the rail above the list. Changed
+     in place, the list below the rail swapped its rows with nothing on
+     screen saying so, so the click brings the list's head up under the site
+     header with that tab pressed and the All tab beside it to undo it. It is
+     a real link to the same URL state, so it also opens in a new tab, and
+     focus moves to the tab it pressed. */
+  const launchesView: Record<string, string | null> = {
+    view: LAUNCH_VIEW,
+    watchlist: null,
+    sort: null,
+  };
+  const launchesHref = (() => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(
+      cleaned({ ...launchesView, limit: null }),
+    ))
+      if (value) next.set(key, value);
+      else next.delete(key);
+    return `/?${next}`;
+  })();
+  const newTabRef = useRef<HTMLButtonElement>(null);
+  const showLaunches = () => {
+    write({ ...launchesView, limit: null });
+    newTabRef.current?.focus({ preventScroll: true });
+    headIntoView(panelRef.current, true);
   };
   /* The rows on show live in the URL as `limit`, as on the traders and
      creators lists: absent or invalid, the first page; each Show more adds
@@ -474,9 +511,25 @@ export function ProductExplore() {
             <i />
             Just launched
           </span>
-          <button onClick={() => set({ view: LAUNCH_VIEW, sort: null })}>
-            All launches →
-          </button>
+          <a
+            className="section-link"
+            href={launchesHref}
+            onClick={(event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
+              event.preventDefault();
+              showLaunches();
+            }}
+          >
+            All launches
+            <ArrowRight aria-hidden="true" />
+          </a>
         </div>
         <div className="launch-rail">
           {/* The rail's own height is fixed by `.launch-section`, so saying
@@ -577,6 +630,7 @@ export function ProductExplore() {
                 {SCREENER_VIEWS.map(([key, label]) => (
                   <button
                     key={key}
+                    ref={key === LAUNCH_VIEW ? newTabRef : undefined}
                     className={view === key ? "active" : ""}
                     aria-pressed={view === key}
                     onClick={() =>
