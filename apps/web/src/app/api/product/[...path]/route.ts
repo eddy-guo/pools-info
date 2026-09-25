@@ -5,6 +5,7 @@ import {
   productUnavailableResponse,
   readEthPrice,
   readProduct,
+  readWalletTradeHistory,
 } from "@/lib/product-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +45,21 @@ export async function GET(
             "Cache-Control": "no-store",
           },
         },
+      );
+    }
+  // The explorer-backed trade history: on demand only, like the price above,
+  // never served from the preloaded dataset (see readWalletTradeHistory).
+  if (path.length === 3 && path[0] === "wallets" && path[2] === "history")
+    try {
+      return Response.json(await readWalletTradeHistory(path, query), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch (error) {
+      if (error instanceof ProductUnavailableError)
+        return productUnavailableResponse(error);
+      return Response.json(
+        { error: "This item is outside available saved coverage." },
+        { status: 404, headers: { "Cache-Control": "no-store" } },
       );
     }
   try {

@@ -1,0 +1,41 @@
+{
+  "mode": "production build; mocked wallets/:address/history?kind=trades response; skeleton to resolved transition",
+  "measurements": [
+    {
+      "route": "wallet-trades",
+      "viewport": "desktop",
+      "before": {
+        "x": 32,
+        "y": 690,
+        "width": 1032,
+        "height": 1773.6875
+      },
+      "after": {
+        "x": 32,
+        "y": 690,
+        "width": 1032,
+        "height": 1773.6875
+      },
+      "cls": 0,
+      "shifts": []
+    },
+    {
+      "route": "wallet-trades",
+      "viewport": "mobile",
+      "before": {
+        "x": 14,
+        "y": 1020.59375,
+        "width": 362,
+        "height": 2850.375
+      },
+      "after": {
+        "x": 14,
+        "y": 1020.59375,
+        "width": 362,
+        "height": 2850.375
+      },
+      "cls": 0,
+      "shifts": []
+    }
+  ]
+}
