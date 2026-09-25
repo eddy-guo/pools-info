@@ -5694,6 +5694,58 @@ button.icon-button:disabled {
     display: block;
   }
 }
+/* Following activity lists the same explorer trades as the wallet's Trades
+   tab, with the wallet in front: a 180px wallet chip and at least a 140px
+   token beside the fixed figures (890px), Time dropped under that (720px),
+   then the same phone rows. */
+.following-activity {
+  container: following-activity / inline-size;
+}
+.following-trades-table {
+  min-width: 890px;
+}
+.following-trades-table th:nth-child(3),
+.following-trades-table td:nth-child(3) {
+  text-align: right;
+}
+.following-trades-table td:nth-child(3) .number {
+  min-width: 100%;
+}
+.following-token {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container following-activity (width < 890px) {
+  .following-trades-table {
+    min-width: 720px;
+  }
+  .following-trades-table col:nth-child(4),
+  .following-trades-table :is(th, td):nth-child(4) {
+    display: none;
+  }
+}
+@container following-activity (width < 720px) {
+  .following-activity .wallet-list-region {
+    display: none;
+  }
+  .following-activity .mobile-wallet-rows {
+    display: block;
+  }
+}
+/* A following phone row carries the wallet and the token, so its figures
+   take two 24px lines where the wallet's own row has one: 13 + 44 + 10 +
+   24 + 24 + 12 + 1px of border. Neither line may push the page sideways. */
+.following-activity .mobile-wallet-row {
+  height: 128px;
+}
+.following-activity .mobile-wallet-row-stats {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.following-activity .mobile-wallet-row-stats + .mobile-wallet-row-stats {
+  margin-top: 0;
+}
 /* The screener's phone row shape: the identity with its headline figure at
    the right on the 44px line, then one 24px line: 13 + 44 + 10 + 24 + 12 +
    1px of border. */

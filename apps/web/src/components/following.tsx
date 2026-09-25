@@ -6,7 +6,11 @@ import { UserRoundCheck, UserRoundPlus, X } from "lucide-react";
 import { shortAddress } from "@pools/core";
 import { Avatar } from "./ui";
 import styles from "./following.module.css";
-import { FollowActivity } from "./follow-activity";
+import {
+  FollowActivity,
+  FollowStatus,
+  useFollowActivity,
+} from "./follow-activity";
 
 const key = "poolsinfo.following.v1";
 const changed = "poolsinfo-following-changed";
@@ -126,6 +130,18 @@ export function FollowedWallets() {
   const { addresses, toggle, error } = useFollowing();
   if (!addresses.length) return null;
   return (
+    <FollowedWalletList addresses={addresses} toggle={toggle} error={error} />
+  );
+}
+/** Mounted only while something is followed, so unfollowing the last wallet
+    unmounts the feed and cancels its reads. */
+function FollowedWalletList({
+  addresses,
+  toggle,
+  error,
+}: Pick<ReturnType<typeof useFollowing>, "addresses" | "toggle" | "error">) {
+  const feed = useFollowActivity(addresses);
+  return (
     <section className={styles.section} aria-label="Followed wallets">
       <h2>
         Following <span>({addresses.length})</span>
@@ -137,7 +153,10 @@ export function FollowedWallets() {
             <Link href={`/wallet/${address}/`}>
               <Avatar address={address} />
               <span>
-                <strong>{shortAddress(address)}</strong>
+                <span className={styles.name}>
+                  <strong>{shortAddress(address)}</strong>
+                  <FollowStatus status={feed.status(address)} />
+                </span>
                 <small>{address}</small>
               </span>
             </Link>
@@ -157,7 +176,7 @@ export function FollowedWallets() {
           {error}
         </p>
       )}
-      <FollowActivity addresses={addresses} />
+      <FollowActivity feed={feed} />
     </section>
   );
 }

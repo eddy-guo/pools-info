@@ -1,20 +1,41 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { shortAddress, type FollowingActivityResponse } from "@pools/core";
+import { Fragment, useEffect, useState } from "react";
+import {
+  shortAddress,
+  type FollowingTrade,
+  type FollowingTradesResponse,
+  type FollowingWalletCoverage,
+} from "@pools/core";
 import { useProduct } from "@/lib/use-product";
-import { Avatar, Price } from "./ui";
-import { Eth, Unavailable, utc } from "./live-ui";
-import { RowsSkeleton } from "./skeletons";
+import { AddressChip, EmptyState, UnavailableState } from "./ui";
+import { utc } from "./live-ui";
+import { reservedRowCount } from "./product-common";
+import {
+  RowFiller,
+  TradeAmount,
+  TradeSide,
+  TradeTime,
+  TradeTransaction,
+} from "./trade-cells";
 import styles from "./following.module.css";
 
-export function FollowActivity({ addresses }: { addresses: string[] }) {
+/** The panel lists the newest trades across the follow list in a fixed run
+    of row slots; more of one wallet's history is on its own page. */
+export const FOLLOWING_ROWS = 25;
+
+export type FollowActivityFeed = ReturnType<typeof useFollowActivity>;
+
+/** The follow list's trade feed, read every 30 seconds while the page is
+    visible and updates are not paused. Polls wait for the previous read. */
+export function useFollowActivity(addresses: string[]) {
   const params = new URLSearchParams({
     wallets: [...addresses].sort().join(","),
-    limit: "50",
+    limit: String(FOLLOWING_ROWS),
   });
-  const { data, error, loading, refresh } =
-    useProduct<FollowingActivityResponse>(`following?${params}`);
+  const { data, error, loading, refresh } = useProduct<FollowingTradesResponse>(
+    `following?${params}`,
+  );
   const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (paused || loading) return;
@@ -33,9 +54,74 @@ export function FollowActivity({ addresses }: { addresses: string[] }) {
       document.removeEventListener("visibilitychange", visible);
     };
   }, [paused, loading, refresh]);
+  /* A list change keeps the previous answer on screen while the new one
+     loads; it never shows a wallet that is no longer followed, and a wallet
+     the answer has not covered yet reads as loading. */
+  const followed = new Set(addresses.map((a) => a.toLowerCase()));
+  const coverage = new Map(
+    data?.coverage.wallets.map((c) => [c.wallet, c.status]) ?? [],
+  );
+  const status = (wallet: string): FollowingWalletCoverage["status"] | null =>
+    coverage.get(wallet.toLowerCase()) ?? (loading ? "pending" : null);
+  return {
+    data,
+    items: data?.items.filter((t) => followed.has(t.wallet)) ?? [],
+    pending: loading || addresses.some((a) => status(a) === "pending"),
+    error,
+    loading,
+    refresh,
+    paused,
+    setPaused,
+    status,
+  };
+}
+
+/** A followed wallet's own read state beside its name: loading until the feed
+    has read it, and a plain mark where its read failed. A wallet whose last
+    refresh failed keeps its rows and reads like any other. */
+export function FollowStatus({
+  status,
+}: {
+  status: FollowingWalletCoverage["status"] | null;
+}) {
+  return (
+    <span className={styles.status}>
+      {status === "pending" ? (
+        <span key="pending" data-pending="true">
+          Loading
+        </span>
+      ) : status === "unavailable" ? (
+        <span key="unavailable">Unavailable</span>
+      ) : null}
+    </span>
+  );
+}
+
+function TokenLink({ trade }: { trade: FollowingTrade }) {
+  const label = trade.symbol ?? shortAddress(trade.token);
+  return trade.poolId ? (
+    <Link href={`/pool/${trade.poolId}/`} title={trade.name ?? trade.token}>
+      {label}
+    </Link>
+  ) : (
+    <span title={trade.name ?? trade.token}>{label}</span>
+  );
+}
+
+export function FollowActivity({ feed }: { feed: FollowActivityFeed }) {
+  const { data, items, error, loading, refresh, paused, setPaused } = feed;
+  const failed = !!error && !data;
+  const loaded = !!data && !feed.pending;
+  const rows = Array.from(
+    { length: reservedRowCount(FOLLOWING_ROWS, failed) },
+    (_, index) => items[index],
+  );
+  const generatedAt = data
+    ? Math.floor(Date.parse(data.coverage.generatedAt) / 1000)
+    : null;
   return (
     <section
-      className={styles.activity}
+      className={`${styles.activity} following-activity`}
       aria-label="Following activity"
       id="following-activity"
     >
@@ -58,94 +144,181 @@ export function FollowActivity({ addresses }: { addresses: string[] }) {
         </div>
       </div>
       <p>
-        Verified activity from wallets you follow. Informational, not advice.
-        Trades are never executed here.
+        Recent trades from wallets you follow. Informational, not advice. Trades
+        are never executed here.
       </p>
-      {data && (
-        <p className={styles.freshness}>
-          {data.coverage.asOf
-            ? `Latest saved cutoff ${utc(data.coverage.asOf)}.`
-            : "No saved trades in this selection."}
-          {data.coverage.oldestAsOf &&
-          data.coverage.oldestAsOf !== data.coverage.asOf
-            ? ` Oldest pool cutoff ${utc(data.coverage.oldestAsOf)}.`
-            : ""}{" "}
-          Partial pool coverage.{" "}
-          {paused
-            ? "Updates paused."
-            : "Checks for saved updates every 30 seconds."}
-        </p>
-      )}
-      {error && (
-        <p role="alert">
-          {data
-            ? "Updates unavailable. Keeping the last saved activity."
-            : "Following activity is temporarily unavailable."}
-        </p>
-      )}
-      {loading && !data ? (
-        <RowsSkeleton label="Loading following activity" />
-      ) : data && !data.items.length ? (
-        <div className={styles.empty}>
-          No verified trades found for these wallets in saved coverage. This
-          does not mean they have never traded.
-        </div>
-      ) : (
-        <ul className={styles.trades}>
-          {data?.items.map((row) => (
-            <li key={row.id}>
-              <div className={styles.tradeIdentity}>
-                <Link href={`/wallet/${row.wallet}/`}>
-                  <Avatar address={row.wallet} small />
-                  <span>{shortAddress(row.wallet)}</span>
-                </Link>
-                <span className={row.side === "buy" ? "positive" : "negative"}>
-                  {row.side === "buy" ? "Bought" : "Sold"}
-                </span>
-                <Link href={`/pool/${row.poolId}/`}>
-                  {row.symbol || shortAddress(row.token)}
-                </Link>
-              </div>
-              <div className={styles.tradeAmounts}>
-                <Eth wei={row.ethWei} />
-                <span>
-                  Avg. execution price{" "}
-                  {row.priceWei === null ? (
-                    <Unavailable />
+      <div className={`wallet-positions-context ${styles.context}`}>
+        <span role={error && data ? "alert" : undefined}>
+          {error && data ? (
+            <Fragment key="failed">Update failed</Fragment>
+          ) : paused ? (
+            <Fragment key="paused">Updates paused</Fragment>
+          ) : null}
+        </span>
+        <span>Updated</span>
+        <strong data-pending={generatedAt === null && !failed}>
+          {generatedAt === null ? (
+            failed ? (
+              " "
+            ) : (
+              "Pending"
+            )
+          ) : (
+            <time
+              key={generatedAt}
+              dateTime={new Date(generatedAt * 1000).toISOString()}
+            >
+              {utc(generatedAt)}
+            </time>
+          )}
+        </strong>
+      </div>
+      <div className="table-region" data-empty={loaded && !items.length}>
+        <div
+          className="table-scroll wallet-list-region"
+          data-failed={failed}
+          aria-busy={feed.pending}
+          data-stale-rows={false}
+        >
+          <table className="data-table following-trades-table">
+            <colgroup>
+              <col style={{ width: "180px" }} />
+              <col />
+              <col style={{ width: "170px" }} />
+              <col style={{ width: "170px" }} />
+              <col style={{ width: "80px" }} />
+              <col style={{ width: "150px" }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Wallet</th>
+                <th>Token</th>
+                <th>Amount</th>
+                <th>Time (UTC)</th>
+                <th>Side</th>
+                <th>Transaction</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t, index) => (
+                <tr
+                  key={index}
+                  aria-hidden={!t}
+                  data-row={t ? "resolved" : "reserved"}
+                  data-row-index={index}
+                >
+                  {t ? (
+                    <Fragment key={t.id}>
+                      <td>
+                        <AddressChip
+                          address={t.wallet}
+                          href={`/wallet/${t.wallet}/`}
+                        />
+                      </td>
+                      <td className="following-token">
+                        <TokenLink trade={t} />
+                      </td>
+                      <td>
+                        <span className="number">
+                          <TradeAmount raw={t.tokenRaw} decimals={t.decimals} />
+                        </span>
+                      </td>
+                      <td>
+                        <TradeTime timestamp={t.timestamp} />
+                      </td>
+                      <td>
+                        <TradeSide side={t.side} />
+                      </td>
+                      <td>
+                        <TradeTransaction hash={t.txHash} />
+                      </td>
+                    </Fragment>
                   ) : (
-                    <Price wei={row.priceWei} />
+                    <Fragment key="reserved">
+                      {Array.from({ length: 6 }, (_, cell) => (
+                        <td key={cell} data-pending={!loaded}>
+                          <RowFiller blank={loaded} />
+                        </td>
+                      ))}
+                    </Fragment>
                   )}
-                </span>
-              </div>
-              <div className={styles.tradeLinks}>
-                <time dateTime={new Date(row.timestamp * 1000).toISOString()}>
-                  {utc(row.timestamp)}
-                </time>
-                <a
-                  href={`https://robinhoodchain.blockscout.com/tx/${row.txHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Transaction ↗
-                </a>
-                <a
-                  href={`https://pools.xyz/t/robinhood/${row.token}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="button secondary"
-                >
-                  Open on Pools ↗
-                </a>
-              </div>
-            </li>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div
+          className="mobile-wallet-rows"
+          aria-busy={feed.pending}
+          data-stale-rows={false}
+        >
+          {rows.map((t, index) => (
+            <div
+              className="mobile-wallet-row"
+              key={index}
+              aria-hidden={!t}
+              data-row={t ? "resolved" : "reserved"}
+              data-row-index={index}
+            >
+              {t ? (
+                <Fragment key={t.id}>
+                  <div className="mobile-wallet-row-top">
+                    <AddressChip
+                      address={t.wallet}
+                      href={`/wallet/${t.wallet}/`}
+                    />
+                    <TradeSide side={t.side} />
+                  </div>
+                  <div className="mobile-wallet-row-stats">
+                    <TradeAmount raw={t.tokenRaw} decimals={t.decimals} />{" "}
+                    <TokenLink trade={t} />
+                  </div>
+                  <div className="mobile-wallet-row-stats">
+                    {t.timestamp !== null && (
+                      <>
+                        <TradeTime timestamp={t.timestamp} /> ·{" "}
+                      </>
+                    )}
+                    <TradeTransaction hash={t.txHash} />
+                  </div>
+                </Fragment>
+              ) : (
+                <Fragment key={loaded ? "blank" : "pending"}>
+                  <div className="mobile-wallet-row-top">
+                    <span data-pending="true">
+                      {loaded ? " " : "Trade pending"}
+                    </span>
+                  </div>
+                  <div className="mobile-wallet-row-stats" data-pending="true">
+                    {loaded ? " " : "Pending"}
+                  </div>
+                </Fragment>
+              )}
+            </div>
           ))}
-        </ul>
+        </div>
+        {loaded && !items.length && (
+          <EmptyState
+            title="No recent trades"
+            description="Trades from wallets you follow will appear here."
+          />
+        )}
+      </div>
+      {failed && (
+        <UnavailableState subject="Following activity" onRetry={refresh} />
       )}
-      {data?.hasMore && (
-        <p>
-          Showing the newest 50 verified trades. Open a wallet profile for its
-          saved history.
-        </p>
+      {!failed && (
+        <div className="pagination">
+          <span className="pagination-count">
+            {data?.hasMore ? (
+              <Fragment key="more">
+                Newest {FOLLOWING_ROWS} shown. Open a wallet for more.
+              </Fragment>
+            ) : (
+              " "
+            )}
+          </span>
+        </div>
       )}
     </section>
   );

@@ -562,73 +562,302 @@ test("following activity fails closed during outage instead of inventing an empt
       ["following"],
       new URLSearchParams({ wallets: `0x${"1".repeat(40)}` }),
     ),
-    /Following|following/,
+    (error: unknown) => error instanceof ProductUnavailableError,
   );
 });
 
-test("following proxy rejects another wallet's activity and unsupported attribution", async () => {
-  const { validateFollowingResponse } = await import("./following-response");
-  const a = `0x${"1".repeat(40)}`,
-    b = `0x${"2".repeat(40)}`,
-    h = `0x${"3".repeat(64)}`;
-  const params = new URLSearchParams({ wallets: a });
-  const response = {
-    scope: "saved_verified_positions",
-    notice: "Partial",
-    hasMore: false,
-    coverage: {
-      requestedWallets: 1,
-      returnedPools: 1,
-      asOf: 200,
-      oldestAsOf: 200,
-      generatedAt: "2026-09-15T00:00:00Z",
-      complete: false,
-      registryExhaustive: false,
+/** The contract's own example response, verbatim (`GET /v1/following`,
+ * trimmed from a real run against the explorer on 25 Sep 2026). */
+const followingExample = {
+  source: "blockscout",
+  scope: "explorer_registry_trades",
+  items: [
+    {
+      id: "0xb391b92e615feae009e3b3ffb0fdc7348aee1c29256b06cd5051378890666af7:17",
+      wallet: "0x562f81ada979043b20b121490f1f0f4ce3f1ec59",
+      poolId:
+        "0x77bbe095432075e9d574ffc55c3076af5f5fe5f104b589a927c72abeebf3c81f",
+      token: "0xe7a2fcf0f32e75ac4b14133f1fa4dff5a0dbaec6",
+      symbol: "ROBINHOOD",
+      name: "Robinhood",
+      decimals: 18,
+      txHash:
+        "0xb391b92e615feae009e3b3ffb0fdc7348aee1c29256b06cd5051378890666af7",
+      logIndex: 17,
+      block: 65240160,
+      timestamp: 1789635351,
+      side: "sell",
+      tokenRaw: "204380635229317043485969",
+      method: "0x3593564c",
     },
-    items: [
+  ],
+  hasMore: true,
+  notice:
+    "Each followed wallet's newest explorer trades in verified-registry tokens. No ETH amounts or prices; wallets not read yet are listed in coverage.",
+  note: "Explorer history for display only; not accounting or PnL evidence.",
+  coverage: {
+    requestedWallets: 2,
+    returnedTokens: 1,
+    wallets: [
       {
-        id: `${h}:1`,
-        wallet: a,
-        poolId: h,
-        token: b,
-        symbol: "TOKEN",
-        decimals: 18,
-        txHash: h,
-        logIndex: 1,
-        block: 100,
-        timestamp: 100,
-        side: "buy",
-        ethWei: "9007199254740993",
-        tokenRaw: "1000000000000000000",
-        priceWei: "9007199254740993",
-        asOf: 200,
-        throughBlock: 200,
-        supported: true,
+        wallet: "0x0224e37d9fbd646b1462fa52dff6ffa761ae9cb5",
+        status: "read",
+        fetchedAt: "2026-09-25T21:44:28.479Z",
+        reason: null,
+        olderTrades: true,
+        horizonBlock: 72114732,
+      },
+      {
+        wallet: "0x562f81ada979043b20b121490f1f0f4ce3f1ec59",
+        status: "read",
+        fetchedAt: "2026-09-25T21:44:35.272Z",
+        reason: null,
+        olderTrades: true,
+        horizonBlock: 65213953,
       },
     ],
-  };
-  assert.doesNotThrow(() => validateFollowingResponse(response, params));
-  for (const patch of [
-    { wallet: b },
-    { supported: false },
-    { ethWei: 9007199254740993 },
-    { side: "transfer" },
-    { timestamp: 201 },
-    { token: "javascript:alert(1)" },
-  ]) {
-    assert.throws(() =>
-      validateFollowingResponse(
-        { ...response, items: [{ ...response.items[0], ...patch }] },
-        params,
-      ),
-    );
-  }
-  assert.throws(() =>
+    generatedAt: "2026-09-25T21:44:36.065Z",
+    complete: false,
+    registryExhaustive: false,
+  },
+};
+const followingParams = new URLSearchParams({
+  wallets:
+    "0x562f81ada979043b20b121490f1f0f4ce3f1ec59,0x0224e37d9fbd646b1462fa52dff6ffa761ae9cb5",
+  limit: "50",
+});
+type FollowingExample = typeof followingExample;
+const withTrade = (
+  patch: Record<string, unknown>,
+  data: FollowingExample = followingExample,
+) => ({ ...data, items: [{ ...data.items[0], ...patch }] });
+const withWallet = (index: number, patch: Record<string, unknown>) => ({
+  ...followingExample,
+  coverage: {
+    ...followingExample.coverage,
+    wallets: followingExample.coverage.wallets.map((w, i) =>
+      i === index ? { ...w, ...patch } : w,
+    ),
+  },
+});
+
+test("following proxy accepts the contract's explorer trades example verbatim", async () => {
+  const { validateFollowingResponse } = await import("./following-response");
+  assert.doesNotThrow(() =>
     validateFollowingResponse(
-      { ...response, items: [response.items[0], response.items[0]] },
-      params,
+      structuredClone(followingExample),
+      followingParams,
     ),
   );
+});
+
+test("following proxy accepts a trade the explorer sent without symbol, name, decimals, time or pool", async () => {
+  const { validateFollowingResponse } = await import("./following-response");
+  for (const patch of [
+    { symbol: null },
+    { name: null },
+    { decimals: null },
+    { timestamp: null },
+    { poolId: null },
+    { symbol: null, name: null, decimals: null, timestamp: null, poolId: null },
+    { method: null },
+  ])
+    assert.doesNotThrow(
+      () => validateFollowingResponse(withTrade(patch), followingParams),
+      JSON.stringify(patch),
+    );
+});
+
+test("following proxy accepts every per-wallet coverage status and holds each to its shape", async () => {
+  const { validateFollowingResponse } = await import("./following-response");
+  // The trade belongs to the second wallet; the first takes each status.
+  for (const patch of [
+    { status: "read" },
+    {
+      status: "stale",
+      reason: "budget_exhausted",
+    },
+    {
+      status: "pending",
+      fetchedAt: null,
+      olderTrades: false,
+      horizonBlock: null,
+    },
+    {
+      status: "unavailable",
+      fetchedAt: null,
+      reason: "key_rejected",
+      olderTrades: false,
+      horizonBlock: null,
+    },
+    { olderTrades: false, horizonBlock: null },
+  ])
+    assert.doesNotThrow(
+      () => validateFollowingResponse(withWallet(0, patch), followingParams),
+      JSON.stringify(patch),
+    );
+  for (const patch of [
+    { status: "partial" },
+    { status: "pending" },
+    { status: "read", fetchedAt: null },
+    { status: "read", fetchedAt: "yesterday" },
+    { reason: "rate_limited" },
+    { olderTrades: "yes" },
+    { horizonBlock: -1 },
+    { wallet: `0x${"9".repeat(40)}` },
+  ])
+    assert.throws(
+      () => validateFollowingResponse(withWallet(0, patch), followingParams),
+      JSON.stringify(patch),
+    );
+  // A wallet the answer says it has not read can have no trades in it.
+  for (const status of ["pending", "unavailable"])
+    assert.throws(() =>
+      validateFollowingResponse(
+        withWallet(1, {
+          status,
+          fetchedAt: null,
+          olderTrades: false,
+          horizonBlock: null,
+        }),
+        followingParams,
+      ),
+    );
+  // One coverage entry per requested wallet, in the api's sorted order.
+  assert.throws(() =>
+    validateFollowingResponse(
+      {
+        ...followingExample,
+        coverage: {
+          ...followingExample.coverage,
+          wallets: [...followingExample.coverage.wallets].reverse(),
+        },
+      },
+      followingParams,
+    ),
+  );
+  assert.throws(() =>
+    validateFollowingResponse(
+      {
+        ...followingExample,
+        coverage: {
+          ...followingExample.coverage,
+          wallets: followingExample.coverage.wallets.slice(1),
+        },
+      },
+      followingParams,
+    ),
+  );
+});
+
+test("following proxy rejects another wallet's trades, the retired shape and malformed rows", async () => {
+  const { validateFollowingResponse } = await import("./following-response");
+  for (const patch of [
+    { wallet: `0x${"9".repeat(40)}` },
+    { side: "transfer" },
+    { token: "javascript:alert(1)" },
+    { poolId: "pool" },
+    { tokenRaw: 204380635229317043485969 },
+    { tokenRaw: "-1" },
+    { tokenRaw: "1.5" },
+    { decimals: 256 },
+    { decimals: "18" },
+    { timestamp: "1789635351" },
+    { symbol: "x".repeat(257) },
+    { id: "0xb391:18" },
+    { logIndex: -1 },
+  ])
+    assert.throws(
+      () => validateFollowingResponse(withTrade(patch), followingParams),
+      JSON.stringify(patch),
+    );
+  assert.throws(() =>
+    validateFollowingResponse(
+      {
+        ...followingExample,
+        items: [followingExample.items[0], followingExample.items[0]],
+      },
+      followingParams,
+    ),
+  );
+  assert.throws(() =>
+    validateFollowingResponse(
+      withTrade({}),
+      new URLSearchParams({
+        wallets: followingParams.get("wallets")!,
+        limit: "0",
+      }),
+    ),
+  );
+  // The pre-ledger accounting shape is retired with the api deploy.
+  assert.throws(() =>
+    validateFollowingResponse(
+      { ...followingExample, scope: "saved_verified_positions" },
+      followingParams,
+    ),
+  );
+  assert.throws(() =>
+    validateFollowingResponse(
+      { ...followingExample, source: undefined },
+      followingParams,
+    ),
+  );
+  assert.throws(() =>
+    validateFollowingResponse(
+      {
+        ...followingExample,
+        coverage: {
+          ...followingExample.coverage,
+          returnedPools: 1,
+          returnedTokens: undefined,
+        },
+      },
+      followingParams,
+    ),
+  );
+});
+
+test("following proxy answers the explorer's 503 as the panel's unavailable state", async (t) => {
+  const old = process.env.INDEXER_API_URL;
+  const disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (old === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = old;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  for (const reason of [
+    "not_configured",
+    "budget_exhausted",
+    "upstream_unavailable",
+    "key_rejected",
+  ]) {
+    t.mock.method(globalThis, "fetch", async () =>
+      Response.json(
+        { error: "wallet_history_unavailable", reason },
+        { status: 503, headers: { "Retry-After": "3600" } },
+      ),
+    );
+    await assert.rejects(
+      readProduct(["following"], followingParams),
+      (error: unknown) => {
+        assert.ok(error instanceof ProductUnavailableError);
+        const response = productUnavailableResponse(error);
+        assert.equal(response.status, 503);
+        return true;
+      },
+    );
+  }
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(structuredClone(followingExample)),
+  );
+  const served = await readProduct(["following"], followingParams);
+  assert.deepEqual(served, {
+    ...followingExample,
+    delivery: { source: "indexer" },
+  });
 });
 
 test("trade share routes require an exact event and explicit proven wallet", () => {

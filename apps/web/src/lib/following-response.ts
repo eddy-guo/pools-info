@@ -1,67 +1,110 @@
 import {
   parseFollowingWallets,
-  type FollowingActivityResponse,
+  type FollowingTrade,
+  type FollowingTradesResponse,
+  type FollowingWalletCoverage,
 } from "@pools/core";
 
-/** A stale or misrouted response must never show another follow list's signals. */
+/*
+ * `GET /v1/following`: each followed wallet's newest explorer trades in
+ * verified-registry tokens (the wallet page's Trades tab source, merged across
+ * the follow list). A 503 `wallet_history_unavailable` never reaches this
+ * check: the proxy answers it as the panel's unavailable state, like any
+ * other outage.
+ */
+
+const hash = /^0x[0-9a-f]{64}$/i;
+const address = /^0x[0-9a-f]{40}$/i;
+const integer = (n: unknown) => Number.isSafeInteger(n) && Number(n) >= 0;
+const nullableText = (v: unknown, max: number) =>
+  v === null || (typeof v === "string" && v.length <= max);
+const rawAmount = (v: unknown) =>
+  typeof v === "string" && /^(0|[1-9][0-9]{0,77})$/.test(v);
+const isoTime = (v: unknown) =>
+  typeof v === "string" && !Number.isNaN(Date.parse(v));
+const statuses = new Set(["read", "stale", "pending", "unavailable"]);
+const reasons = new Set([
+  "not_configured",
+  "budget_exhausted",
+  "upstream_unavailable",
+  "key_rejected",
+]);
+
+function validCoverage(value: unknown, wallet: string) {
+  const c = value as FollowingWalletCoverage | null;
+  if (!c || typeof c !== "object" || c.wallet !== wallet) return false;
+  const read = c.status === "read" || c.status === "stale";
+  return (
+    statuses.has(c.status) &&
+    (read ? isoTime(c.fetchedAt) : c.fetchedAt === null) &&
+    (c.reason === null || reasons.has(c.reason)) &&
+    typeof c.olderTrades === "boolean" &&
+    (c.horizonBlock === null || integer(c.horizonBlock))
+  );
+}
+
+function validTrade(value: unknown, read: ReadonlySet<string>) {
+  const t = value as FollowingTrade | null;
+  return !!(
+    t &&
+    typeof t === "object" &&
+    read.has(t.wallet) &&
+    (t.poolId === null ||
+      (typeof t.poolId === "string" && hash.test(t.poolId))) &&
+    typeof t.token === "string" &&
+    address.test(t.token) &&
+    nullableText(t.symbol, 256) &&
+    nullableText(t.name, 256) &&
+    (t.decimals === null || (integer(t.decimals) && t.decimals <= 255)) &&
+    typeof t.txHash === "string" &&
+    hash.test(t.txHash) &&
+    integer(t.logIndex) &&
+    integer(t.block) &&
+    (t.timestamp === null || integer(t.timestamp)) &&
+    (t.side === "buy" || t.side === "sell") &&
+    rawAmount(t.tokenRaw) &&
+    nullableText(t.method, 256) &&
+    t.id === `${t.txHash}:${t.logIndex}`
+  );
+}
+
+/** A stale or misrouted response must never show another follow list's
+ * trades, and a wallet the answer says it has not read can have none. */
 export function validateFollowingResponse(
   value: unknown,
   params: URLSearchParams,
-): asserts value is FollowingActivityResponse {
-  const data = value as FollowingActivityResponse | null;
-  const wallets = new Set(parseFollowingWallets(params.get("wallets")));
-  const hash = /^0x[0-9a-f]{64}$/;
-  const address = /^0x[0-9a-f]{40}$/;
-  const integer = (n: unknown) => Number.isSafeInteger(n) && Number(n) >= 0;
-  const amount = (n: unknown) =>
-    typeof n === "string" && /^(0|[1-9][0-9]{0,159})$/.test(n);
-  const ids = new Set<string>();
+): asserts value is FollowingTradesResponse {
+  const data = value as FollowingTradesResponse | null;
+  const wallets = parseFollowingWallets(params.get("wallets"));
   if (
     !data ||
-    data.scope !== "saved_verified_positions" ||
+    data.source !== "blockscout" ||
+    data.scope !== "explorer_registry_trades" ||
     !Array.isArray(data.items) ||
     data.items.length > Number(params.get("limit") ?? 50) ||
     typeof data.hasMore !== "boolean" ||
     typeof data.notice !== "string" ||
-    data.coverage?.complete !== false ||
+    typeof data.note !== "string" ||
+    !data.coverage ||
+    data.coverage.complete !== false ||
     data.coverage.registryExhaustive !== false ||
-    data.coverage.requestedWallets !== wallets.size ||
-    !integer(data.coverage.returnedPools) ||
-    (data.coverage.asOf !== null && !integer(data.coverage.asOf)) ||
-    (data.coverage.oldestAsOf !== null && !integer(data.coverage.oldestAsOf))
+    data.coverage.requestedWallets !== wallets.length ||
+    !integer(data.coverage.returnedTokens) ||
+    !isoTime(data.coverage.generatedAt) ||
+    !Array.isArray(data.coverage.wallets) ||
+    data.coverage.wallets.length !== wallets.length ||
+    wallets.some((w, i) => !validCoverage(data.coverage.wallets[i], w))
   )
     throw Error("Invalid following activity");
+  const read = new Set(
+    data.coverage.wallets
+      .filter((c) => c.status === "read" || c.status === "stale")
+      .map((c) => c.wallet),
+  );
+  const ids = new Set<string>();
   for (const row of data.items) {
-    if (
-      !row ||
-      !wallets.has(row.wallet) ||
-      !address.test(row.token) ||
-      !hash.test(row.poolId) ||
-      !hash.test(row.txHash) ||
-      !integer(row.logIndex) ||
-      !integer(row.block) ||
-      !integer(row.timestamp) ||
-      !integer(row.asOf) ||
-      !integer(row.throughBlock) ||
-      row.timestamp > row.asOf ||
-      row.block > row.throughBlock ||
-      row.supported !== true ||
-      !["buy", "sell"].includes(row.side) ||
-      typeof row.symbol !== "string" ||
-      row.symbol.length > 256 ||
-      !integer(row.decimals) ||
-      row.decimals > 255 ||
-      !amount(row.ethWei) ||
-      !amount(row.tokenRaw) ||
-      BigInt(row.ethWei) <= 0n ||
-      BigInt(row.tokenRaw) <= 0n ||
-      (row.priceWei !== null && !amount(row.priceWei)) ||
-      typeof row.id !== "string" ||
-      !row.id ||
-      row.id.length > 256 ||
-      ids.has(`${row.txHash}:${row.logIndex}`)
-    )
+    if (!validTrade(row, read) || ids.has(row.id))
       throw Error("Invalid following trade");
-    ids.add(`${row.txHash}:${row.logIndex}`);
+    ids.add(row.id);
   }
 }
