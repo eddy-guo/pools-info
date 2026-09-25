@@ -313,14 +313,17 @@ test("a view change starts over at the first page, brings the head back and keep
     await rowName(page, rows, 0).textContent(),
     "the dimmed row is still the previous view's own row, not a fabricated stand-in",
   ).toBe(first);
-  const padding = await page.evaluate(() =>
-    parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
+  /* Just under the sticky header, 12px clear of it: the header is 151px
+     tall on a phone, past the page's 90px `scroll-padding-top`. */
+  const header = await page.evaluate(
+    () =>
+      document.querySelector(".site-header")!.getBoundingClientRect().bottom,
   );
   await expect
     .poll(async () => Math.round((await panel.boundingBox())!.y), {
-      message: "the panel head returns under the site header",
+      message: "the panel head returns just under the site header",
     })
-    .toBe(Math.round(padding));
+    .toBe(Math.round(header + 12));
   release();
   await expect(busy).toHaveAttribute("aria-busy", "false", { timeout: 15000 });
   await expect(busy).toHaveAttribute("data-stale-rows", "false");
