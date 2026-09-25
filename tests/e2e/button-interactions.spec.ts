@@ -2,7 +2,9 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const colors = {
   accent: "rgb(187, 244, 81)",
-  accentDeep: "rgb(25, 46, 3)",
+  primary: "rgb(40, 50, 23)",
+  primaryHover: "rgb(51, 65, 27)",
+  primaryActive: "rgb(62, 79, 31)",
   panelRaised: "rgb(16, 16, 20)",
   panelHover: "rgb(18, 18, 22)",
   surface5: "rgb(28, 28, 34)",
@@ -13,6 +15,7 @@ const colors = {
   text: "rgb(242, 242, 245)",
   text2: "rgb(180, 180, 190)",
 } as const;
+const transparent = "rgba(0, 0, 0, 0)";
 
 type Visual = Awaited<ReturnType<typeof visual>>;
 
@@ -164,9 +167,11 @@ test("primary, secondary and ghost controls share deliberate interaction states"
   const primary = page.getByRole("button", { name: "Open wallet profile" });
   const primaryRest = await visual(primary);
   expect(primaryRest).toMatchObject({
-    background: colors.accent,
+    background: colors.primary,
+    border: transparent,
     borderWidth: "1px",
-    color: colors.accentDeep,
+    boxShadow: "none",
+    color: colors.accent,
     filter: "none",
     fontWeight: "600",
   });
@@ -175,16 +180,19 @@ test("primary, secondary and ghost controls share deliberate interaction states"
   const primaryHover = await visual(primary);
   expectGeometry(primaryHover, primaryRest);
   expect(primaryHover).toMatchObject({
-    background: colors.accent,
-    color: colors.accentDeep,
+    background: colors.primaryHover,
+    border: transparent,
+    boxShadow: "none",
+    color: colors.accent,
     filter: "none",
   });
-  expect(primaryHover.boxShadow).toContain(colors.accentDeep);
   expectTextContrast(primaryHover);
   const primaryPressed = await pressed(page, primary);
   expectGeometry(primaryPressed, primaryRest);
   expect(primaryPressed).toMatchObject({
-    background: colors.accentDeep,
+    background: colors.primaryActive,
+    border: transparent,
+    boxShadow: "none",
     color: colors.accent,
     filter: "none",
   });
@@ -198,7 +206,7 @@ test("primary, secondary and ghost controls share deliberate interaction states"
   const primaryDisabled = await visual(primary);
   expectGeometry(primaryDisabled, primaryRest);
   expect(primaryDisabled).toMatchObject({
-    background: colors.accent,
+    background: colors.primary,
     cursor: "not-allowed",
     opacity: "0.35",
   });
@@ -272,20 +280,25 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
   const cta = page.getByRole("link", { name: "Trader leaderboard" });
   const ctaRest = await visual(cta);
   expect(ctaRest).toMatchObject({
-    background: colors.accent,
-    color: colors.accentDeep,
+    background: colors.primary,
+    boxShadow: "none",
+    color: colors.accent,
     filter: "none",
     fontWeight: "600",
   });
   await cta.hover();
   const ctaHover = await visual(cta);
   expectGeometry(ctaHover, ctaRest);
-  expect(ctaHover.boxShadow).toContain(colors.accentDeep);
+  expect(ctaHover).toMatchObject({
+    background: colors.primaryHover,
+    boxShadow: "none",
+  });
   expectTextContrast(ctaHover);
   const ctaPressed = await pressed(page, cta);
   expectGeometry(ctaPressed, ctaRest);
   expect(ctaPressed).toMatchObject({
-    background: colors.accentDeep,
+    background: colors.primaryActive,
+    boxShadow: "none",
     color: colors.accent,
   });
   expectTextContrast(ctaPressed);
@@ -397,6 +410,23 @@ for (const width of [1440, 390]) {
     expect(primaryActionSignature(copyFocus), "focus-visible").toEqual(
       primaryActionSignature(leaderboardFocus),
     );
+    // The shared look itself: a lime tint with lime text, no dark border or
+    // inset ring in any state, and the global lime focus ring.
+    for (const [state, background] of [
+      [copyRest, colors.primary],
+      [copyHover, colors.primaryHover],
+      [copyActive, colors.primaryActive],
+      [copyFocus, colors.primary],
+    ] as const) {
+      expect(state).toMatchObject({
+        background,
+        border: transparent,
+        boxShadow: "none",
+        color: colors.accent,
+      });
+      expectTextContrast(state);
+    }
+    expectFocus(copyFocus, copyRest);
     expect(copyRest.rect.height).toBe(width === 390 ? 44 : 38);
     expect(copyRest.icon).toEqual({
       height: 15,
