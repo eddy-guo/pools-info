@@ -1,6 +1,6 @@
 /** Explorer wallet history served on demand from the Blockscout PRO API.
  * Display only: never accounting or PnL evidence, never joined to positions. */
-export type WalletHistoryKind = "transactions" | "token-transfers";
+export type WalletHistoryKind = "transactions" | "token-transfers" | "trades";
 export interface WalletHistoryTransaction {
   hash: string;
   /** Null while the transaction is still pending. */
@@ -41,6 +41,24 @@ export interface WalletHistoryTokenTransfer {
   tokenId: string | null;
   method: string | null;
 }
+/** One ERC-20 leg the wallet settled directly with the v4 PoolManager: the
+ * explorer's view of a swap. It carries no ETH figure, because the ETH side
+ * of a swap is often paid or received by a router or bot contract rather than
+ * the wallet, so the exact amount lives only in the Swap log. */
+export interface WalletHistoryTrade {
+  transactionHash: string;
+  logIndex: number;
+  block: number;
+  /** Unix seconds; null when the explorer has not attached a block time. */
+  timestamp: number | null;
+  /** `buy`: the token left the PoolManager for the wallet; `sell`: the wallet
+   * paid the token into the PoolManager. */
+  side: "buy" | "sell";
+  token: WalletHistoryTokenTransfer["token"];
+  /** Raw token amount as an exact decimal string; scale by `token.decimals`. */
+  tokenRaw: string;
+  method: string | null;
+}
 interface WalletHistoryPage<K extends WalletHistoryKind, T> {
   source: "blockscout";
   chainId: 4663;
@@ -58,7 +76,8 @@ interface WalletHistoryPage<K extends WalletHistoryKind, T> {
 }
 export type WalletHistoryResponse =
   | WalletHistoryPage<"transactions", WalletHistoryTransaction>
-  | WalletHistoryPage<"token-transfers", WalletHistoryTokenTransfer>;
+  | WalletHistoryPage<"token-transfers", WalletHistoryTokenTransfer>
+  | WalletHistoryPage<"trades", WalletHistoryTrade>;
 export interface WalletHistoryUnavailable {
   error: "wallet_history_unavailable";
   reason:
