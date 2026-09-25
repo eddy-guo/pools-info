@@ -434,7 +434,12 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
   const history = createWalletHistory({
     client: {
       budget,
-      async readPage(kind: string, _wallet: string, _page: unknown, reserveShare = 0) {
+      async readPage(
+        kind: string,
+        _wallet: string,
+        _page: unknown,
+        reserveShare = 0,
+      ) {
         assert.equal(kind, "trades");
         budget.spend(30, Math.ceil(budget.snapshot().dailyCap * reserveShare));
         calls++;
@@ -489,12 +494,18 @@ test("concurrent following refreshes keep the wallet-page credit reserve", async
     key: "test-key",
     baseUrl: "https://example.test/api/v2",
     dailyCreditCap: 300,
-    limiter: { acquire: async () => new Promise<void>((resolve) => setImmediate(resolve)) },
+    limiter: {
+      acquire: async () =>
+        new Promise<void>((resolve) => setImmediate(resolve)),
+    },
     fetchImpl: async () => {
       calls++;
-      return new Response(JSON.stringify({ items: [], next_page_params: null }), {
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ items: [], next_page_params: null }),
+        {
+          headers: { "content-type": "application/json" },
+        },
+      );
     },
   });
   const history = createWalletHistory({
@@ -512,7 +523,12 @@ test("concurrent following refreshes keep the wallet-page credit reserve", async
   assert.equal(results.filter((r) => r.status === "rejected").length, 1);
   assert.equal(client.budget.snapshot().spent, 240);
   assert.equal(calls, 8);
-  await history.read({ wallet: address(10), kind: "trades", page: null, scope: "s" });
+  await history.read({
+    wallet: address(10),
+    kind: "trades",
+    page: null,
+    scope: "s",
+  });
   assert.equal(client.budget.snapshot().spent, 270);
 });
 
