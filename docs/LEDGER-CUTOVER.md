@@ -501,3 +501,18 @@ Its backup is a **daily refresh of the local production-shaped copy**:
   run by hand or by whatever scheduler the captain's machine offers, and the
   date on the newest file in `data/pools-backups/` is the truth of whether it
   happened. A missing day means no backup for that day, not a silent one.
+
+## The dead indexer service, deleted
+
+The `indexer` service on Railway (`zestful-fulfillment` / production /
+`d41596b3-6c74-4f96-a0fe-b6655c98ba95`), left stopped with the dangling
+`${{Postgres.DATABASE_URL}}` reference described above, was itself deleted on
+2026-09-25 under the captain's defaults ruling of the same date. A read-only
+pass against live Railway state confirmed, before deletion: its latest
+deployment (of 20 checked) was REMOVED at 2026-09-16T07:00:59Z with none since
+and none SUCCESS/running; its service instance had no connected source
+(`repo`/`image` both null); and its `DATABASE_URL` resolved to the empty
+string because its unrendered form still references the old `Postgres`
+service, which no longer exists, confirming it targets a deleted database and
+not `LedgerPostgres`, the current live database (host/name compared, no
+credential printed). `api`, `ledger-tip` and `LedgerPostgres` were untouched.
