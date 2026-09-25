@@ -24,6 +24,7 @@ import {
 } from "./ledger-market";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
 import { readLedgerWallet } from "./ledger-wallet";
+import type { RegistryToken } from "./token-registry";
 import {
   encodeCursor,
   isAddress,
@@ -36,6 +37,9 @@ type Row = Record<string, any>; // PostgreSQL projections are mapped explicitly 
 type Query = (sql: string, values?: unknown[]) => Promise<{ rows: Row[] }>;
 export interface Reader {
   read(request: ReadRequest): Promise<unknown>;
+  /** The verified registry's launch tokens past a pool ref, for the explorer
+   * trade list's token check (`token-registry.ts`). */
+  registeredTokens?(afterRef: number): Promise<RegistryToken[]>;
   /** Checks before HTTP caches, and again before publishing an in-flight read. */
   assertReady?(expected?: number): number;
   close(): Promise<void>;
@@ -555,6 +559,28 @@ export function createReader(
         throw error;
       } finally {
         client.release(broken);
+      }
+    },
+    async registeredTokens(afterRef) {
+      // A product read like any other: it waits for a warm, verified database.
+      const version = warmth?.assertReady();
+      const client = await pool.connect().catch((error) => {
+        warmth?.invalidate("database_connect_failed");
+        throw error;
+      });
+      try {
+        await initialized.get(client);
+        warmth?.assertReady(version);
+        const result = await client.query(
+          "SELECT pool_ref, token FROM indexed_pools WHERE chain_id=4663 AND pool_ref>$1 ORDER BY pool_ref",
+          [afterRef],
+        );
+        return result.rows.map((row) => ({
+          ref: Number(row.pool_ref),
+          token: row.token as string,
+        }));
+      } finally {
+        client.release();
       }
     },
     async close() {

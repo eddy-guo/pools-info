@@ -1,0 +1,245 @@
+{
+  "items": [
+    {
+      "block_hash": "0x8e77a820095f32dcb4f4e5270e550f3b6ed59210e8d94a43e547de69b689bbf5",
+      "block_number": 67884118,
+      "from": {
+        "ens_domain_name": null,
+        "hash": "0x78cc2fF0a2127c1Bbb96B99124fAdC8C41F89388",
+        "implementations": [],
+        "is_contract": false,
+        "is_scam": false,
+        "is_verified": false,
+        "metadata": null,
+        "name": null,
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "log_index": 36,
+      "method": "0x3593564c",
+      "timestamp": "2026-09-20T10:57:06.000000Z",
+      "to": {
+        "ens_domain_name": null,
+        "hash": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "implementations": [],
+        "is_contract": true,
+        "is_scam": false,
+        "is_verified": true,
+        "metadata": {
+          "tags": [
+            {
+              "meta": {
+                "tagIcon ": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "textColor": "#C163D4",
+                "tooltipAttribution": "https://www.openlabelsinitiative.org?utm_source=blockscout",
+                "tooltipAttributionIcon": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "tooltipDescription": "Provided by OLI"
+              },
+              "name": "PoolManager",
+              "ordinal": 0,
+              "slug": "poolmanager",
+              "tagType": "name"
+            }
+          ]
+        },
+        "name": "PoolManager",
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "token": {
+        "address_hash": "0x3d67aAEaf8a95F7Df9972261A39a65EA17e6632F",
+        "circulating_market_cap": null,
+        "circulating_supply": null,
+        "decimals": "18",
+        "exchange_rate": null,
+        "holders_count": "12",
+        "icon_url": null,
+        "name": "The Rangers",
+        "new_ui_multiplier": null,
+        "reputation": "ok",
+        "symbol": "Gloob",
+        "total_supply": "1000000000000000000000000000",
+        "type": "ERC-20",
+        "ui_multiplier": null,
+        "ui_multiplier_effective_at": null,
+        "volume_24h": null
+      },
+      "token_type": "ERC-20",
+      "total": {
+        "decimals": "18",
+        "ui_multiplier": null,
+        "value": "60792583809964850361384326"
+      },
+      "transaction_hash": "0xe9da1b00a06ab6badc6c04452db3959fe326ffe78a4a523bfacb8ae1933cc55b",
+      "type": "token_transfer"
+    },
+    {
+      "block_hash": "0xd4b52f0157f1c7617d18e9c19817f751fdab4cdcbacdd80d03b14bc55ad439fc",
+      "block_number": 67880964,
+      "from": {
+        "ens_domain_name": null,
+        "hash": "0x78cc2fF0a2127c1Bbb96B99124fAdC8C41F89388",
+        "implementations": [],
+        "is_contract": false,
+        "is_scam": false,
+        "is_verified": false,
+        "metadata": null,
+        "name": null,
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "log_index": 1,
+      "method": "0x3593564c",
+      "timestamp": "2026-09-20T10:51:46.000000Z",
+      "to": {
+        "ens_domain_name": null,
+        "hash": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "implementations": [],
+        "is_contract": true,
+        "is_scam": false,
+        "is_verified": true,
+        "metadata": {
+          "tags": [
+            {
+              "meta": {
+                "tagIcon ": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "textColor": "#C163D4",
+                "tooltipAttribution": "https://www.openlabelsinitiative.org?utm_source=blockscout",
+                "tooltipAttributionIcon": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "tooltipDescription": "Provided by OLI"
+              },
+              "name": "PoolManager",
+              "ordinal": 0,
+              "slug": "poolmanager",
+              "tagType": "name"
+            }
+          ]
+        },
+        "name": "PoolManager",
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "token": {
+        "address_hash": "0x3d67aAEaf8a95F7Df9972261A39a65EA17e6632F",
+        "circulating_market_cap": null,
+        "circulating_supply": null,
+        "decimals": "18",
+        "exchange_rate": null,
+        "holders_count": "12",
+        "icon_url": null,
+        "name": "The Rangers",
+        "new_ui_multiplier": null,
+        "reputation": "ok",
+        "symbol": "Gloob",
+        "total_supply": "1000000000000000000000000000",
+        "type": "ERC-20",
+        "ui_multiplier": null,
+        "ui_multiplier_effective_at": null,
+        "volume_24h": null
+      },
+      "token_type": "ERC-20",
+      "total": {
+        "decimals": "18",
+        "ui_multiplier": null,
+        "value": "52107928979969871738329421"
+      },
+      "transaction_hash": "0xfe9dbec80f4e1b62755bea4d2532e90253249df6222693c80a2c995f26b1aebc",
+      "type": "token_transfer"
+    },
+    {
+      "block_hash": "0x2d2a4d23fcc4f920dc9491bc3b2ca3f1c0ae0b3524fb7b9eed966806f00e573d",
+      "block_number": 67879939,
+      "from": {
+        "ens_domain_name": null,
+        "hash": "0x78cc2fF0a2127c1Bbb96B99124fAdC8C41F89388",
+        "implementations": [],
+        "is_contract": false,
+        "is_scam": false,
+        "is_verified": false,
+        "metadata": null,
+        "name": null,
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "log_index": 1,
+      "method": "0x3593564c",
+      "timestamp": "2026-09-20T10:50:03.000000Z",
+      "to": {
+        "ens_domain_name": null,
+        "hash": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "implementations": [],
+        "is_contract": true,
+        "is_scam": false,
+        "is_verified": true,
+        "metadata": {
+          "tags": [
+            {
+              "meta": {
+                "tagIcon ": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "textColor": "#C163D4",
+                "tooltipAttribution": "https://www.openlabelsinitiative.org?utm_source=blockscout",
+                "tooltipAttributionIcon": "https://blockscout-icons.s3.us-east-1.amazonaws.com/OLI_tag_logo.svg",
+                "tooltipDescription": "Provided by OLI"
+              },
+              "name": "PoolManager",
+              "ordinal": 0,
+              "slug": "poolmanager",
+              "tagType": "name"
+            }
+          ]
+        },
+        "name": "PoolManager",
+        "private_tags": [],
+        "proxy_type": null,
+        "public_tags": [],
+        "reputation": "ok",
+        "watchlist_names": []
+      },
+      "token": {
+        "address_hash": "0x3d67aAEaf8a95F7Df9972261A39a65EA17e6632F",
+        "circulating_market_cap": null,
+        "circulating_supply": null,
+        "decimals": "18",
+        "exchange_rate": null,
+        "holders_count": "12",
+        "icon_url": null,
+        "name": "The Rangers",
+        "new_ui_multiplier": null,
+        "reputation": "ok",
+        "symbol": "Gloob",
+        "total_supply": "1000000000000000000000000000",
+        "type": "ERC-20",
+        "ui_multiplier": null,
+        "ui_multiplier_effective_at": null,
+        "volume_24h": null
+      },
+      "token_type": "ERC-20",
+      "total": {
+        "decimals": "18",
+        "ui_multiplier": null,
+        "value": "74439898542814102483327745"
+      },
+      "transaction_hash": "0x8d9721ad1921883a11296847a0bc574c8c8f50a51254c9047442c019441c39ce",
+      "type": "token_transfer"
+    }
+  ],
+  "next_page_params": {
+    "index": 26,
+    "block_number": 67732751
+  }
+}

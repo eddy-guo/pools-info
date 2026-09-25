@@ -309,6 +309,9 @@ export function parseRequest(input: string): ReadRequest {
         leaderboard,
         creators,
         group,
+        // History kinds share a wallet but never a page, a cursor or an
+        // in-flight read; other routes' scopes stay as they were.
+        ...(route === "history" ? [kind] : []),
       ]),
     )
     .digest("hex")
