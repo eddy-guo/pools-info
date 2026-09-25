@@ -117,11 +117,11 @@ An ERC-20 transfer between the wallet and the Uniswap v4 PoolManager
 swap in a catalog pool, of a token in the verified registry (`indexed_pools`,
 whose pools are admitted only after their id is recomputed from the pool key).
 The API reads the wallet's explorer transfer pages and keeps only those legs,
-deriving `side` from their direction. The first page of the 7d board's top wallet on 25 Sep 2026 was 10
-spoofed-token address-poisoning logs (a token named with invisible characters
-to pass for "ETH"), 8 NFT mints and 32 PoolManager legs, so the raw
-`kind=token-transfers` list is not a trade list, and telling its rows apart
-needs this chain's contract addresses.
+deriving `side` from their direction. The first page of the 7d board's top
+wallet on 25 Sep 2026 was 10 spoofed-token address-poisoning logs (a token
+named with invisible characters to pass for "ETH"), 8 NFT mints and 32
+PoolManager legs, so the raw `kind=token-transfers` list is not a trade list,
+and telling its rows apart needs this chain's contract addresses.
 
 - **No ETH amount.** For many trades the ETH is paid or received by a router
   or bot contract, not the wallet, so no wallet-level explorer feed carries
@@ -156,12 +156,13 @@ needs this chain's contract addresses.
 
 ## Pagination
 
-Every response reads exactly one explorer page of 50 transfers, so a page
-holds anywhere from 0 to 50 trades beside a non-null `nextCursor`: a wallet
-whose page is crowded with other transfers, or with trades in pools outside the
-registry, can answer an empty page that still has more behind it. Offer Show more whenever `nextCursor` is non-null, whatever
-the item count. Append by following `nextCursor` and never refetch a page
-already shown. Key rows on `transactionHash` and `logIndex`.
+Every response reads exactly one explorer page of 50 transfers, so a page holds
+anywhere from 0 to 50 trades beside a non-null `nextCursor`: a wallet whose
+page is crowded with other transfers, or with trades in pools outside the
+registry, can answer an empty page that still has more behind it. Offer Show
+more whenever `nextCursor` is non-null, whatever the item count. Append by
+following `nextCursor` and never refetch a page already shown. Key rows on
+`transactionHash` and `logIndex`.
 
 One explorer page answers in about 2 s: measured on 25 Sep 2026, 1.5-2.1 s
 from a workstation (Blockscout itself took 1.8-2.0 s per page) and 2.0-4.6 s
@@ -182,8 +183,8 @@ per second. An explorer page of transfers costs 30 credits.
 | a page already read within 10 minutes | 0 (cached)     | 0       |
 
 Each process may spend `BLOCKSCOUT_DAILY_CREDIT_CAP` (default 30,000) per day,
-which is 1,000 uncached wallet page loads or Show mores.
-Past that the route serves cached pages marked `stale` and otherwise answers
-503 `budget_exhausted` until UTC midnight. The cap keeps three process
-lifetimes a day inside the key's allowance. At 16:27 UTC on 25 Sep 2026 the key
-had 99,900 credits left, so the route was barely being called.
+which is 1,000 uncached wallet page loads or Show mores. Past that the route
+serves cached pages marked `stale` and otherwise answers 503 `budget_exhausted`
+until UTC midnight. The cap keeps three process lifetimes a day inside the
+key's allowance. At 16:27 UTC on 25 Sep 2026 the key had 99,900 credits left,
+so the route was barely being called.
