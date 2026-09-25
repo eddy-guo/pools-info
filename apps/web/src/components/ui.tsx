@@ -209,6 +209,7 @@ export function AddressChip({
   size = "small",
   avatarSize = "compact",
   badge,
+  external = false,
 }: {
   address: string;
   href: string;
@@ -216,7 +217,27 @@ export function AddressChip({
   size?: "small" | "large";
   avatarSize?: "compact" | "monogram";
   badge?: React.ReactNode;
+  /** `href` has no route in this app (an address this app never indexed, such
+      as an explorer-only trade's token): the identity opens the explorer
+      directly in a new tab, a plain anchor rather than the app's own router. */
+  external?: boolean;
 }) {
+  const identity = (
+    <>
+      <Avatar address={address} />
+      {size === "large" ? (
+        <span className="address-chip-lines">
+          <span className="address-chip-name">{shortAddress(address)}</span>
+          <span className="address-chip-meta">
+            <span className="mono">{shortAddress(address)}</span>
+            {badge}
+          </span>
+        </span>
+      ) : (
+        <span className="mono">{shortAddress(address)}</span>
+      )}
+    </>
+  );
   return (
     <span
       className="address-chip"
@@ -224,24 +245,29 @@ export function AddressChip({
       data-size={size === "large" ? "large" : undefined}
       data-avatar-size={avatarSize === "monogram" ? "monogram" : undefined}
     >
-      <Link className="address-chip-link" href={href} title={address}>
-        <Avatar address={address} />
-        {size === "large" ? (
-          <span className="address-chip-lines">
-            <span className="address-chip-name">{shortAddress(address)}</span>
-            <span className="address-chip-meta">
-              <span className="mono">{shortAddress(address)}</span>
-              {badge}
-            </span>
-          </span>
-        ) : (
-          <span className="mono">{shortAddress(address)}</span>
-        )}
-      </Link>
+      {external ? (
+        <a
+          className="address-chip-link"
+          href={href}
+          title={address}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {identity}
+        </a>
+      ) : (
+        <Link className="address-chip-link" href={href} title={address}>
+          {identity}
+        </Link>
+      )}
       {size !== "large" && badge}
       <span className="address-chip-actions">
         <CopyButton value={address} size={12} />
-        <ExplorerLink address={address} size={12} className="icon-button" />
+        {/* The identity link above already opens the explorer; a second,
+            identical icon beside it would be a redundant action. */}
+        {!external && (
+          <ExplorerLink address={address} size={12} className="icon-button" />
+        )}
       </span>
     </span>
   );

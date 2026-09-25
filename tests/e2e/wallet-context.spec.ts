@@ -89,14 +89,14 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
   await expect(comingSoon.locator("button, a")).toHaveCount(0);
   await expect(comingSoon).toHaveCSS("color", "rgb(154, 154, 164)");
-  // The export's tab counts, from the rows the read sent. No Trades tab:
-  // the read serves no per-wallet trade list, and the count that matters
-  // sits on the Trades stat tile.
+  // The export's tab counts, from the rows the read sent. Trades carries no
+  // count of its own: the explorer history's length is never the wallet's
+  // trade count, which stays on the Trades stat tile.
   await expect(main.getByRole("tab")).toHaveText([
     /^Positions\s*1$/,
+    /^Trades$/,
     /^Launches\s*0$/,
   ]);
-  await expect(main.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   // No separate "Positions by pool" heading or underlined tab row: the
   // counts above carry that information inside the panel head instead.
   await expect(

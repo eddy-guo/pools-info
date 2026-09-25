@@ -10,6 +10,10 @@ import {
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import {
+  useWalletTradeHistory,
+  REVEAL_STEP as TRADE_HISTORY_STEP,
+} from "@/lib/use-wallet-trade-history";
+import {
   Eth,
   Stat,
   Unavailable,
@@ -19,6 +23,7 @@ import {
   explorer,
 } from "./live-ui";
 import {
+  AddressChip,
   AddressLabel,
   Avatar,
   Change,
@@ -31,13 +36,14 @@ import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
-import { SHOW_MORE_STEP, ShowMore } from "./product-common";
+import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useQuery } from "./state";
 import { PnlCardModal } from "./pnl-card-modal";
 import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 const tabs = [
   { id: "positions", label: "Positions" },
+  { id: "trades", label: "Trades" },
   { id: "launches", label: "Launches" },
 ];
 /**
@@ -64,12 +70,38 @@ const CURVE_UNSERVED = "The PnL curve is not served for this wallet yet.";
  */
 function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
   if (!data) return null;
+  // The explorer history's own length is never the wallet's trade count (a
+  // page covers pools the ledger does not register), so this tab never
+  // carries one; the real count stays on the header's Trades stat tile.
+  if (id === "trades") return null;
   if (id !== "launches" && unindexed(data)) return null;
   if (id === "positions")
     return data.positionsTruncated ? null : data.positions.length;
   if (id === "launches")
     return data.launchesTruncated ? null : data.launches.length;
   return null;
+}
+/**
+ * A raw token amount and its decimals, in bigint arithmetic throughout: a
+ * float division would lose precision on a large raw integer, exactly what
+ * this figure must never do. Six significant fractional digits, truncated
+ * (never rounded past what the wallet actually holds) and stripped of
+ * trailing zeros, matching the six-significant-digit convention every other
+ * token quantity in this app already uses.
+ */
+function formatTokenRaw(raw: string, decimals: number | null): string | null {
+  if (decimals === null) return null;
+  const value = BigInt(raw);
+  const base = 10n ** BigInt(decimals);
+  const whole = value / base;
+  const frac = value % base;
+  const fracDigits = frac
+    .toString()
+    .padStart(decimals, "0")
+    .slice(0, 6)
+    .replace(/0+$/, "");
+  const wholeText = new Intl.NumberFormat("en-US").format(whole);
+  return fracDigits ? `${wholeText}.${fracDigits}` : wholeText;
 }
 /** A position's token quantity in whole tokens, or null where the read has none. */
 function holding(p: AnalyticsWalletResponse["positions"][number]) {
@@ -164,6 +196,25 @@ export function ProductWallet({ address }: { address: string }) {
     [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
   }, [data, shown]);
   const held = stillHeld(data);
+  const tradeHistory = useWalletTradeHistory(
+    address.toLowerCase(),
+    tab === "trades",
+  );
+  /* Reserved at the fixed step while pending, exactly like the positions
+     table's own `shown` reservation: a wallet with fewer trades than the
+     step blank-fills the shortfall (RowFiller) rather than shrinking the
+     region once the read resolves, so the skeleton-to-content transition
+     moves nothing. Growing past the step is a "Load more" click, which
+     Chrome never scores against CLS. */
+  const tradeRowCount = reservedRowCount(
+    Math.max(TRADE_HISTORY_STEP, tradeHistory.trades.length),
+    tradeHistory.failed,
+  );
+  const tradeRows = Array.from(
+    { length: tradeRowCount },
+    (_, index) => tradeHistory.trades[index],
+  );
+  const tradesLoaded = !tradeHistory.loading && !tradeHistory.failed;
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -559,6 +610,248 @@ export function ProductWallet({ address }: { address: string }) {
                     {data?.positionsTruncated && (
                       <p className="panel-footnote">
                         Showing the first {data.positions.length} positions.
+                      </p>
+                    )}
+                  </>
+                )}
+                {tab === "trades" && (
+                  <>
+                    <div className="wallet-positions-context">
+                      <span>Updated</span>
+                      <strong data-pending={!tradeHistory.fetchedAt}>
+                        {tradeHistory.fetchedAt == null ? (
+                          "Pending"
+                        ) : (
+                          <Fragment key={tradeHistory.fetchedAt}>
+                            <time
+                              dateTime={new Date(
+                                tradeHistory.fetchedAt * 1000,
+                              ).toISOString()}
+                              title={utc(tradeHistory.fetchedAt)}
+                            >
+                              {since(tradeHistory.fetchedAt, renderedAt)}
+                            </time>{" "}
+                            ago
+                          </Fragment>
+                        )}
+                      </strong>
+                    </div>
+                    <div
+                      className="table-region"
+                      data-empty={tradesLoaded && !tradeHistory.trades.length}
+                    >
+                      <div
+                        className="table-scroll wallet-list-region"
+                        data-failed={tradeHistory.failed}
+                        aria-busy={tradeHistory.loading}
+                        data-stale-rows={false}
+                      >
+                        <table className="data-table wallet-trades-table">
+                          <colgroup>
+                            <col />
+                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "90px" }} />
+                            <col style={{ width: "170px" }} />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>Token</th>
+                              <th>Amount</th>
+                              <th>Time (UTC)</th>
+                              <th>Side</th>
+                              <th>Transaction</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tradeRows.map((t, index) => (
+                              <tr
+                                key={index}
+                                aria-hidden={!t}
+                                data-row={t ? "resolved" : "reserved"}
+                                data-row-index={index}
+                              >
+                                <td data-pending={!t && tradeHistory.loading}>
+                                  {t ? (
+                                    <AddressChip
+                                      address={t.token.address}
+                                      href={`${explorer}/address/${t.token.address}`}
+                                      external
+                                    />
+                                  ) : (
+                                    <RowFiller blank={tradesLoaded} />
+                                  )}
+                                </td>
+                                <td data-pending={!t && tradeHistory.loading}>
+                                  {t ? (
+                                    <span className="number">
+                                      {formatTokenRaw(
+                                        t.tokenRaw,
+                                        t.token.decimals,
+                                      ) === null ? (
+                                        <Unavailable />
+                                      ) : (
+                                        `${formatTokenRaw(t.tokenRaw, t.token.decimals)} ${t.token.symbol ?? ""}`
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <RowFiller blank={tradesLoaded} />
+                                  )}
+                                </td>
+                                <td data-pending={!t && tradeHistory.loading}>
+                                  {t ? (
+                                    t.timestamp == null ? (
+                                      <Unavailable />
+                                    ) : (
+                                      utc(t.timestamp)
+                                    )
+                                  ) : (
+                                    <RowFiller blank={tradesLoaded} />
+                                  )}
+                                </td>
+                                <td data-pending={!t && tradeHistory.loading}>
+                                  {t ? (
+                                    <span className="wallet-trade-side">
+                                      {t.side === "buy" ? "Buy" : "Sell"}
+                                    </span>
+                                  ) : (
+                                    <RowFiller blank={tradesLoaded} />
+                                  )}
+                                </td>
+                                <td data-pending={!t && tradeHistory.loading}>
+                                  {t ? (
+                                    <a
+                                      href={`${explorer}/tx/${t.transactionHash}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {shortAddress(t.transactionHash)} ↗
+                                    </a>
+                                  ) : (
+                                    <RowFiller blank={tradesLoaded} />
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div
+                        className="mobile-wallet-rows"
+                        aria-busy={tradeHistory.loading}
+                        data-stale-rows={false}
+                      >
+                        {tradeRows.map((t, index) => (
+                          <div
+                            className="mobile-wallet-row"
+                            key={index}
+                            aria-hidden={!t}
+                            data-row={t ? "resolved" : "reserved"}
+                            data-row-index={index}
+                          >
+                            {t ? (
+                              <Fragment key="resolved">
+                                <div className="mobile-wallet-row-top">
+                                  <AddressChip
+                                    address={t.token.address}
+                                    href={`${explorer}/address/${t.token.address}`}
+                                    external
+                                  />
+                                  <span className="wallet-trade-side">
+                                    {t.side === "buy" ? "Buy" : "Sell"}
+                                  </span>
+                                </div>
+                                <div className="mobile-wallet-row-stats">
+                                  {formatTokenRaw(
+                                    t.tokenRaw,
+                                    t.token.decimals,
+                                  ) === null ? (
+                                    <Unavailable />
+                                  ) : (
+                                    `${formatTokenRaw(t.tokenRaw, t.token.decimals)} ${t.token.symbol ?? ""}`
+                                  )}{" "}
+                                  ·{" "}
+                                  {t.timestamp == null ? (
+                                    <Unavailable />
+                                  ) : (
+                                    utc(t.timestamp)
+                                  )}{" "}
+                                  ·{" "}
+                                  <a
+                                    href={`${explorer}/tx/${t.transactionHash}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {shortAddress(t.transactionHash)} ↗
+                                  </a>
+                                </div>
+                              </Fragment>
+                            ) : (
+                              <Fragment key="pending">
+                                <div className="mobile-wallet-row-top">
+                                  <span data-pending="true">
+                                    {tradesLoaded ? " " : "Trade pending"}
+                                  </span>
+                                </div>
+                                <div
+                                  className="mobile-wallet-row-stats"
+                                  data-pending="true"
+                                >
+                                  {tradesLoaded ? " " : "Pending"}
+                                </div>
+                              </Fragment>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {tradesLoaded && !tradeHistory.trades.length && (
+                        <EmptyState
+                          title="No trade history"
+                          description="This wallet has no explorer trade history yet."
+                        />
+                      )}
+                    </div>
+                    {tradeHistory.failed && (
+                      <UnavailableState
+                        subject="Trade history"
+                        onRetry={
+                          tradeHistory.canRetry ? tradeHistory.retry : undefined
+                        }
+                      />
+                    )}
+                    {/* The wrapper always renders once the tab is reachable,
+                        reserving the button's row from first paint the same
+                        way ShowMore does elsewhere: this list never learns a
+                        total, so whether more exists is only known after the
+                        first page resolves, and the button must not pop the
+                        row in once it is. */}
+                    {!tradeHistory.failed && (
+                      <div className="pagination">
+                        <span className="pagination-count">
+                          {tradeHistory.moreFailed
+                            ? "Some trades could not be loaded."
+                            : " "}
+                        </span>
+                        {(tradeHistory.loading || tradeHistory.hasMore) && (
+                          <button
+                            type="button"
+                            className="button secondary"
+                            disabled={
+                              tradeHistory.loading || tradeHistory.loadingMore
+                            }
+                            onClick={tradeHistory.loadMore}
+                          >
+                            {tradeHistory.moreFailed
+                              ? "Try again"
+                              : `Load ${TRADE_HISTORY_STEP} more`}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!tradeHistory.failed && (
+                      <p className="panel-footnote">
+                        Explorer history for display only; not accounting or
+                        PnL evidence.
                       </p>
                     )}
                   </>

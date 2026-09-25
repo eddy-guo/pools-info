@@ -270,7 +270,11 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions",
   );
-  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
+  // The Trades tab reads a separate, on-demand endpoint and never carries a
+  // count of its own (its length is never the wallet's real trade count).
+  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText(
+    "Trades",
+  );
   // The launches are real: they come from the catalog, not the accounting.
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
@@ -335,7 +339,9 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
   await expect(tabs.getByRole("tab", { name: "Positions" })).toHaveText(
     "Positions0",
   );
-  await expect(tabs.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
+  await expect(tabs.getByRole("tab", { name: "Trades" })).toHaveText(
+    "Trades",
+  );
   await expect(tabs.getByRole("tab", { name: "Launches" })).toHaveText(
     "Launches129",
   );
@@ -380,7 +386,7 @@ const servedPositions = Array.from({ length: 60 }, (_, i) => ({
   },
 }));
 
-test("a served wallet whose curve is not sent says so, with no Trades tab and its positions in pages", async ({
+test("a served wallet whose curve is not sent says so, with an uncounted Trades tab and its positions in pages", async ({
   page,
 }, testInfo) => {
   const { viewport } = surface(testInfo);
@@ -412,14 +418,14 @@ test("a served wallet whose curve is not sent says so, with no Trades tab and it
   });
 
   await page.goto(`/wallet/${wallet}/?window=All`);
-  // The tile keeps the served count; the strip has no Trades tab to
-  // contradict it.
+  // The tile keeps the served count; the Trades tab carries no count of its
+  // own to contradict it (its explorer history reads from a separate,
+  // on-demand endpoint this route's mock does not touch).
   await expect(tile(page, "Trades")).toHaveText("594");
   await expect(tile(page, "Realized PnL")).toHaveText("+198.89 ETH");
-  await expect(page.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
   await expect(
     page.getByRole("tablist", { name: "Wallet activity" }).getByRole("tab"),
-  ).toHaveText(["Positions60", "Launches129"]);
+  ).toHaveText(["Positions60", "Trades", "Launches129"]);
   // The curve panel says the curve is not served, never that there is no
   // realized PnL under a tile that shows some; the readout keeps its dash.
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(

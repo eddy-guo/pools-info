@@ -1,6 +1,7 @@
 import { parseFollowingWallets } from "@pools/core";
 const wallet = /^0x[0-9a-f]{40}$/i;
 const pool = /^0x[0-9a-f]{64}$/i;
+const historyCursor = /^[A-Za-z0-9_-]{1,2048}$/;
 export function productRequest(path: string[], input: URLSearchParams) {
   const endpoint = path.join("/");
   const tradeShare =
@@ -11,12 +12,21 @@ export function productRequest(path: string[], input: URLSearchParams) {
     /^(0|[1-9]\d{0,9})$/.test(path[3]) &&
     Number(path[3]) <= 2147483647;
   const ethPrice = endpoint === "prices/eth-usd";
+  // The explorer-backed trade history, kept to its one supported kind: this
+  // proxy never forwards `transactions` or `token-transfers`, the display-only
+  // read the wallet page dropped when its Trades tab was cut.
+  const walletTradeHistory =
+    path.length === 3 &&
+    path[0] === "wallets" &&
+    wallet.test(path[1]) &&
+    path[2] === "history";
   if (!(
     ["explore", "leaderboard", "search", "following", "creators"].includes(
       endpoint,
     ) ||
     tradeShare ||
     ethPrice ||
+    walletTradeHistory ||
     (path.length === 2 &&
       ((path[0] === "wallets" && wallet.test(path[1])) ||
         (path[0] === "pools" && pool.test(path[1]))))
@@ -25,19 +35,21 @@ export function productRequest(path: string[], input: URLSearchParams) {
   const output = new URLSearchParams();
   const allowed = tradeShare
     ? ["wallet"]
-    : endpoint === "following"
-      ? ["wallets", "limit"]
-      : endpoint === "explore"
-        ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
-        : endpoint === "leaderboard"
-          ? ["window", "minTrades", "metric", "limit", "offset"]
-          : endpoint === "creators"
-            ? ["window", "sort", "direction", "limit", "offset"]
-            : endpoint === "search"
-              ? ["q", "group"]
-              : path[0] === "wallets" || path[0] === "pools"
-                ? ["window"]
-                : [];
+    : walletTradeHistory
+      ? ["kind", "cursor"]
+      : endpoint === "following"
+        ? ["wallets", "limit"]
+        : endpoint === "explore"
+          ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
+          : endpoint === "leaderboard"
+            ? ["window", "minTrades", "metric", "limit", "offset"]
+            : endpoint === "creators"
+              ? ["window", "sort", "direction", "limit", "offset"]
+              : endpoint === "search"
+                ? ["q", "group"]
+                : path[0] === "wallets" || path[0] === "pools"
+                  ? ["window"]
+                  : [];
   for (const [key, value] of input) {
     if (!allowed.includes(key) || input.getAll(key).length !== 1)
       throw Error("Invalid product query");
@@ -91,6 +103,11 @@ export function productRequest(path: string[], input: URLSearchParams) {
       throw Error("Invalid watchlist");
     if (endpoint === "following" && key === "limit" && Number(value) > 50)
       throw Error("Invalid following limit");
+    // Only the trades kind is served here: the transactions and token-transfers
+    // kinds this route also supports upstream have no page on the site.
+    if (key === "kind" && value !== "trades") throw Error("Invalid history kind");
+    if (key === "cursor" && !historyCursor.test(value))
+      throw Error("Invalid history cursor");
     if (key === "wallets") {
       output.set(key, parseFollowingWallets(value).join(","));
       continue;
@@ -109,5 +126,7 @@ export function productRequest(path: string[], input: URLSearchParams) {
   }
   if (tradeShare && !output.has("wallet"))
     throw Error("A trade wallet is required");
+  if (walletTradeHistory && output.get("kind") !== "trades")
+    throw Error("A history kind is required");
   return { endpoint: endpoint.toLowerCase(), params: output };
 }

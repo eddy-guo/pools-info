@@ -4,6 +4,10 @@ import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
 import {
+  validateWalletTradeHistoryResponse,
+  type WalletTradeHistoryResponse,
+} from "./wallet-trade-history-response";
+import {
   buildAnalyticsModel,
   exploreAnalytics,
   leaderboardAnalytics,
@@ -357,6 +361,59 @@ export async function readEthPrice(
     throw new EthPriceUnavailableError(30);
   }
   return body;
+}
+/**
+ * The wallet's explorer-backed trade history (`wallets/:address/history
+ * ?kind=trades`): on demand only, like the ETH/USD rate above and unlike
+ * every other product read, because it is Blockscout PRO data that has no
+ * committed dataset to fall back to and no window to keep it consistent
+ * with a snapshot. A fixture deployment answers it unavailable exactly as
+ * production does when it has no read API configured, and the browser
+ * suites exercise the tab's real states by intercepting this route's own
+ * fetch (`tests/e2e/wallet-trades.spec.ts`, the pattern
+ * `wallet-context.spec.ts` already uses) rather than by baking Blockscout
+ * rows into the preloaded catalog.
+ */
+export async function readWalletTradeHistory(
+  path: string[],
+  params: URLSearchParams,
+): Promise<Delivered<WalletTradeHistoryResponse>> {
+  const checked = productRequest(path, params);
+  let origin: URL | null = null;
+  try {
+    origin = indexerOrigin();
+  } catch {
+    /* A misconfigured origin is as unusable as an absent one. */
+  }
+  if (!origin) throw new ProductUnavailableError();
+  let response: Response;
+  try {
+    const url = new URL(`/v1/${checked.endpoint}`, origin);
+    url.search = checked.params.toString();
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+      redirect: "error",
+    });
+  } catch {
+    throw new ProductUnavailableError();
+  }
+  if (response.status === 404) throw Error("Outside available coverage");
+  if (!response.ok) {
+    const seconds = Number(response.headers.get("retry-after"));
+    throw new ProductUnavailableError(
+      Number.isSafeInteger(seconds) && seconds > 0
+        ? String(Math.min(seconds, 86400))
+        : "30",
+    );
+  }
+  const data = await response.json().catch(() => null);
+  try {
+    validateWalletTradeHistoryResponse(data, path[1]);
+  } catch {
+    throw new ProductUnavailableError();
+  }
+  return { ...(data as WalletTradeHistoryResponse), delivery: { source: "indexer" } };
 }
 /**
  * One product read, from the configured read API and nowhere else.

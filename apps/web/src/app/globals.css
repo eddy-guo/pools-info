@@ -5036,7 +5036,8 @@ button.icon-button:disabled {
 .table-region[data-empty="true"] tbody,
 .table-region[data-empty="true"] .mobile-pool,
 .table-region[data-empty="true"] .mobile-launch,
-.table-region[data-empty="true"] .mobile-position {
+.table-region[data-empty="true"] .mobile-position,
+.table-region[data-empty="true"] .mobile-wallet-row {
   visibility: hidden;
 }
 /* Collapsed borders are painted by the table rather than the row group, so
@@ -5619,7 +5620,11 @@ button.icon-button:disabled {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.wallet-list-region {
+/* Positions and launches never fail on their own (the whole page does), so
+   this reservation stays unconditional for them; the Trades tab reads from a
+   separate, independently-failing endpoint and sets data-failed to collapse
+   it, per the same reservedRowCount contract PR #143 gave the other lists. */
+.wallet-list-region:not([data-failed="true"]) {
   min-height: calc(25 * 62px + 44px);
 }
 .wallet-list-region .data-table tbody tr {
@@ -5652,12 +5657,29 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.wallet-trades-table {
+  min-width: 780px;
+}
+.wallet-trades-table th:nth-child(2),
+.wallet-trades-table td:nth-child(2) {
+  text-align: right;
+}
+.wallet-trades-table td:nth-child(2) .number {
+  min-width: 100%;
+}
 @container wallet-activity (width < 780px) {
   .wallet-positions-table {
     min-width: 630px;
   }
   .wallet-positions-table col:nth-child(3),
   .wallet-positions-table :is(th, td):nth-child(3) {
+    display: none;
+  }
+  .wallet-trades-table {
+    min-width: 630px;
+  }
+  .wallet-trades-table col:nth-child(3),
+  .wallet-trades-table :is(th, td):nth-child(3) {
     display: none;
   }
 }
@@ -5760,6 +5782,14 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Buy/sell is not a PnL signal - it never borrows the app's positive/negative
+   colours, which belong to actual realized/unrealized figures elsewhere on
+   this page. Both sides read in the same neutral ink; the word itself is the
+   only distinction. */
+.wallet-trade-side {
+  color: var(--color-text-2);
+  text-transform: capitalize;
 }
 .wallet-top-pools {
   height: calc(5 * 62px);

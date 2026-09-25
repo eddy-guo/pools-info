@@ -65,17 +65,20 @@ test("the wallet's launches tab shows no unavailable marks in a reserved row", a
   );
 });
 
-// The Trades tab was cut with the ledger's wallet route, which serves no
-// per-wallet trade list: a bookmark to it opens the Positions tab, as any
-// unknown tab always did, with no error.
-test("a bookmarked trades tab falls to the positions tab", async ({ page }) => {
+// The Trades tab reads the explorer's own history endpoint, on demand only
+// (see readWalletTradeHistory): with no read API configured, exactly the e2e
+// suite's own setup, it answers unavailable rather than falling back to
+// another tab or a stored substitute. tests/e2e/wallet-trades.spec.ts covers
+// its loaded, empty and retry states behind route interception.
+test("a bookmarked trades tab opens the trades tab", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await settled(page, `/wallet/${wallet}/?window=All&tab=trades`);
+  await page.goto(`/wallet/${wallet}/?window=All&tab=trades`);
   await expect(page.getByRole("tab", { selected: true })).toHaveText(
-    /^Positions/,
+    /^Trades/,
   );
-  await expect(page.getByRole("tab", { name: /^Trades/ })).toHaveCount(0);
-  expect(await rows(page, "resolved").count()).toBeGreaterThan(0);
+  await expect(
+    page.getByText("Trade history unavailable", { exact: true }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

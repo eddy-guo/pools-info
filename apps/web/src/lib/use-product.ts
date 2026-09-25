@@ -19,7 +19,7 @@ const resource = (path: string) => path.split("?")[0];
 /** Request the trailing-slash form the app serves, rather than paying its 308. */
 const productUrl = (path: string) =>
   `/api/product/${resource(path)}/${path.slice(resource(path).length)}`;
-function retryAfterMilliseconds(value: string | null, now = Date.now()) {
+export function retryAfterMilliseconds(value: string | null, now = Date.now()) {
   if (value === null) return null;
   if (/^\d+$/.test(value)) {
     const seconds = Number(value);
