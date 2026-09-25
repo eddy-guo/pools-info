@@ -11,7 +11,6 @@ import { readCreators } from "./creators-read";
 import { readSearch } from "./search-read";
 import { assertCatalogIdentity, catalogCte } from "./catalog-read";
 import { readLiveTrades } from "./live-read";
-import { readFollowing } from "./following-read";
 import { readTradeShare } from "./trade-share-read";
 import { poolAnalytics } from "@pools/core";
 import { loadAnalyticsModel } from "./analytics-read";
@@ -40,6 +39,11 @@ export interface Reader {
   /** The verified registry's launch tokens past a pool ref, for the explorer
    * trade list's token check (`token-registry.ts`). */
   registeredTokens?(afterRef: number): Promise<RegistryToken[]>;
+  /** Each wallet's newest trading activity in the ledger, unix seconds, for
+   * Following's refresh gate (`following-read.ts`); null without a ledger. */
+  walletActivity?(
+    wallets: readonly string[],
+  ): Promise<Map<string, number> | null>;
   /** Checks before HTTP caches, and again before publishing an in-flight read. */
   assertReady?(expected?: number): number;
   close(): Promise<void>;
@@ -196,8 +200,6 @@ export async function readData(
   }
   if (request.route === "live-trades")
     return readLiveTrades(query, request.poolId);
-  if (request.route === "following")
-    return readFollowing(query, request.wallets, request.limit);
   if (request.route === "trade-share")
     return readTradeShare(query, {
       poolId: request.poolId!,
@@ -524,6 +526,22 @@ export function createReader(
       void identity.catch(() => warmth.invalidate("database_identity_failed"));
     });
   warmth?.start();
+  /** One statement outside a product transaction. It waits for a warm,
+   * verified database like any product read. */
+  async function single(sql: string, values: unknown[]) {
+    const version = warmth?.assertReady();
+    const client = await pool.connect().catch((error) => {
+      warmth?.invalidate("database_connect_failed");
+      throw error;
+    });
+    try {
+      await initialized.get(client);
+      warmth?.assertReady(version);
+      return await client.query(sql, values);
+    } finally {
+      client.release();
+    }
+  }
   return {
     assertReady: (expected) => warmth?.assertReady(expected) ?? 0,
     async read(request) {
@@ -562,26 +580,34 @@ export function createReader(
       }
     },
     async registeredTokens(afterRef) {
-      // A product read like any other: it waits for a warm, verified database.
-      const version = warmth?.assertReady();
-      const client = await pool.connect().catch((error) => {
-        warmth?.invalidate("database_connect_failed");
-        throw error;
-      });
-      try {
-        await initialized.get(client);
-        warmth?.assertReady(version);
-        const result = await client.query(
-          "SELECT pool_ref, token FROM indexed_pools WHERE chain_id=4663 AND pool_ref>$1 ORDER BY pool_ref",
-          [afterRef],
-        );
-        return result.rows.map((row) => ({
-          ref: Number(row.pool_ref),
-          token: row.token as string,
-        }));
-      } finally {
-        client.release();
-      }
+      const result = await single(
+        "SELECT pool_ref, pool_id, token FROM indexed_pools WHERE chain_id=4663 AND pool_ref>$1 ORDER BY pool_ref",
+        [afterRef],
+      );
+      return result.rows.map((row) => ({
+        ref: Number(row.pool_ref),
+        poolId: row.pool_id as string,
+        token: row.token as string,
+      }));
+    },
+    async walletActivity(wallets) {
+      if (marketSource !== "ledger") return null;
+      // The All window's row: one primary-key probe per wallet, refreshed
+      // with the windows after each tip cycle.
+      const result = await single(
+        `SELECT '0x'||encode(w.address,'hex') AS wallet, ww.last_timestamp
+        FROM agg_wallets w JOIN agg_wallet_windows ww
+          ON ww.chain_id=4663 AND ww."window"='All' AND ww.wallet_ref=w.wallet_ref
+        WHERE w.address=ANY(ARRAY(SELECT decode(substr(a,3),'hex') FROM unnest($1::text[]) a))
+          AND ww.last_timestamp IS NOT NULL`,
+        [wallets],
+      );
+      return new Map(
+        result.rows.map((row) => [
+          row.wallet as string,
+          chainNumber(row.last_timestamp)!,
+        ]),
+      );
     },
     async close() {
       await warmth?.close();

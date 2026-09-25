@@ -8,6 +8,7 @@ import {
 } from "./token-image-store";
 import { createTokenRegistry } from "./token-registry";
 import { createWalletHistoryFromEnv } from "./wallet-history";
+import { createFollowing } from "./following-read";
 
 const port = Number(process.env.PORT ?? "3102");
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
@@ -21,12 +22,20 @@ const reader = createReader(undefined, undefined, {
 const images = createTokenImageService(createTokenImageStore(), {
   settings: tokenImageSettings(),
 });
+// One registry and one explorer cache serve the wallet page's trades and
+// Following, so a wallet read by either is not paid for twice.
+const registry = createTokenRegistry((afterRef) =>
+  reader.registeredTokens!(afterRef),
+);
+const history = createWalletHistoryFromEnv(process.env, registry);
 const server = createApi(reader, {
   images,
-  history: createWalletHistoryFromEnv(
-    process.env,
-    createTokenRegistry((afterRef) => reader.registeredTokens!(afterRef)),
-  ),
+  history,
+  following: createFollowing({
+    history,
+    registry,
+    activity: (wallets) => reader.walletActivity!(wallets),
+  }),
 });
 server.listen(port, "0.0.0.0", () =>
   process.stdout.write(

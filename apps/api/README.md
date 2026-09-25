@@ -543,6 +543,13 @@ whenever the explorer or the budget cannot answer, otherwise the route returns
 and coalescing apply, the key never appears in any response or log line, and
 the route makes no chain RPC call.
 
+## Following
+
+`GET /v1/following` merges followed wallets' explorer trades. See
+`docs/FOLLOWING-AND-WATCHLISTS.md` for its request, response, coverage and
+refresh contract, and `docs/WALLET-TRADE-HISTORY.md` for shared explorer
+credit arithmetic.
+
 ## ETH/USD spot price
 
 `GET /v1/prices/eth-usd` serves one number for the frontend's unit toggle and

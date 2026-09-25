@@ -433,6 +433,33 @@ test(
     });
     assert.ok(await refreshLedgerWindows(db));
 
+    // Following's refresh gate reads a wallet's newest activity from its All
+    // window row, the header's own `last`; a wallet the ledger never saw is
+    // absent, and a deployment on the broad source has no signal at all.
+    assert.equal(await readers.broad.walletActivity!([W[1]]), null);
+    const activity = await readers.ledger.walletActivity!([
+      W[1],
+      W[3],
+      wallet(99),
+    ]);
+    // W[3]'s All row has no timed trade, so like an unseen wallet it gives
+    // no signal rather than a zero.
+    assert.equal((await profile(W[3], "All")).wallet!.last, null);
+    assert.deepEqual(
+      activity,
+      new Map([[W[1], (await profile(W[1], "All")).wallet!.last]]),
+    );
+    assert.ok(activity!.get(W[1])! > 0);
+    // The registry the explorer's trades are checked against names each
+    // token's pool.
+    assert.deepEqual(
+      (await readers.ledger.registeredTokens!(0)).map((r) => [
+        r.poolId,
+        r.token,
+      ]),
+      [pools.P, pools.Q, pools.R].map((p) => [p.id, p.token]),
+    );
+
     // The response's fields are the accounting reader's, field for field,
     // on the profile, its summary and each position.
     const day = await profile(W[1], "24h");

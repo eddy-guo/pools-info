@@ -5,8 +5,8 @@ import { createTokenRegistry, type RegistryToken } from "./token-registry";
 test("the registry loads once, then only newer refs, and reloads in full to drop removed pools", async () => {
   let now = 1_000_000;
   let table: RegistryToken[] = [
-    { ref: 1, token: "0xa" },
-    { ref: 2, token: "0xb" },
+    { ref: 1, poolId: "0xpa", token: "0xa" },
+    { ref: 2, poolId: "0xpb", token: "0xb" },
   ];
   const loads: number[] = [];
   const registry = createTokenRegistry(
@@ -18,7 +18,7 @@ test("the registry loads once, then only newer refs, and reloads in full to drop
   );
   assert.deepEqual([...(await registry.current())], ["0xa", "0xb"]);
   // Within the refresh interval the set is served from memory.
-  table.push({ ref: 3, token: "0xc" });
+  table.push({ ref: 3, poolId: "0xpc", token: "0xc" });
   now += 29000;
   assert.equal((await registry.current()).has("0xc"), false);
   assert.deepEqual(loads, [0]);
@@ -44,7 +44,7 @@ test("concurrent callers share one load, a failed refresh keeps the last set, an
       calls++;
       if (fail) throw Error("database_unavailable");
       await new Promise<void>((resolve) => (release = resolve));
-      return [{ ref: 1, token: "0xa" }];
+      return [{ ref: 1, poolId: "0xpa", token: "0xa" }];
     },
     { now: () => now },
   );
@@ -72,4 +72,22 @@ test("concurrent callers share one load, a failed refresh keeps the last set, an
     throw Error("database_unavailable");
   });
   await assert.rejects(cold.current(), /database_unavailable/);
+});
+
+test("a token with multiple pools stays ambiguous through later incremental rows", async () => {
+  let now = 0;
+  const rows: RegistryToken[] = [
+    { ref: 1, poolId: "0xpa", token: "0xa" },
+    { ref: 2, poolId: "0xpb", token: "0xa" },
+  ];
+  const registry = createTokenRegistry(
+    async (afterRef) => rows.filter((row) => row.ref > afterRef),
+    { now: () => now },
+  );
+  await registry.current();
+  assert.equal(registry.poolOf("0xa"), null);
+  rows.push({ ref: 3, poolId: "0xpc", token: "0xa" });
+  now += 30000;
+  await registry.current();
+  assert.equal(registry.poolOf("0xa"), null);
 });

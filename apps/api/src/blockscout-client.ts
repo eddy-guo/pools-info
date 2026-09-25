@@ -136,7 +136,7 @@ export function createCreditBudget({
       spent = 0;
     }
   }
-  function assertAvailable(cost: number) {
+  function assertAvailable(cost: number, reserve = 0) {
     roll();
     const t = now();
     if (upstreamBlockedUntil > t)
@@ -144,13 +144,13 @@ export function createCreditBudget({
         "budget_exhausted",
         Math.ceil((upstreamBlockedUntil - t) / 1000),
       );
-    if (spent + cost > dailyCap)
+    if (spent + cost + reserve > dailyCap)
       throw new BlockscoutError("budget_exhausted", secondsToUtcMidnight(t));
   }
   return {
     assertAvailable,
-    spend(cost: number) {
-      assertAvailable(cost);
+    spend(cost: number, reserve = 0) {
+      assertAvailable(cost, reserve);
       spent += cost;
     },
     /** The header counts every process using the key, not only this one. */
@@ -323,6 +323,7 @@ export interface BlockscoutClient {
     kind: K,
     wallet: string,
     page: PageParams | null,
+    reserveShare?: number,
   ): Promise<BlockscoutPage<K>>;
   budget: ReturnType<typeof createCreditBudget>;
 }
@@ -371,12 +372,13 @@ export function createBlockscoutClient({
   }
   return {
     budget,
-    async readPage(kind, wallet, page) {
+    async readPage(kind, wallet, page, reserveShare = 0) {
       if (!addressHash.test(wallet)) throw Error("Invalid wallet");
       const cost = creditCost[kind];
-      budget.assertAvailable(cost);
+      const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
+      budget.assertAvailable(cost, reserve);
       await limiter.acquire();
-      budget.spend(cost);
+      budget.spend(cost, reserve);
       const address = wallet.toLowerCase();
       const url = new URL(
         `${baseUrl.replace(/\/+$/, "")}/addresses/${address}/${upstream[kind].path}`,

@@ -4,6 +4,7 @@ import type { Reader } from "./reader";
 import { respondTokenImage, type TokenImageService } from "./token-image-store";
 import { createWalletHistory, type WalletHistory } from "./wallet-history";
 import { createEthPriceService, type EthPriceService } from "./eth-price";
+import type { Following } from "./following-read";
 
 /** Small per-instance limits. We deliberately do not trust forwarded IP headers
  * or keep visitor/account records. Railway may add an edge limit separately. */
@@ -17,6 +18,7 @@ export function createApi(
     maxImagesPerMinute = 1200,
     history = createWalletHistory({ client: null }) as WalletHistory,
     ethPrice = createEthPriceService() as EthPriceService,
+    following = null as Following | null,
   } = {},
 ) {
   const cache = new Map<
@@ -34,6 +36,14 @@ export function createApi(
     cache.delete(key);
   }
   const pending = new Map<string, Promise<string>>();
+  function readFollowing(wallets: string[], limit: number) {
+    if (!following)
+      throw new RequestError(503, "wallet_history_unavailable", {
+        reason: "not_configured",
+        retryAfter: 3600,
+      });
+    return following.read(wallets, limit);
+  }
   /** Per-minute budget; returns the seconds until the window resets when spent. */
   function limiter(max: number) {
     let windowStart = now(),
@@ -139,7 +149,9 @@ export function createApi(
                     page: request.page,
                     scope: request.scope,
                   })
-                : await reader.read(request),
+                : request.route === "following"
+                  ? await readFollowing(request.wallets, request.limit)
+                  : await reader.read(request),
             );
             const bytes = Buffer.byteLength(body);
             if (databaseRead) reader.assertReady?.(version);

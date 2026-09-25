@@ -9,22 +9,19 @@ import {
   getStream,
   rewind,
 } from "../../../packages/db/src/index";
-import type {
-  FollowingActivityResponse,
-  TradeShareResponse,
-} from "@pools/core";
+import type { TradeShareResponse } from "@pools/core";
 import { readData } from "./reader";
 import { parseRequest } from "./request";
 
 const word = (n: number) => `0x${n.toString(16).padStart(64, "0")}`;
 const address = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 test(
-  "following SQL uses verified attribution, exact amounts, bounded ordering and canonical source removal",
+  "trade share SQL uses verified attribution, exact amounts and canonical source removal",
   { skip: !process.env.TEST_DATABASE_URL },
   async (t) => {
     const db = createClient(process.env.TEST_DATABASE_URL!);
     await db.connect();
-    const schema = `following_${randomUUID().replaceAll("-", "")}`;
+    const schema = `trade_share_${randomUUID().replaceAll("-", "")}`;
     await db.query(`CREATE SCHEMA "${schema}"`);
     await db.query(`SET search_path TO "${schema}"`);
     t.after(async () => {
@@ -99,16 +96,8 @@ test(
       );
     }
     for (let n = 0; n < 55; n++) await trade(n, address(n % 2 ? 11 : 12));
-    await trade(56, address(11));
-    await trade(57, address(12));
-    // Equal timestamps/blocks/log indexes still have deterministic hash order.
-    await db.query(
-      "UPDATE analytics_accounting_trades SET timestamp=254,block_number=74,log_index=56 WHERE transaction_hash=ANY($1::text[])",
-      [[word(1056), word(1057)]],
-    );
-    await trade(60, address(13)); // verified but not followed
     await trade(61, address(14)); // attributed, but position has unknown basis
-    await trade(62, address(11), false); // followed wallet, failed execution audit
+    await trade(62, address(11), false); // attributed wallet, failed execution audit
     await trade(63, null, false); // initiator-only swap: no proven beneficiary
     await db.query(
       "INSERT INTO indexed_events(chain_id,stream_key,batch_end,tx_hash,log_index,block_number,block_hash,timestamp,kind,pool_id,token,transaction_sender,payload) VALUES(4663,'discovery:v1',199,$1,63,83,$2,263,'swap',$3,$4,$5,'{}')",
@@ -119,39 +108,8 @@ test(
       calls++;
       return db.query(sql, values);
     };
-    const read = async (suffix = "") =>
-      readData(
-        query,
-        parseRequest(
-          `/v1/following?wallets=${address(11)},${address(12)},${address(14)}${suffix}`,
-        ),
-      ) as Promise<FollowingActivityResponse>;
-    let response = await read("&limit=3");
-    assert.equal(calls, 1);
-    assert.equal(response.hasMore, true);
-    assert.equal(response.items.length, 3);
-    assert.deepEqual(
-      response.items.map((row) => row.txHash),
-      [word(1057), word(1056), word(1054)],
-    );
-    assert.equal(response.items[0].ethWei, exact);
-    assert.equal(response.items[0].tokenRaw, "3000000");
-    assert.equal(response.items[0].priceWei, (BigInt(exact) / 3n).toString());
-    assert.ok(
-      response.items.every(
-        (row) =>
-          row.supported && [address(11), address(12)].includes(row.wallet),
-      ),
-    );
-    assert.equal(response.coverage.asOf, 1000);
-    assert.equal(response.coverage.oldestAsOf, 1000);
-    assert.equal(response.coverage.complete, false);
-    response = await read();
-    assert.equal(response.items.length, 50);
-    assert.equal(response.hasMore, true);
-    assert.equal(new Set(response.items.map((row) => row.id)).size, 50);
     // A share card reads the stored realization by event, independently of the
-    // bounded following or profile trade list. Both profit and loss stay exact.
+    // bounded profile trade list. Both profit and loss stay exact.
     const cost = "1801439850948198600004";
     await trade(70, address(11));
     await trade(71, address(12));
@@ -235,19 +193,13 @@ test(
     await db.query(
       "UPDATE analytics_pool_snapshots SET generated_at=generated_at+interval '1 second'",
     );
-    assert.equal((await read()).items.length, 0);
     await assert.rejects(share(70), unavailable);
     await db.query(
       "UPDATE analytics_pool_snapshots SET generated_at=generated_at-interval '1 second'",
     );
-    assert.equal((await read("&limit=1")).items.length, 1);
     assert.equal((await share(70)).trade.realizedWei, sale.trade.realizedWei);
     // Removing the canonical launch batch cascades snapshots, positions and trades.
     await rewind(db, await getStream(db, "discovery:v1"), null);
-    response = await read();
-    assert.deepEqual(response.items, []);
-    assert.equal(response.hasMore, false);
-    assert.equal(response.coverage.asOf, null);
     await assert.rejects(share(70), unavailable);
   },
 );
