@@ -111,8 +111,9 @@ Errors are the route's existing ones: 503
 An ERC-20 transfer between the wallet and the Uniswap v4 PoolManager
 (`0x8366a39cc670b4001a1121b8f6a443a643e40951`), the settlement leg of every
 swap in a catalog pool. The API reads the wallet's explorer transfer pages and
-keeps only those legs, deriving `side` from their direction. Everything else is
-dropped. The first page of the 7d board's top wallet on 25 Sep 2026 was 10
+keeps only those legs, deriving `side` from their direction; any transfer
+whose two parties are not the wallet and the PoolManager is dropped.
+The first page of the 7d board's top wallet on 25 Sep 2026 was 10
 spoofed-token address-poisoning logs (a token named with invisible characters
 to pass for "ETH"), 8 NFT mints and 32 PoolManager legs, so the raw
 `kind=token-transfers` list is not a trade list, and telling its rows apart
@@ -131,6 +132,13 @@ needs this chain's contract addresses.
   length as the wallet's trade count, and never derive a figure from it: it is
   display data, not accounting evidence, and is never joined to positions or
   PnL.
+- **Forged legs pass.** The filter reads only a Transfer log's `from` and `to`,
+  which any token contract can write. A spoofed token whose Transfer log names
+  the PoolManager as the wallet's counterparty currently passes it and appears
+  as a real buy or sell, and Blockscout's own reputation flag does not catch it
+  either (the recorded poisoning token is marked `ok`). Treat every row as
+  display-only, exactly as `note` says. This is a known gap, not yet closed,
+  not an oversight.
 - **Direct settlement only.** A trade where a contract other than the
   PoolManager hands the wallet its tokens is not listed. None of the sampled
   board wallets traded that way. A liquidity add or remove against the
@@ -139,15 +147,18 @@ needs this chain's contract addresses.
 
 ## Pagination
 
-Each response reads whole explorer pages (50 transfers each) until it holds 25
-trades, reaches the end, or has read three pages. So a page usually holds 25 to
-50 trades, and can hold up to 150. It can hold fewer, or none, beside a
-non-null `nextCursor` when the wallet's pages are crowded with other transfers
-or a later explorer page failed. Offer Show more whenever `nextCursor` is
-non-null, whatever the item count. Append by following `nextCursor` and never
-refetch a page already shown. Key rows on `transactionHash` and `logIndex`.
-Measured on 25 Sep 2026 from a workstation, a first page answered in 1.5-2.1 s
-(Blockscout itself took 1.8-2.0 s per page).
+Every response reads exactly one explorer page of 50 transfers, so a page
+holds anywhere from 0 to 50 trades beside a non-null `nextCursor`: a wallet
+whose page is crowded with other transfers can answer an empty page that still
+has more behind it. Offer Show more whenever `nextCursor` is non-null, whatever
+the item count. Append by following `nextCursor` and never refetch a page
+already shown. Key rows on `transactionHash` and `logIndex`.
+
+One explorer page answers in about 2 s: measured on 25 Sep 2026, 1.5-2.1 s
+from a workstation (Blockscout itself took 1.8-2.0 s per page) and 2.0-4.6 s
+from Railway. The website's proxy aborts every upstream read at 8 s
+(`AbortSignal.timeout(8000)` in `apps/web/src/lib/product-server.ts`), which is
+why a response never reads more than the one page.
 
 ## Credit budget
 
@@ -156,13 +167,13 @@ per second. An explorer page of transfers costs 30 credits.
 
 | event                                 | explorer pages | credits |
 | ------------------------------------- | -------------- | ------- |
-| wallet page load, first trades page   | 1 (at most 3)  | 30 (90) |
+| wallet page load, first trades page   | 1              | 30      |
 | same wallet again within 30 s         | 0 (cached)     | 0       |
-| each Show more                        | 1 (at most 3)  | 30 (90) |
+| each Show more                        | 1              | 30      |
 | a page already read within 10 minutes | 0 (cached)     | 0       |
 
 Each process may spend `BLOCKSCOUT_DAILY_CREDIT_CAP` (default 30,000) per day,
-which is 1,000 uncached wallet page loads (333 when every page is crowded).
+which is 1,000 uncached wallet page loads or Show mores.
 Past that the route serves cached pages marked `stale` and otherwise answers
 503 `budget_exhausted` until UTC midnight. The cap keeps three process
 lifetimes a day inside the key's allowance. At 16:27 UTC on 25 Sep 2026 the key

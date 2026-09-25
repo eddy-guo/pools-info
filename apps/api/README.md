@@ -492,16 +492,16 @@ and keeps only the legs the wallet settled directly with the v4 PoolManager
 (`0x8366…0951`): a trade item has `transactionHash`, `logIndex`, `block`,
 `timestamp`, `side` (`buy` when the token left the PoolManager for the wallet,
 `sell` when the wallet paid it in), `token` (as above), `tokenRaw` (exact raw
-amount) and `method`. Everything else on those pages, such as spoofed-token
-address-poisoning logs, airdrops and plain sends, is dropped. There is no ETH
+amount) and `method`. Any other transfer on those pages, such as a
+spoofed-token address-poisoning log naming another party, an airdrop or a plain
+send, is dropped; a forged Transfer log that names the PoolManager still passes
+(see the contract doc). There is no ETH
 figure: the ETH side of a swap is often paid or received by a router or bot
 contract rather than the wallet, so the exact amount lives only in the Swap
 log, one explorer call per trade. A trade routed so that a contract other than
-the PoolManager hands the wallet its tokens is not listed. One response reads
-whole explorer pages until it holds 25 trades, the explorer runs out, or it has
-read three pages (at most 90 credits); a later page that fails ends the response
-early with a cursor at that page, so a page can hold 0 to 150 trades beside a
-non-null cursor. The contract, an example payload and the credit arithmetic for
+the PoolManager hands the wallet its tokens is not listed. Like every kind, one
+response reads exactly one explorer page (30 credits), so a page can hold 0 to
+50 trades beside a non-null cursor. The contract, an example payload and the credit arithmetic for
 one wallet page load are in `docs/WALLET-TRADE-HISTORY.md`.
 
 Configuration, read from the environment at startup:

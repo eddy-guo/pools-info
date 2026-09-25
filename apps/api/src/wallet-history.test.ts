@@ -22,8 +22,6 @@ import { createApi } from "./server";
 import {
   createWalletHistory,
   createWalletHistoryFromEnv,
-  tradesMaxPages,
-  tradesPageTarget,
 } from "./wallet-history";
 
 const wallet = "0x42a68318a6d78644870d3a37ec9e708e3ea904f5";
@@ -745,100 +743,40 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   );
 });
 
-test("a trades response reads whole explorer pages until it holds enough trades, and ends early at a failing page", async () => {
-  assert.equal(tradesPageTarget, 25);
-  assert.equal(tradesMaxPages, 3);
-  const trade = (n: number) => ({ logIndex: n }) as never;
-  let script: ({ items: number; next: boolean } | BlockscoutError)[] = [];
+test("a trades response reads exactly one explorer page and carries its cursor, even with no trades on it", async () => {
   const pages: unknown[] = [];
-  const readPage = async (kind: string, _wallet: string, page: unknown) => {
-    assert.equal(kind, "trades");
-    pages.push(page);
-    const step = script.shift()!;
-    if (step instanceof BlockscoutError) throw step;
-    const at = pages.length;
-    return {
-      items: Array.from({ length: step.items }, (_, i) => trade(at * 100 + i)),
-      nextPageParams: step.next
-        ? { block_number: String(at), index: "0" }
-        : null,
-    };
-  };
+  let items = 0;
   const history = createWalletHistory({
-    client: { readPage, budget: createCreditBudget({ dailyCap: 1 }) } as never,
-  });
-  const read = (w: string, page: Record<string, string> | null = null) =>
-    history.read({ wallet: w, kind: "trades", page, scope: "s" });
-  const cursorPage = (cursor: string | null) =>
-    cursor && decodeHistoryCursor(cursor, "s", "trades");
-  // A page crowded by poisoning logs keeps reading, up to three pages.
-  script = [
-    { items: 4, next: true },
-    { items: 0, next: true },
-    { items: 9, next: true },
-    { items: 50, next: true },
-  ];
-  let body = await read("0x" + "a".repeat(40));
-  assert.equal(body.items.length, 13);
-  assert.deepEqual(pages, [
-    null,
-    { block_number: "1", index: "0" },
-    { block_number: "2", index: "0" },
-  ]);
-  assert.deepEqual(cursorPage(body.nextCursor), {
-    block_number: "3",
-    index: "0",
-  });
-  // A full page, or the explorer's last page, stops at once.
-  pages.length = 0;
-  script = [{ items: 25, next: true }];
-  body = await read("0x" + "b".repeat(40));
-  assert.equal(body.items.length, 25);
-  assert.equal(pages.length, 1);
-  pages.length = 0;
-  script = [{ items: 2, next: false }];
-  body = await read("0x" + "c".repeat(40));
-  assert.deepEqual(
-    [body.items.length, body.nextCursor, pages.length],
-    [2, null, 1],
-  );
-  // A later page that fails ends the response with what was read and a
-  // cursor at the page that failed; a first page that fails is the 503.
-  pages.length = 0;
-  script = [
-    { items: 3, next: true },
-    new BlockscoutError("upstream_unavailable", 30),
-  ];
-  body = await read("0x" + "d".repeat(40), { block_number: "9", index: "1" });
-  assert.equal(body.items.length, 3);
-  assert.equal(body.stale, false);
-  assert.deepEqual(cursorPage(body.nextCursor), {
-    block_number: "1",
-    index: "0",
-  });
-  script = [new BlockscoutError("budget_exhausted", 60)];
-  await assert.rejects(
-    read("0x" + "e".repeat(40)),
-    (e: RequestError) => e.reason === "budget_exhausted",
-  );
-  // Other kinds still read exactly one page.
-  const once: string[] = [];
-  const single = createWalletHistory({
     client: {
-      readPage: async (kind: string) => {
-        once.push(kind);
-        return { items: [], nextPageParams: { block_number: "1" } };
+      readPage: async (kind: string, _wallet: string, page: unknown) => {
+        assert.equal(kind, "trades");
+        pages.push(page);
+        return {
+          items: Array.from({ length: items }, (_, i) => ({ logIndex: i })),
+          nextPageParams: { block_number: String(pages.length), index: "0" },
+        };
       },
       budget: createCreditBudget({ dailyCap: 1 }),
     } as never,
   });
-  await single.read({
-    wallet,
-    kind: "token-transfers",
-    page: null,
-    scope: "s",
+  const read = (w: string, page: Record<string, string> | null = null) =>
+    history.read({ wallet: w, kind: "trades", page, scope: "s" });
+  items = 4;
+  let body = await read("0x" + "a".repeat(40));
+  assert.equal(body.items.length, 4);
+  assert.deepEqual(pages, [null]);
+  assert.deepEqual(decodeHistoryCursor(body.nextCursor!, "s", "trades"), {
+    block_number: "1",
+    index: "0",
   });
-  assert.deepEqual(once, ["token-transfers"]);
+  items = 0;
+  body = await read("0x" + "b".repeat(40), { block_number: "9", index: "1" });
+  assert.deepEqual(body.items, []);
+  assert.deepEqual(pages, [null, { block_number: "9", index: "1" }]);
+  assert.deepEqual(decodeHistoryCursor(body.nextCursor!, "s", "trades"), {
+    block_number: "2",
+    index: "0",
+  });
 });
 
 test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503 when unconfigured", async (t) => {
