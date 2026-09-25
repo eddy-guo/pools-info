@@ -11,9 +11,11 @@ import {
   ledgerPassPolicy,
   multicallConfig,
   planLedgerRange,
+  type HyperSyncPageRecord,
   type HyperSyncRetryEvent,
   type LedgerRangeCollection,
   type LedgerSwapSelection,
+  type LedgerTransferSelection,
   type MulticallConfig,
 } from "@pools/chain";
 import {
@@ -282,6 +284,13 @@ export interface LedgerRangeProgress {
   newWallets: number;
   registryPools: number;
   swapSelection: LedgerSwapSelection;
+  /** How the transfer lane selected, the Transfer logs outside the registry
+   * a chain-wide selection dropped, the transfer lane's pages, and the
+   * requests of a chain-wide query given up for the token lists. */
+  transferSelection: LedgerTransferSelection;
+  unregisteredTransfers: number;
+  transferPages: number;
+  transferFallbackRequests: number;
   pages: number;
   requests: number;
   bytes: number;
@@ -303,13 +312,16 @@ export interface LedgerRangeOptions {
   rpc: () => Rpc;
   /** Unset picks by the range's length; both select the same rows. */
   swapSelection?: LedgerSwapSelection;
+  transferSelection?: LedgerTransferSelection;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
 }
+const lanePages = (lane: HyperSyncPageRecord[][]) =>
+  lane.reduce((n, p) => n + p.length, 0);
 const pageCount = (c: LedgerRangeCollection) =>
   c.pages.launch.length +
-  c.pages.swaps.reduce((n, p) => n + p.length, 0) +
-  c.pages.transfers.reduce((n, p) => n + p.length, 0) +
+  lanePages(c.pages.swaps) +
+  lanePages(c.pages.transfers) +
   c.pages.headers.length;
 /** The ledger batch of one collected range (report 7.1 step 7). */
 export function ledgerBatchOf(collection: LedgerRangeCollection): LedgerBatch {
@@ -369,6 +381,7 @@ export async function runLedgerRange(
     registry,
     maxPages: options.maxPages,
     swapSelection: options.swapSelection,
+    transferSelection: options.transferSelection,
     multicall: options.multicall ?? multicallConfig(),
   });
   options.signal?.throwIfAborted();
@@ -418,6 +431,10 @@ export async function runLedgerRange(
     newWallets: created.wallets,
     registryPools: collection.registryPools,
     swapSelection: collection.swapSelection,
+    transferSelection: collection.transferSelection,
+    unregisteredTransfers: collection.unregisteredTransfers,
+    transferPages: lanePages(collection.pages.transfers),
+    transferFallbackRequests: collection.transferFallbackRequests,
     pages: pageCount(collection),
     requests: collection.requests,
     bytes: collection.bytes,
@@ -578,6 +595,10 @@ export class LedgerPassProgress {
       newWallets: p.newWallets,
       registryPools: p.registryPools,
       swapSelection: p.swapSelection,
+      transferSelection: p.transferSelection,
+      unregisteredTransfers: p.unregisteredTransfers,
+      transferPages: p.transferPages,
+      transferFallbackRequests: p.transferFallbackRequests,
       pages: p.pages,
       requests: p.requests,
       bytes: p.bytes,
@@ -621,6 +642,7 @@ export interface LedgerPassOptions {
   maxPages: number;
   rpc: () => Rpc;
   swapSelection?: LedgerSwapSelection;
+  transferSelection?: LedgerTransferSelection;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
   log?: Log;
@@ -753,8 +775,7 @@ export async function runLedgerPass(
   }
   const maxRangeBlocks =
     options.maxRangeBlocks ?? ledgerPassPolicy.maxRangeBlocks;
-  const catchUpMargin =
-    options.catchUpMargin ?? ledgerPassPolicy.catchUpMargin;
+  const catchUpMargin = options.catchUpMargin ?? ledgerPassPolicy.catchUpMargin;
   if (
     !Number.isSafeInteger(options.rangeBlocks) ||
     options.rangeBlocks < 1 ||
@@ -806,6 +827,7 @@ export async function runLedgerPass(
         height,
         rpc: options.rpc,
         swapSelection: options.swapSelection,
+        transferSelection: options.transferSelection,
         multicall: options.multicall,
         signal: options.signal,
       });
@@ -930,6 +952,7 @@ export async function calibrateLedgerRange(
 /** One selection's side of a comparison. */
 export interface LedgerSelectionRun {
   swapSelection: LedgerSwapSelection;
+  transferSelection: LedgerTransferSelection;
   toBlock: number;
   contentHash: string;
   launches: number;
@@ -940,6 +963,11 @@ export interface LedgerSelectionRun {
   swapQueries: number;
   swapPages: number;
   swapLogs: number;
+  unregisteredTransfers: number;
+  transferQueries: number;
+  transferPages: number;
+  transferLogs: number;
+  transferFallbackRequests: number;
   pages: number;
   requests: number;
   bytes: number;
@@ -950,16 +978,19 @@ export interface LedgerSelectionComparison {
   toBlock: number;
   registryPools: number;
   identical: true;
-  pools: LedgerSelectionRun;
-  manager: LedgerSelectionRun;
+  lists: LedgerSelectionRun;
+  local: LedgerSelectionRun;
 }
-/** Collect one range with the swap lane's pool-id lists and again with the
- * manager-wide selection, and require what the fold would receive to be the
- * same: the range, its boundary hashes, every launch, swap and transfer row
- * and so the content hash, and each launch's catalogue fields (the supply's
- * read block excepted, the provider's head at each read). Writes nothing; a
- * difference throws `ledger_swap_selections_disagree`. */
-export async function compareLedgerSwapSelections(
+/** Collect one range with the lanes' value lists (pool ids and tokens) and
+ * again with the local selections (every manager swap and every Transfer on
+ * the chain), and require what the fold would receive to be the same: the
+ * range, its boundary hashes, every launch, swap and transfer row and so the
+ * content hash, and each launch's catalogue fields (the supply's read block
+ * excepted, the provider's head at each read). Writes nothing; a difference
+ * throws `ledger_selections_disagree`. A chain-wide transfer query over its
+ * page cap falls back to the lists, which the local run's
+ * `transferSelection` then reports. */
+export async function compareLedgerSelections(
   db: Client,
   client: HyperSyncClient,
   rpc: () => Rpc,
@@ -968,7 +999,10 @@ export async function compareLedgerSwapSelections(
 ): Promise<LedgerSelectionComparison> {
   const height = await client.height();
   const registry = await ledgerRegistry(db, range.fromBlock - 1);
-  const collect = (swapSelection: LedgerSwapSelection) =>
+  const collect = (
+    swapSelection: LedgerSwapSelection,
+    transferSelection: LedgerTransferSelection,
+  ) =>
     collectLedgerRange(client, rpc(), {
       ...range,
       parentHash: null,
@@ -976,9 +1010,10 @@ export async function compareLedgerSwapSelections(
       registry,
       maxPages,
       swapSelection,
+      transferSelection,
     });
-  const pools = await collect("pool_ids");
-  const manager = await collect("manager");
+  const lists = await collect("pool_ids", "tokens");
+  const local = await collect("manager", "chain");
   const consumed = (c: LedgerRangeCollection) => ({
     fromBlock: c.fromBlock,
     toBlock: c.toBlock,
@@ -992,10 +1027,11 @@ export async function compareLedgerSwapSelections(
     transfers: c.transfers,
     contentHash: ledgerContentHash(ledgerBatchOf(c)),
   });
-  if (!isDeepStrictEqual(consumed(pools), consumed(manager)))
-    throw Error("ledger_swap_selections_disagree");
+  if (!isDeepStrictEqual(consumed(lists), consumed(local)))
+    throw Error("ledger_selections_disagree");
   const run = (c: LedgerRangeCollection): LedgerSelectionRun => ({
     swapSelection: c.swapSelection,
+    transferSelection: c.transferSelection,
     toBlock: c.toBlock,
     contentHash: ledgerContentHash(ledgerBatchOf(c)),
     launches: c.launch.pools.length,
@@ -1004,20 +1040,25 @@ export async function compareLedgerSwapSelections(
     unregisteredSwaps: c.unregisteredSwaps,
     transfers: c.transfers.length,
     swapQueries: c.pages.swaps.length,
-    swapPages: c.pages.swaps.reduce((n, p) => n + p.length, 0),
+    swapPages: lanePages(c.pages.swaps),
     swapLogs: c.pages.swaps.flat().reduce((n, p) => n + p.logs, 0),
+    unregisteredTransfers: c.unregisteredTransfers,
+    transferQueries: c.pages.transfers.length,
+    transferPages: lanePages(c.pages.transfers),
+    transferLogs: c.pages.transfers.flat().reduce((n, p) => n + p.logs, 0),
+    transferFallbackRequests: c.transferFallbackRequests,
     pages: pageCount(c),
     requests: c.requests,
     bytes: c.bytes,
     sentBytes: c.sentBytes,
   });
   return {
-    fromBlock: pools.fromBlock,
-    toBlock: pools.toBlock,
-    registryPools: pools.registryPools,
+    fromBlock: lists.fromBlock,
+    toBlock: lists.toBlock,
+    registryPools: lists.registryPools,
     identical: true,
-    pools: run(pools),
-    manager: run(manager),
+    lists: run(lists),
+    local: run(local),
   };
 }
 export async function ledgerPassStatus(db: Client) {

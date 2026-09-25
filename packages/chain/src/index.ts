@@ -113,6 +113,7 @@ export {
   hypersyncPolicy,
   swapLogQuery,
   transferLogQuery,
+  transferAddressQuery,
   headerQuery,
   chunkValues,
   checkedPage,
@@ -167,6 +168,7 @@ export {
   ledgerChunks,
   ledgerLaunchQuery,
   ledgerLaunchStream,
+  ledgerChainQueryRecord,
   ledgerManagerQueryRecord,
   ledgerPassPolicy,
   ledgerQueryRecord,
@@ -182,4 +184,5 @@ export {
   type LedgerRangeInput,
   type LedgerRegistryPool,
   type LedgerSwapSelection,
+  type LedgerTransferSelection,
 } from "./hypersync-ledger";

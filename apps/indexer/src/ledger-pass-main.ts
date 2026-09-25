@@ -9,7 +9,7 @@ import {
 import { errorDetails } from "./errors";
 import {
   calibrateLedgerRange,
-  compareLedgerSwapSelections,
+  compareLedgerSelections,
   createLedgerPassClient,
   createLedgerPassRpc,
   ledgerPassConfig,
@@ -23,8 +23,9 @@ import { RPC_RATE_LIMIT_EXIT_CODE } from "./supervisor";
 // Manual, off by default, never started by service.ts:
 //   pnpm ledger:pass status                      reads the streams, writes nothing
 //   pnpm ledger:pass calibrate <from> <to>       collects one range, writes nothing
-//   pnpm ledger:pass compare <from> <to>         collects one range with both swap
-//                                                selections and requires the same rows
+//   pnpm ledger:pass compare <from> <to>         collects one range with the lanes' lists
+//                                                and with their local selections and
+//                                                requires the same rows
 //   pnpm ledger:pass run                         folds ranges from the cursor to the cutoff
 // A sustained HyperSync or RPC throttle ends `run` with the reserved exit
 // code 75 and nothing restarts it.
@@ -94,7 +95,7 @@ async function main() {
       throw Error(usage);
     if (mode === "compare") {
       const started = performance.now();
-      const comparison = await compareLedgerSwapSelections(
+      const comparison = await compareLedgerSelections(
         db,
         client,
         () => createLedgerPassRpc(config, stop.signal),
@@ -102,7 +103,7 @@ async function main() {
         config.maxPages,
       );
       emit({
-        event: "ledger_swap_selections_compared",
+        event: "ledger_selections_compared",
         ...comparison,
         throttled,
         elapsedMs: Math.round(performance.now() - started),

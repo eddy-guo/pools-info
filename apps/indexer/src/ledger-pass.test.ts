@@ -5,6 +5,7 @@ import {
   decodeFunctionData,
   encodeFunctionResult,
   erc20Abi,
+  toEventSelector,
   type Hex,
 } from "viem";
 import {
@@ -15,6 +16,7 @@ import {
   decodeAggregateRequest,
   encodeAggregateReply,
   ledgerPassPolicy,
+  transferEvent,
   type HyperSyncRetryEvent,
 } from "@pools/chain";
 import {
@@ -254,6 +256,7 @@ const runOptions = (
     maxRangeBlocks?: number;
     catchUpMargin?: number;
     swapSelection?: "manager" | "pool_ids";
+    transferSelection?: "chain" | "tokens";
   } = {},
 ) => ({
   rangeBlocks: 100,
@@ -431,6 +434,132 @@ test(
         q.map((r: Record<string, unknown>) => [r.selection, r.count]),
       ),
       [[["pool_ids", 1]], [["pool_ids", 2]], [["pool_ids", 2]]],
+    );
+  },
+);
+
+test(
+  "the pass folds the same ledger whichever way the transfer lane selects, and records how it did",
+  dbTest,
+  async (t) => {
+    const other = addr(0xabcd);
+    const run = async (transferSelection: "chain" | "tokens") => {
+      const db = await database(t);
+      await writer(db);
+      const { fake } = fakeChain();
+      // A token outside the registry moves beside the registered ones, once
+      // inside a registered swap's transaction, and a contract's ERC-721
+      // Transfer shares the topic.
+      fake.logs.push(
+        fakeTransfer({
+          block: start + 5,
+          logIndex: 9,
+          token: other,
+          from: W,
+          to: V,
+          value: 3n,
+          transactionHash: word(0xc1),
+        }),
+        fakeTransfer({
+          block: start + 160,
+          logIndex: 4,
+          token: other,
+          from: V,
+          to: W,
+          value: 2n,
+        }),
+        {
+          block: start + 250,
+          logIndex: 0,
+          transactionHash: word(0xd1),
+          address: addr(0xef01),
+          topics: [
+            toEventSelector(transferEvent),
+            word(0),
+            word(0x3333),
+            word(42),
+          ],
+          data: "0x",
+          from: W,
+        },
+      );
+      const log: Record<string, unknown>[] = [];
+      const summary = await runLedgerPass(
+        db,
+        passClient(fake),
+        runOptions(log, { transferSelection }),
+      );
+      assert.equal(summary.stopped, "complete");
+      const query = await db.query(
+        "SELECT query->'transfers' AS transfers FROM agg_batches ORDER BY to_block",
+      );
+      const rows = await ledgerRows(db);
+      await releaseLedgerWriter(db);
+      return {
+        rows,
+        transferQueries: query.rows.map((r) => r.transfers),
+        progress: log.filter((e) => e.event === "ledger_progress"),
+      };
+    };
+    const lists = await run("tokens");
+    const chain = await run("chain");
+    assert.deepEqual(chain.rows, lists.rows);
+    assert.equal(chain.rows.batches.length, 3);
+    assert.ok(chain.rows.batches.some((b) => b.transfers > 0));
+    assert.deepEqual(
+      chain.progress.map((p) => [
+        p.transferSelection,
+        p.unregisteredTransfers,
+        p.transferPages,
+        p.transferFallbackRequests,
+      ]),
+      // The probe and, where a registered token moved, the list naming it;
+      // the last range's registered tokens stand still.
+      [
+        ["chain", 1, 2, 0],
+        ["chain", 1, 2, 0],
+        ["chain", 1, 1, 0],
+      ],
+    );
+    assert.deepEqual(
+      lists.progress.map((p) => [p.transferSelection, p.unregisteredTransfers]),
+      [
+        ["tokens", 0],
+        ["tokens", 0],
+        ["tokens", 0],
+      ],
+    );
+    // The probe keeps the registry's count and digest and the Transfers it
+    // named outside the registry; the list after it, the tokens it named.
+    assert.deepEqual(
+      chain.transferQueries.map((q) =>
+        q.map((r: Record<string, unknown>) =>
+          r.selection === "chain"
+            ? [
+                r.selection,
+                (r.registry as { count: number }).count,
+                r.unregistered,
+              ]
+            : [r.selection, r.count],
+        ),
+      ),
+      [
+        [
+          ["chain", 1, 1],
+          ["tokens", 1],
+        ],
+        [
+          ["chain", 2, 1],
+          ["tokens", 2],
+        ],
+        [["chain", 2, 1]],
+      ],
+    );
+    assert.deepEqual(
+      lists.transferQueries.map((q) =>
+        q.map((r: Record<string, unknown>) => [r.selection, r.count]),
+      ),
+      [[["tokens", 1]], [["tokens", 2]], [["tokens", 2]]],
     );
   },
 );
@@ -728,8 +857,9 @@ test(
     const { fake } = fakeChain({
       intercept: (request) => {
         if (request.path !== "/query") return undefined;
-        // Range 1 needs launch, swap, transfer and two headers: five queries.
-        return ++queries > 5
+        // Range 1 needs launch, swap, the transfer probe and list and two
+        // headers: six queries.
+        return ++queries > 6
           ? new Response("slow down", {
               status: 429,
               headers: { "retry-after": "0" },
@@ -1099,6 +1229,10 @@ test("the progress counters accumulate per run and per million blocks of history
     newWallets: 2,
     registryPools: 3,
     swapSelection: "manager",
+    transferSelection: "tokens",
+    unregisteredTransfers: 0,
+    transferPages: 1,
+    transferFallbackRequests: 0,
     pages: 3,
     requests: 6,
     bytes: 500,

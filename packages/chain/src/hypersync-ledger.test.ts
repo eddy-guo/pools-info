@@ -22,6 +22,7 @@ import {
 import {
   collectLedgerRange,
   ledgerChunks,
+  ledgerChainQueryRecord,
   ledgerLaunchQuery,
   ledgerManagerQueryRecord,
   ledgerPassPolicy,
@@ -29,6 +30,7 @@ import {
   planLedgerRange,
   verifyLedgerLaunchBatch,
   type LedgerQueryRecord,
+  type LedgerRangeCollection,
 } from "./hypersync-ledger";
 import {
   FakeHyperSync,
@@ -57,7 +59,7 @@ const fixture = (name: string) =>
 const apiToken = "x".repeat(16);
 /** A value-list record, where the test knows the query sent a list. */
 function listRecord(record: LedgerQueryRecord) {
-  if (record.selection === "manager") throw Error("expected a value list");
+  if ("registry" in record) throw Error("expected a value list");
   return record;
 }
 const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
@@ -427,6 +429,7 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
     height: 64149078,
     registry,
     swapSelection: "pool_ids",
+    transferSelection: "tokens",
   });
   assert.equal(c.fromBlock, from);
   assert.equal(c.toBlock, to);
@@ -492,7 +495,10 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
   assert.match(c.parentHash, /^0x[0-9a-f]{64}$/);
   assert.match(c.blockHash, /^0x[0-9a-f]{64}$/);
   // The same range selecting every manager swap, the recorded unfiltered
-  // answer, keeps the same five rows and drops the other 68 locally.
+  // answer, keeps the same five rows and drops the other 68 locally. The
+  // transfer probe names only the two recorded tokens, but the registry here
+  // claims swaps in two pools whose tokens never move, so the probe is not
+  // trusted and the full lists answer.
   const managerRequests: HyperSyncQuery[] = [];
   const m = await collectLedgerRange(
     new HyperSyncClient({
@@ -517,12 +523,28 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
     },
   );
   assert.equal(m.swapSelection, "manager");
+  assert.deepEqual(
+    [m.transferSelection, m.transferFallbackRequests],
+    ["tokens", 1],
+  );
   assert.deepEqual(m.swaps, c.swaps);
   assert.deepEqual(m.transfers, c.transfers);
   assert.equal(m.unregisteredSwaps, 73 - 5);
   assert.equal(c.unregisteredSwaps, 0);
+  assert.deepEqual(
+    [m.unregisteredTransfers, c.unregisteredTransfers, c.transferSelection],
+    [0, 0, "tokens"],
+  );
   assert.deepEqual(managerRequests[1], fixture("swaps-unfiltered.request"));
-  assert.equal(m.requests, 5);
+  assert.deepEqual(
+    [managerRequests[2].logs, managerRequests[2].field_selection],
+    [
+      [{ topics: [[toEventSelector(transferEvent)]] }],
+      { log: ["block_number", "address"] },
+    ],
+  );
+  assert.deepEqual(managerRequests[3], requests[2]);
+  assert.equal(m.requests, 6);
   assert.ok(m.sentBytes > 0 && m.sentBytes < c.sentBytes);
 });
 
@@ -831,9 +853,11 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
   assert.equal(c.parentHash, fake.hashOf(start - 1));
   assert.equal(c.blockHash, fake.hashOf(start + 199));
   assert.equal(c.toTimestamp, (start + 199) * 2);
-  // launch, one swap chunk, one transfer chunk, the cutoff and from headers.
-  assert.equal(c.requests, 5);
-  // A later range sees the registry from the caller and finds nothing new.
+  // launch, one swap chunk, the transfer probe and the list of the two
+  // tokens it names, the cutoff and from headers.
+  assert.equal(c.requests, 6);
+  // A later range sees the registry from the caller and finds nothing new:
+  // the probe names no registered token, so no list is sent.
   const later = await collectLedgerRange(client, silentRpc(), {
     fromBlock: start + 200,
     toBlock: start + 299,
@@ -1025,6 +1049,302 @@ test("both swap selections give the same rows: the manager-wide one sends no poo
   );
 });
 
+test("both transfer selections give the same rows: the probe sends no token and the lists then name only the registered tokens that moved", async () => {
+  const height = start + 3000 + 128;
+  const { fake, poolA, poolB } = fakeChain(height);
+  const transferTopic = toEventSelector(transferEvent);
+  const other = addr(0xabcd);
+  const nft = addr(0xef01);
+  // Transfers of contracts outside the registry: one in the same transaction
+  // as a registered swap (a route through both), one alone, an ERC-721 one
+  // (the same topic, the token id a fourth topic, no data), one on the
+  // range's last block and one past it.
+  const foreign = (block: number, logIndex: number, transactionHash?: string) =>
+    fakeTransfer({
+      block,
+      logIndex,
+      token: other,
+      from: W,
+      to: V,
+      value: 7n,
+      transactionHash,
+    });
+  fake.logs.push(
+    foreign(start + 5, 9, word(0xc1)),
+    foreign(start + 50, 0),
+    {
+      block: start + 60,
+      logIndex: 0,
+      transactionHash: word(0xd1),
+      address: nft,
+      topics: [transferTopic, word(0), word(0x3333), word(42)],
+      data: "0x",
+      from: W,
+    },
+    foreign(start + 199, 0),
+    foreign(start + 250, 0),
+  );
+  const tokens = {
+    [TA]: ["Alpha", "A", 18],
+    [TB]: ["Beta", "B", 6],
+  } as Record<string, [string, string, number]>;
+  const registry = [
+    { poolId: poolA, token: TA, launchBlock: start },
+    { poolId: poolB, token: TB, launchBlock: start + 150 },
+  ];
+  const collect = async (
+    transferSelection?: "chain" | "tokens",
+    range: { fromBlock: number; toBlock: number } = {
+      fromBlock: start,
+      toBlock: start + 199,
+    },
+    source: FakeHyperSync = fake,
+    maxPages?: number,
+    extra: typeof registry = [],
+  ) => {
+    const before = source.requests.length;
+    const c = await collectLedgerRange(
+      fakeClient(source),
+      metadataRpc(tokens).rpc,
+      {
+        ...range,
+        parentHash: null,
+        height,
+        registry: [...(range.fromBlock > start ? registry : []), ...extra],
+        transferSelection,
+        maxPages,
+      },
+    );
+    return { c, requests: source.requests.slice(before) };
+  };
+  const rows = ({ c }: { c: LedgerRangeCollection }) => ({
+    toBlock: c.toBlock,
+    blockHash: c.blockHash,
+    launches: c.launch.pools,
+    swaps: c.swaps,
+    unsupportedSwaps: c.unsupportedSwaps,
+    transfers: c.transfers,
+    registryPools: c.registryPools,
+  });
+  const isProbe = (body?: HyperSyncQuery) =>
+    body?.logs?.length === 1 && body.logs[0].address === undefined;
+  const isList = (body?: HyperSyncQuery) =>
+    body?.logs?.[0].topics?.[0]?.[0] === transferTopic &&
+    body.logs[0].address !== undefined;
+  const bodies = (
+    { requests }: { requests: typeof fake.requests },
+    which: (body?: HyperSyncQuery) => boolean,
+  ) => requests.map((r) => r.body).filter(which);
+  // A registered token that never moves in the range, listed only by the
+  // lists: a third pool launched long before.
+  const idle = {
+    poolId: word(0x1d1e),
+    token: addr(0x7777),
+    launchBlock: start - 1,
+  };
+  const chain = await collect(undefined, undefined, fake, undefined, [idle]);
+  const lists = await collect("tokens", undefined, fake, undefined, [idle]);
+  assert.equal(chain.c.transferSelection, "chain");
+  assert.deepEqual(rows(chain), rows(lists));
+  assert.equal(chain.c.transfers.length, 4);
+  // The Transfer inside the registered swap's transaction, the lone one, the
+  // ERC-721 one and the last block's; the one past the range is a later
+  // range's to count.
+  assert.deepEqual(
+    [chain.c.unregisteredTransfers, lists.c.unregisteredTransfers],
+    [4, 0],
+  );
+  assert.deepEqual(
+    [chain.c.transferFallbackRequests, lists.c.transferFallbackRequests],
+    [0, 0],
+  );
+  const [probeBody] = bodies(chain, isProbe);
+  assert.equal(bodies(chain, isProbe).length, 1);
+  assert.deepEqual(
+    [probeBody!.logs, probeBody!.field_selection],
+    [[{ topics: [[transferTopic]] }], { log: ["block_number", "address"] }],
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(probeBody)) < 1024);
+  // The lists name the whole registry; after the probe, only the two tokens
+  // that moved, never the idle one.
+  assert.deepEqual(
+    bodies(lists, isList).map((b) => b!.logs![0].address),
+    [[TA, TB, idle.token].sort()],
+  );
+  assert.deepEqual(
+    bodies(chain, isList).map((b) => b!.logs![0].address),
+    [[TA, TB].sort()],
+  );
+  assert.equal(chain.c.requests, lists.c.requests + 1);
+  assert.deepEqual(
+    chain.c.pages.transfers.map((p) => p.length),
+    [1, 1],
+  );
+  const [record, list] = chain.c.query.transfers;
+  assert.deepEqual(record, {
+    from_block: start,
+    to_block: start + 200,
+    selection: "chain",
+    registry: {
+      count: 3,
+      sha256: listRecord(ledgerQueryRecord(bodies(lists, isList)[0]!)).sha256,
+    },
+    unregistered: 4,
+  });
+  assert.deepEqual(
+    [list.selection, listRecord(list).count, chain.c.query.transfers.length],
+    ["tokens", 2, 2],
+  );
+  assert.equal(lists.c.query.transfers[0].selection, "tokens");
+  assert.throws(
+    () => ledgerQueryRecord(probeBody!),
+    /Invalid HyperSync ledger query/,
+  );
+  assert.throws(
+    () => ledgerChainQueryRecord(bodies(lists, isList)[0]!, [TA], 0),
+    /Invalid HyperSync ledger query/,
+  );
+  assert.throws(
+    () => ledgerManagerQueryRecord(probeBody!, [TA], 0),
+    /Invalid HyperSync ledger query/,
+  );
+  // The length picks the selection: chainTransferBlocks blocks probe the
+  // chain, one block more sends the lists. With no registered token moving,
+  // the probe is the lane's only query.
+  const edge = ledgerPassPolicy.chainTransferBlocks;
+  const short = await collect(undefined, {
+    fromBlock: start + 200,
+    toBlock: start + 199 + edge,
+  });
+  const long = await collect(undefined, {
+    fromBlock: start + 200,
+    toBlock: start + 200 + edge,
+  });
+  assert.deepEqual(
+    [short.c.transferSelection, long.c.transferSelection],
+    ["chain", "tokens"],
+  );
+  assert.deepEqual(
+    [short.c.unregisteredTransfers, short.c.query.transfers.length],
+    [1, 1],
+  );
+  assert.equal(bodies(short, isList).length, 0);
+  await assert.rejects(
+    collect("chain-wide" as "chain"),
+    /Invalid HyperSync ledger range/,
+  );
+  // A probe that cannot finish the range within the lane's page cap is
+  // dropped for the lists: the same rows, the lists' records, and the cap's
+  // requests spent on top.
+  const probeServer = (
+    answer: (body: HyperSyncQuery, source: FakeHyperSync) => Response,
+  ) => {
+    const source: FakeHyperSync = new FakeHyperSync({
+      height,
+      logs: fake.logs,
+      intercept: ({ body }) =>
+        isProbe(body) ? answer(body!, source) : undefined,
+    });
+    return source;
+  };
+  const slow = probeServer((body, source) =>
+    Response.json(
+      source.respond({
+        ...body,
+        to_block: Math.min(body.to_block!, body.from_block + 10),
+      }),
+    ),
+  );
+  const capped = await collect(undefined, undefined, slow);
+  const plain = await collect("tokens");
+  assert.deepEqual(rows(capped), rows(plain));
+  assert.deepEqual(
+    [
+      capped.c.transferSelection,
+      capped.c.transferFallbackRequests,
+      capped.c.unregisteredTransfers,
+    ],
+    ["tokens", ledgerPassPolicy.chainTransferPages, 0],
+  );
+  assert.deepEqual(capped.c.query.transfers, plain.c.query.transfers);
+  assert.deepEqual(capped.c.pages.transfers, plain.c.pages.transfers);
+  assert.equal(
+    capped.c.requests,
+    plain.c.requests + ledgerPassPolicy.chainTransferPages,
+  );
+  // A lower page cap for the whole range caps the probe too.
+  const tight = await collect(undefined, undefined, slow, 3);
+  assert.deepEqual(
+    [tight.c.transferSelection, tight.c.transferFallbackRequests],
+    ["tokens", 3],
+  );
+  // A first page over the lane's byte cap, an answer that is not the probe's
+  // shape and a probe that misses a token a registered swap moved are each
+  // dropped for the lists rather than trusted or stopping the loop.
+  for (const [name, source] of [
+    [
+      "oversized",
+      probeServer(
+        (body, source) =>
+          new Response(
+            JSON.stringify(source.respond(body)) +
+              " ".repeat(ledgerPassPolicy.maxBytes),
+          ),
+      ),
+    ],
+    [
+      "shapeless",
+      probeServer((body, source) => {
+        const page = source.respond(body);
+        return Response.json({
+          ...page,
+          data: [{ logs: [{ address: "not an address" }] }],
+        });
+      }),
+    ],
+    [
+      "short of a traded token",
+      probeServer((body, source) => {
+        const page = source.respond(body);
+        const logs = page.data[0].logs as { address: string }[];
+        return Response.json({
+          ...page,
+          data: [{ logs: logs.filter((l) => l.address !== TB) }],
+        });
+      }),
+    ],
+  ] as const) {
+    const dropped = await collect(undefined, undefined, source);
+    assert.deepEqual(rows(dropped), rows(plain), name);
+    assert.deepEqual(
+      [dropped.c.transferSelection, dropped.c.transferFallbackRequests],
+      ["tokens", 1],
+      name,
+    );
+  }
+  // A throttle is not dropped for the lists: it stops the range.
+  const throttled = probeServer(() => new Response("", { status: 429 }));
+  await assert.rejects(
+    collectLedgerRange(
+      new HyperSyncClient({
+        token: apiToken,
+        minIntervalMs: 0,
+        retryBaseMs: 1,
+        fetch: throttled.fetch,
+      }),
+      metadataRpc(tokens).rpc,
+      {
+        fromBlock: start,
+        toBlock: start + 199,
+        parentHash: null,
+        height,
+        registry: [],
+      },
+    ),
+    /HyperSync rate limit/,
+  );
+});
+
 test("lanes end the range on the shortest whole page and later queries are asked only up to it", async () => {
   const height = start + 299 + 128;
   const a = fakeLaunch({
@@ -1066,6 +1386,7 @@ test("lanes end the range on the shortest whole page and later queries are asked
     height,
     registry: [],
     maxPages: 1,
+    transferSelection: "tokens",
   });
   // The swap lane's one page held blocks start+1..start+4; the transfer lane
   // was asked only up to there and the range ends there.
@@ -1103,6 +1424,7 @@ test("lanes end the range on the shortest whole page and later queries are asked
       height,
       registry: [],
       maxPages: 1,
+      transferSelection: "tokens",
     }),
     /conflicting|Inconsistent HyperSync canonical headers/,
   );

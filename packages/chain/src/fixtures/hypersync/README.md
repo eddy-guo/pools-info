@@ -68,7 +68,7 @@ for the range, matched by the request body's SHA-256, parsed and serialised
 again with every row and its order unchanged. The pool-id and token lists are
 not kept: `pools` holds the registered pools the answers name and `registry` a
 digest of the full sorted pool id list. `expected` is what the live comparison
-derived. `apps/indexer/src/ledger-swap-selection.test.ts` replays both
+derived. `apps/indexer/src/ledger-selection.test.ts` replays both
 selections through `collectLedgerRange` and requires the same rows and
 content hash.
 
@@ -90,3 +90,39 @@ The first is a tip range exactly as the local tip loop committed it (its
 - A gzip request body (`content-encoding: gzip`) is rejected with HTTP 400
   `invalid JSON: expected value at line 1 column 1`: the server does not
   decompress requests.
+
+## Ledger transfer probe fixture (Blockscout, 2026-09-25, 22:30 UTC)
+
+`ledger-transfer-probe-65402717-65403527.json.br` (brotli JSON, 37 KB) holds
+every `Transfer` log (ERC-20 and ERC-721 share the topic) of the 811-block tip
+range of the swap selection fixture above, 27,441 logs from 672 contracts,
+as Blockscout's PRO API answered
+`module=logs&action=getLogs&topic0=0xddf252ad...` between 22:30:20 and
+22:30:57 UTC, 29 calls of at most 1,000 logs walked block by block. Each log
+is kept as the two fields the transfer lane's probe (`transferAddressQuery`)
+selects, its block and emitting contract (`rows` index `addresses`). It is
+another indexer's answer for the same chain, not a HyperSync recording: no
+HyperSync call was made, because the only token is the production tip
+loop's. Filtered to the registry, its rows are the recorded transfer
+answers' 307 logs field for field (block, log index, transaction, address,
+data, topics). `apps/indexer/src/ledger-selection.test.ts` serves it as the
+probe's one page, the way the tip's partitions answered the range's
+manager-wide query, and requires the rows and content hash the recorded
+lists gave.
+
+Transfer density on chain 4663, from the same API on 25 Sep 2026 (93 calls,
+1,860 of the free key's credits):
+
+| Sample                                                                       |        Transfers |                                           Per block | Transactions |
+| ---------------------------------------------------------------------------- | ---------------: | --------------------------------------------------: | -----------: |
+| 65,402,717-65,403,527 (811 blocks, 17 Sep 13:28 UTC)                         |           27,441 |                                               33.84 |        4,846 |
+| 72,582,901-72,583,681 (781 blocks, the tip loop's range of 25 Sep 22:25 UTC) |           11,909 |                                               15.25 |        2,365 |
+| 42 samples, one per 145,000 blocks, 18 Sep 21:42 to 25 Sep 20:06 UTC         | first 1,000 each | 7.93 to 84.27 (median 15.87, 90th percentile 32.23) |            - |
+
+The recorded registered transfers of the first range were 307 (0.4 a block
+at the busy rate); the tip loop's own logs of 25 Sep counted 5 to 185 a
+range, 34 on average. With their transactions and blocks the recorded rows
+average 613 bytes a log, 318 a transaction and 203 a block, so whole
+chain-wide answers would be 8.2 MB (25 Sep) and 18.5 MB (17 Sep) per tip
+range, against a client cap of 32 MB and 20,000 rows a page; the probe's
+rows serialise to 81 bytes, 0.96 MB and 2.2 MB.

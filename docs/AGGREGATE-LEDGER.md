@@ -200,10 +200,17 @@ requested per page, 16 pages, 24 MiB per lane query):
    transaction (the initiator, `to` for the route label) and its block, and
    decoded; a swap whose amounts share a sign is not a trade and is counted
    as `unsupportedSwaps`.
-3. The transfer lane: every registered token's `Transfer` logs split the same
-   way over queries of at most 40,000 addresses (two of about 31,400, 1.41
-   MB, where fixed 31,000-address chunks took three), validated and joined
-   the same way.
+3. The transfer lane: every registered token's `Transfer` logs, validated
+   and joined the same way. A range longer than
+   `ledgerPassPolicy.chainTransferBlocks` (1,000 blocks) sends the registry
+   split the same way over queries of at most 40,000 addresses (two of about
+   31,400, 1.41 MB, where fixed 31,000-address chunks took three). A range of
+   at most 1,000 blocks first probes every `Transfer` on the chain for its
+   block and emitting contract only (`transferAddressQuery`), then sends the
+   same list query naming only the registry's tokens the probe found, so the
+   rows are the lists' own; the Transfers of other contracts it named are
+   counted as `unregisteredTransfers` (phase 3, "The transfer lane at the
+   tip").
 
 A lane query that hits a cap ends the range on its last whole page, every
 later query is asked only up to that block, rows beyond it are dropped, and
@@ -398,8 +405,9 @@ ends the loop on a committed batch.
   (5.3 MB a minute on Railway, most of the service's bill) to ask for a few
   hundred swaps. A range of at most `managerSwapBlocks` (2,000) blocks now
   sends one 527-byte manager-wide query and keeps the registry's swaps
-  locally; the transfer lane keeps its token lists, since a chain-wide
-  `Transfer` selection over 780 blocks overflowed HyperSync's 32 MB response.
+  locally; the transfer lane kept its token lists, since a chain-wide
+  `Transfer` selection over 780 blocks overflowed HyperSync's 32 MB response
+  (see the next entry for how it stopped re-sending them).
   Replaying the recorded answers of four 17 Sep tip ranges through the
   production client on a local TLS server, a cycle uploads 2.84 MB instead of
   7.19 MB (TLS bytes, handshakes and HTTP headers included) in 8 or 9
@@ -412,10 +420,42 @@ ends the loop on a committed batch.
   near 3,300 blocks at the busiest rate. Both selections gave identical rows and content hashes
   over seven real ranges (launches, the busiest morning, a quiet evening,
   the threshold); two are committed as recorded fixtures
-  (`apps/indexer/src/ledger-swap-selection.test.ts`) and
+  (`apps/indexer/src/ledger-selection.test.ts`) and
   `pnpm ledger:pass compare` reruns the comparison live. Envio does not
   accept a gzip request body (HTTP 400), so the transfer lists stay
   uncompressed.
+- **The transfer lane at the tip probes for the tokens that moved** (25 Sep
+  2026). After the swap lane's change the token lists were the tip loop's
+  only large upload: 2,904,754 bytes a cycle, about 3.4 GB a day of Railway
+  egress, for 5 to 185 registered transfers a range (34 on average over 233
+  cycles of 25 Sep). A range of at most `chainTransferBlocks` (1,000) blocks
+  now sends a 209-byte probe for every `Transfer` on the chain with two
+  fields, `block_number` and `address`, and then the usual list query naming
+  only the registry's tokens among the answer (tens of addresses, 0.8 to
+  about 2 KB), so the kept rows come from the same query shape as before and the
+  content hash is unchanged. Whole rows are not an option: measured on
+  Blockscout's copy of the chain, Transfers run 8 to 84 a block (median 16,
+  90th percentile 32 over 42 samples across 18 to 25 Sep), 11,909 in the
+  781-block tip range of 25 Sep and 27,441 in the 811-block range of 17 Sep, 8
+  to 19 MB with their transactions and blocks against a client cap of 32 MB
+  and 20,000 rows a page; the probe's rows are 81 bytes, 0.96 and 2.2 MB.
+  A tip page is a partition that has held a whole tip range (the manager-wide
+  swap query over 811 blocks was one page), so a cycle keeps its request
+  count: the probe and one list where the lists took two, and only the probe
+  when no registered token moved. The probe is capped at
+  `chainTransferPages` (8) pages and is dropped for the full lists, counted
+  as `transferFallbackRequests`, when it cannot finish the range within the
+  cap or the byte cap, fails for any reason but a throttle, a rejected
+  token, the request budget or a stop, or misses a registered token that a
+  swap of the range moved (a trade settles its token with a Transfer in the
+  same transaction). The tip cycle log reports `transferSelection`,
+  `unregisteredTransfers`, `transferPages` and `transferFallbackRequests`
+  beside the cycle's `requests` and `sentBytes`. Blockscout's Transfers of
+  the 811-block range, block and contract, are the probe answer replayed in
+  `apps/indexer/src/ledger-selection.test.ts`, which requires the rows and
+  content hash the recorded lists gave, and `pnpm ledger:pass compare` now
+  collects a range with both lanes' lists and again with both local
+  selections.
 - **Ranks are row numbers kept for the top 100**, not the report's dense rank
   over every eligible wallet: the leaderboard today ranks by position with
   the address breaking ties, and serves no rank past 100 (captain, 17 Sep
