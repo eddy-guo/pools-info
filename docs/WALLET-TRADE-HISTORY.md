@@ -1,8 +1,9 @@
 # Wallet trade history
 
 The wallet page's trade list is served on demand from the chain's explorer,
-Blockscout, and never from our database (aggregate design decision D3: no
-per-sale rows are stored, the PnL curve is hourly). This note is the contract
+Blockscout (aggregate design decision D3: no per-sale rows are stored, the PnL
+curve is hourly). Only the verified registry's list of launch tokens comes from
+our database, to decide which explorer rows are trades. This note is the contract
 between the read API and the website. The route's configuration, budget and
 failure behaviour are in `apps/api/README.md`, "Explorer wallet history".
 
@@ -104,16 +105,19 @@ Example (a real first page, trimmed to two items):
 Errors are the route's existing ones: 503
 `{error:"wallet_history_unavailable", reason}` with `Retry-After`, where
 `reason` is `not_configured`, `budget_exhausted`, `upstream_unavailable` or
-`key_rejected`; 400 `invalid_kind` or `invalid_cursor`.
+`key_rejected`; 400 `invalid_kind` or `invalid_cursor`. A process that has not
+yet read the registry and cannot reach the database answers the generic 503
+`{error:"data_temporarily_unavailable"}` (or the warming refusal while the
+database warms), and spends no explorer credit.
 
 ## What a trade is here
 
 An ERC-20 transfer between the wallet and the Uniswap v4 PoolManager
 (`0x8366a39cc670b4001a1121b8f6a443a643e40951`), the settlement leg of every
-swap in a catalog pool. The API reads the wallet's explorer transfer pages and
-keeps only those legs, deriving `side` from their direction; any transfer
-whose two parties are not the wallet and the PoolManager is dropped.
-The first page of the 7d board's top wallet on 25 Sep 2026 was 10
+swap in a catalog pool, of a token in the verified registry (`indexed_pools`,
+whose pools are admitted only after their id is recomputed from the pool key).
+The API reads the wallet's explorer transfer pages and keeps only those legs,
+deriving `side` from their direction. The first page of the 7d board's top wallet on 25 Sep 2026 was 10
 spoofed-token address-poisoning logs (a token named with invisible characters
 to pass for "ETH"), 8 NFT mints and 32 PoolManager legs, so the raw
 `kind=token-transfers` list is not a trade list, and telling its rows apart
@@ -125,20 +129,25 @@ needs this chain's contract addresses.
   call per trade, about 750 credits per page, which the free key cannot
   sustain. The row links to the explorer transaction, which shows it.
 - **Not the ledger's count.** The Trades stat tile is the ledger's window
-  count (`tradeCount`); this list is the wallet's whole history across every v4
-  pool. On 25 Sep 2026 over the same 24 hours, one wallet matched exactly
-  (46 and 46); another showed 40 legs against the ledger's 12, because most of
-  its legs were in pools the ledger has not registered. Never label the list's
+  count (`tradeCount`); this list is the wallet's whole history in the
+  registry's pools. On 25 Sep 2026 over the same 24 hours, one wallet matched
+  exactly (46 and 46); another showed 40 PoolManager legs against the ledger's
+  12, because most of its legs were in pools the ledger has not registered,
+  which the registry check now leaves out. Never label the list's
   length as the wallet's trade count, and never derive a figure from it: it is
   display data, not accounting evidence, and is never joined to positions or
   PnL.
-- **Forged legs pass.** The filter reads only a Transfer log's `from` and `to`,
-  which any token contract can write. A spoofed token whose Transfer log names
-  the PoolManager as the wallet's counterparty currently passes it and appears
-  as a real buy or sell, and Blockscout's own reputation flag does not catch it
-  either (the recorded poisoning token is marked `ok`). Treat every row as
-  display-only, exactly as `note` says. This is a known gap, not yet closed,
-  not an oversight.
+- **Registry tokens only.** Any token contract can write any `from` and `to`
+  into its Transfer log, so the direction alone cannot tell a sale from a
+  spoofed token's log that names the PoolManager, and Blockscout's reputation
+  flag does not catch it either (the recorded poisoning token is marked `ok`).
+  The token of a Transfer log, though, is the contract that emitted it, which
+  the EVM sets, so a spoofed token can never carry a registered token's
+  address; the registry check closes that gap. The API holds the registry's
+  tokens in memory, reads only newly registered pools every 30 s and reloads
+  in full hourly, so a token launched in the last half minute can be missing
+  from a first read. Trades in pools outside the verified registry are not
+  listed, the same scope as every other page on the site.
 - **Direct settlement only.** A trade where a contract other than the
   PoolManager hands the wallet its tokens is not listed. None of the sampled
   board wallets traded that way. A liquidity add or remove against the
@@ -149,8 +158,8 @@ needs this chain's contract addresses.
 
 Every response reads exactly one explorer page of 50 transfers, so a page
 holds anywhere from 0 to 50 trades beside a non-null `nextCursor`: a wallet
-whose page is crowded with other transfers can answer an empty page that still
-has more behind it. Offer Show more whenever `nextCursor` is non-null, whatever
+whose page is crowded with other transfers, or with trades in pools outside the
+registry, can answer an empty page that still has more behind it. Offer Show more whenever `nextCursor` is non-null, whatever
 the item count. Append by following `nextCursor` and never refetch a page
 already shown. Key rows on `transactionHash` and `logIndex`.
 

@@ -468,8 +468,9 @@ Blockscout PRO API (`https://api.blockscout.com/4663/api/v2`, the chain's
 official explorer). This is display data only: it never joins accounting or
 PnL tables, carries no evidence, and is not mixed into any verified figure. The
 indexed `/v1/wallets/:address/activity` route keeps serving our own verified
-activity unchanged. Blockscout returns 50 items per page, newest first, and
-this service reads no database table on this route.
+activity unchanged. Blockscout returns 50 items per page, newest first. The
+only table this route reads is `indexed_pools`, for the trades kind's token
+check below.
 
 The response is the shared `WalletHistoryResponse` type in `@pools/core`:
 `source:"blockscout"`, `chainId:4663`, `wallet` (lowercase), `kind`, `items`,
@@ -492,10 +493,16 @@ and keeps only the legs the wallet settled directly with the v4 PoolManager
 (`0x8366…0951`): a trade item has `transactionHash`, `logIndex`, `block`,
 `timestamp`, `side` (`buy` when the token left the PoolManager for the wallet,
 `sell` when the wallet paid it in), `token` (as above), `tokenRaw` (exact raw
-amount) and `method`. Any other transfer on those pages, such as a
-spoofed-token address-poisoning log naming another party, an airdrop or a plain
-send, is dropped; a forged Transfer log that names the PoolManager still passes
-(see the contract doc). There is no ETH
+amount) and `method`. A leg is kept only when its token is a launch token of
+the verified registry (`indexed_pools`): a spoofed token's Transfer log can name
+the PoolManager as counterparty, but its token address is the contract that
+emitted it, which the EVM sets, so it can never carry a registered token's
+address. `token-registry.ts` holds those tokens in memory (one full read, then
+rows past the highest `pool_ref` every 30 s, a full reload hourly) and is read
+before any credit is spent; with no registry the trades kind answers 503
+`not_configured`. Everything else on those pages, such as poisoning logs,
+airdrops, plain sends and trades in pools outside the registry, is dropped.
+There is no ETH
 figure: the ETH side of a swap is often paid or received by a router or bot
 contract rather than the wallet, so the exact amount lives only in the Swap
 log, one explorer call per trade. A trade routed so that a contract other than

@@ -19,6 +19,7 @@ import {
 import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
 import { parseRequest, RequestError } from "./request";
 import { createApi } from "./server";
+import { createTokenRegistry } from "./token-registry";
 import {
   createWalletHistory,
   createWalletHistoryFromEnv,
@@ -752,12 +753,16 @@ test("a trades response reads exactly one explorer page and carries its cursor, 
         assert.equal(kind, "trades");
         pages.push(page);
         return {
-          items: Array.from({ length: items }, (_, i) => ({ logIndex: i })),
+          items: Array.from({ length: items }, (_, i) => ({
+            logIndex: i,
+            token: { address: "0xa" },
+          })),
           nextPageParams: { block_number: String(pages.length), index: "0" },
         };
       },
       budget: createCreditBudget({ dailyCap: 1 }),
     } as never,
+    registry: createTokenRegistry(async () => [{ ref: 1, token: "0xa" }]),
   });
   const read = (w: string, page: Record<string, string> | null = null) =>
     history.read({ wallet: w, kind: "trades", page, scope: "s" });
@@ -777,6 +782,94 @@ test("a trades response reads exactly one explorer page and carries its cursor, 
     block_number: "2",
     index: "0",
   });
+});
+
+test("a spoofed token whose transfer log names the PoolManager was listed as a trade and is now dropped, since only registry tokens are trades", async (t) => {
+  const launcher = "0x78cc2ff0a2127c1bbb96b99124fadc8c41f89388";
+  const page = JSON.parse(await fixture("trades-page1"));
+  // The recorded poisoning log is a real one from this chain, emitted by the
+  // spoofed "ETH" contract 0x57d0...9c23 and naming a lookalike address. The
+  // same contract can name any counterparty, so here it names the PoolManager,
+  // which is what the side filter alone could not tell from a real sale.
+  const spoof = { ...page.items[0], to: { hash: poolManager } };
+  const [sell, launchBuy] = [page.items[2], page.items[3]];
+  const served = JSON.stringify({ ...page, items: [spoof, sell, launchBuy] });
+  const { baseUrl } = await upstream(t, async () => ({ body: served }));
+  // Before: the explorer page alone lists the spoof as a sale.
+  const before = await client(baseUrl).readPage("trades", launcher, null);
+  assert.deepEqual(
+    before.items.map((i) => [i.token.symbol, i.side]),
+    [
+      ["E឵T឵H", "sell"],
+      ["FOMOEGG", "sell"],
+      ["FOMOEGG", "buy"],
+    ],
+  );
+  assert.equal(
+    before.items[0].token.address,
+    "0x57d00fb1e72c721a8bcd5a57221b930c2ce49c23",
+  );
+  // After: the trade list keeps only tokens the verified registry holds.
+  const registered = [sell, launchBuy].map((row, i) => ({
+    ref: i + 1,
+    token: String(row.token.address_hash).toLowerCase(),
+  }));
+  const history = createWalletHistory({
+    client: client(baseUrl),
+    registry: createTokenRegistry(async () => registered),
+  });
+  const after = await history.read({
+    wallet: launcher,
+    kind: "trades",
+    page: null,
+    scope: "s",
+  });
+  assert.equal(after.kind, "trades");
+  assert.deepEqual(
+    after.items.map((i) => ("side" in i ? [i.logIndex, i.side] : null)),
+    [
+      [30, "sell"],
+      [47, "buy"],
+    ],
+  );
+});
+
+test("the trades kind needs the registry, and reads it before spending a credit", async () => {
+  let reads = 0;
+  const readPage = async () => {
+    reads++;
+    return { items: [], nextPageParams: null };
+  };
+  const budget = createCreditBudget({ dailyCap: 1 });
+  const unregistered = createWalletHistory({
+    client: { readPage, budget } as never,
+  });
+  await assert.rejects(
+    unregistered.read({ wallet, kind: "trades", page: null, scope: "s" }),
+    (e: RequestError) =>
+      e.status === 503 &&
+      e.reason === "not_configured" &&
+      e.retryAfter === 3600,
+  );
+  // Other kinds never touch the registry.
+  await unregistered.read({
+    wallet,
+    kind: "token-transfers",
+    page: null,
+    scope: "s",
+  });
+  assert.equal(reads, 1);
+  const unreachable = createWalletHistory({
+    client: { readPage, budget } as never,
+    registry: createTokenRegistry(async () => {
+      throw Error("database_unavailable");
+    }),
+  });
+  await assert.rejects(
+    unreachable.read({ wallet, kind: "trades", page: null, scope: "s" }),
+    /database_unavailable/,
+  );
+  assert.equal(reads, 1);
 });
 
 test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503 when unconfigured", async (t) => {

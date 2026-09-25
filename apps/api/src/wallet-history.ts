@@ -7,6 +7,7 @@ import {
 } from "./blockscout-client";
 import { encodeHistoryCursor } from "./history-cursor";
 import { RequestError } from "./request";
+import type { TokenRegistry } from "./token-registry";
 
 const note =
   "Explorer history for display only; not accounting or PnL evidence." as const;
@@ -38,9 +39,12 @@ function unavailable(error: BlockscoutError): RequestError {
 /** Cache keyed by wallet, kind, and page. First pages change as the wallet
  * acts, so they stay fresh briefly; deeper pages are effectively immutable
  * history and stay longer. Past freshness an entry is still served, marked
- * stale, whenever the explorer or the credit budget cannot answer. */
+ * stale, whenever the explorer or the credit budget cannot answer. Trades
+ * keep only legs whose token is in the verified registry, read before any
+ * credit is spent; without a registry the trades kind is not configured. */
 export function createWalletHistory({
   client,
+  registry = null,
   now = Date.now,
   firstPageTtlMs = 30000,
   pageTtlMs = 600000,
@@ -49,6 +53,7 @@ export function createWalletHistory({
   maxBytes = 32 * 1024 * 1024,
 }: {
   client: BlockscoutClient | null;
+  registry?: TokenRegistry | null;
   now?: () => number;
   firstPageTtlMs?: number;
   pageTtlMs?: number;
@@ -64,7 +69,7 @@ export function createWalletHistory({
   }
   return {
     async read({ wallet, kind, page, scope }) {
-      if (!client)
+      if (!client || (kind === "trades" && !registry))
         throw new RequestError(503, "wallet_history_unavailable", {
           reason: "not_configured",
           retryAfter: 3600,
@@ -80,6 +85,7 @@ export function createWalletHistory({
         cache.set(key, hit);
         return hit.body;
       }
+      const registered = kind === "trades" ? await registry!.current() : null;
       try {
         const result = await client.readPage(kind, wallet, page);
         const fetchedAt = now();
@@ -88,7 +94,11 @@ export function createWalletHistory({
           chainId: 4663,
           wallet,
           kind,
-          items: result.items,
+          items: registered
+            ? (result.items as { token: { address: string } }[]).filter((i) =>
+                registered.has(i.token.address),
+              )
+            : result.items,
           nextCursor: result.nextPageParams
             ? encodeHistoryCursor(scope, kind, result.nextPageParams)
             : null,
@@ -117,6 +127,7 @@ export function createWalletHistory({
  * 503 `not_configured`, so unconfigured deployments and CI stay green. */
 export function createWalletHistoryFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  registry: TokenRegistry | null = null,
 ): WalletHistory {
   function integer(name: string, fallback: number, max: number) {
     const raw = env[name];
@@ -128,6 +139,7 @@ export function createWalletHistoryFromEnv(
   }
   const key = env.BLOCKSCOUT_API_KEY;
   return createWalletHistory({
+    registry,
     client: key
       ? createBlockscoutClient({
           key,

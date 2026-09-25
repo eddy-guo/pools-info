@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import test from "node:test";
 import pg from "pg";
 import { createReader } from "./reader";
+import { createTokenRegistry } from "./token-registry";
 import { parseRequest } from "./request";
 import type { ChainSnapshot } from "@pools/core";
 import { readData } from "./reader";
@@ -130,6 +131,55 @@ test(
         discoveryV2: "0",
         discoveryV1V2Overlap: "0",
       });
+    } finally {
+      await reader.close();
+      await db.query(`DROP SCHEMA ${schema} CASCADE`);
+      await db.end();
+    }
+  },
+);
+test(
+  "Postgres: the registry's launch tokens load in full, then past a pool ref, for the trade list's token check",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const schema = "api_test_registry_" + randomBytes(8).toString("hex");
+    const db = new pg.Client({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+    await db.connect();
+    const reader = createReader(process.env.TEST_DATABASE_URL, schema);
+    try {
+      await db.query(`CREATE SCHEMA ${schema}`);
+      await db.query(`SET search_path TO ${schema}`);
+      await applyTestMigrations(db);
+      await db.query(
+        "INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash) VALUES(4663,'discovery:v1','discovery',100,199,$1)",
+        [word(199)],
+      );
+      await db.query(
+        "INSERT INTO indexer_batches VALUES(4663,'discovery:v1',100,199,$1,'checksum','{}')",
+        [word(199)],
+      );
+      for (const id of [1, 2, 3])
+        await db.query(
+          `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,
+            launch_sender,launched_at,source_stream,source_batch)
+          VALUES(4663,$1,$2,'Token','T',100,$3,$4,1000,'discovery:v1',199)`,
+          [word(id), address(id + 100), word(id + 10), address(90)],
+        );
+      const all = await reader.registeredTokens!(0);
+      assert.deepEqual(
+        all.map((row) => row.token),
+        [address(101), address(102), address(103)],
+      );
+      assert(all.every((row, i) => i === 0 || row.ref > all[i - 1].ref));
+      assert.deepEqual(await reader.registeredTokens!(all[1].ref), [all[2]]);
+      assert.deepEqual(await reader.registeredTokens!(all[2].ref), []);
+      const registry = createTokenRegistry((afterRef) =>
+        reader.registeredTokens!(afterRef),
+      );
+      const tokens = await registry.current();
+      assert(tokens.has(address(102)) && !tokens.has(address(104)));
     } finally {
       await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);
