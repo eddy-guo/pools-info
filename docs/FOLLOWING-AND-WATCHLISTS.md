@@ -33,17 +33,15 @@ action opens the designed copy-trading card as a read-only preview instead
 disabled and no order, wallet connection or backtest behind it.
 
 The feed's rows are each followed wallet's own trades as the chain explorer
-lists them (see "API and evidence" below). Until 25 Sep 2026 they came from
-the pre-ledger accounting tables, frozen at block 64,018,999 (15 Sep 22:47Z),
-and showed an exact ETH amount and average execution price per trade; the
-explorer trades carry neither, and whether trade lists show an ETH amount is
-an open product question. The website's panel
-(`apps/web/src/components/follow-activity.tsx` over
-`apps/web/src/lib/following-response.ts`) still expects the old shape and reads
-the feed as unavailable until it adopts the new one. No trade is signed,
+lists them (see "API and evidence" below). The API supplies the wallet, buy
+or sell, token identity, exact raw token amount, optional block time and
+transaction hash for each row. The previous accounting-backed feed showed an
+ETH amount and average execution price per trade; the explorer source supplies
+neither. Whether trade lists
+should show ETH amounts remains an open product question. No trade is signed,
 submitted, simulated or executed. The surface is informational, not advice.
 
-The browser checks the existing saved API every 30 seconds while visible and
+The browser checks the Following API every 30 seconds while visible and
 unpaused. Polls wait for the previous request; there are no overlapping automatic
 requests or browser RPC calls. Pausing stops automatic refresh, and removing the
 last followed wallet unmounts and cancels its feed. Failed refreshes retain the
@@ -70,7 +68,8 @@ response types and the policy below.
 The answer is the union of each wallet's first explorer page (50 ERC-20
 transfers, so 0 to 50 trades each), merged newest first by block and log index
 and cut at `limit`. A row has `id` (`txHash:logIndex`), `wallet`, `poolId`
-(the registry's pool for the token), `token`, `symbol`, `name`, `decimals`,
+(the registry's pool for the token, or null if ambiguous), `token`, `symbol`,
+`name`, `decimals`,
 `txHash`, `logIndex`, `block`, `timestamp`, `side`, `tokenRaw` (exact raw
 amount) and `method`; there is no ETH amount, price, publication cutoff or
 support flag. `coverage.wallets` says for every requested wallet whether its
@@ -79,8 +78,8 @@ page was `read` (with `fetchedAt`), is `stale` (a refresh failed, with its
 `reason`), and where its page ends (`horizonBlock`, with `olderTrades`): a
 launcher's page of transfers can span a few hours, so that wallet's older
 trades may be missing while other wallets' trades at those blocks are listed.
-When no requested wallet could be read the route answers the explorer's own
-503 `wallet_history_unavailable` with its reason and `Retry-After`.
+When no requested wallet could be read the route answers 503
+`wallet_history_unavailable` with a reason and `Retry-After`.
 
 One answer reads at most 8 wallets from the explorer (240 credits), never-read
 wallets first, so a list of 200 fills in over about 25 polls. A cached page is
@@ -107,7 +106,6 @@ feed.
 the registry re-check, the refresh gate against ledger activity and age, the
 per-answer read bound, per-wallet failure disclosure, the credit reserve and the
 shared cache. `ledger-wallet.integration.test.ts` pins the ledger signal to the
-wallet header's own `last`. Browser tests of the website's panel still run
-against the old shape through intercepted routes until the panel adopts the new
-one. Watchlist browser tests use fresh recipient contexts and cover explicit
+wallet header's own `last`. Watchlist browser tests use fresh recipient
+contexts and cover explicit
 merge, cross-tab state, URL filters, invalid input, limits and clipboard denial.

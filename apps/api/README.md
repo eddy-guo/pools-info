@@ -545,23 +545,10 @@ the route makes no chain RPC call.
 
 ## Following
 
-`GET /v1/following?wallets=<up to 200 addresses>&limit=<1..50>` is each
-followed wallet's first page of the trades kind above, served from the same
-cache and registry check and merged newest first. It is display data only and
-no longer reads the pre-ledger accounting tables. Rows carry the trade's
-wallet, side, token identity, registry `poolId`, exact `tokenRaw`, block, log
-index, time, transaction hash and method, with no ETH amount or price;
-`coverage.wallets` gives each wallet's `status` (`read`, `stale`, `pending`,
-`unavailable`), `fetchedAt`, failure `reason` and page end (`horizonBlock`).
-One answer reads at most 8 wallets from the explorer. A cached page is read
-again only when the ledger's All-window `last_timestamp` for the wallet shows
-activity past its newest listed trade, or when it is 6 hours old (10 minutes
-without a ledger, where `MARKET_SOURCE` is `broad`), and Following leaves the
-last fifth of `BLOCKSCOUT_DAILY_CREDIT_CAP` to the wallet page. With every
-requested wallet unreadable it answers 503 `wallet_history_unavailable` with
-the reason, and without `BLOCKSCOUT_API_KEY` 503 `not_configured`. The
-contract, policy and credit arithmetic are in `docs/FOLLOWING-AND-WATCHLISTS.md`
-and `docs/WALLET-TRADE-HISTORY.md`.
+`GET /v1/following` merges followed wallets' explorer trades. See
+`docs/FOLLOWING-AND-WATCHLISTS.md` for its request, response, coverage and
+refresh contract, and `docs/WALLET-TRADE-HISTORY.md` for shared explorer
+credit arithmetic.
 
 ## ETH/USD spot price
 
