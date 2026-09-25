@@ -188,3 +188,22 @@ serves cached pages marked `stale` and otherwise answers 503 `budget_exhausted`
 until UTC midnight. The cap keeps three process lifetimes a day inside the
 key's allowance. At 16:27 UTC on 25 Sep 2026 the key had 99,900 credits left,
 so the route was barely being called.
+
+`GET /v1/following` spends from the same cap and cache (`apps/api/src/following-read.ts`,
+`docs/FOLLOWING-AND-WATCHLISTS.md`): each followed wallet's first trades page,
+read again only when the ledger shows the wallet trading since, and at most
+8 reads (240 credits) per answer. It never spends the cap's last fifth, which
+stays for this route.
+
+| Following event                                         | explorer pages          | credits           |
+| ------------------------------------------------------- | ----------------------- | ----------------- |
+| first view of 10 followed wallets                       | 10, over 2 answers      | 300               |
+| first view of 200 followed wallets (the maximum)        | 200, over 25 answers    | 6,000             |
+| a 30 s poll with nothing new in the ledger              | 0                       | 0                 |
+| a quiet followed wallet, per day while watched          | 4 (6 h age limit)       | 120               |
+| a followed wallet trading in ~30 bursts a day           | about 34                | about 1,000       |
+| a followed wallet trading nonstop for 24 h, the ceiling | 720 (one per 2 minutes) | 21,600            |
+| 10 followed wallets, 3 of them active, watched all day  | about 150               | about 4,500 (15%) |
+
+A page is shared by every viewer following the wallet and by this route's
+first page, so the figures are per unique followed wallet, not per viewer.

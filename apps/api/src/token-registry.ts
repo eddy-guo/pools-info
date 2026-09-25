@@ -1,7 +1,8 @@
-/** One registry row: the pool's surrogate key, which only grows, and its
- * launch token, lowercase as `indexed_pools` stores it. */
+/** One registry row: the pool's surrogate key, which only grows, its pool id
+ * and its launch token, lowercase as `indexed_pools` stores them. */
 export interface RegistryToken {
   ref: number;
+  poolId: string;
   token: string;
 }
 
@@ -13,6 +14,9 @@ export interface RegistryToken {
  * token's address. */
 export interface TokenRegistry {
   current(): Promise<ReadonlySet<string>>;
+  /** The pool of a token in the set `current()` last answered: null when the
+   * token is not there, or when more than one registered pool launched it. */
+  poolOf(token: string): string | null;
 }
 
 /** Holds the set in memory. It loads every token once, then only rows past the
@@ -30,6 +34,7 @@ export function createTokenRegistry(
   }: { now?: () => number; refreshMs?: number; fullReloadMs?: number } = {},
 ): TokenRegistry {
   let tokens: Set<string> | null = null;
+  let pools = new Map<string, string | null>();
   let lastRef = 0,
     refreshedAt = 0,
     fullAt = 0;
@@ -39,12 +44,19 @@ export function createTokenRegistry(
     const full = !tokens || t - fullAt >= fullReloadMs;
     const rows = await load(full ? 0 : lastRef);
     const next = full ? new Set<string>() : tokens!;
+    const nextPools = full ? new Map<string, string | null>() : pools;
     let max = full ? 0 : lastRef;
     for (const row of rows) {
       next.add(row.token);
+      const held = nextPools.get(row.token);
+      nextPools.set(
+        row.token,
+        held === undefined || held === row.poolId ? row.poolId : null,
+      );
       if (row.ref > max) max = row.ref;
     }
     tokens = next;
+    pools = nextPools;
     lastRef = max;
     refreshedAt = t;
     if (full) fullAt = t;
@@ -63,6 +75,9 @@ export function createTokenRegistry(
         }
       }
       return tokens!;
+    },
+    poolOf(token) {
+      return pools.get(token) ?? null;
     },
   };
 }

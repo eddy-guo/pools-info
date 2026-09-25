@@ -39,6 +39,10 @@ test("warming refuses all database routes before reads/cache/budget while health
             retryAfter: 17,
           });
         },
+        peekTrades: () => null,
+        refreshTrades: async () => {
+          throw Error("Unexpected trades refresh");
+        },
       },
       ethPrice: {
         read: async () => {

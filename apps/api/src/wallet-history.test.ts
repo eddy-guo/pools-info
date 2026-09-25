@@ -647,7 +647,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
     "Explorer history for display only; not accounting or PnL evidence.",
   );
   now += 29000;
-  assert.equal(
+  assert.deepEqual(
     await history.read({ wallet, kind: "transactions", page: null, scope }),
     first,
   );
@@ -660,7 +660,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
     scope,
   });
   assert.equal(calls, 2);
-  assert.notEqual(refreshed, first);
+  assert.notDeepEqual(refreshed, first);
   const page = decodeHistoryCursor(first.nextCursor!, scope, "transactions");
   const deep = await history.read({
     wallet,
@@ -670,7 +670,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   });
   assert.equal(deep.nextCursor, null);
   now += 599000;
-  assert.equal(
+  assert.deepEqual(
     await history.read({ wallet, kind: "transactions", page, scope }),
     deep,
   );
@@ -762,7 +762,9 @@ test("a trades response reads exactly one explorer page and carries its cursor, 
       },
       budget: createCreditBudget({ dailyCap: 1 }),
     } as never,
-    registry: createTokenRegistry(async () => [{ ref: 1, token: "0xa" }]),
+    registry: createTokenRegistry(async () => [
+      { ref: 1, poolId: "0xpa", token: "0xa" },
+    ]),
   });
   const read = (w: string, page: Record<string, string> | null = null) =>
     history.read({ wallet: w, kind: "trades", page, scope: "s" });
@@ -812,6 +814,7 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
   // After: the trade list keeps only tokens the verified registry holds.
   const registered = [sell, launchBuy].map((row, i) => ({
     ref: i + 1,
+    poolId: `0xpool${i + 1}`,
     token: String(row.token.address_hash).toLowerCase(),
   }));
   const history = createWalletHistory({
@@ -884,6 +887,10 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
       seen.push(input);
       if (outcome instanceof Error) throw outcome;
       return outcome;
+    },
+    peekTrades: () => null,
+    refreshTrades: async () => {
+      throw Error("Unexpected trades refresh");
     },
   };
   const reader = { read: async () => ({}), close: async () => {} };
