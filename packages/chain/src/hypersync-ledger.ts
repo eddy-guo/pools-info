@@ -123,17 +123,24 @@ export const ledgerPassPolicy = Object.freeze({
    * bytes a row: 0.96 and 2.2 MB. A longer range only happens while catching
    * up, where the lists answer in one page each. */
   chainTransferBlocks: 1000,
-  /** Whole pages the transfer probe may take for one range; a range it
-   * cannot finish within them (or within maxLogs and maxBytes, about 300,000
-   * rows) is selected again by the full token lists, so a burst costs these
-   * pages and the two list queries, never an unbounded run of pages or a
-   * shortened range. A tip page is a server partition that has held a whole
-   * tip range, so the probe is one request and the list after it a second,
-   * the two the lists took; with the rest of a tip cycle (height, head
-   * header, reconcile, launch, one or two swap pages, the cutoff header)
-   * the cap bounds a cycle near 17 requests at the 2 s request interval,
-   * about 11 a minute against the free tier's 30. */
-  chainTransferPages: 8,
+  /** Whole pages allowed for the chain-wide Transfer probe before falling
+   * back to the full token lists. The 25 Sep tip logs show 233 ranges of
+   * 708-837 blocks (p50 741, p90 764, p95 about 770), eight requests per
+   * cycle, at most nine, and a 74 s cycle, about 6.5 requests/minute.
+   * Blockscout counted 11,909 Transfers in 781 tip blocks and 27,441 in
+   * 811 older blocks; 42 samples had median 15.87 and p90 32.23 per block.
+   * At 32/block for 770 blocks, 24,640 / the smallest recorded tip page
+   * of 3,530 logs rounds up to seven pages; using the exact p90 needs eight.
+   * The 27,441-log range needs eight at that floor. Ten leaves two pages of
+   * margin. At 32/block August's 1,300-log floor would need 19 and fall back
+   * (20 at the exact p90 density).
+   * Page boundaries did not change across default, logs+blocks, logs-only
+   * or max_num_logs=20,000 selections; the probe's two fields reduce bytes,
+   * not the expected logs per page. At the cap, seven other requests at the
+   * observed maximum plus ten probe pages and two fallback list queries
+   * total at most 19: 36 s of 2 s pacing plus the 60 s tip poll, about
+   * 12 requests/minute against the shared free tier's roughly 30. */
+  chainTransferPages: 10,
   /** Whole pages consumed per lane query before the range is cut short. */
   maxPages: 16,
   maxLogs: 80000,

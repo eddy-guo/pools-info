@@ -439,11 +439,20 @@ ends the loop on a committed batch.
   781-block tip range of 25 Sep and 27,441 in the 811-block range of 17 Sep, 8
   to 19 MB with their transactions and blocks against a client cap of 32 MB
   and 20,000 rows a page; the probe's rows are 81 bytes, 0.96 and 2.2 MB.
-  A tip page is a partition that has held a whole tip range (the manager-wide
-  swap query over 811 blocks was one page), so a cycle keeps its request
-  count: the probe and one list where the lists took two, and only the probe
-  when no registered token moved. The probe is capped at
-  `chainTransferPages` (8) pages and is dropped for the full lists, counted
+  Recorded tip pages held 3,530 to 5,965 logs, and the 27,441-log range
+  needs eight pages at that floor. A p95 tip range of about 770 blocks at
+  the sampled p90 density of 32.23 Transfers per block also needs eight;
+  the cap of `chainTransferPages` (10) leaves two pages of margin. The
+  probe's two-field selection reduces bytes, while recorded page boundaries
+  are independent of field selection. The probe and one list can cost more
+  requests than the previous two lists, and a burst is capped before it
+  falls back. With seven other requests at the observed cycle maximum,
+  ten probe requests and two fallback list requests, a cycle uses 19
+  requests: about 12 per minute with 2-second pacing and the 60-second tip
+  poll, below the shared free tier's roughly 30. Under the sampled density
+  distribution and the 3,530-log tip page floor, roughly 10% of
+  770-block ranges should fall back for page count; this is a model, not a
+  measured production rate. The probe is dropped for the full lists, counted
   as `transferFallbackRequests`, when it cannot finish the range within the
   cap or the byte cap, fails for any reason but a throttle, a rejected
   token, the request budget or a stop, or misses a registered token that a
@@ -451,7 +460,8 @@ ends the loop on a committed batch.
   same transaction). The tip cycle log reports `transferSelection`,
   `unregisteredTransfers`, `transferPages` and `transferFallbackRequests`
   beside the cycle's `requests` and `sentBytes`. Blockscout's Transfers of
-  the 811-block range, block and contract, are the probe answer replayed in
+  the 811-block range, block and contract, are replayed as six simulated
+  block-complete probe pages in
   `apps/indexer/src/ledger-selection.test.ts`, which requires the rows and
   content hash the recorded lists gave, and `pnpm ledger:pass compare` now
   collects a range with both lanes' lists and again with both local

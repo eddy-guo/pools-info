@@ -98,26 +98,39 @@ const probeRows = (range: string): ProbeRows =>
       ),
     ).toString(),
   );
-/** The probe's answer for the range in one page, as the tip's partitions
- * answered the range's manager-wide query. */
-const probeAnswer = (f: Fixture, probe: ProbeRows): Page[] => [
-  {
-    data: [
-      {
-        logs: probe.rows.map(([block, address]) => ({
-          block_number: block,
-          address: probe.addresses[address],
-        })),
-      },
-    ],
-    archive_height: Math.min(
-      ...f.responses.transfers.flat().map((p) => p.archive_height),
-    ),
-    next_block: f.toBlock + 1,
-    total_execution_time: 1,
-    rollback_guard: null,
-  },
-];
+const probeAnswer = (f: Fixture, probe: ProbeRows): Page[] => {
+  const count = Math.ceil(probe.rows.length / 5000);
+  const pages: Page[] = [];
+  const archiveHeight = Math.min(
+    ...f.responses.transfers.flat().map((p) => p.archive_height),
+  );
+  let start = 0;
+  for (let i = 0; i < count; i++) {
+    let end = start + Math.ceil((probe.rows.length - start) / (count - i));
+    while (
+      end < probe.rows.length &&
+      probe.rows[end - 1][0] === probe.rows[end][0]
+    )
+      end++;
+    pages.push({
+      data: [
+        {
+          logs: probe.rows.slice(start, end).map(([block, address]) => ({
+            block_number: block,
+            address: probe.addresses[address],
+          })),
+        },
+      ],
+      archive_height: archiveHeight,
+      next_block:
+        end < probe.rows.length ? probe.rows[end][0] : f.toBlock + 1,
+      total_execution_time: 1,
+      rollback_guard: null,
+    });
+    start = end;
+  }
+  return pages;
+};
 /** The pages of one recorded query keyed by the block each was asked from. */
 function byFrom(fromBlock: number, pages: Page[]) {
   const map = new Map<number, Page>();
@@ -370,6 +383,14 @@ test("a chain-wide Transfer probe over the recorded tip range lists only the tok
     recorded.map((l) => l.block_number).sort((a, b) => a - b),
   );
   const pages = probeAnswer(f, probe);
+  assert.equal(pages.length, 6);
+  assert.ok(pages.length <= ledgerPassPolicy.chainTransferPages);
+  assert.ok(
+    pages.every((p) => {
+      const logs = p.data.flatMap((chunk) => chunk.logs ?? []);
+      return logs.length >= 3530 && logs.length <= 5965;
+    }),
+  );
   const lists = await collect(f, "pool_ids", "tokens");
   const local = await collect(f, "manager", "chain", pages);
   // The tip loop's own choice for the range, unset, is the probe.
@@ -410,18 +431,26 @@ test("a chain-wide Transfer probe over the recorded tip range lists only the tok
           "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
       ),
     );
-  const [probeQuery, listQuery, ...rest] = transferQueries(local.sent);
-  assert.deepEqual(rest, []);
-  assert.deepEqual(probeQuery.field_selection, {
-    log: ["block_number", "address"],
-  });
-  assert.ok(bytes(probeQuery) < 1024);
+  const localTransferQueries = transferQueries(local.sent);
+  const probes = localTransferQueries.slice(0, pages.length);
+  const listQuery = localTransferQueries[pages.length];
+  assert.equal(localTransferQueries.length, pages.length + 1);
+  assert.deepEqual(
+    probes.map((q) => q.from_block),
+    [f.fromBlock, ...pages.slice(0, -1).map((p) => p.next_block)],
+  );
+  for (const probeQuery of probes) {
+    assert.deepEqual(probeQuery.field_selection, {
+      log: ["block_number", "address"],
+    });
+    assert.ok(bytes(probeQuery) < 1024);
+  }
   assert.deepEqual(listQuery.logs![0].address, [...registered].sort());
   assert.ok(bytes(listQuery) < 2048);
   assert.equal(transferQueries(lists.sent).length, 1);
   assert.deepEqual(
     local.c.pages.transfers.map((p) => p.length),
-    [1, 1],
+    [pages.length, 1],
   );
   const [record, list] = local.c.query.transfers;
   assert.deepEqual(

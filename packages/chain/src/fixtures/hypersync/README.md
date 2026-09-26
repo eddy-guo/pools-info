@@ -105,10 +105,11 @@ another indexer's answer for the same chain, not a HyperSync recording: no
 HyperSync call was made, because the only token is the production tip
 loop's. Filtered to the registry, its rows are the recorded transfer
 answers' 307 logs field for field (block, log index, transaction, address,
-data, topics). `apps/indexer/src/ledger-selection.test.ts` serves it as the
-probe's one page, the way the tip's partitions answered the range's
-manager-wide query, and requires the rows and content hash the recorded
-lists gave.
+data, topics). `apps/indexer/src/ledger-selection.test.ts` replays the
+27,441 rows as six simulated, block-complete pages of roughly 4,600 logs
+each, within the recorded tip page sizes, and requires the same rows and
+content hash as the recorded full-list answers. The page boundaries are a
+test simulation, not a recorded HyperSync answer to this probe.
 
 Transfer density on chain 4663, from the same API on 25 Sep 2026 (93 calls,
 1,860 of the free key's credits):
@@ -126,3 +127,39 @@ average 613 bytes a log, 318 a transaction and 203 a block, so whole
 chain-wide answers would be 8.2 MB (25 Sep) and 18.5 MB (17 Sep) per tip
 range, against a client cap of 32 MB and 20,000 rows a page; the probe's
 rows serialise to 81 bytes, 0.96 MB and 2.2 MB.
+
+The page cap uses the available HyperSync page evidence, not the one-page
+manager answer as a proxy for the probe. Near the tip, recorded pages held
+3,530 to 5,965 logs: the 811-block manager-wide answer was one page of
+4,296, and the 2,000-block answer was 4,441 + 5,965. August pages held
+1,300 to 2,300. On 16-17 Sep, the same query ended at the same block with
+default fields, logs plus blocks, logs only, and `max_num_logs=20,000`:
+server partitions, not selected fields, set page boundaries. The probe's
+two-field selection reduces response bytes but does not change that measured
+page boundary behavior. PR 91's whole-row chain-wide Transfer query exceeded
+32 MB over 780 tip blocks, so the small selection is necessary.
+
+Deployment `02a6827b`'s ledger-tip logs cover 233 cycles on 25 Sep,
+17:37-22:26 UTC: range sizes 708-837 blocks, p50 741, p90 764, p95 about
+770, maximum 837. They used eight HyperSync requests per cycle, maximum
+nine, with a roughly 74-second cycle, or about 6.5 requests/minute.
+At 32 Transfers/block over 770 blocks, `ceil(24,640 / 3,530) = 7` probe
+pages; at the observed p90 of 32.23, it is eight. The recorded 27,441-log
+range also needs eight at that page floor; the 11,909-log tip range needs
+four. `chainTransferPages=10` allows two pages of margin. At the August
+1,300-log floor, the rounded 32/block case needs 19 pages (20 at the
+exact p90) and falls back to full token lists. A capped fallback costs
+at most ten probe requests plus two
+list requests. Adding the seven non-transfer requests in the observed
+maximum nine-request cycle gives 19 requests; 2-second pacing spans at
+least 36 seconds and the 60-second tip poll makes roughly 12 requests per
+minute, below the shared free tier's roughly 30. Even within the request
+burst, 19 is below 30 requests in a minute.
+
+Ten pages at the 3,530-log tip floor cover about 45.8 Transfers/block for a
+770-block range. That exceeds the p90 density of the 42 Blockscout samples,
+so under those page-size and range assumptions only about the upper tenth
+of sampled densities would fall back for page count; byte
+limits or failed requests can add fallbacks. This is a modeled frequency,
+not a measured HyperSync fallback rate. Production tip logs after deployment
+must establish actual pages, fallback counts, lag and committed Transfers.
