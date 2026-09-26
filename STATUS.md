@@ -1,5 +1,13 @@
 # Status - 15 Sep 2026, current settling pass
 
+## Crowd launches join the ledger (26 Sep 2026, branch fm/pools-cca-launch-scope-p29)
+
+The 54 pools.xyz crowd (auction) launches, XBOW among them, register through
+a crowd lane of the ledger tip loop and are served like any other launch once
+their stream is level with the main cursor; auction entrants are excluded.
+Design, the template rule and the catch-up: `docs/CROWD-LAUNCHES.md`. The
+first deploy catches their history up inside the tip loop's own pacer.
+
 ## Production serves from the aggregate ledger (18 Sep 2026, 00:12 UTC)
 
 The api on Railway reads `LedgerPostgres` with `MARKET_SOURCE=ledger`: the
