@@ -34,23 +34,6 @@ export interface FollowingActivityItem {
   supported: true;
 }
 
-export interface FollowingActivityResponse {
-  items: FollowingActivityItem[];
-  hasMore: boolean;
-  scope: "saved_verified_positions";
-  notice: string;
-  coverage: {
-    requestedWallets: number;
-    returnedPools: number;
-    /** Publication cutoffs of returned items only, not all followed wallets. */
-    asOf: number | null;
-    oldestAsOf: number | null;
-    generatedAt: string;
-    complete: false;
-    registryExhaustive: false;
-  };
-}
-
 /** One followed wallet's trade as the explorer lists it: the wallet's ERC-20
  * leg against the PoolManager in a token of the verified registry. It carries
  * no ETH amount and no price; those are not in the explorer's transfer. */
