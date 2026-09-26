@@ -512,8 +512,10 @@ export async function readProduct<T>(
     }
   }
   if (!productFixtures()) throw new ProductUnavailableError();
-  if (checked.endpoint === "following")
-    throw Error("Saved following activity is temporarily unavailable.");
+  /* Following is explorer history with no committed dataset behind it: a
+     fixture deployment answers it unavailable, as the read API does when it
+     has no explorer key (`wallet_history_unavailable`, `not_configured`). */
+  if (checked.endpoint === "following") throw new ProductUnavailableError();
   if (checked.endpoint.startsWith("trades/"))
     throw Error("This verified sale is unavailable in the saved index.");
   const data = await preloadedProduct(checked.endpoint, checked.params);

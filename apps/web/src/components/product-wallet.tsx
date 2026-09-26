@@ -39,6 +39,13 @@ import { PoolImage } from "./pool-image";
 import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useQuery } from "./state";
 import { PnlCardModal } from "./pnl-card-modal";
+import {
+  RowFiller,
+  TradeAmount,
+  TradeSide,
+  TradeTime,
+  TradeTransaction,
+} from "./trade-cells";
 import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 const tabs = [
@@ -81,28 +88,6 @@ function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
     return data.launchesTruncated ? null : data.launches.length;
   return null;
 }
-/**
- * A raw token amount and its decimals, in bigint arithmetic throughout: a
- * float division would lose precision on a large raw integer, exactly what
- * this figure must never do. Six significant fractional digits, truncated
- * (never rounded past what the wallet actually holds) and stripped of
- * trailing zeros, matching the six-significant-digit convention every other
- * token quantity in this app already uses.
- */
-function formatTokenRaw(raw: string, decimals: number | null): string | null {
-  if (decimals === null) return null;
-  const value = BigInt(raw);
-  const base = 10n ** BigInt(decimals);
-  const whole = value / base;
-  const frac = value % base;
-  const fracDigits = frac
-    .toString()
-    .padStart(decimals, "0")
-    .slice(0, 6)
-    .replace(/0+$/, "");
-  const wholeText = new Intl.NumberFormat("en-US").format(whole);
-  return fracDigits ? `${wholeText}.${fracDigits}` : wholeText;
-}
 /** A position's token quantity in whole tokens, or null where the read has none. */
 function holding(p: AnalyticsWalletResponse["positions"][number]) {
   return p.position && p.decimals !== null
@@ -118,20 +103,6 @@ function stillHeld(data: AnalyticsWalletResponse | undefined) {
   );
   const held = known.filter((p) => BigInt(p.quantity) > 0n).length;
   return known.length ? `${held} of ${known.length}` : null;
-}
-/**
- * A reserved position row's two text states, as separate keyed nodes. Left as
- * bare strings they are one text run that React rewrites in place, and Chrome
- * scores a rewritten run whose start moves - which every right-aligned cell
- * here does - reporting it against the `td` with rectangles that read
- * byte-identical in the observer's own log. Remounted nodes it never scores.
- */
-function RowFiller({ blank }: { blank: boolean }) {
-  return blank ? (
-    <span key="blank">{"\u00a0"}</span>
-  ) : (
-    <span key="pending">Pending</span>
-  );
 }
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
@@ -689,14 +660,11 @@ export function ProductWallet({ address }: { address: string }) {
                                 <td data-pending={!t && tradeHistory.loading}>
                                   {t ? (
                                     <span className="number">
-                                      {formatTokenRaw(
-                                        t.tokenRaw,
-                                        t.token.decimals,
-                                      ) === null ? (
-                                        <Unavailable />
-                                      ) : (
-                                        `${formatTokenRaw(t.tokenRaw, t.token.decimals)} ${t.token.symbol ?? ""}`
-                                      )}
+                                      <TradeAmount
+                                        raw={t.tokenRaw}
+                                        decimals={t.token.decimals}
+                                        symbol={t.token.symbol}
+                                      />
                                     </span>
                                   ) : (
                                     <RowFiller blank={tradesLoaded} />
@@ -704,33 +672,23 @@ export function ProductWallet({ address }: { address: string }) {
                                 </td>
                                 <td data-pending={!t && tradeHistory.loading}>
                                   {t ? (
-                                    t.timestamp == null ? (
-                                      <Unavailable />
-                                    ) : (
-                                      utc(t.timestamp)
-                                    )
+                                    <TradeTime timestamp={t.timestamp} />
                                   ) : (
                                     <RowFiller blank={tradesLoaded} />
                                   )}
                                 </td>
                                 <td data-pending={!t && tradeHistory.loading}>
                                   {t ? (
-                                    <span className="wallet-trade-side">
-                                      {t.side === "buy" ? "Buy" : "Sell"}
-                                    </span>
+                                    <TradeSide side={t.side} />
                                   ) : (
                                     <RowFiller blank={tradesLoaded} />
                                   )}
                                 </td>
                                 <td data-pending={!t && tradeHistory.loading}>
                                   {t ? (
-                                    <a
-                                      href={`${explorer}/tx/${t.transactionHash}`}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      {shortAddress(t.transactionHash)} ↗
-                                    </a>
+                                    <TradeTransaction
+                                      hash={t.transactionHash}
+                                    />
                                   ) : (
                                     <RowFiller blank={tradesLoaded} />
                                   )}
@@ -761,33 +719,16 @@ export function ProductWallet({ address }: { address: string }) {
                                     href={`${explorer}/address/${t.token.address}`}
                                     external
                                   />
-                                  <span className="wallet-trade-side">
-                                    {t.side === "buy" ? "Buy" : "Sell"}
-                                  </span>
+                                  <TradeSide side={t.side} />
                                 </div>
                                 <div className="mobile-wallet-row-stats">
-                                  {formatTokenRaw(
-                                    t.tokenRaw,
-                                    t.token.decimals,
-                                  ) === null ? (
-                                    <Unavailable />
-                                  ) : (
-                                    `${formatTokenRaw(t.tokenRaw, t.token.decimals)} ${t.token.symbol ?? ""}`
-                                  )}{" "}
-                                  ·{" "}
-                                  {t.timestamp == null ? (
-                                    <Unavailable />
-                                  ) : (
-                                    utc(t.timestamp)
-                                  )}{" "}
-                                  ·{" "}
-                                  <a
-                                    href={`${explorer}/tx/${t.transactionHash}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {shortAddress(t.transactionHash)} ↗
-                                  </a>
+                                  <TradeAmount
+                                    raw={t.tokenRaw}
+                                    decimals={t.token.decimals}
+                                    symbol={t.token.symbol}
+                                  />{" "}
+                                  · <TradeTime timestamp={t.timestamp} /> ·{" "}
+                                  <TradeTransaction hash={t.transactionHash} />
                                 </div>
                               </Fragment>
                             ) : (
@@ -856,8 +797,8 @@ export function ProductWallet({ address }: { address: string }) {
                     )}
                     {!tradeHistory.failed && (
                       <p className="panel-footnote">
-                        Explorer history for display only; not accounting or
-                        PnL evidence.
+                        Explorer history for display only; not accounting or PnL
+                        evidence.
                       </p>
                     )}
                   </>
