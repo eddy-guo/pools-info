@@ -80,7 +80,7 @@ export async function readProjectedExplore(
     });
   const catalogConditions = (bound: number) => [
     ...catalogFilters.map((filter, i) => filter.sql(`$${bound + i + 1}`)),
-    ...(options.view === "crowd" ? ["false"] : []),
+    ...(options.view === "crowd" ? ["p.launch_type='crowd'"] : []),
   ];
   const sort = options.view === "new" ? "launch" : (options.sort ?? "launch");
   const metricConditions: string[] = [];
@@ -409,11 +409,5 @@ export async function readProjectedExplore(
     total,
     nextOffset: offset + limit < total ? offset + limit : null,
     broadMarketCutoff: announcedBroadMarketCutoff(broadCut),
-    ...(options.view === "crowd"
-      ? {
-          message:
-            "Crowd launches are not included in the verified deployment registry yet.",
-        }
-      : {}),
   };
 }

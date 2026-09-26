@@ -62,7 +62,7 @@ export const limitations = {
 const coverageColumns =
   "s.start_block, s.cursor_block, s.cursor_hash, s.updated_at";
 const poolColumns =
-  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch, p.discovery_source, p.image_url, p.description, p.external_url, p.metadata_sources, p.creator_fees";
+  "p.pool_id, p.token, p.name, p.symbol, p.launch_block, p.launch_tx, p.launch_sender, p.launched_at, p.source_stream, p.source_batch, p.discovery_source, p.image_url, p.description, p.external_url, p.metadata_sources, p.creator_fees, p.launch_type";
 const eventColumns =
   "e.stream_key, e.pool_id, e.token, e.tx_hash, e.log_index, e.block_number, e.block_hash, e.timestamp, e.kind, e.transaction_sender, e.payload";
 const eventOrder =
@@ -98,6 +98,7 @@ function poolItem(r: Row) {
     description: r.description ?? null,
     externalUrl: r.external_url ?? null,
     metadataSources: r.metadata_sources ?? null,
+    launchType: r.launch_type,
     launch: {
       block: chainNumber(r.launch_block),
       transactionHash: r.launch_tx,
@@ -180,6 +181,8 @@ export async function readData(
     // release ahead of it stays unready and the previous release keeps
     // serving until the column exists.
     await query("SELECT creator_fees FROM indexed_pools WHERE false");
+    // The launch type (migration 023) is named by the same CTE.
+    await query("SELECT launch_type FROM indexed_pools WHERE false");
     if (marketSource === "ledger") {
       await query("SELECT 1 FROM agg_streams WHERE false");
       await query("SELECT 1 FROM agg_batches WHERE false");

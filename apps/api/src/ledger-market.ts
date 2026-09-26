@@ -211,13 +211,31 @@ export const ledgerWindowBaselineSql = (
   flow === "ring"
     ? ledgerRingBaselineSql(poolRef, active, ledgerRingParams)
     : ledgerBaselineSql(poolRef, "$8::integer", active);
+/** How far the crowd ledger stream (docs/CROWD-LAUNCHES.md) may trail the
+ * main cursor and still have its pools served under it. The tip loop brings
+ * it level every cycle, a few seconds after the main range commits; one tip
+ * range is 760 to 2,000 blocks. A crowd lane catching up, failing or
+ * switched off trails by more, and its pools then answer as unmeasured
+ * rather than as figures cut at an older block under the main cutoff. */
+export const crowdServedLagBlocks = 2000;
+/** The crowd ledger's cursor while it is served under the main cursor, else
+ * null (so no crowd launch source qualifies). One read per statement. */
+const crowdCursorSql = (cursor: string) =>
+  `(SELECT c.cursor_block FROM agg_streams c WHERE c.chain_id=4663 AND c.stream_key='ledger:crowd:v1'
+      AND c.cursor_block BETWEEN ${cursor}::bigint-${crowdServedLagBlocks} AND ${cursor}::bigint)`;
+/** A launch source the ledger serves at the main cursor: the main launch
+ * lane's batches at or below it, and the crowd lane's at or below the crowd
+ * ledger's cursor while that is served. `ps` prefixes the source columns. */
+export const ledgerSourceSql = (ps: string, cursor: string) =>
+  `(${ps}stream_key='launches:agg:v1' AND ${ps}batch_end<=${cursor}
+    OR ${ps}stream_key='launches:crowd:v1' AND ${ps}batch_end<=${crowdCursorSql(cursor)})`;
 /** A launch the ledger covers: launched inside the ledger's range and
- * registered by its own launch lane in a batch at or below its cursor, so
+ * registered by one of its launch lanes in a batch its stream has folded, so
  * every swap of the pool since launch is folded and a missing pool state is
  * a proven zero. $start and $cursor name the statement's parameters. */
 export const ledgerLaunchSql = (alias: string, start: string, cursor: string) =>
   `${alias}launch_block BETWEEN ${start} AND ${cursor} AND EXISTS(SELECT 1 FROM pool_launch_sources ps
-    WHERE ps.chain_id=4663 AND ps.pool_id=${alias}pool_id AND ps.stream_key='launches:agg:v1' AND ps.batch_end<=${cursor})`;
+    WHERE ps.chain_id=4663 AND ps.pool_id=${alias}pool_id AND ${ledgerSourceSql("ps.", cursor)})`;
 /** The display price in wei per whole token of a raw pool price state. Every
  * pool is keyed currency0 = native ETH (18 decimals) and currency1 = the
  * token (`decimals`), and `sqrtPriceX96 = sqrt(token1 raw / token0 raw) *

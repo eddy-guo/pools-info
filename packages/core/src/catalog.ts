@@ -7,6 +7,9 @@ export interface CatalogPool {
   launchSender: string;
   launchBlock: number;
   launchedAt: number;
+  /** Where the pool came from: an Instant strategy's launch or a pools.xyz
+   * crowd (auction) launch that migrated into it. Read API rows only. */
+  launchType?: "instant" | "crowd";
   /** Creator-supplied presentation claims from a verified factory event. */
   imageUrl?: string;
   description?: string;
