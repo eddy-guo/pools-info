@@ -22,10 +22,13 @@ finally reported unavailable rather than retried forever.
 
 `apps/api/src/database-warmth.ts` owns the policy and readiness state.
 `apps/api/src/warm-set.ts` invokes the current serving readers in order:
-screener volume ranking and launch strip, home leaderboard (24h, five rows,
-minimum ten trades), traders (7d), the busiest ledger pool's 24h market,
-ledger cut and a wallet profile. With the broad source it uses the same broad
-serving readers. Empty databases have no pool or wallet to warm; they do not
+screener volume ranking and launch strip, the creators page's first load
+(All window, launches order, 25 rows; the read closest to the serving budget
+cold), home leaderboard (24h, five rows, minimum ten trades), traders (7d),
+the busiest ledger pool's 24h market, ledger cut and a wallet profile. The
+creators read comes before the small reads so that a cache too small for all
+of them evicts its pages rather than theirs. With the broad source it uses
+the same broad serving readers. Empty databases have no pool or wallet to warm; they do not
 invent an identity. All warm connections are read-only and use autocommit.
 
 Startup and new database identities trigger warming. The API reads

@@ -136,3 +136,40 @@ test(
     );
   },
 );
+
+test(
+  "the warm set runs every warmed purpose, the creators page's first load included",
+  dbTest,
+  async (t) => {
+    const url = process.env.TEST_DATABASE_URL!;
+    const db = createClient(url);
+    await db.connect();
+    const schema = `api_test_set_${randomUUID().replaceAll("-", "")}`;
+    await db.query(`CREATE SCHEMA ${schema}`);
+    await db.query(`SET search_path TO ${schema}`);
+    await migrate(db);
+    t.after(async () => {
+      await db.query(`DROP SCHEMA ${schema} CASCADE`);
+      await db.end();
+    });
+    for (const source of ["ledger", "broad"] as const) {
+      const names: unknown[] = [];
+      await createWarmSet(url, source, schema, (event) => {
+        if (event.event === "database_warm_read") names.push(event.name);
+      })({
+        signal: new AbortController().signal,
+        identity: () => {},
+        slow: () => {},
+      });
+      assert.deepEqual(names, [
+        "screener",
+        "creators",
+        "home_leaderboard",
+        "traders",
+        "busy_pool",
+        ...(source === "ledger" ? ["ledger_cut"] : []),
+        "wallet",
+      ]);
+    }
+  },
+);
