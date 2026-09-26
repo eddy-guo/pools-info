@@ -1,5 +1,24 @@
-import { encodeAbiParameters, keccak256, toEventSelector } from "viem";
+import {
+  decodeFunctionData,
+  encodeAbiParameters,
+  encodeFunctionResult,
+  erc20Abi,
+  keccak256,
+  toEventSelector,
+  type Hex,
+} from "viem";
 import type { HyperSyncQuery } from "./hypersync";
+import {
+  auctionCreatedEvent,
+  crowdFactory,
+  crowdPoolId,
+  crowdStrategies,
+  crowdTemplate,
+  initializerCreatedEvent,
+  migratedEvent,
+} from "./crowd";
+import { Rpc } from "./rpc";
+import { decodeAggregateRequest, encodeAggregateReply } from "./multicall";
 import { contracts, launchEvent, swapEvent, transferEvent } from "./events";
 import { instantDeployments } from "./deployments";
 import { tokenMetadataEvent, tokenMetadataFactory } from "./token-metadata";
@@ -111,6 +130,213 @@ export function fakeLaunch(options: {
     },
   ];
   return { poolId, logs, deployment };
+}
+/** One pools.xyz crowd launch as the chain emits it: the creation
+ * transaction (the launcher's log, the factory's metadata, the auction's
+ * AuctionCreated and the strategy's InitializerCreated) and, later, the
+ * permissionless migration's Migrated. `overrides` bend the template. */
+export function fakeCrowdLaunch(options: {
+  creationBlock: number;
+  migrationBlock: number;
+  token: string;
+  auction: string;
+  creator: string;
+  keeper?: string;
+  creationTx: string;
+  migrationTx: string;
+  metadata?: { description: string; website: string; image: string };
+  strategy?: string;
+  launcher?: boolean;
+  overrides?: {
+    amount?: bigint;
+    tokensRecipient?: string;
+    blocks?: number;
+    hook?: string;
+    positionRecipient?: string;
+    poolId?: string;
+  };
+}) {
+  const o = options.overrides ?? {};
+  const zero = "0x0000000000000000000000000000000000000000" as const;
+  const strategy = (options.strategy ?? crowdStrategies[1].strategy) as Hex;
+  const fee = 2500,
+    tickSpacing = 25;
+  const topic = (a: string) => `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
+  const poolId = o.poolId ?? crowdPoolId(options.token, fee, tickSpacing);
+  const start = options.creationBlock + 10;
+  const config = encodeAbiParameters(
+    [
+      {
+        type: "tuple",
+        components: [
+          { type: "address" },
+          { type: "address" },
+          { type: "address" },
+          { type: "uint64" },
+          { type: "uint64" },
+          { type: "uint64" },
+          { type: "uint256" },
+          { type: "address" },
+          { type: "uint256" },
+          { type: "uint128" },
+          { type: "bytes" },
+        ],
+      },
+    ],
+    [
+      [
+        zero,
+        (o.tokensRecipient ?? crowdTemplate.tokensRecipient) as Hex,
+        strategy,
+        BigInt(start),
+        BigInt(start + (o.blocks ?? 36000)),
+        BigInt(start + (o.blocks ?? 36000)),
+        1n,
+        zero,
+        1n,
+        1n,
+        "0x",
+      ],
+    ],
+  );
+  const creation = {
+    block: options.creationBlock,
+    transactionHash: options.creationTx,
+    from: options.creator,
+    to: "0x0000ffffbe8efe702c8703ae3477ff5de3d319c0",
+  };
+  const logs: FakeHyperSyncLog[] = [
+    ...(options.launcher === false
+      ? []
+      : [
+          {
+            ...creation,
+            logIndex: 0,
+            address: "0x0000ffffbe8efe702c8703ae3477ff5de3d319c0",
+            topics: [word(2)],
+            data: "0x",
+          },
+        ]),
+    ...(options.metadata
+      ? [
+          {
+            ...creation,
+            logIndex: 1,
+            address: tokenMetadataFactory,
+            topics: [toEventSelector(tokenMetadataEvent)],
+            data: encodeAbiParameters(tokenMetadataEvent.inputs, [
+              options.token as Hex,
+              { ...options.metadata, extraData: "0x" },
+            ]),
+          },
+        ]
+      : []),
+    {
+      ...creation,
+      logIndex: 2,
+      address: crowdFactory.address,
+      topics: [
+        toEventSelector(auctionCreatedEvent),
+        topic(options.auction),
+        topic(options.token),
+      ],
+      data: encodeAbiParameters(
+        [{ type: "uint256" }, { type: "bytes" }],
+        [o.amount ?? crowdTemplate.auctionAmountRaw, config],
+      ),
+    },
+    {
+      ...creation,
+      logIndex: 3,
+      address: strategy,
+      topics: [toEventSelector(initializerCreatedEvent), topic(options.auction)],
+      data: encodeAbiParameters(
+        [initializerCreatedEvent.inputs[1]],
+        [
+          {
+            token: options.token as Hex,
+            currency: zero,
+            migrationBlock: BigInt(start + 36001),
+            reservedTokenAmountForLP: 1n,
+            recipient: crowdTemplate.tokensRecipient as Hex,
+            positionRecipient: (o.positionRecipient ??
+              "0x9411fa7f956f64aa7981aa27cb3bc6ec0415449c") as Hex,
+            poolParameters: {
+              fee,
+              tickSpacing,
+              hook: (o.hook ?? zero) as Hex,
+            },
+            positionDefinitions: "0x",
+            lpAllocationSchedule: "0x",
+          },
+        ],
+      ),
+    },
+    {
+      block: options.migrationBlock,
+      transactionHash: options.migrationTx,
+      from: options.keeper ?? word(9).slice(0, 42),
+      to: "0xca11bde05977b3631167028862be2a173976ca11",
+      logIndex: 7,
+      address: strategy,
+      topics: [toEventSelector(migratedEvent), topic(options.auction), poolId],
+      data: encodeAbiParameters(
+        [{ type: "uint160" }, { type: "bytes" }],
+        [1n << 96n, "0x"],
+      ),
+    },
+  ];
+  return { poolId, logs, strategy: strategy.toLowerCase() };
+}
+/** The public RPC as the launch lanes read it: name, symbol, decimals and
+ * total supply through Multicall3 at a fixed head, and nothing else. A
+ * token's supply is 1e27 raw unless given. */
+export function fakeMetadataRpc(
+  tokens: Record<string, [string, string, number, bigint?]> = {},
+  head = 64798181,
+) {
+  const rpc = new Rpc();
+  rpc.call = async <T>(method: string) => {
+    if (method === "eth_chainId") return "0x1237" as T;
+    if (method === "eth_blockNumber") return `0x${head.toString(16)}` as T;
+    throw Error(`Unexpected JSON-RPC ${method}`);
+  };
+  rpc.logs = async () => {
+    throw Error("Unexpected JSON-RPC eth_getLogs");
+  };
+  rpc.batch = async <T>(method: string, params: unknown[][]) => {
+    if (method !== "eth_call") throw Error(`Unexpected JSON-RPC ${method}`);
+    return params.map((p) => {
+      const { data } = p[0] as { to: Hex; data: Hex };
+      return encodeAggregateReply(
+        decodeAggregateRequest(data).map((member) => {
+          const fn = decodeFunctionData({
+            abi: erc20Abi,
+            data: member.callData,
+          }).functionName as "name" | "symbol" | "decimals" | "totalSupply";
+          const [name, symbol, decimals, supply = 10n ** 27n] = tokens[
+            member.target.toLowerCase()
+          ] ?? ["Token", "TKN", 18];
+          return {
+            success: true,
+            returnData: encodeFunctionResult({
+              abi: erc20Abi,
+              functionName: fn,
+              result:
+                fn === "name"
+                  ? name
+                  : fn === "symbol"
+                    ? symbol
+                    : fn === "decimals"
+                      ? decimals
+                      : supply,
+            } as Parameters<typeof encodeFunctionResult>[0]),
+          };
+        }),
+      );
+    }) as T[];
+  };
+  return rpc;
 }
 /** One PoolManager swap; amounts are the caller's BalanceDelta legs. */
 export function fakeSwap(options: {

@@ -43,6 +43,26 @@ export const ledgerStream = Object.freeze({
    * recent tables had no bound and would have filled the volume. */
   liveTradeRows: 1250000,
 } as const);
+/** The crowd lane's ledger stream (docs/CROWD-LAUNCHES.md): the same tables
+ * and writer, over the pools.xyz crowd launches only. It catches their
+ * history up from the same start and then follows the main stream's cursor;
+ * its pools are never in the main stream's registry, nor the main pools in
+ * its, so the two never touch the same position, hour or pool row. */
+export const crowdLedgerStream = Object.freeze({
+  key: "ledger:crowd:v1",
+  start: ledgerStream.start,
+});
+export type LedgerStreamKey =
+  | typeof ledgerStream.key
+  | typeof crowdLedgerStream.key;
+/** The pools each ledger stream folds. */
+const streamLaunchType = (key: LedgerStreamKey) =>
+  key === crowdLedgerStream.key ? "crowd" : "instant";
+function checkedKey(key: LedgerStreamKey) {
+  if (key !== ledgerStream.key && key !== crowdLedgerStream.key)
+    throw Error("ledger_stream_missing");
+  return key;
+}
 /** The pass's catalog stream: launches re-discovered from HyperSync, written
  * through the ordinary discovery commit so the catalog readers see exactly
  * what they see today. It advances in lockstep with the ledger stream, one
@@ -83,16 +103,21 @@ export async function ensureLedgerLaunchStream(db: Client): Promise<Stream> {
     throw Error("ledger_launch_stream_identity");
   return current;
 }
-/** Every registered pool launched at or before a block, in launch order:
- * the registry that leads a range's swap and transfer filters. */
+/** Every registered pool of one launch type launched at or before a block,
+ * in launch order: the registry that leads a range's swap and transfer
+ * filters. The main stream folds the Instant launches, the crowd stream the
+ * crowd ones. */
 export async function ledgerRegistry(
   db: Client,
   throughBlock: number,
+  launchType: "instant" | "crowd" = "instant",
 ): Promise<{ poolId: string; token: string; launchBlock: number }[]> {
   if (!integer(throughBlock)) throw Error("ledger_invalid_registry_block");
+  if (launchType !== "instant" && launchType !== "crowd")
+    throw Error("Invalid launch type");
   const r = await db.query(
-    "SELECT pool_id,token,launch_block FROM indexed_pools WHERE chain_id=4663 AND launch_block<=$1 ORDER BY launch_block,pool_id",
-    [throughBlock],
+    "SELECT pool_id,token,launch_block FROM indexed_pools WHERE chain_id=4663 AND launch_block<=$1 AND launch_type=$2 ORDER BY launch_block,pool_id",
+    [throughBlock, launchType],
   );
   return r.rows.map((row) => ({
     poolId: row.pool_id as string,
@@ -102,10 +127,14 @@ export async function ledgerRegistry(
 }
 /** Positions created by a committed batch: its journal rows without a
  * pre-image. The pass sums them into pairs per swap. */
-export async function ledgerBatchCreatedRows(db: Client, toBlock: number) {
+export async function ledgerBatchCreatedRows(
+  db: Client,
+  toBlock: number,
+  key: LedgerStreamKey = ledgerStream.key,
+) {
   const r = await db.query(
     `SELECT "table",count(*)::int AS created FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2 AND before IS NULL GROUP BY "table"`,
-    [ledgerStream.key, toBlock],
+    [checkedKey(key), toBlock],
   );
   const created = { positions: 0, wallets: 0 };
   for (const row of r.rows) {
@@ -182,11 +211,15 @@ export async function pruneLedgerLiveTrades(
   return { aged: aged.rowCount ?? 0, counted: counted.rowCount ?? 0 };
 }
 /** Hand the stream to the tip loop once the pass reaches the confirmed cutoff. */
-export async function setLedgerMode(db: Client, mode: LedgerMode) {
+export async function setLedgerMode(
+  db: Client,
+  mode: LedgerMode,
+  key: LedgerStreamKey = ledgerStream.key,
+) {
   if (mode !== "pass" && mode !== "tip") throw Error("ledger_invalid_mode");
   await db.query(
     "UPDATE agg_streams SET mode=$2,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
-    [ledgerStream.key, mode],
+    [checkedKey(key), mode],
   );
 }
 export const ledgerRules: LedgerRules = {
@@ -326,25 +359,32 @@ const streamSelect =
 export async function ensureLedgerStream(
   db: Client,
   mode: LedgerMode = "pass",
+  key: LedgerStreamKey = ledgerStream.key,
 ) {
   if (mode !== "pass" && mode !== "tip") throw Error("ledger_invalid_mode");
   await db.query(
     "INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES (4663,$1,$2,$3) ON CONFLICT DO NOTHING",
-    [ledgerStream.key, ledgerStream.start, mode],
+    [checkedKey(key), ledgerStream.start, mode],
   );
-  return readLedgerStream(db);
+  return readLedgerStream(db, key);
 }
-export async function readLedgerStream(db: Client): Promise<LedgerStreamState> {
-  const r = await db.query(streamSelect, [ledgerStream.key]);
+export async function readLedgerStream(
+  db: Client,
+  key: LedgerStreamKey = ledgerStream.key,
+): Promise<LedgerStreamState> {
+  const r = await db.query(streamSelect, [checkedKey(key)]);
   if (!r.rowCount) throw Error("ledger_stream_missing");
   return streamState(r.rows[0]);
 }
 /** The newest checkpoints, newest first, for reconciling the cursor against
  * the provider before extending. */
-export async function ledgerCheckpoints(db: Client) {
+export async function ledgerCheckpoints(
+  db: Client,
+  key: LedgerStreamKey = ledgerStream.key,
+) {
   const r = await db.query(
     "SELECT to_block,encode(block_hash,'hex') AS hash FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC LIMIT $2",
-    [ledgerStream.key, ledgerStream.journalDepth],
+    [checkedKey(key), ledgerStream.journalDepth],
   );
   return r.rows.map((row) => ({
     to: Number(row.to_block),
@@ -423,20 +463,25 @@ const nullable = <T>(v: unknown, f: (v: unknown) => T) =>
 export async function applyLedgerBatch(
   db: Client,
   batch: LedgerBatch,
+  key: LedgerStreamKey = ledgerStream.key,
+  options: {
+    /** Runs inside the batch's transaction, after its rows are written,
+     * with the wallets whose positions or hours it changed. */
+    touched?: (db: Client, walletRefs: number[]) => Promise<unknown>;
+  } = {},
 ): Promise<LedgerApplied> {
   checkBatch(batch);
+  checkedKey(key);
   const contentHash = ledgerContentHash(batch);
   await db.query("BEGIN");
   try {
     await assertLedgerWriter(db);
-    const locked = await db.query(streamSelect + " FOR UPDATE", [
-      ledgerStream.key,
-    ]);
+    const locked = await db.query(streamSelect + " FOR UPDATE", [key]);
     if (!locked.rowCount) throw Error("ledger_stream_missing");
     const stream = streamState(locked.rows[0]);
     const previous = await db.query(
       "SELECT encode(content_hash,'hex') AS content_hash FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
-      [ledgerStream.key, batch.to],
+      [key, batch.to],
     );
     if (previous.rowCount) {
       if ("0x" + previous.rows[0].content_hash !== contentHash)
@@ -462,9 +507,10 @@ export async function applyLedgerBatch(
       (stream.hash !== null && lower(batch.parentHash) !== stream.hash)
     )
       throw Error("ledger_noncontiguous_batch");
-    // The registry: every pool a row names, resolved to its surrogate.
+    // The registry: every pool of the stream's launch type a row names,
+    // resolved to its surrogate.
     const registry = await db.query(
-      "SELECT pool_ref,pool_id,token FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[]))",
+      "SELECT pool_ref,pool_id,token FROM indexed_pools WHERE chain_id=4663 AND (pool_id = ANY($1::text[]) OR token = ANY($2::text[])) AND launch_type=$3",
       [
         [
           ...new Set([
@@ -478,6 +524,7 @@ export async function applyLedgerBatch(
             ...batch.launches.map((l) => lower(l.token)),
           ]),
         ],
+        streamLaunchType(key),
       ],
     );
     const byPool = new Map<string, PoolRef>(),
@@ -525,7 +572,7 @@ export async function applyLedgerBatch(
       `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
        VALUES (4663,$1,$2,$3,decode($4,'hex'),decode($5,'hex'),$6,$7,$8,decode($9,'hex'),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
-        ledgerStream.key,
+        key,
         batch.to,
         batch.from,
         bytes(batch.parentHash),
@@ -571,7 +618,7 @@ export async function applyLedgerBatch(
           [
             fresh.map((w) => bytes(w.wallet)),
             fresh.map((w) => w.firstBlock),
-            ledgerStream.key,
+            key,
             batch.to,
           ],
         );
@@ -583,7 +630,7 @@ export async function applyLedgerBatch(
     }
     // Journal the pre-image of every row the plan can touch, and load the rows.
     const state = createLedgerState();
-    const journal = [ledgerStream.key, batch.to];
+    const journal = [key, batch.to];
     if (keys.positions.length) {
       const loaded = await db.query(
         `WITH k AS (SELECT * FROM unnest($1::int[],$2::int[]) AS k(pool_ref,wallet_ref)),
@@ -926,33 +973,58 @@ export async function applyLedgerBatch(
               attribution: t.attribution,
             })),
           ),
-          ledgerStream.key,
+          key,
           batch.to,
         ],
       );
-    await writeLedgerTransferProvenance(
-      db,
-      batch.to,
-      { swaps, transfers, registry: [...byPool.values()] },
-      events,
-      new Map([...byPool.values()].map((p) => [p.poolId, p.ref])),
-    );
-    // Prune: the live ring by age and size, the journal beyond the newest batches.
-    await pruneLedgerLiveTrades(db, { through: batch.timestamp });
+    // Transfer provenance (attended migrations) covers the main stream only;
+    // a crowd batch leaves its coverage unrecorded (null), never zero.
+    if (key === ledgerStream.key)
+      await writeLedgerTransferProvenance(
+        db,
+        batch.to,
+        { swaps, transfers, registry: [...byPool.values()] },
+        events,
+        new Map([...byPool.values()].map((p) => [p.poolId, p.ref])),
+      );
+    // Prune: the live ring by age and size, the journal beyond the newest
+    // batches. The ring is the 24 hours ending at the main cursor, which a
+    // crowd batch catching up history may trail by days.
+    let through = batch.timestamp;
+    if (key !== ledgerStream.key) {
+      const main = await db.query(
+        "SELECT cursor_timestamp FROM agg_streams WHERE chain_id=4663 AND stream_key=$1",
+        [ledgerStream.key],
+      );
+      if (main.rows[0]?.cursor_timestamp != null)
+        through = Math.max(through, Number(main.rows[0].cursor_timestamp));
+    }
+    await pruneLedgerLiveTrades(db, { through });
     await db.query(
       `DELETE FROM agg_journal j USING (SELECT to_block FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC OFFSET $2 LIMIT 1) AS edge
        WHERE j.chain_id=4663 AND j.stream_key=$1 AND j.batch_end<=edge.to_block`,
-      [ledgerStream.key, ledgerStream.journalDepth],
+      [key, ledgerStream.journalDepth],
     );
     // The batch's journal size, which walk-back checks before undoing it.
     await db.query(
       `UPDATE agg_batches SET journal_rows=(SELECT count(*) FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2)
        WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2`,
-      [ledgerStream.key, batch.to],
+      [key, batch.to],
     );
+    if (options.touched) {
+      const touched = await db.query(
+        `SELECT DISTINCT (key->>'wallet_ref')::int AS wallet_ref FROM agg_journal
+         WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2 AND "table" IN ('agg_positions','agg_wallet_hours')`,
+        [key, batch.to],
+      );
+      await options.touched(
+        db,
+        touched.rows.map((r) => r.wallet_ref as number).sort((a, b) => a - b),
+      );
+    }
     await db.query(
       "UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
-      [ledgerStream.key, batch.to, bytes(batch.hash), batch.timestamp],
+      [key, batch.to, bytes(batch.hash), batch.timestamp],
     );
     await db.query("COMMIT");
     return {
@@ -988,22 +1060,25 @@ const journalTables = [
  * batch to undo is older than the journal keeps, or its journal is not whole
  * (`ledger_walkback_unavailable`): written before journal sizes were kept,
  * pruned, or left out of a restored dump. */
-export async function walkBackLedger(db: Client, ancestor: number | null) {
+export async function walkBackLedger(
+  db: Client,
+  ancestor: number | null,
+  key: LedgerStreamKey = ledgerStream.key,
+) {
   if (ancestor !== null && !integer(ancestor))
     throw Error("ledger_invalid_ancestor");
+  checkedKey(key);
   await db.query("BEGIN");
   try {
     await assertLedgerWriter(db);
-    const locked = await db.query(streamSelect + " FOR UPDATE", [
-      ledgerStream.key,
-    ]);
+    const locked = await db.query(streamSelect + " FOR UPDATE", [key]);
     if (!locked.rowCount) throw Error("ledger_stream_missing");
     const stream = streamState(locked.rows[0]);
     const newest = await db.query(
       `SELECT to_block,encode(block_hash,'hex') AS hash,to_timestamp,journal_rows,
          (SELECT count(*) FROM agg_journal j WHERE j.chain_id=4663 AND j.stream_key=b.stream_key AND j.batch_end=b.to_block)::int AS journaled
        FROM agg_batches b WHERE chain_id=4663 AND stream_key=$1 ORDER BY to_block DESC LIMIT $2`,
-      [ledgerStream.key, ledgerStream.journalDepth + 1],
+      [key, ledgerStream.journalDepth + 1],
     );
     const known = newest.rows.map((r) => ({
       to: Number(r.to_block),
@@ -1021,7 +1096,7 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
     if (ancestor !== null && !target) {
       const older = await db.query(
         "SELECT 1 FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
-        [ledgerStream.key, ancestor],
+        [key, ancestor],
       );
       throw Error(
         older.rowCount
@@ -1037,11 +1112,11 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
         // The pre-image travels as jsonb text: parsed in JavaScript, a wei
         // amount beyond 2^53 would come back rounded.
         'SELECT "table",key,before::text AS before FROM agg_journal WHERE chain_id=4663 AND stream_key=$1 AND batch_end=$2',
-        [ledgerStream.key, b.to],
+        [key, b.to],
       );
       await db.query(
         "DELETE FROM agg_batches WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2",
-        [ledgerStream.key, b.to],
+        [key, b.to],
       );
       for (const { table, keys } of journalTables) {
         const where = [
@@ -1050,12 +1125,23 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
         ].join(" AND ");
         for (const entry of entries.rows.filter((e) => e.table === table)) {
           const values = keys.map((k) => entry.key[k]);
-          // A wallet the batch created may already stand in a window.
-          if (table === "agg_wallets")
+          if (table === "agg_wallets") {
+            // A wallet the batch created goes with it unless the other
+            // stream's rows name it since: the two streams share wallets but
+            // never a pool, so its rows there are that stream's to undo.
+            const named = await db.query(
+              `SELECT EXISTS (SELECT 1 FROM agg_positions WHERE chain_id=4663 AND wallet_ref=$1)
+                 OR EXISTS (SELECT 1 FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1)
+                 OR EXISTS (SELECT 1 FROM agg_live_trades WHERE chain_id=4663 AND wallet_ref=$1) AS named`,
+              values,
+            );
+            if (named.rows[0].named) continue;
+            // A wallet the batch created may already stand in a window.
             await db.query(
               "DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND wallet_ref=$1",
               values,
             );
+          }
           await db.query(`DELETE FROM ${table} WHERE ${where}`, values);
           if (entry.before !== null)
             await db.query(
@@ -1065,10 +1151,15 @@ export async function walkBackLedger(db: Client, ancestor: number | null) {
         }
       }
     }
+    // The windows summed the crowd rows this undid; the main stream's refresh
+    // state goes with the main batch it reflected, the crowd's is taken here,
+    // and the next refresh rebuilds either way.
+    if (key !== ledgerStream.key && undo.length)
+      await db.query("DELETE FROM agg_window_refreshes WHERE chain_id=4663");
     await db.query(
       "UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
       [
-        ledgerStream.key,
+        key,
         target?.to ?? null,
         target?.hash ?? null,
         target?.timestamp ?? null,

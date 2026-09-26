@@ -178,7 +178,7 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const lower = (s: string) => s.toLowerCase();
 const hexData = (v: string, bytes: number) =>
   new RegExp(`^0x[\\da-f]{${bytes * 2}}$`, "i").test(v);
-const logOrder = (a: HyperSyncLogRow, b: HyperSyncLogRow) =>
+export const logOrder = (a: HyperSyncLogRow, b: HyperSyncLogRow) =>
   a.block_number - b.block_number ||
   a.log_index - b.log_index ||
   a.transaction_hash
@@ -391,25 +391,25 @@ export interface LedgerLaunchBatch {
   evidence: LedgerLaunchEvidence;
 }
 /** The contract reads per launch, by evidence schema version. */
-const launchReadFields = {
+export const launchReadFields = {
   1: ["name", "symbol", "decimals"],
   2: ["name", "symbol", "decimals", "totalSupply"],
 } as const;
-const currentLaunchSchema = 2 as const;
-type LaunchReadField = (typeof launchReadFields)[2][number];
-const readKey = (to: string, data: string) =>
+export const currentLaunchSchema = 2 as const;
+export type LaunchReadField = (typeof launchReadFields)[2][number];
+export const readKey = (to: string, data: string) =>
   `${to.toLowerCase()}:${data.toLowerCase()}`;
-const metadataRead = (token: string, field: LaunchReadField) =>
+export const metadataRead = (token: string, field: LaunchReadField) =>
   ({
     to: token as Hex,
     data: encodeFunctionData({ abi: erc20Abi, functionName: field }),
   }) as const;
-function presentation(metadata: TokenMetadata | null | undefined) {
+export function presentation(metadata: TokenMetadata | null | undefined) {
   if (!metadata) return {};
   const { token: _token, ...fields } = metadata;
   return fields;
 }
-function checkedEvidenceRows(evidence: {
+export function checkedEvidenceRows(evidence: {
   transactions: HyperSyncTransactionRow[];
   blocks: HyperSyncBlockRow[];
 }) {
@@ -433,13 +433,13 @@ function checkedEvidenceRows(evidence: {
   }
   return { transactions, blocks };
 }
-const sortedTransactions = (rows: Iterable<HyperSyncTransactionRow>) =>
+export const sortedTransactions = (rows: Iterable<HyperSyncTransactionRow>) =>
   [...rows].sort((a, b) => {
     const x = a.hash.toLowerCase(),
       y = b.hash.toLowerCase();
     return x < y ? -1 : x > y ? 1 : 0;
   });
-function orderedLogs(
+export function orderedLogs(
   rows: HyperSyncLogRow[],
   range: LedgerBlockRange,
   name: string,
@@ -622,7 +622,7 @@ function ledgerLaunchRows(
     toTimestamp: blockTimestamp(cutoff),
   };
 }
-function decodedDecimals(data: Hex): number | null {
+export function decodedDecimals(data: Hex): number | null {
   try {
     const value = decodeFunctionResult({
       abi: erc20Abi,
@@ -635,7 +635,7 @@ function decodedDecimals(data: Hex): number | null {
   }
 }
 /** One uint256 word, or null: an unreadable supply is stored as unread, never 0. */
-function decodedSupply(data: Hex): string | null {
+export function decodedSupply(data: Hex): string | null {
   return /^0x[\da-f]{64}$/i.test(data) ? BigInt(data).toString() : null;
 }
 function launchPools(
@@ -890,6 +890,112 @@ function tradedTokens(
     }
   }
   return traded;
+}
+/** The swap and transfer rows of a range from its lane logs: each log
+ * validated, de-duplicated, kept only inside the range and joined to its
+ * successful transaction and block. With `manager`, swaps of pools outside
+ * the registry are counted and dropped (a manager-wide selection returns
+ * every pool's); without it, one is an error. Shared by the main and the
+ * crowd lanes so both fold exactly the same rows from the same logs. */
+export function ledgerTradeRows(
+  swapLogs: readonly HyperSyncLogRow[],
+  transferLogs: readonly HyperSyncLogRow[],
+  context: {
+    fromBlock: number;
+    toBlock: number;
+    byPool: ReadonlyMap<string, LedgerRegistryPool>;
+    byToken: ReadonlyMap<string, LedgerRegistryPool>;
+    manager: boolean;
+    transactions: ReadonlyMap<string, HyperSyncTransactionRow>;
+    blocks: ReadonlyMap<number, HyperSyncBlockRow>;
+    /** Drop a token's transfers before its pool's launch block: a crowd
+     * token exists (and its auction moves it) long before its pool, and its
+     * pool's history starts at the migration whatever the range bounds. */
+    transfersFromLaunch?: boolean;
+  },
+) {
+  const { fromBlock, toBlock, byPool, byToken, transactions, blocks } =
+    context;
+  const inRange = (l: HyperSyncLogRow) =>
+    l.block_number >= fromBlock && l.block_number <= toBlock;
+  const swaps: LedgerSwap[] = [];
+  const seen = new Set<string>();
+  let unsupportedSwaps = 0,
+    unregisteredSwaps = 0;
+  for (const log of swapLogs.filter(inRange).sort(logOrder)) {
+    const topics = checkedSwapLog(log);
+    const identity = `${log.transaction_hash.toLowerCase()}:${log.log_index}`;
+    if (seen.has(identity)) throw Error("Duplicate HyperSync ledger evidence");
+    seen.add(identity);
+    const pool = byPool.get(topics[1].toLowerCase());
+    if (!pool && context.manager) {
+      unregisteredSwaps++;
+      continue;
+    }
+    if (!pool) throw Error("HyperSync swap outside the registry");
+    if (log.block_number < pool.launchBlock)
+      throw Error("Ledger swap precedes verified launch");
+    const { transaction, block } = joinedLog(log, transactions, blocks);
+    let d: ReturnType<typeof decodeSwap>;
+    try {
+      d = decodeSwap(rawLogOf(log));
+    } catch (e) {
+      if (e instanceof Error && e.message === "Unsupported swap signs") {
+        unsupportedSwaps++;
+        continue;
+      }
+      throw e;
+    }
+    if (!same(d.id, pool.poolId))
+      throw Error("Unexpected ledger swap pool identity");
+    swaps.push({
+      txHash: log.transaction_hash.toLowerCase(),
+      logIndex: log.log_index,
+      block: log.block_number,
+      blockHash: log.block_hash.toLowerCase(),
+      timestamp: blockTimestamp(block),
+      poolId: pool.poolId,
+      token: pool.token,
+      initiator: transaction.from.toLowerCase(),
+      txTo: transaction.to === null ? null : transaction.to.toLowerCase(),
+      side: d.side,
+      ethWei: d.ethWei,
+      tokenRaw: d.tokenRaw,
+      sqrtPriceX96: d.sqrtPriceX96.toString(),
+      liquidity: d.liquidity.toString(),
+      tick: d.tick,
+    });
+  }
+  const transfers: LedgerTransfer[] = [];
+  for (const log of transferLogs.filter(inRange).sort(logOrder)) {
+    const topics = checkedTransferLog(log);
+    const identity = `${log.transaction_hash.toLowerCase()}:${log.log_index}`;
+    if (seen.has(identity)) throw Error("Duplicate HyperSync ledger evidence");
+    seen.add(identity);
+    const token = byToken.get(log.address.toLowerCase());
+    if (!token) throw Error("HyperSync transfer outside the registry");
+    if (context.transfersFromLaunch && log.block_number < token.launchBlock)
+      continue;
+    const { block } = joinedLog(log, transactions, blocks);
+    const { args } = decodeEventLog({
+      abi: [transferEvent],
+      data: log.data as Hex,
+      topics: topics as [Hex, ...Hex[]],
+      strict: true,
+    });
+    transfers.push({
+      txHash: log.transaction_hash.toLowerCase(),
+      logIndex: log.log_index,
+      block: log.block_number,
+      blockHash: log.block_hash.toLowerCase(),
+      timestamp: blockTimestamp(block),
+      token: token.token,
+      from: args.from.toLowerCase(),
+      to: args.to.toLowerCase(),
+      value: args.value.toString(),
+    });
+  }
+  return { swaps, transfers, unsupportedSwaps, unregisteredSwaps };
 }
 /** Collect one range in whole pages, lane by lane. The launch lane runs
  * first so the range's own launches lead the swap filter; each lane query
@@ -1160,88 +1266,23 @@ export async function collectLedgerRange(
   const registryPools = [...byPool.values()].filter(
     (p) => p.launchBlock <= toBlock,
   ).length;
-  // 6. Swap rows. A manager-wide selection returns every pool's swaps and the
-  // registry keeps its own; a pool-id selection returns only the listed pools.
-  const swaps: LedgerSwap[] = [];
-  const seen = new Set<string>();
-  let unsupportedSwaps = 0,
-    unregisteredSwaps = 0;
-  for (const log of swapLogs.filter(inRange).sort(logOrder)) {
-    const topics = checkedSwapLog(log);
-    const identity = `${log.transaction_hash.toLowerCase()}:${log.log_index}`;
-    if (seen.has(identity)) throw Error("Duplicate HyperSync ledger evidence");
-    seen.add(identity);
-    const pool = byPool.get(topics[1].toLowerCase());
-    if (!pool && swapSelection === "manager") {
-      unregisteredSwaps++;
-      continue;
-    }
-    if (!pool) throw Error("HyperSync swap outside the registry");
-    if (log.block_number < pool.launchBlock)
-      throw Error("Ledger swap precedes verified launch");
-    const { transaction, block } = joinedLog(log, transactions, retainedBlocks);
-    let d: ReturnType<typeof decodeSwap>;
-    try {
-      d = decodeSwap(rawLogOf(log));
-    } catch (e) {
-      if (e instanceof Error && e.message === "Unsupported swap signs") {
-        unsupportedSwaps++;
-        continue;
-      }
-      throw e;
-    }
-    if (!same(d.id, pool.poolId))
-      throw Error("Unexpected ledger swap pool identity");
-    swaps.push({
-      txHash: log.transaction_hash.toLowerCase(),
-      logIndex: log.log_index,
-      block: log.block_number,
-      blockHash: log.block_hash.toLowerCase(),
-      timestamp: blockTimestamp(block),
-      poolId: pool.poolId,
-      token: pool.token,
-      initiator: transaction.from.toLowerCase(),
-      txTo: transaction.to === null ? null : transaction.to.toLowerCase(),
-      side: d.side,
-      ethWei: d.ethWei,
-      tokenRaw: d.tokenRaw,
-      sqrtPriceX96: d.sqrtPriceX96.toString(),
-      liquidity: d.liquidity.toString(),
-      tick: d.tick,
-    });
-  }
+  // 6 and 7. Swap and transfer rows. A manager-wide selection returns every
+  // pool's swaps and the registry keeps its own; a pool-id selection returns
+  // only the listed pools.
+  const trades = ledgerTradeRows(swapLogs, transferLogs, {
+    fromBlock,
+    toBlock,
+    byPool,
+    byToken,
+    manager: swapSelection === "manager",
+    transactions,
+    blocks: retainedBlocks,
+  });
+  const { swaps, transfers, unsupportedSwaps, unregisteredSwaps } = trades;
   if (managerQuery)
     swapRecords.push(
       ledgerManagerQueryRecord(managerQuery, poolIds, unregisteredSwaps),
     );
-  // 7. Transfer rows.
-  const transfers: LedgerTransfer[] = [];
-  for (const log of transferLogs.filter(inRange).sort(logOrder)) {
-    const topics = checkedTransferLog(log);
-    const identity = `${log.transaction_hash.toLowerCase()}:${log.log_index}`;
-    if (seen.has(identity)) throw Error("Duplicate HyperSync ledger evidence");
-    seen.add(identity);
-    const token = byToken.get(log.address.toLowerCase());
-    if (!token) throw Error("HyperSync transfer outside the registry");
-    const { block } = joinedLog(log, transactions, retainedBlocks);
-    const { args } = decodeEventLog({
-      abi: [transferEvent],
-      data: log.data as Hex,
-      topics: topics as [Hex, ...Hex[]],
-      strict: true,
-    });
-    transfers.push({
-      txHash: log.transaction_hash.toLowerCase(),
-      logIndex: log.log_index,
-      block: log.block_number,
-      blockHash: log.block_hash.toLowerCase(),
-      timestamp: blockTimestamp(block),
-      token: token.token,
-      from: args.from.toLowerCase(),
-      to: args.to.toLowerCase(),
-      value: args.value.toString(),
-    });
-  }
   // The probe's Transfers outside the registry, ERC-721 ones among them.
   const unregisteredTransfers = probe
     ? probe.logs.filter(

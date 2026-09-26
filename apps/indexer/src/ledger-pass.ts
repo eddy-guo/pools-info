@@ -323,8 +323,33 @@ const pageCount = (c: LedgerRangeCollection) =>
   lanePages(c.pages.swaps) +
   lanePages(c.pages.transfers) +
   c.pages.headers.length;
-/** The ledger batch of one collected range (report 7.1 step 7). */
-export function ledgerBatchOf(collection: LedgerRangeCollection): LedgerBatch {
+/** The ledger batch of one collected range (report 7.1 step 7): the main
+ * lane's or the crowd lane's, which carry the same rows. */
+export function ledgerBatchOf(
+  collection: Pick<
+    LedgerRangeCollection,
+    | "fromBlock"
+    | "toBlock"
+    | "parentHash"
+    | "blockHash"
+    | "toTimestamp"
+    | "archiveHeight"
+    | "registryPools"
+    | "requests"
+    | "bytes"
+    | "swaps"
+    | "transfers"
+  > & {
+    query: unknown;
+    pages: unknown;
+    launch: {
+      pools: Pick<
+        LedgerRangeCollection["launch"]["pools"][number],
+        "id" | "token" | "launchBlock" | "launchBlockHash" | "launchTx" | "launchLogIndex"
+      >[];
+    };
+  },
+): LedgerBatch {
   return {
     from: collection.fromBlock,
     to: collection.toBlock,
@@ -1098,7 +1123,7 @@ export function ledgerPassSafeError(e: unknown): string {
   if (/^(Wrong chain|Invalid chain head)$/.test(message))
     return "rpc_endpoint_rejected: the JSON-RPC endpoint is not chain 4663";
   if (
-    /^((Invalid|Unexpected|Duplicate|Inconsistent) (HyperSync )?(ledger|launch|catalog)|HyperSync (ledger|swap outside|transfer outside|log lacks|returned)|Unverified catalog|Launch precedes|Ledger (swap|range))/.test(
+    /^((Invalid|Unexpected|Duplicate|Inconsistent) (HyperSync )?(ledger|launch|catalog|crowd)|HyperSync (ledger|crowd|swap outside|transfer outside|log lacks|returned)|Unverified catalog|Launch precedes|Ledger (swap|range))/.test(
       message,
     )
   )
