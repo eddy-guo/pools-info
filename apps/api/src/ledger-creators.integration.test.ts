@@ -5,7 +5,8 @@ import pg from "pg";
 import type { CreatorsResponse } from "@pools/core";
 import { applyTestMigrations } from "./test-migrations";
 import { creatorsNote, ledgerCreatorsNote } from "./creators-read";
-import { createReader } from "./reader";
+import type { MarketSource } from "./ledger-market";
+import { createReader, readData } from "./reader";
 import { parseRequest } from "./request";
 
 const word = (n: number) => "0x" + n.toString(16).padStart(64, "0");
@@ -78,7 +79,7 @@ const strip = (response: CreatorsResponse) => {
 };
 
 test(
-  "Postgres creators under MARKET_SOURCE=ledger measure every launch the ledger covers from its hours, state and positions, and the broad rule keeps the rest",
+  "Postgres creators under MARKET_SOURCE=ledger measure every launch the ledger covers from its hours, state and positions, and the broad rule keeps the rest; the frozen deep trades are read only for launches they serve",
   { skip: !process.env.TEST_DATABASE_URL },
   async () => {
     const schema = "api_test_ledger_creators_" + randomBytes(8).toString("hex");
@@ -359,6 +360,65 @@ test(
         [202, 1, 1, 1, "7", "7", 5, "7", true],
         [203, 1, 0, 0, null, null, null, null, null],
       ]);
+
+      // The frozen deep trades are read only for a launch its deep
+      // publication serves, counted from the plans of every statement one
+      // read runs rather than from their text. Sender 201's one published
+      // launch, P1, is the ledger's, so neither its volume rank nor its page
+      // executes a plan node on the trades table: a catalog-wide aggregate
+      // read all of them (107 MB on production) to serve no row. The broad
+      // source covers nothing here, so it serves P1 from its deep trades.
+      const frozenReads = async (path: string, source: MarketSource) => {
+        let executions = 0;
+        const walk = (node: Record<string, any>) => {
+          if (node["Relation Name"] === "analytics_accounting_trades")
+            executions += node["Actual Loops"];
+          for (const child of node.Plans ?? []) walk(child);
+        };
+        await db.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        try {
+          const response = (await readData(
+            async (sql, values) => {
+              if (/^\s*(WITH|SELECT)\b/.test(sql))
+                walk(
+                  (
+                    await db.query(
+                      "EXPLAIN (ANALYZE, FORMAT JSON) " + sql,
+                      values as unknown[],
+                    )
+                  ).rows[0]["QUERY PLAN"][0].Plan,
+                );
+              return db.query(sql, values as unknown[]);
+            },
+            parseRequest(path),
+            source,
+          )) as {
+            total: number;
+            items: { id: string; stats: { volumeWei: string | null } }[];
+          };
+          return {
+            executions,
+            items: response.items.map((item) => [
+              Number(BigInt(item.id)),
+              item.stats.volumeWei,
+            ]),
+          };
+        } finally {
+          await db.query("COMMIT");
+        }
+      };
+      const own = `/v1/explore?window=24h&sort=volume&q=${address(201)}`;
+      assert.deepEqual(await frozenReads(own, "ledger"), {
+        executions: 0,
+        items: [
+          [1, "35"],
+          [2, "0"],
+          [3, "0"],
+        ],
+      });
+      const deep = await frozenReads(own, "broad");
+      assert.deepEqual(deep.items, [[1, "10"]]);
+      assert(deep.executions > 0, "the deep flow of P1 was never read");
     } finally {
       for (const reader of Object.values(readers)) await reader.close();
       await db.query(`DROP SCHEMA ${schema} CASCADE`);

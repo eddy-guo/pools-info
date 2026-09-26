@@ -120,6 +120,20 @@ export function broadFlowCte(source: "catalog" | "page") {
     ) inputs GROUP BY pool_id
 )`;
 }
+/** One launch's deep flow: its deep trades inside the publication's window
+ * ($1), or `where`, read through the pool's own trade index. Callers place it
+ * inside the CASE branch that serves the deep publication, so it runs only for
+ * the launches that fall through to it. The deep trades are frozen, and with
+ * the ledger no deep-published launch falls through, so a read touches none of
+ * them; a catalog-wide aggregate read the whole table (107 MB on production)
+ * on every rank to feed no row. An aggregate scalar subquery is never hashed
+ * into one whole-table read the way an EXISTS or IN sublink can be. */
+export const deepFlowSql = (
+  select: string,
+  pool: string,
+  where = "t.timestamp >= $1",
+) =>
+  `(SELECT ${select} FROM analytics_accounting_trades t WHERE t.chain_id=4663 AND t.pool_id=${pool} AND ${where})`;
 // Every launch's served trades and volume on the cheap flow columns: broad
 // flow where the canonical broad cutoff covers the launch and no deep
 // publication is newer, else deep flow, else null where no source proves the
@@ -135,7 +149,7 @@ export function broadFlowCte(source: "catalog" | "page") {
 // rather than taking a flag because the evidence costs a probe per launch:
 // the creators page needs it only for the creators it serves, and asking for
 // it over the whole catalog is what put that read past its statement budget.
-// Deep evidence rides the flow scan the rank already pays for; broad evidence
+// Deep evidence is one probe of the launch's own deep trades; broad evidence
 // is one hash semi-join over broad_swaps at or below the served cutoff.
 // With `ledger` (the served window), the ledger's flow comes first for every
 // launch it covers whose deep publication, if any, is no newer than its
@@ -165,18 +179,15 @@ export function rankedFlowCtes(
     ledger
       ? `WHEN ll.pool_id IS NOT NULL AND p.launch_block BETWEEN $9 AND $7 AND (a.through_block IS NULL OR $7 >= a.through_block) THEN ${ledgerAnswers(ledger) ? value : "NULL"} `
       : "";
-  const flow = ownBuys
-    ? `SELECT t.pool_id,sum(t.eth_wei) FILTER (WHERE t.timestamp >= $1) AS volume,count(*) FILTER (WHERE t.timestamp >= $1)::integer AS trades,
-      bool_or(t.side='buy' AND t.wallet=p.launch_sender) AS own
-    FROM analytics_accounting_trades t LEFT JOIN indexed_pools p ON p.chain_id=t.chain_id AND p.pool_id=t.pool_id WHERE t.chain_id=4663 GROUP BY t.pool_id
-  ), broad_own AS (
-    SELECT DISTINCT bs.pool_id FROM broad_swaps bs JOIN indexed_pools p ON p.chain_id=bs.chain_id AND p.pool_id=bs.pool_id AND p.launch_sender=bs.transaction_sender
-    WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2${ofSenders("p.launch_sender")}`
-    : `SELECT pool_id,sum(eth_wei) AS volume,count(*)::integer AS trades FROM analytics_accounting_trades WHERE chain_id=4663 AND timestamp >= $1 GROUP BY pool_id`;
   const ledgerOwn = ownBuys && ledger;
-  return `${catalogCte}, flow AS (
-    ${flow}
-  )${broadFlowCte("catalog")}${
+  return `${catalogCte}${broadFlowCte("catalog")}${
+    ownBuys
+      ? `, broad_own AS (
+    SELECT DISTINCT bs.pool_id FROM broad_swaps bs JOIN indexed_pools p ON p.chain_id=bs.chain_id AND p.pool_id=bs.pool_id AND p.launch_sender=bs.transaction_sender
+    WHERE bs.chain_id=4663 AND bs.side='buy' AND bs.batch_end<=$2${ofSenders("p.launch_sender")}
+  )`
+      : ""
+  }${
     ledger
       ? `${ledgerFlowCtes}, ledger_flow_ids AS (
     SELECT ip.pool_id,f.trades,f.volume FROM ledger_flow f JOIN indexed_pools ip ON ip.pool_ref=f.pool_ref
@@ -193,16 +204,15 @@ export function rankedFlowCtes(
       : ""
   }, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
-      CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN coalesce(f.trades,0) END AS trades,
-      CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(f.volume,0) END AS volume${
+      CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN ${deepFlowSql("count(*)::integer", "p.pool_id")} END AS trades,
+      CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("sum(t.eth_wei)", "p.pool_id")},0) END AS volume${
         ownBuys
           ? `,
-      CASE ${ledgerSelected("lo.pool_id IS NOT NULL")}WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(f.own,false) END AS own`
+      CASE ${ledgerSelected("lo.pool_id IS NOT NULL")}WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("bool_or(t.side='buy' AND t.wallet=p.launch_sender)", "p.pool_id", "true")},false) END AS own`
           : ""
       }
     FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id${ownBuys ? " LEFT JOIN broad_own bo ON bo.pool_id=p.pool_id" : ""}
-    LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
-    LEFT JOIN flow f ON f.pool_id=p.pool_id${
+    LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id${
       ledger
         ? `
     LEFT JOIN ledger_launches ll ON ll.pool_id=p.pool_id
@@ -349,8 +359,8 @@ export function broadExploreCtes({ ledger = null as LiveWindow | null } = {}) {
 ), metrics AS (
   SELECT p.pool_id,a.market,a.liquidity_wei,a.holders_count,a.from_block,a.from_timestamp,a.generated_at,a.source_kind,
     CASE ${when("false")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN true ELSE false END AS broad_selected,
-    CASE ${when("l.volume")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.volume ELSE a.volume END AS volume,
-    CASE ${when("l.trades")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.trades ELSE a.trades END AS trades,
+    CASE ${when("l.volume")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.volume WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("sum(t.eth_wei)", "p.pool_id")},0) END AS volume,
+    CASE ${when("l.trades")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.trades WHEN a.pool_id IS NOT NULL THEN ${deepFlowSql("count(*)::integer", "p.pool_id")} END AS trades,
     CASE ${when("l.price")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.price ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN (a.market->>'priceWei')::numeric END END AS price,
     CASE ${when("l.change")}WHEN b.pool_id IS NOT NULL AND (a.through_block IS NULL OR b.through_block>=a.through_block) THEN b.change ELSE CASE WHEN a.units_conflict IS NOT TRUE THEN a.change END END AS change,
     a.through_block,a.asof_timestamp,
