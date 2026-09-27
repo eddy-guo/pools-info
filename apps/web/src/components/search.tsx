@@ -12,6 +12,7 @@ import { createSearchProvider } from "@/lib/search-provider";
 import { Avatar } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
+import { searchResultTitle } from "@/lib/token-identity";
 const kindHints: Record<SearchResponse["kind"], string> = {
   text: "name",
   address: "address",
@@ -230,10 +231,7 @@ export function Search() {
               <section key={type}>
                 <h2>{type}</h2>
                 {selected.map((r) => {
-                  const title = r.title.replace(
-                    /^(.*) \(([^()]+)\)$/,
-                    "$1 · $2",
-                  );
+                  const title = searchResultTitle(r.title, r.address);
                   const address = shortAddress(r.address);
                   return (
                     <Link

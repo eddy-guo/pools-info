@@ -22,6 +22,7 @@ import {
 import { useProduct } from "@/lib/use-product";
 import { useExploreRows } from "@/lib/use-explore-rows";
 import { rememberPoolRow } from "@/lib/pool-row-memory";
+import { tokenLabel, tokenSubSymbol } from "@/lib/token-identity";
 import {
   MAX_WATCHLIST_QUERY_POOLS,
   parseSharedWatchlist,
@@ -114,24 +115,31 @@ function RowSubtitle({
     launchOnly(pool) || !trades || pool.stats.trades === null
       ? null
       : `${integers.format(pool.stats.trades)} trades`;
-  const full = [pool.symbol, age, tradeCount].filter(Boolean).join(" · ");
+  const symbol = tokenSubSymbol(pool);
+  const full = [symbol, age, tradeCount].filter(Boolean).join(" · ");
+  /* Each part after the first carries its own leading separator, so a token
+     without a symbol never opens on a dot. While nothing is known yet (a
+     nameless token before the age resolves) the line holds its height. */
   return (
     <span className="row-subtitle" title={full} aria-label={full}>
-      <span className="mono" aria-hidden="true">
-        {pool.symbol}
-      </span>
+      {symbol && (
+        <span className="mono" aria-hidden="true">
+          {symbol}
+        </span>
+      )}
       {age && (
         <span aria-hidden="true">
-          {" · "}
+          {symbol && " · "}
           {age}
         </span>
       )}
       {tradeCount && (
         <span className="row-subtitle-trades" aria-hidden="true">
-          {" · "}
+          {(symbol || age) && " · "}
           {tradeCount}
         </span>
       )}
+      {!full && <span aria-hidden="true">{"\u00a0"}</span>}
     </span>
   );
 }
@@ -153,14 +161,20 @@ function PoolCell({
         hasImage={!!pool.imageUrl}
       />
       <span>
-        <strong>{pool.name}</strong>
+        <strong>{tokenLabel(pool)}</strong>
         <small>
           {subtitle ??
-            (launchOnly(pool)
-              ? pool.symbol
-              : `${pool.symbol} · ${new Date(
-                  pool.launchedAt * 1000,
-                ).toLocaleDateString("en-US", { timeZone: "UTC" })}`)}
+            ([
+              tokenSubSymbol(pool),
+              launchOnly(pool)
+                ? null
+                : new Date(pool.launchedAt * 1000).toLocaleDateString("en-US", {
+                    timeZone: "UTC",
+                  }),
+            ]
+              .filter(Boolean)
+              .join(" · ") ||
+              "\u00a0")}
         </small>
       </span>
     </Link>
@@ -570,7 +584,11 @@ export function ProductExplore() {
                   )}
                   <span className="launch-card-label">
                     <strong data-pending={!p && !launches.data}>
-                      {p?.name ?? (launches.data ? "\u00a0" : "Pool pending")}
+                      {p
+                        ? tokenLabel(p)
+                        : launches.data
+                          ? "\u00a0"
+                          : "Pool pending"}
                     </strong>
                     <small>
                       <time

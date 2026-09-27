@@ -16,6 +16,7 @@ import { AddressLabel, Change, Price, WatchButton } from "./ui";
 import { Eth, Stat, Unavailable, explorer, utc } from "./live-ui";
 import { PendingValue } from "./product-common";
 import { PoolImage } from "./pool-image";
+import { tokenLabel, tokenSubSymbol, tokenText } from "@/lib/token-identity";
 import {
   Candles,
   ChartRangeControl,
@@ -59,6 +60,17 @@ export function PoolHeading({
   children: React.ReactNode;
 }) {
   const launch = pool?.launch;
+  /* A served name reads through the token fallback; an unserved one keeps
+     the page's own pending and unavailable wording. */
+  const label = pool?.name !== undefined ? tokenLabel(pool) : undefined;
+  /* Undefined while the symbol is not served; null when there is none to
+     show beside the title (blank, or already the title itself). */
+  const symbol =
+    pool?.symbol === undefined
+      ? undefined
+      : pool.name === undefined
+        ? tokenText(pool.symbol)
+        : tokenSubSymbol(pool);
   return (
     <div className="page-heading">
       <div className={styles.identity}>
@@ -78,19 +90,22 @@ export function PoolHeading({
         </span>
         <div className="pool-heading-copy">
           <div className={`${styles.title} pool-identity-title`}>
-            <h1 data-pending={pending && !pool?.name} title={pool?.name}>
-              {pool?.name ??
+            <h1 data-pending={pending && !label} title={label}>
+              {label ??
                 (pending ? "Loading saved pool" : "Pool name unavailable")}
             </h1>
             {/* The name's width settles with the response; the symbol and
-                chip after it are new nodes then, not moved ones. */}
+                chip after it are new nodes then, not moved ones. A nameless
+                token's symbol is already its title, so it is not repeated. */}
             <Fragment key={pending ? "pending" : "resolved"}>
-              <span
-                className={styles.symbol}
-                data-pending={pending && !pool?.symbol}
-              >
-                {pool?.symbol ?? (pending ? "Pending" : <Unavailable />)}
-              </span>
+              {symbol !== null && (
+                <span
+                  className={styles.symbol}
+                  data-pending={pending && !symbol}
+                >
+                  {symbol ?? (pending ? "Pending" : <Unavailable />)}
+                </span>
+              )}
               <span className={styles.mode}>INSTANT</span>
             </Fragment>
           </div>
@@ -283,7 +298,9 @@ export function ObservedPoolDetail({
         <Link href="/">Pools</Link>
         <span>/</span>
         <span data-pending={pending && !pool?.symbol}>
-          {pool?.symbol ?? (pending ? "Pool pending" : "Pool")}
+          {(pool?.symbol !== undefined &&
+            (tokenText(pool.symbol) ?? tokenLabel(pool))) ||
+            (pending ? "Pool pending" : "Pool")}
         </span>
       </nav>
       <PoolHeading
