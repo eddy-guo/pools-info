@@ -5,7 +5,7 @@
 // has its pre-image journaled first, and walkBackLedger restores those
 // pre-images in reverse batch order after a reorg or a provider fork.
 import { createHash } from "node:crypto";
-import { contracts } from "@pools/chain";
+import { contracts, crowdStrategies, crowdTemplate } from "@pools/chain";
 import {
   applyLedgerEvents,
   createLedgerState,
@@ -262,7 +262,7 @@ export interface LedgerBatch {
   launches: readonly LedgerLaunch[];
   swaps: readonly LedgerSwap[];
   transfers: readonly LedgerTransfer[];
-  claims?: readonly LedgerTransfer[];
+  claims?: readonly (LedgerTransfer & { auction: string })[];
 }
 export interface LedgerApplied {
   changed: boolean;
@@ -352,6 +352,7 @@ export function ledgerContentHash(batch: LedgerBatch) {
               lower(t.from),
               lower(t.to),
               t.value,
+              lower(t.auction),
             ]),
         }
       : {}),
@@ -448,10 +449,12 @@ function checkBatch(batch: LedgerBatch, key: LedgerStreamKey) {
       throw Error("ledger_row_outside_batch");
   if (batch.claims?.length) {
     if (key !== crowdLedgerStream.key) throw Error("ledger_invalid_batch");
+    const auctions = new Map<string, string>();
     for (const claim of batch.claims) {
       const launch = batch.launches.find(
         (l) => lower(l.token) === lower(claim.token),
       );
+      const token = lower(claim.token);
       if (
         !launch ||
         !integer(claim.block) ||
@@ -463,10 +466,12 @@ function checkBatch(batch: LedgerBatch, key: LedgerStreamKey) {
         !hex32.test(claim.blockHash) ||
         !hex20.test(claim.from) ||
         !hex20.test(claim.to) ||
+        !hex20.test(claim.auction) ||
         !/^\d+$/.test(claim.value) ||
-        BigInt(claim.value) <= 0n
+        (auctions.has(token) && auctions.get(token) !== lower(claim.auction))
       )
         throw Error("ledger_invalid_claim");
+      auctions.set(token, lower(claim.auction));
     }
   }
   for (const l of batch.launches)
@@ -599,26 +604,37 @@ export async function applyLedgerBatch(
     const transfers = batch.transfers.filter((t) =>
       byToken.has(lower(t.token)),
     );
+    const claimsByToken = new Map<
+      string,
+      (LedgerTransfer & { auction: string })[]
+    >();
+    for (const claim of batch.claims ?? []) {
+      const token = lower(claim.token);
+      const group = claimsByToken.get(token) ?? [];
+      group.push(claim);
+      claimsByToken.set(token, group);
+    }
+    const claimEvents = [...claimsByToken].flatMap(([token, claims]) => {
+      const pool = byToken.get(token);
+      if (!pool) throw Error("ledger_unregistered_claim");
+      return planLedgerBatch(
+        { swaps: [], transfers: claims, registry: [pool] },
+        {
+          ...ledgerRules,
+          infrastructure: [
+            claims[0].auction,
+            ...crowdStrategies.map((s) => s.strategy),
+            crowdTemplate.tokensRecipient,
+          ],
+        },
+      );
+    });
     const events = [
       ...planLedgerBatch(
         { swaps, transfers, registry: [...byPool.values()] },
         ledgerRules,
       ),
-      ...(batch.claims ?? []).map((claim) => {
-        const pool = byToken.get(lower(claim.token));
-        if (!pool) throw Error("ledger_unregistered_claim");
-        return {
-          kind: "inflow" as const,
-          txHash: lower(claim.txHash),
-          logIndex: claim.logIndex,
-          block: claim.block,
-          blockHash: lower(claim.blockHash),
-          timestamp: claim.timestamp,
-          poolId: pool.poolId,
-          wallet: lower(claim.to),
-          tokenRaw: BigInt(claim.value),
-        };
-      }),
+      ...claimEvents,
     ].sort(logOrder);
     const keys = ledgerKeys(events);
     const attributed = events.filter((e) => e.kind === "swap").length,

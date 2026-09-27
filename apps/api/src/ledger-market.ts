@@ -215,7 +215,8 @@ export const ledgerWindowBaselineSql = (
  * launch source qualifies. One read per statement. */
 const crowdCursorSql = (cursor: string) =>
   `(SELECT c.cursor_block FROM agg_streams c WHERE c.chain_id=4663 AND c.stream_key='ledger:crowd:v1'
-      AND c.cursor_block=${cursor}::bigint)`;
+      AND c.cursor_block=${cursor}::bigint AND c.cursor_hash=(SELECT m.cursor_hash FROM agg_streams m
+        WHERE m.chain_id=4663 AND m.stream_key='ledger:agg:v1' AND m.cursor_block=${cursor}::bigint))`;
 /** A launch source the ledger serves at the main cursor: the main launch
  * lane's batches at or below it, and the crowd lane's at or below the crowd
  * ledger's cursor while that is served. `ps` prefixes the source columns. */

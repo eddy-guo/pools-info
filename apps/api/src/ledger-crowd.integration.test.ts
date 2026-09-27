@@ -87,15 +87,23 @@ test(
         `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES(4663,$1,23467030,'tip')`,
         [key],
       );
-    const batch = async (key: string, to: number) => {
+    const batch = async (key: string, to: number, hash = to) => {
       await db.query(
         `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
         VALUES(4663,$1,$2,23467030,decode($3,'hex'),decode($4,'hex'),$5,$6,1,decode($7,'hex'),'{}','{}',0,0,1,0,0,0,1,1)`,
-        [key, to, hex(23467029), hex(to), cursorTime, to + 128, "e".repeat(64)],
+        [
+          key,
+          to,
+          hex(23467029),
+          hex(hash),
+          cursorTime,
+          to + 128,
+          "e".repeat(64),
+        ],
       );
       await db.query(
         `UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4 WHERE stream_key=$1`,
-        [key, to, hex(to), cursorTime],
+        [key, to, hex(hash), cursorTime],
       );
     };
     await batch("ledger:agg:v1", cursor);
@@ -160,9 +168,22 @@ test(
     assert.equal(page.market?.coverage?.completeWindow, false);
     assert.equal(ledgerServed(await served(I)), true);
 
-    // Level again: the crowd pool is served from its hours and state, first
-    // by volume.
-    await batch("ledger:crowd:v1", cursor);
+    await batch("ledger:crowd:v1", cursor, cursor + 1);
+    assert.deepEqual(
+      (await explore()).map((r) => r.id),
+      [I],
+    );
+    page = await served(X);
+    assert.equal(page.market?.volumeWei, null);
+    assert.equal(page.market?.coverage?.completeWindow, false);
+    await db.query(
+      "UPDATE agg_batches SET block_hash=decode($1,'hex') WHERE stream_key='ledger:crowd:v1' AND to_block=$2",
+      [hex(cursor), cursor],
+    );
+    await db.query(
+      "UPDATE agg_streams SET cursor_hash=decode($1,'hex') WHERE stream_key='ledger:crowd:v1'",
+      [hex(cursor)],
+    );
     rows = await explore();
     assert.deepEqual(
       rows.map((r) => r.id),

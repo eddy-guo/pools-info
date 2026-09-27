@@ -47,6 +47,7 @@ export type LedgerSide = "buy" | "sell";
 export interface LedgerRules {
   manager: string;
   router: string;
+  infrastructure?: readonly string[];
 }
 /** One registered PoolManager Swap log joined to its transaction. */
 export interface LedgerSwap {
@@ -340,7 +341,11 @@ export function planLedgerBatch(
 ): LedgerEvent[] {
   const manager = address(rules.manager, "manager"),
     router = address(rules.router, "router");
-  const infrastructure = new Set([manager, ledgerZeroAddress]);
+  const infrastructure = new Set([
+    manager,
+    ledgerZeroAddress,
+    ...(rules.infrastructure ?? []).map((a) => address(a, "infrastructure")),
+  ]);
   const poolByToken = new Map<string, string>();
   for (const e of rows.registry) {
     const token = address(e.token, "token"),

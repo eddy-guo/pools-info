@@ -40,6 +40,7 @@ const addr = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
 const W = addr(0x3333),
   V = addr(0x4444),
   U = addr(0x6666),
+  R = addr(0x7777),
   S = addr(0x5555),
   C = addr(0xc0de),
   TA = addr(0x1111),
@@ -155,11 +156,22 @@ function chain(options: { fork?: boolean } = {}) {
       transactionHash: word(0xe1),
       sender: V,
     }),
+    fakeTransfer({
+      block: start + 145,
+      logIndex: 0,
+      token: TX,
+      from: V,
+      to: R,
+      value: 20n,
+      transactionHash: word(0xe2),
+      sender: V,
+    }),
     ...trade(start + 170, x.poolId, TX, W, "buy", 10n, 100n),
     ...trade(start + 175, x.poolId, TX, C, "buy", 3n, 30n),
     ...trade(start + 180, x.poolId, TX, W, "sell", 15n, 100n),
     ...trade(start + 185, x.poolId, TX, V, "buy", 4n, 40n),
     ...trade(start + 190, x.poolId, TX, V, "sell", 7n, 50n),
+    ...trade(start + 195, x.poolId, TX, R, "buy", 5n, 50n),
     ...trade(start + 250, a.poolId, TA, W, "buy", 10n, 100n),
     ...trade(start + 260, x.poolId, TX, W, "buy", 10n, 100n),
     // U first trades the crowd pool, then the Instant one.
@@ -297,7 +309,7 @@ test(
     const waits: number[] = [];
     const summary = await runLedgerTip(
       db,
-      tipOptions(fake, log, { crowdBudgetMs: 60000, waits }),
+      tipOptions(fake, log, { crowdEnabled: true, waits }),
     );
     assert.equal(summary.stopped, "aborted");
     assert.deepEqual(waits, [60000]);
@@ -353,13 +365,24 @@ test(
     assert.equal(position(W).supported, true);
     assert.equal(position(W).realized_wei, 5 + 6);
     assert.equal(position(V).supported, false);
-    assert.deepEqual(position(V).flags, ["zero_cost_inflow"]);
+    assert.deepEqual(position(V).flags, [
+      "unattributed_outflow",
+      "zero_cost_inflow",
+    ]);
     assert.equal(position(V).buys, 1);
     assert.equal(position(V).inflow_raw, 50);
+    assert.equal(position(V).outflow_raw, 20);
+    assert.equal(position(V).quantity_raw, 20);
+    assert.equal(position(R).supported, false);
+    assert.deepEqual(position(R).flags, ["zero_cost_inflow"]);
+    assert.equal(position(R).buys, 1);
+    assert.equal(position(R).inflow_raw, 20);
+    assert.equal(position(R).quantity_raw, 70);
     assert.equal(position(C).supported, true);
     const state = JSON.parse(x.poolState[0].row);
-    assert.equal(state.trades, 8);
-    assert.equal(state.volume_wei, 10 + 3 + 4 + 15 + 7 + 10 + 2 + 16);
+    assert.equal(state.trades, 9);
+    assert.equal(state.volume_wei, 10 + 3 + 4 + 15 + 7 + 5 + 10 + 2 + 16);
+    assert.equal(state.holders, 4);
     // The pending auction is remembered, not registered.
     const pending = await db.query(
       "SELECT auction FROM crowd_auctions ORDER BY auction",
@@ -414,7 +437,7 @@ test(
     };
     const summary = await runLedgerTip(
       db,
-      tipOptions(fake, log, { crowdBudgetMs: 60000, fetch: refusing }),
+      tipOptions(fake, log, { crowdEnabled: true, fetch: refusing }),
     );
     assert.equal(summary.stopped, "aborted");
     assert.equal(summary.failures, 0);
@@ -448,7 +471,7 @@ test(
     await passTwoRanges(straight, forked.fake);
     await runLedgerTip(
       straight,
-      tipOptions(forked.fake, [], { crowdBudgetMs: 60000 }),
+      tipOptions(forked.fake, [], { crowdEnabled: true }),
     );
     const expected = await rows(straight);
     const expectedWindows = await windows(straight);
@@ -458,17 +481,14 @@ test(
     await writer(db);
     const first = chain();
     await passTwoRanges(db, first.fake);
-    await runLedgerTip(
-      db,
-      tipOptions(first.fake, [], { crowdBudgetMs: 60000 }),
-    );
+    await runLedgerTip(db, tipOptions(first.fake, [], { crowdEnabled: true }));
     // The provider now serves the fork from +350 on, and more blocks.
     const second = chain({ fork: true });
     second.fake.height += 100;
     const log: Record<string, unknown>[] = [];
     await runLedgerTip(
       db,
-      tipOptions(second.fake, log, { crowdBudgetMs: 60000 }),
+      tipOptions(second.fake, log, { crowdEnabled: true }),
     );
     assert.ok(log.some((e) => e.event === "ledger_walk_back"));
     assert.ok(log.some((e) => e.event === "ledger_crowd_walk_back"));

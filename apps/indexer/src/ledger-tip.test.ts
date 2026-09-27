@@ -908,7 +908,6 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     pollMs: 60000,
     windowRefreshMs: 60000,
     crowdEnabled: true,
-    crowdBudgetMs: 60000,
   });
   assert.equal(
     ledgerTipConfig({ LEDGER_CROWD_ENABLED: "0" }).crowdEnabled,
@@ -939,7 +938,6 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     ],
     [{ LEDGER_TIP_ENABLED: "yes" }, /Invalid LEDGER_TIP_ENABLED/],
     [{ LEDGER_CROWD_ENABLED: "yes" }, /Invalid LEDGER_CROWD_ENABLED/],
-    [{ LEDGER_CROWD_BUDGET_MS: "999" }, /Invalid LEDGER_CROWD_BUDGET_MS/],
     [{ LEDGER_TIP_MAX_PAGES: "17" }, /Invalid LEDGER_TIP_MAX_PAGES/],
     [
       { LEDGER_TIP_RANGE_BLOCKS: "5000", LEDGER_TIP_MAX_RANGE_BLOCKS: "4000" },

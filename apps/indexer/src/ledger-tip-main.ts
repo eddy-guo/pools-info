@@ -121,7 +121,6 @@ async function main() {
       pollMs: config.pollMs,
       windowRefreshMs: config.windowRefreshMs,
       crowdEnabled: config.crowdEnabled,
-      crowdBudgetMs: config.crowdBudgetMs,
     });
     if (!(await locks(db))) {
       if (stop.signal.aborted) return;
@@ -161,9 +160,7 @@ async function main() {
           maxPages: config.maxPages,
           pollMs: config.pollMs,
           windowRefreshMs: config.windowRefreshMs,
-          ...(config.crowdEnabled
-            ? { crowdBudgetMs: config.crowdBudgetMs }
-            : {}),
+          crowdEnabled: config.crowdEnabled,
           signal: stop.signal,
           log: emit,
           throttled: () => throttled,

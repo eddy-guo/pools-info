@@ -68,10 +68,8 @@ export interface LedgerTipConfig {
   maxRequestsPerCycle: number;
   pollMs: number;
   windowRefreshMs: number;
-  /** The crowd lane runs unless LEDGER_CROWD_ENABLED=0. */
+  /** Disable the crowd lane to preserve the shared free-tier token for the main ledger. */
   crowdEnabled: boolean;
-  /** Time a cycle may spend on crowd ranges while the lane catches up. */
-  crowdBudgetMs: number;
 }
 export const ledgerTipDefaults = Object.freeze({
   /** Blocks per range; a range that completes whole doubles the next one up
@@ -171,13 +169,6 @@ export function ledgerTipConfig(
       3600000,
     ),
     crowdEnabled: crowd !== "0",
-    crowdBudgetMs: integer(
-      env,
-      "LEDGER_CROWD_BUDGET_MS",
-      ledgerTipDefaults.crowdBudgetMs,
-      1000,
-      600000,
-    ),
   };
 }
 /** Both gates are required before any authenticated request is built. */
@@ -365,8 +356,7 @@ export interface LedgerTipOptions {
   maxPages: number;
   pollMs: number;
   windowRefreshMs: number;
-  /** The crowd lane's time budget per cycle; unset leaves the lane off. */
-  crowdBudgetMs?: number;
+  crowdEnabled?: boolean;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
   log?: Log;
@@ -506,11 +496,11 @@ export async function runLedgerTip(
         options.warmth.observeIdentity(identity.rows[0].identity);
       }
       const crowd =
-        options.crowdBudgetMs !== undefined && crowdSkip === 0
+        options.crowdEnabled && crowdSkip === 0
           ? {
               rangeBlocks: crowdRangeBlocks,
               maxRangeBlocks: ledgerCrowdDefaults.maxRangeBlocks,
-              budgetMs: options.crowdBudgetMs,
+              budgetMs: ledgerTipDefaults.crowdBudgetMs,
             }
           : undefined;
       if (crowdSkip > 0) crowdSkip--;

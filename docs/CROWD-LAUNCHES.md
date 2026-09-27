@@ -66,12 +66,12 @@ One crowd range (`collectCrowdRange`, `packages/chain/src/hypersync-crowd.ts`):
    logs and transactions, and the launch is verified from that read alone;
    a graduation that fails is recorded in the batch's `rejected` list.
 4. Swaps of every crowd pool by pool id, and transfers of every crowd token
-   from its pool's migration on. At each migration, a separate token Transfer
-   read from auction creation through the preceding block carries auction
-   claims into the exclusion fold.
+   from its pool's migration on. At each migration, a separate read of every
+   token Transfer from auction creation through the preceding block carries
+   claims and onward transfers into the exclusion fold.
 5. The cutoff header; name, symbol, decimals and supply over the public RPC.
 
-`verifyCrowdLaunchBatch` re-derives every pool, remembered auction, claim,
+`verifyCrowdLaunchBatch` re-derives every pool, remembered auction, transfer,
 rejection and metadata issue from the retained rows before commit.
 
 ## Inside the tip loop
@@ -81,7 +81,7 @@ main range of every tip cycle, on the same HyperSync client, pacer and token:
 
 - **Catch-up.** From an empty stream it folds the crowd history from the
   ledger's start block in ranges of 100,000 blocks growing to 1,000,000 while
-  quiet, for at most `LEDGER_CROWD_BUDGET_MS` (60 s) of each cycle; the loop
+  quiet, for at most 60 s of each cycle; the loop
   skips its poll wait while the lane is behind. The 54 pools' history is
   about 0.7M logs; at the pages the pass measured that is 300 to 800
   requests, about an hour at the token's spare rate. Nothing runs from a
@@ -109,8 +109,8 @@ main range of every tip cycle, on the same HyperSync client, pacer and token:
 ## Serving
 
 `ledgerLaunchSql`/`ledgerSourceSql` (`apps/api/src/ledger-market.ts`) serve a
-crowd pool from the ledger only while the crowd stream is level with the main
-cursor; otherwise it is listed but
+crowd pool from the ledger only while the crowd stream's cursor height and hash
+match the main cursor; otherwise it is listed but
 unmeasured, as any unmeasured launch is, rather than cut at an older block
 under the main cutoff. Every catalogue row carries `launchType` (explore
 items, the pool page's `pool`, a creator's `bestLaunch` and a wallet
@@ -122,9 +122,11 @@ launches. A creator's launch count and medians include their crowd launches.
 
 An auction entrant's tokens come from the auction contract, not a swap: the
 transfer is a zero-cost inflow and the position is excluded
-(`zero_cost_inflow`), as any unattributed inflow is. The auction's raise is not
-pool volume, and the migration's liquidity arrives as `ModifyLiquidity`,
-which the ledger does not read.
+(`zero_cost_inflow`), as any unattributed inflow is. Pre-migration onward
+transfers carry the sender's outflow and recipient's zero-cost inflow through
+the same transfer fold. The auction's raise is not pool volume, and the
+migration's liquidity arrives as `ModifyLiquidity`, which the ledger does not
+read.
 
 ## History
 

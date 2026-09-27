@@ -65,7 +65,6 @@ import {
   type LedgerQueryRecord,
   type LedgerRegistryPool,
 } from "./hypersync-ledger";
-import { contracts } from "./events";
 
 /** The crowd lane of the aggregate ledger (docs/CROWD-LAUNCHES.md): the
  * pools.xyz crowd launches, verified from their own events, and the swaps
@@ -96,6 +95,7 @@ export interface CrowdCatalogPool extends LedgerCatalogPool {
   launchType: "crowd";
   auction: string;
 }
+export type CrowdPreMigrationTransfer = LedgerTransfer & { auction: string };
 /** A migration of a template auction the lane saw, and what its creation
  * block said when read again. */
 export interface CrowdLaunchEvidence {
@@ -151,7 +151,7 @@ export interface CrowdLaunchBatch {
   pools: CrowdCatalogPool[];
   /** Template auctions created in the range, for the caller to remember. */
   auctions: CrowdAuction[];
-  claims: LedgerTransfer[];
+  claims: CrowdPreMigrationTransfer[];
   evidence: CrowdLaunchEvidence;
 }
 
@@ -526,22 +526,16 @@ const admittedTokens = (
     typeof launch === "string" ? [] : [launch.auction.token],
   );
 const claimQuery = (auction: CrowdAuction, migrationBlock: number) => {
-  const query = transferLogQuery(
+  return transferLogQuery(
     { fromBlock: auction.createdBlock, toBlock: migrationBlock - 1 },
     [auction.token],
     ledgerPassPolicy.tokensPerQuery,
   );
-  query.logs![0].topics!.push(
-    [auction.auction, auction.strategy].map(
-      (address) => `0x${address.slice(2).padStart(64, "0")}`,
-    ),
-  );
-  return checkedQuery(query);
 };
 function crowdClaimRows(
   launches: ReturnType<typeof crowdLaunchRows>["launches"],
   reads: CrowdLaunchEvidence["claims"],
-): LedgerTransfer[] {
+): CrowdPreMigrationTransfer[] {
   const admitted = launches.filter((l) => typeof l.launch !== "string");
   if (!Array.isArray(reads) || reads.length !== admitted.length)
     throw invalid();
@@ -578,20 +572,7 @@ function crowdClaimRows(
       transactions,
       blocks,
     }).transfers;
-    if (
-      rows.some(
-        (r) => r.from !== declared.auction && r.from !== declared.strategy,
-      )
-    )
-      throw invalid();
-    return rows.filter(
-      (r) =>
-        r.to !== declared.auction &&
-        r.to !== declared.strategy &&
-        r.to !== "0x0000000000000000000000000000000000000000" &&
-        r.to !== contracts.manager &&
-        BigInt(r.value) > 0n,
-    );
+    return rows.map((r) => ({ ...r, auction: declared.auction }));
   });
 }
 /** Re-derive a crowd launch batch from its retained evidence with no network
@@ -674,7 +655,7 @@ export interface CrowdRangeCollection {
   launch: CrowdLaunchBatch;
   swaps: LedgerSwap[];
   transfers: LedgerTransfer[];
-  claims: LedgerTransfer[];
+  claims: CrowdPreMigrationTransfer[];
   unsupportedSwaps: number;
   swapSelection: "pool_ids";
   unregisteredSwaps: 0;

@@ -66,6 +66,14 @@ test("a crowd launch registers at its migration with its creator, metadata and t
         to: W,
         value: 5n,
       }),
+      fakeTransfer({
+        block: start + 450,
+        logIndex: 0,
+        token: T,
+        from: W,
+        to: X,
+        value: 2n,
+      }),
       fakeSwap({
         block: start + 600,
         logIndex: 1,
@@ -116,8 +124,11 @@ test("a crowd launch registers at its migration with its creator, metadata and t
     [[start + 600, W]],
   );
   assert.deepEqual(
-    c.claims.map((t) => [t.block, t.to, t.value]),
-    [[start + 400, W, "5"]],
+    c.claims.map((t) => [t.block, t.from, t.to, t.value, t.auction]),
+    [
+      [start + 400, A, W, "5", A],
+      [start + 450, W, X, "2", A],
+    ],
   );
   assert.deepEqual(
     c.transfers.map((t) => t.block),

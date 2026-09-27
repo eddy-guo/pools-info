@@ -341,7 +341,7 @@ export function ledgerBatchOf(
     | "swaps"
     | "transfers"
   > & {
-    claims?: readonly LedgerTransfer[];
+    claims?: readonly (LedgerTransfer & { auction: string })[];
     query: unknown;
     pages: unknown;
     launch: {
