@@ -518,7 +518,7 @@ test(
     const small = await runLedgerTipCycle(db, passClient(fake), cycleOptions);
     assert.deepEqual(
       [small.range?.from, small.range?.to, small.atTip, small.requests],
-      [start + 500, start + 549, true, 7],
+      [start + 500, start + 549, true, 8],
     );
     assert.equal(small.range?.swapSelection, "manager");
     assert.deepEqual(
@@ -694,11 +694,11 @@ test(
       )
         break;
     }
-    // A range cycle is eight requests (the transfer probe and the list of
-    // the tokens it named among them): the first eight runs stop after each
+    // A range cycle is nine requests (the transfer probe and the list of
+    // the tokens it named among them): the first nine runs stop after each
     // of them in turn and commit nothing; the next three each commit a range
     // and stop inside the cycle after it, the last at the tip.
-    assert.equal(stops, 11);
+    assert.equal(stops, 12);
     assert.deepEqual(await snapshot(db, true), expected);
   },
 );
@@ -756,10 +756,10 @@ test(
     await writer(db);
     const { fake } = tipChain();
     await passTwoRanges(db, fake);
-    // The first cycle's eight requests pass; every later one is throttled.
+    // The first cycle's nine requests pass; every later one is throttled.
     let requests = 0;
     const throttledFetch: typeof globalThis.fetch = async (input, init) =>
-      ++requests > 8
+      ++requests > 9
         ? new Response("slow down", {
             status: 429,
             headers: { "retry-after": "0" },
@@ -785,7 +785,7 @@ test(
       [1, start + 299, 3, 0],
     );
     // One throttled request of four attempts, then nothing.
-    assert.equal(requests, 12);
+    assert.equal(requests, 13);
     assert.ok(!log.some((e) => e.event === "ledger_tip_cycle_failed"));
     assert.ok(
       log.some(

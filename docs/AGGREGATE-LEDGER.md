@@ -446,8 +446,8 @@ ends the loop on a committed batch.
   probe's two-field selection reduces bytes, while recorded page boundaries
   are independent of field selection. The probe and one list can cost more
   requests than the previous two lists, and a burst is capped before it
-  falls back. With seven other requests at the observed cycle maximum,
-  ten probe requests and two fallback list requests, a cycle uses 19
+  falls back. With eight other requests at the observed cycle maximum,
+  ten probe requests and two fallback list requests, a cycle uses 20
   requests: about 12 per minute with 2-second pacing and the 60-second tip
   poll, below the shared free tier's roughly 30. Under the sampled density
   distribution and the 3,530-log tip page floor, roughly 10% of

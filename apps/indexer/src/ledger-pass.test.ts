@@ -857,9 +857,9 @@ test(
     const { fake } = fakeChain({
       intercept: (request) => {
         if (request.path !== "/query") return undefined;
-        // Range 1 needs launch, swap, the transfer probe and list and two
-        // headers: six queries.
-        return ++queries > 6
+        // Range 1 needs launch, swap, the transfer probe and list and three
+        // headers: seven queries.
+        return ++queries > 7
           ? new Response("slow down", {
               status: 429,
               headers: { "retry-after": "0" },

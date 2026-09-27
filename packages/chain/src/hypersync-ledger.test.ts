@@ -537,15 +537,19 @@ test("recorded filtered swap and transfer pages become ledger rows joined to the
   );
   assert.deepEqual(managerRequests[1], fixture("swaps-unfiltered.request"));
   assert.deepEqual(
-    [managerRequests[2].logs, managerRequests[2].field_selection],
+    [managerRequests[3].logs, managerRequests[3].field_selection],
     [
       [{ topics: [[toEventSelector(transferEvent)]] }],
       { log: ["block_number", "address"] },
     ],
   );
-  assert.deepEqual(managerRequests[3], requests[2]);
-  assert.equal(m.requests, 6);
-  assert.ok(m.sentBytes > 0 && m.sentBytes < c.sentBytes);
+  assert.deepEqual(managerRequests[4], requests[2]);
+  assert.equal(m.requests, 7);
+  assert.ok(m.sentBytes > 0);
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(managerRequests[1])) <
+      Buffer.byteLength(JSON.stringify(requests[1])),
+  );
 });
 
 test("the recorded tip page yields one verified launch with name, symbol and decimals through one Multicall3 aggregate", async () => {
@@ -854,8 +858,8 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
   assert.equal(c.blockHash, fake.hashOf(start + 199));
   assert.equal(c.toTimestamp, (start + 199) * 2);
   // launch, one swap chunk, the transfer probe and the list of the two
-  // tokens it names, the cutoff and from headers.
-  assert.equal(c.requests, 6);
+  // tokens it names, and three boundary headers.
+  assert.equal(c.requests, 7);
   // A later range sees the registry from the caller and finds nothing new:
   // the probe names no registered token, so no list is sent.
   const later = await collectLedgerRange(client, silentRpc(), {
@@ -872,7 +876,7 @@ test("a fake range is collected lane by lane: the range's own launches lead the 
     [later.swaps.length, later.transfers.length, later.launch.pools.length],
     [0, 0, 0],
   );
-  assert.equal(later.requests, 4);
+  assert.equal(later.requests, 5);
   await assert.rejects(
     collectLedgerRange(client, silentRpc(), {
       fromBlock: start + 200,
@@ -1175,7 +1179,7 @@ test("both transfer selections give the same rows: the probe sends no token and 
     bodies(chain, isList).map((b) => b!.logs![0].address),
     [[TA, TB].sort()],
   );
-  assert.equal(chain.c.requests, lists.c.requests + 1);
+  assert.equal(chain.c.requests, lists.c.requests + 2);
   assert.deepEqual(
     chain.c.pages.transfers.map((p) => p.length),
     [1, 1],
@@ -1270,7 +1274,7 @@ test("both transfer selections give the same rows: the probe sends no token and 
   assert.deepEqual(capped.c.pages.transfers, plain.c.pages.transfers);
   assert.equal(
     capped.c.requests,
-    plain.c.requests + ledgerPassPolicy.chainTransferPages,
+    plain.c.requests + ledgerPassPolicy.chainTransferPages + 1,
   );
   // A lower page cap for the whole range caps the probe too.
   const tight = await collect(undefined, undefined, slow, 3);
@@ -1342,6 +1346,89 @@ test("both transfer selections give the same rows: the probe sends no token and 
       },
     ),
     /HyperSync rate limit/,
+  );
+});
+
+test("a fork between the transfer probe and token query cannot omit a newly moving token", async () => {
+  const height = start + 199 + hypersyncPolicy.safeDistance;
+  const oldTransfer = fakeTransfer({
+    block: start + 5,
+    logIndex: 0,
+    token: TA,
+    from: W,
+    to: V,
+    value: 1n,
+  });
+  const newTransfer = fakeTransfer({
+    block: start + 6,
+    logIndex: 0,
+    token: TB,
+    from: W,
+    to: V,
+    value: 2n,
+  });
+  let forked = false;
+  const fake = new FakeHyperSync({
+    height,
+    logs: [oldTransfer],
+    intercept: ({ body }) => {
+      if (
+        !forked &&
+        body?.logs?.[0]?.address?.includes(TA) &&
+        body.logs[0].topics?.[0]?.[0] === toEventSelector(transferEvent)
+      ) {
+        forked = true;
+        fake.logs.push(newTransfer);
+        fake.reorgFrom = start + 1;
+      }
+      return undefined;
+    },
+  });
+  const input = {
+    fromBlock: start,
+    toBlock: start + 99,
+    parentHash: null,
+    height,
+    registry: [
+      { poolId: word(1), token: TA, launchBlock: start - 1 },
+      { poolId: word(2), token: TB, launchBlock: start - 1 },
+    ],
+  };
+  await assert.rejects(
+    collectLedgerRange(fakeClient(fake), silentRpc(), input),
+    /transfer probe crossed a canonical range change/,
+  );
+  assert.equal(forked, true);
+  const full = await collectLedgerRange(fakeClient(fake), silentRpc(), {
+    ...input,
+    transferSelection: "tokens",
+  });
+  assert.deepEqual(
+    full.transfers.map((transfer) => transfer.token),
+    [TA, TB],
+  );
+  const shortFake = new FakeHyperSync({
+    height,
+    logs: [oldTransfer],
+    intercept: ({ body }) => {
+      if (
+        shortFake.reorgFrom === null &&
+        body?.logs?.[0]?.address?.includes(TA) &&
+        body.logs[0].topics?.[0]?.[0] === toEventSelector(transferEvent)
+      ) {
+        shortFake.logs.push({ ...newTransfer, block: start + 4 });
+        shortFake.reorgFrom = start + 1;
+        shortFake.maxLogsPerPage = 1;
+      }
+      return undefined;
+    },
+  });
+  await assert.rejects(
+    collectLedgerRange(fakeClient(shortFake), silentRpc(), {
+      ...input,
+      maxPages: 1,
+    }),
+    /transfer probe crossed a canonical range change/,
   );
 });
 

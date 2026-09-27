@@ -136,9 +136,9 @@ export const ledgerPassPolicy = Object.freeze({
    * (20 at the exact p90 density).
    * Page boundaries did not change across default, logs+blocks, logs-only
    * or max_num_logs=20,000 selections; the probe's two fields reduce bytes,
-   * not the expected logs per page. At the cap, seven other requests at the
+   * not the expected logs per page. At the cap, eight other requests at the
    * observed maximum plus ten probe pages and two fallback list queries
-   * total at most 19: 36 s of 2 s pacing plus the 60 s tip poll, about
+   * total at most 20: 38 s of 2 s pacing plus the 60 s tip poll, about
    * 12 requests/minute against the shared free tier's roughly 30. */
   chainTransferPages: 10,
   /** Whole pages consumed per lane query before the range is cut short. */
@@ -1038,6 +1038,30 @@ export async function collectLedgerRange(
     else managerQuery = query;
     swapPages.push(collected.pages);
   }
+  const headerPages: HyperSyncPageRecord[] = [];
+  const header = async (n: number) => {
+    const page = await client.query(headerQuery(n));
+    if (
+      page.blocks.length !== 1 ||
+      page.blocks[0].number !== n ||
+      page.archiveHeight === null ||
+      page.archiveHeight - hypersyncPolicy.safeDistance < n
+    )
+      throw Error("HyperSync returned an unexpected header");
+    headerPages.push({
+      fromBlock: page.fromBlock,
+      nextBlock: page.nextBlock,
+      archiveHeight: page.archiveHeight,
+      totalExecutionTime: page.totalExecutionTime,
+      rollbackGuard: page.rollbackGuard,
+      logs: 0,
+      transactions: 0,
+      blocks: 1,
+      bytes: page.bytes,
+    });
+    archiveHeight = Math.min(archiveHeight, page.archiveHeight);
+    return page.blocks[0];
+  };
   // 3. Transfers of every registered token, the registry as of the range end
   // selecting them: sent as token lists over a long range. Over a short one a
   // probe first asks which contracts emitted a Transfer anywhere on the chain
@@ -1062,6 +1086,10 @@ export async function collectLedgerRange(
   } | null = null;
   let listed = tokens;
   let transferFallbackRequests = 0;
+  const probeBoundary =
+    transferSelection === "chain" && tokens.length
+      ? await header(toBlock)
+      : null;
   if (transferSelection === "chain" && tokens.length) {
     const query = transferAddressQuery({ fromBlock, toBlock });
     const requestsBefore = client.requests;
@@ -1101,31 +1129,15 @@ export async function collectLedgerRange(
     transferPages.push(collected.pages);
   }
   // 4. The boundary headers: the cutoff always, the parent on the first range.
-  const headerPages: HyperSyncPageRecord[] = [];
-  const header = async (n: number) => {
-    const page = await client.query(headerQuery(n));
-    if (
-      page.blocks.length !== 1 ||
-      page.blocks[0].number !== n ||
-      page.archiveHeight === null ||
-      page.archiveHeight - hypersyncPolicy.safeDistance < toBlock
-    )
-      throw Error("HyperSync returned an unexpected header");
-    headerPages.push({
-      fromBlock: page.fromBlock,
-      nextBlock: page.nextBlock,
-      archiveHeight: page.archiveHeight,
-      totalExecutionTime: page.totalExecutionTime,
-      rollbackGuard: page.rollbackGuard,
-      logs: 0,
-      transactions: 0,
-      blocks: 1,
-      bytes: page.bytes,
-    });
-    archiveHeight = Math.min(archiveHeight, page.archiveHeight);
-    return page.blocks[0];
-  };
-  const cutoff = await header(toBlock);
+  const probeCutoff = probe && probeBoundary
+    ? await header(probeBoundary.number)
+    : null;
+  if (probeCutoff && probeBoundary && !same(probeCutoff.hash, probeBoundary.hash))
+    throw Error("HyperSync transfer probe crossed a canonical range change");
+  const cutoff =
+    probeCutoff && probeCutoff.number === toBlock
+      ? probeCutoff
+      : await header(toBlock);
   merge({ transactions: new Map(), blocks: new Map([[toBlock, cutoff]]) });
   const parentHash =
     input.parentHash === null
