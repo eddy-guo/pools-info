@@ -129,23 +129,16 @@ export async function readCreators(
           ).rows[0].count,
         ),
   );
-  // Own-buy evidence for the page's creators and no others. It costs a
-  // position probe per launch, so over the whole catalog it was 2.1s of a
-  // cold production-shaped read's 2.4s, inside a 3s statement budget; the
-  // page's creators are the only ones whose flag is served, and the orders
-  // above never read it. bought_own is null without a measured launch, since
+  // Own-buy evidence for the page's creators and no others. The orders above
+  // never read the flag. bought_own is null without a measured launch, since
   // only measured launches carry swap evidence. A ledger-served launch's
   // evidence is a position probe (`probe` in `rankedFlowCtes`), and one hit
   // answers for its sender, so each sender's ledger launches are probed one
-  // at a time and the probing stops at the first hit, and a sender whose
-  // other evidence already says true is not probed at all. Probing every
-  // launch read 12,463 positions at random for the top 100 by launches, the
-  // page that answered 503 on production under a memory cap; stopping at the
-  // first hit reads one for most creators and every launch only for the
-  // creator who never bought one of their own (docs/LEDGER-MARKET-SERVING.md,
-  // "The creators aggregate"). The LATERAL with its LIMIT keeps the planner
-  // on the primary-key probe rather than the wallet index's every position of
-  // the launching wallet.
+  // at a time and the probing stops at the first hit. A sender whose other
+  // evidence already says true is not probed. The LATERAL with its LIMIT
+  // keeps the planner on the primary-key probe rather than the wallet index's
+  // every position of the launching wallet. See "The creators aggregate" in
+  // docs/LEDGER-MARKET-SERVING.md for the measured cost.
   const senders = rows.map((r) => r.launch_sender),
     ownParam = `$${values.length + 1}`,
     ownRanked = rankedFlowCtes(

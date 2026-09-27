@@ -110,14 +110,18 @@ test(
       hourRows(
         "(SELECT 1 AS i) s",
         "(SELECT h,400 AS t FROM generate_series($4::integer-1169,$4::integer) h) hours",
-      ).replace("$3::bigint", "$1::bigint").replace(/\$4/g, "$2"),
+      )
+        .replace("$3::bigint", "$1::bigint")
+        .replace(/\$4/g, "$2"),
       [cursorBlock, H],
     );
     await db.query(
       hourRows(
         "generate_series(2,101) i",
         "(SELECT h,20 AS t FROM generate_series($4::integer-399,$4::integer) h) hours",
-      ).replace("$3::bigint", "$1::bigint").replace(/\$4/g, "$2"),
+      )
+        .replace("$3::bigint", "$1::bigint")
+        .replace(/\$4/g, "$2"),
       [cursorBlock, H],
     );
     await seedBatches(102, scalePools, 4000, (lo, hi) =>
@@ -218,7 +222,10 @@ test(
       const data = (await response.json()) as any;
       const ms = performance.now() - started;
       assert.equal(response.status, 200, `${path} ${JSON.stringify(data)}`);
-      assert(ms < readBudgetMs, `${path} exceeded ${readBudgetMs}ms: ${ms.toFixed(1)}ms`);
+      assert(
+        ms < readBudgetMs,
+        `${path} exceeded ${readBudgetMs}ms: ${ms.toFixed(1)}ms`,
+      );
       return { data, ms };
     };
     const reads: [string, number][] = [];
@@ -242,7 +249,10 @@ test(
     const flags = creators.items.map(
       (c: { boughtOwnLaunch: boolean | null }) => c.boughtOwnLaunch,
     );
-    assert(flags.includes(true) && flags.includes(false), JSON.stringify(flags));
+    assert(
+      flags.includes(true) && flags.includes(false),
+      JSON.stringify(flags),
+    );
     // The whole board in one request, which a reload asks for once the page
     // has grown: production answered 53100 for every window=All page of 50
     // rows or more, `could not resize shared memory segment ... to 8388608
@@ -299,14 +309,20 @@ test(
     await db.query("COMMIT");
     assert(probes >= 0, "no statement carried the own-buy evidence");
     assert(!sequential, "the own-buy probe scanned the whole position table");
-    assert.equal(parallel, "", `the own-buy probe planned a parallel ${parallel}`);
+    assert.equal(
+      parallel,
+      "",
+      `the own-buy probe planned a parallel ${parallel}`,
+    );
     assert(
       probes <= pageProbes,
       `own-buy probes ${probes} exceeded the page's ${pageProbes} (catalog ${counts.pools})`,
     );
     // The controls, on the same cold fixture: the board the tip loop ranked
     // and, further down, the busiest pool's page.
-    const board = await timed("/v1/leaderboard?window=7d&limit=25&minTrades=10");
+    const board = await timed(
+      "/v1/leaderboard?window=7d&limit=25&minTrades=10",
+    );
     reads.push(["traders7d", board.ms]);
     assert.equal(board.data.total, 100);
     assert.equal(board.data.items.length, 25);
@@ -363,7 +379,10 @@ test(
     );
     // One untimed read loads the relation caches the seeding left cold, so
     // the timings below measure the statements rather than a first touch.
-    assert.equal((await fetch(`${base}/v1/explore?window=All&limit=1`)).status, 200);
+    assert.equal(
+      (await fetch(`${base}/v1/explore?window=All&limit=1`)).status,
+      200,
+    );
     const explore = async (name: string, query: string) => {
       const read = await timed(`/v1/explore?${query}`);
       reads.push([name, read.ms]);
@@ -372,10 +391,16 @@ test(
     const launch = await explore("launch24h", "window=24h&limit=25");
     assert.equal(launch.total, scalePools + 31);
     assert.equal(launch.items[0].marketCoverage.source, "aggregate_ledger");
-    const volume = await explore("volume24h", "window=24h&sort=volume&limit=25");
+    const volume = await explore(
+      "volume24h",
+      "window=24h&sort=volume&limit=25",
+    );
     assert.equal(volume.total, scalePools + 30);
     assert.equal(volume.items[1].id, poolId(1));
-    const trades = await explore("tradesAll", "window=All&sort=trades&limit=25");
+    const trades = await explore(
+      "tradesAll",
+      "window=All&sort=trades&limit=25",
+    );
     assert.equal(trades.items[0].stats.trades, 1170 * 400);
     await explore("trades30d", "window=30d&sort=trades&limit=25&offset=975");
     // A change needs an hour before the window: a two-hour pool k hours back
@@ -396,9 +421,15 @@ test(
     };
     const day = await explore("change24h", "window=24h&sort=change&limit=25");
     assert.equal(day.total, scalePools - withoutBaseline(24));
-    const month = await explore("change30d", "window=30d&sort=change&direction=asc&limit=25");
+    const month = await explore(
+      "change30d",
+      "window=30d&sort=change&direction=asc&limit=25",
+    );
     assert.equal(month.total, scalePools - withoutBaseline(720) - 100);
-    const gainers = await explore("gainers7d", "window=7d&view=gainers&sort=volume&limit=25");
+    const gainers = await explore(
+      "gainers7d",
+      "window=7d&view=gainers&sort=volume&limit=25",
+    );
     assert(gainers.total > 0);
     for (const row of gainers.items as AnalyticsPoolRow[])
       assert(row.stats.change! > 0);
@@ -421,7 +452,10 @@ test(
     await explore("volume1h100", "window=1h&sort=volume&limit=100");
     const liquidity = await explore("liquidity7d", "window=7d&sort=liquidity&limit=25");
     assert.equal(liquidity.total, 0);
-    await explore("search24h", "window=24h&q=Ledger%20launch%2061&sort=change&limit=25");
+    await explore(
+      "search24h",
+      "window=24h&q=Ledger%20launch%2061&sort=change&limit=25",
+    );
     // The busiest pool's page: 1,170 hours, the newest thousand as candles.
     for (const window of ["1h", "24h", "All"]) {
       const read = await timed(`/v1/pools/${poolId(1)}?window=${window}`);

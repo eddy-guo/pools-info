@@ -236,9 +236,8 @@ of them from disk cold and none past a 16 MB `shared_buffers`, and the
 index is 4 MB, built in 123 ms. Production had answered 7d and 30d net in
 0.7-1.7 s under a 1.5 GB memory cap, against 148-187 ms uncapped, because the
 tip loop's writes pushed those pages out between reads. A gate under 10 reads
-the window's rows without an index. The warm set for a cutover
-(`docs/LEDGER-CUTOVER.md`) is therefore the four default boards, the four
-`metric=net` boards, and explore's catalog count.
+the window's rows without an index. `docs/DATABASE-WARMING.md` owns the current
+warm set.
 
 ## The wallet page
 
@@ -365,8 +364,8 @@ that probe by a `LATERAL ... LIMIT 1` (the wallet index's plan read 1.3M
 buffers with two parallel workers and a temp spill), stopping at the first
 hit, since one own buy answers for the sender. A sender whose broad or deep
 launches already hold an own buy, or who has no ledger-served measured
-launch, is not probed at all, and under `1h`, which the ledger does not
-answer, nothing is.
+launch, is not probed at all. If the live ring cannot answer `1h`, no
+ledger-served launch is measured in that window, so none is probed.
 
 Those probes read the position heap at random, so the read carries them for
 the creators it serves and no others: the ranking statement measures the whole
@@ -453,12 +452,13 @@ the precomputed trader board took 19-22 ms and the busiest pool page took
 78-88 ms. The disconfirming result was that a host-wide cold penalty would
 have taken the two controls into seconds too; neither did, cold-first or after
 creators. The creators ranking spent 2,436 ms of one 2,537 ms read in one
-statement, with 2,180 ms in its `ledger_own` hash alone. Finally, the
-deterministic scale regression fails before this rule with 62,031 own-buy
-probes for a page containing 103 launches, and passes when the served plan can
-probe no more than those page launches. That plan-scope assertion, rather than
-a machine-speed or cache-temperature wall-clock assertion, prevents the
-root-cause mechanism consistently across runners.
+statement, with 2,180 ms in its `ledger_own` hash alone. The deterministic
+scale regression failed before page scoping with 62,031 own-buy probes for a
+page containing 103 launches. It now checks the served plan against one probe
+for each buying creator and each launch of a creator who never bought one.
+That plan-scope assertion, rather than a machine-speed or cache-temperature
+wall-clock assertion, prevents both whole-catalog and redundant per-launch
+probing across runners.
 
 The alternatives were measured on that same cold copy before choosing the
 page-scoped query:
@@ -471,8 +471,8 @@ page-scoped query:
 | Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
 | Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
 
-No index, migration, precompute path, cache, timeout increase or production
-change is part of this rule.
+The earlier page-scoping change added no index, migration, precompute path,
+cache or timeout increase. Migration 023 is for the separate net board read.
 
 Response shape, ranking rule, the Launches column and every other field are
 unchanged, and no row goes empty that was not empty before: under `broad` on
@@ -486,8 +486,7 @@ cursor 65,409,776) the read answers over HTTP in 351-906 ms cold and
 211-411 ms warm across every window and sort. `ledger-market.scale.test.ts`
 bounds every one of them at 2,000 ms on caches its own seeding left cold,
 before its warm-up read, and asserts from the served statement's plan that the
-own-buy probe never reaches past the page's own launches (62,031 probes against
-the page's 103 before this rule). The population walk (the
+own-buy probe stops at each creator's first own buy. The population walk (the
 old and new top 100 by launches and by volume side by side) is
 `scripts/creators-walk.mjs <old api origin> <new api origin>`, recorded in the
 pull request that made the change.

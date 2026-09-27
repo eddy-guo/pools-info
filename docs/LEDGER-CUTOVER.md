@@ -238,13 +238,9 @@ no ROI (design decision D2 counts them; a predicate on the position flags
 would exclude them), and the top wallets are bots by trade count (up to
 43,063 supported trades on All).
 
-Warm set for the deploy: the four default boards
-(`/v1/leaderboard?window=<24h|7d|30d|All>&limit=100`, about 480 pages each
-plus the coverage's catalog and pool-state counts) and the four `metric=net`
-boards (the window's whole eligible set, about 8,600 pages on All), all
-measured under 60 ms warm on the copy; the old 7d board cost 821 ms cold on
-the accounting tables, and the new one's cold cost is the same order for the
-catalog count and smaller for the board itself.
+The current board read path and index costs are in
+`docs/LEDGER-MARKET-SERVING.md` ("The trader
+leaderboard"); the active reader warm set is in `docs/DATABASE-WARMING.md`.
 
 ## Unattributed transfers excluded: the board before and after migration 022
 

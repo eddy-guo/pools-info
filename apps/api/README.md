@@ -330,13 +330,14 @@ grouped by sender with ordered-array aggregates for the median and the best
 launch, then sorted and paged with `count(*) OVER ()`; it carries no `ownBuys`
 column. A second statement runs that same rank restricted to the page's launch
 senders, with `ownBuys` naming them, and answers
-`bool_or(own) FILTER (WHERE volume IS NOT NULL)` per sender, so own-buy
-evidence is derived for the creators the page serves and no others: deep
-evidence rides that statement's own deep-trades scan, broad evidence is one
-hash semi-join over `broad_swaps` for those senders, and a ledger-covered
-launch is one `agg_positions` probe per launch of those senders. No order this
-route offers reads the flag, so the page is the same page either way, and both
-statements read one snapshot inside the reader's `REPEATABLE READ` transaction.
+the own-buy flag per sender, so evidence is derived for the creators the page
+serves and no others: deep evidence rides that statement's own deep-trades
+scan, broad evidence is one hash semi-join over `broad_swaps` for those
+senders, and ledger evidence probes a sender's measured launches only until
+the first attributed buy. A sender with a broad or deep own buy needs no
+ledger probe. No order this route offers reads the flag, so the page is the
+same page either way. Both statements read one snapshot inside the reader's
+`REPEATABLE READ` transaction.
 The page's best launches are then looked up by primary key. Like explore both
 ranked statements run with `jit = off`, because the planner prices the rank's
 per-launch coverage subplan far above `jit_optimize_above_cost` while each
@@ -351,10 +352,9 @@ launches, 25,718 senders, 1,364 deep publications, 1,853 broad summaries,
 at 94-111 ms for every sort, first and last page, with a sub-millisecond
 identity lookup; the whole-catalog own-buy join that took the same statement to
 131-157 ms there is no longer part of it. The cold and warm cost of
-the split under `MARKET_SOURCE=ledger` is recorded in
-`docs/LEDGER-MARKET-SERVING.md` ("The creators aggregate"): 351-906 ms cold and
-211-411 ms warm over every window and sort, the two statements 284 ms and
-457 ms of a cold 842 ms. The 52k-launch serial scale phase
+the ledger-served read, including the later first-hit probe, is recorded in
+`docs/LEDGER-MARKET-SERVING.md` ("The creators aggregate"). The 52k-launch
+serial scale phase
 (`broad-explore.scale.test.ts`) bounds each variant at 2,000 ms and prints a
 `52k creators serving` line.
 

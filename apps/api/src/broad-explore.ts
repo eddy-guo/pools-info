@@ -164,12 +164,9 @@ export const deepFlowSql = (
 // the one address that did), over the pool's whole folded history. The CTE
 // does not look it up. One such position answers for every launch of its
 // sender, so the caller probes a sender's ledger launches one primary key at
-// a time and stops at the first hit (`readCreators`): probing every launch
-// here read the position heap at random once per launch, 12,463 probes for
-// the top 100 creators' 14,727 launches, and over the whole catalog those
-// probes were 260k buffers and 2.1s of the 2.4s a cold production-shaped
-// creators read spent inside its 3s budget. `probe` is false for every
-// launch without `ledger`.
+// a time and stops at the first hit (`readCreators`). `probe` is false for
+// every launch without `ledger`; see `docs/LEDGER-MARKET-SERVING.md` for the
+// measured cost of probing all launches.
 export function rankedFlowCtes(
   where = "",
   { ownBuys = null as string | null, ledger = null as LedgerFlow | null } = {},
