@@ -598,13 +598,13 @@ test("migration 022 excludes every position with a zero-cost inflow or an unattr
   assert.deepEqual(preimage(sender, "agg_positions").before.flags, []);
 
   await migrate(db);
-  assert.deepEqual(
+  assert.equal(
     (
-      await db.query(
-        "SELECT name FROM pools_schema_migrations ORDER BY name DESC LIMIT 1",
-      )
-    ).rows[0].name,
-    migration,
+      await db.query("SELECT 1 FROM pools_schema_migrations WHERE name=$1", [
+        migration,
+      ])
+    ).rowCount,
+    1,
   );
   // Positions: the farms excluded with their flags as they were, the sender
   // excluded with the outflow flag it now carries, their figures untouched;
