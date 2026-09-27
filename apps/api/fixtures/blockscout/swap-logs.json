@@ -6,9 +6,7 @@
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "topics": [
         "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
-        [
-          "0x9d35297537fdf4a56fa9fa58d247792a7b519af877a084e4963c9920fc712b96"
-        ]
+        ["0x9d35297537fdf4a56fa9fa58d247792a7b519af877a084e4963c9920fc712b96"]
       ]
     },
     "result": []
@@ -20,9 +18,7 @@
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "topics": [
         "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
-        [
-          "0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520"
-        ]
+        ["0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520"]
       ]
     },
     "result": [
@@ -50,9 +46,7 @@
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "topics": [
         "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
-        [
-          "0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520"
-        ]
+        ["0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520"]
       ]
     },
     "result": [
@@ -80,9 +74,7 @@
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "topics": [
         "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
-        [
-          "0x0311d9143d33f3a3efb2c3c39061b13cbcdcc74cb348a4062253f1a97a4caec1"
-        ]
+        ["0x0311d9143d33f3a3efb2c3c39061b13cbcdcc74cb348a4062253f1a97a4caec1"]
       ]
     },
     "result": [
@@ -140,9 +132,7 @@
       "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
       "topics": [
         "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f",
-        [
-          "0x0311d9143d33f3a3efb2c3c39061b13cbcdcc74cb348a4062253f1a97a4caec1"
-        ]
+        ["0x0311d9143d33f3a3efb2c3c39061b13cbcdcc74cb348a4062253f1a97a4caec1"]
       ]
     },
     "result": [

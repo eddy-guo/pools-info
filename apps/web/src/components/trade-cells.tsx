@@ -53,8 +53,7 @@ export function TradeAmount({
     amount
   ) : (
     <span className="trade-amount-pair">
-      <span className="trade-amount-quantity">{amount}</span>
-      {" "}
+      <span className="trade-amount-quantity">{amount}</span>{" "}
       <span className="trade-amount-symbol" title={symbol ?? undefined}>
         {symbol ?? ""}
       </span>

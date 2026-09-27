@@ -5962,9 +5962,8 @@ a.wallet-top-pool:hover {
    (`listCount` is zero) and drops this reservation, so its compact
    UnavailableState sits right under the toolbar instead of a screen below
    a blank, still-reserved board. */
-.leaderboard-panel .desktop-traders:not(.following-traders):not(
-    [data-failed="true"]
-  ) {
+.leaderboard-panel
+  .desktop-traders:not(.following-traders):not([data-failed="true"]) {
   min-height: calc(22 * 60px + 44px);
 }
 /* The ranked board alone grows with its URL: `--ranked-rows` is the row count
@@ -5974,9 +5973,9 @@ a.wallet-top-pool:hover {
    since a `limit` left in the URL beside `?pool=` is not its own count. This
    rule is more specific than the one above, so it must repeat that one's
    failed-read exclusion or a failed board reserves rows again. */
-.ranked-traders .leaderboard-panel .desktop-traders:not(.following-traders):not(
-    [data-failed="true"]
-  ) {
+.ranked-traders
+  .leaderboard-panel
+  .desktop-traders:not(.following-traders):not([data-failed="true"]) {
   min-height: calc(var(--ranked-rows, 22) * 60px + 44px);
 }
 .leaderboard-panel .data-table tbody tr,

@@ -442,7 +442,10 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
         _wallet: string,
         _page: unknown,
         reserveShare = 0,
-        registry?: { tokens: ReadonlySet<string>; poolsOf(token: string): readonly string[] },
+        registry?: {
+          tokens: ReadonlySet<string>;
+          poolsOf(token: string): readonly string[];
+        },
       ) {
         assert.equal(kind, "trades");
         assert(registry);

@@ -45,7 +45,10 @@ function trade(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function openTrades(page: Page, viewport?: { width: number; height: number }) {
+async function openTrades(
+  page: Page,
+  viewport?: { width: number; height: number },
+) {
   if (viewport) await page.setViewportSize(viewport);
   await page.goto(`/wallet/${wallet}/?window=All&tab=trades`);
 }
@@ -64,7 +67,9 @@ test("a populated page renders exact quantities, neutral sides and no ETH figure
   page,
 }, testInfo) => {
   await page.route(historyPath, (route: Route) =>
-    route.fulfill({ json: envelope([trade(), trade({ side: "sell", logIndex: 1 })]) }),
+    route.fulfill({
+      json: envelope([trade(), trade({ side: "sell", logIndex: 1 })]),
+    }),
   );
   await openTrades(page);
   const mobile = testInfo.project.name === "mobile";
@@ -126,9 +131,9 @@ test("a page crowded with other transfers reads empty with more behind it, and c
   });
   await openTrades(page);
   await expect(resolvedRows(page)).toHaveCount(2);
-  await expect(page.getByRole("heading", { name: "No trade history" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("heading", { name: "No trade history" }),
+  ).toHaveCount(0);
   expect(calls).toBe(2);
 });
 
@@ -142,7 +147,10 @@ test("a failed read shows a compact retry banner and honors Retry-After", async 
       return route.fulfill({
         status: 503,
         headers: { "Retry-After": "1" },
-        json: { error: "wallet_history_unavailable", reason: "budget_exhausted" },
+        json: {
+          error: "wallet_history_unavailable",
+          reason: "budget_exhausted",
+        },
       });
     return route.fulfill({ json: envelope([trade()]) });
   });
@@ -152,9 +160,7 @@ test("a failed read shows a compact retry banner and honors Retry-After", async 
   ).toBeVisible();
   // Withheld immediately: hammering "Try again" before the server's own
   // delay elapses would only answer the same failure again.
-  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible({
     timeout: 3000,
   });
@@ -196,9 +202,9 @@ test("Load more keys off nextCursor, never a fixed row count", async ({
   await expect(rows).toHaveCount(35);
   expect(calls).toBe(2);
   // nextCursor is now null and every row on hand is shown: no further control.
-  await expect(
-    page.getByRole("button", { name: /Load \d+ more/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Load \d+ more/ })).toHaveCount(
+    0,
+  );
 });
 
 for (const [name, viewport] of [
@@ -232,8 +238,9 @@ for (const [name, viewport] of [
     });
     await expect(resolvedRows(page)).toHaveCount(12);
     const cls = await page.evaluate(
-      () => (window as unknown as { tradesShifts: { cls: number } })
-        .tradesShifts.cls,
+      () =>
+        (window as unknown as { tradesShifts: { cls: number } }).tradesShifts
+          .cls,
     );
     // The suite's own noise tolerance (see AGENTS.md): a sub-pixel score under
     // 0.001 is measurement noise, not a real shift.
