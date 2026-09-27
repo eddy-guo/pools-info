@@ -161,11 +161,17 @@ test("the Crowd view lives in the URL: Show more, reload and Back restore it", a
   await expect(tab(page, "Crowd")).toHaveAttribute("aria-pressed", "true");
   await expect(rows(page, testInfo)).toHaveCount(launches.length);
 
-  await tab(page, "All").click();
-  await expect.poll(() => search(page).get("view")).toBeNull();
-  await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
+  /* The screener rewrites its URL in place, so Back returns from a page
+     the list opened to the view it was opened from. */
+  const last = launches[launches.length - 1];
+  await rows(page, testInfo)
+    .last()
+    .locator(`a.token-cell[href*="${last.id}"]`)
+    .click();
+  await expect(page).toHaveURL(new RegExp(`/pool/${last.id}/`));
   await page.goBack();
   await expect.poll(() => search(page).get("view")).toBe("crowd");
+  expect(search(page).get("limit")).toBe(String(launches.length));
   await expect(tab(page, "Crowd")).toHaveAttribute("aria-pressed", "true");
   await expect(rows(page, testInfo)).toHaveCount(launches.length);
   await expect(
@@ -220,7 +226,10 @@ test("the Crowd view paints its mixed rows with no layout shift", async ({
   try {
     await page.goto("/?view=crowd&sort=launch", { waitUntil: "commit" });
     await expect(
-      page.locator(".explore-page [data-row='skeleton']").first(),
+      page
+        .locator(".explore-page [data-row='skeleton']")
+        .filter({ visible: true })
+        .first(),
     ).toBeVisible();
     releaseScripts();
     await expect(rows(page, testInfo)).toHaveCount(25);
