@@ -41,15 +41,30 @@ newer deep publication answers as with `broad`.
 
 ## Windows
 
-A window is whole UTC hours ending with the newest hour the pool hours hold
-(`max(hour)` in `agg_pool_hours`): 24h is hours newest-23 through newest, 7d
-the last 168 and 30d the last 720. The cutoff reported with every figure is
-the ledger's cursor, inside that newest hour, and `windowStart` is the first
-hour's start, so a label always spans the ledger's own last hours and never a
-stale capture's minutes. The newest hour holds only the minutes up to the
-cursor, so a 1h window of one bucket would be a bucket-rounded figure under an
-hour's name: the ledger serves no volume, trade count or change for 1h, and
-its `completeWindow` is false. All is the pool's whole history.
+The 6h, 24h, 7d and 30d windows cover whole UTC hours ending with the newest
+pool hour (`max(hour)` in `agg_pool_hours`): 24h is hours newest-23 through
+newest, 7d the last 168 and 30d the last 720. The cutoff reported with every
+figure is the ledger's cursor, inside that newest hour, and `windowStart` is
+the first hour's start, so a label always spans the ledger's own last hours
+and never a stale capture's minutes. All is the pool's whole history.
+
+1h is the rolling hour instead: the swaps from the cursor's time less 3,600 s
+(inclusive, its `windowStart`) through the cursor, read from the live ring
+(`agg_live_trades`, `ledgerHour` in `apps/api/src/ledger-market.ts`). Whole
+hours cannot answer it, since the newest hour holds only the minutes up to the
+cursor (three minutes of trading at 09:03 under an hour's name). The ring is
+written in the same transaction as the hours it mirrors and pruned only from
+its oldest end (24 hours ending at the cursor, with the row cap in
+`docs/AGGREGATE-LEDGER.md` under **The live ring**), so it always holds every
+swap after its oldest row; walk-back removes a batch's rows with the batch,
+and the tip loop resumes from its cursor, so a restart leaves
+no gap. Its reads are ranges of the ring's block index, bounded by the batches'
+end times rather than scanned. The age prune removes only trades older than
+the cursor less 24 hours, before the rolling hour's first UTC hour. The ring
+covers that hour when its oldest row predates it or the ring holds fewer than
+the configured row cap. If the oldest row falls inside the hour and the ring
+is at its row bound, 1h serves no volume, trade count or change and its
+`completeWindow` is false.
 
 ## Figures
 
@@ -64,14 +79,16 @@ its `completeWindow` is false. All is the pool's whole history.
   deep publication it outdates carries an older price, candles and trades that
   the page would otherwise prefer.
 - **Volume and trades**: the window's hours summed (All reads the pool state's
-  lifetime totals). A covered pool with no trade in the window has a proven
-  `"0"` and `0`.
+  lifetime totals, 1h the rolling hour's swaps in the ring). A covered pool
+  with no trade in the window has a proven `"0"` and `0`.
 - **Change**: the latest price state against the close of the pool's last
   hour before the window, to the hundredth and truncated toward zero, taken
-  from the sqrt prices themselves. Exactly 0 when the pool traded before the
-  window and not inside it. Null for All, for 1h, and when the pool's first
-  hour is inside the window: a change since launch is never labelled with a
-  window the series does not span.
+  from the sqrt prices themselves. For 1h the baseline is the pool's last
+  swap before the rolling hour's start: from the ring when it is inside the
+  start's UTC hour, else the close of the pool's last hour before that one.
+  Exactly 0 when the pool traded before the window and not inside it. Null
+  for All, and when the pool launched inside the window: a change since
+  launch is never labelled with a window the series does not span.
 - **completeWindow**: price and volume are served and the pool either
   launched inside the window or has its pre-window close. The screener must
   read it: a false flag means the row's figures do not cover the window.
@@ -80,7 +97,7 @@ its `completeWindow` is false. All is the pool's whole history.
   first swap's state for the pool's first hour); its high and low prices are
   the lowest and highest sqrt among that opening state and its swaps.
 - **Observations**: the pool's newest fifty trades still in the ledger's live
-  ring (`agg_live_trades`, its last 24 hours or 250,000 rows).
+  ring (`agg_live_trades`; retention is defined in `docs/AGGREGATE-LEDGER.md`).
 - **FDV** (`market.fdvWei`, pool page only): the served price times the
   token's measured `indexed_pools.token_total_supply_raw` (migration 019) over
   `10^decimals`, null until the supply has been read. The supply is written by
@@ -312,10 +329,11 @@ rule that gives an explore row its window volume (`rankedFlowCtes`), so with
 covers, under "Which pools the ledger serves" above and whose deep
 publication, if any, is no newer than the cursor, is measured from the
 ledger's pool hours and state (the window's whole hours, or the state's
-lifetime totals for All; a covered launch with no swap is a proven zero, so it
-is measured and not traded), and every other launch keeps the broad rule.
-`1h` is a window whole hours cannot answer, so a covered launch is unmeasured
-under it. A ledger that has folded nothing yet changes no byte.
+lifetime totals for All, or the rolling hour's swaps in the ring for 1h; a
+covered launch with no swap is a proven zero, so it is measured and not
+traded), and every other launch keeps the broad rule. While the ring does not
+hold the rolling hour, a covered launch is unmeasured under 1h. A ledger that
+has folded nothing yet changes no byte.
 
 Once the ledger has folded, the response's existing `coverage` envelope is
 the ledger coverage shared with wallet and leaderboard reads: its cursor time,

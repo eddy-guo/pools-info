@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertObservedMarket, type ObservedMarket } from "@pools/core";
+import { ledgerStream } from "../../../packages/db/src/index";
 import {
   creatorFeeFlag,
-  ledgerAnswers,
+  ledgerFlow,
+  ledgerLiveTradeRows,
+  ledgerValues,
   ledgerWindowHour,
+  ledgerWindowStart,
   marketSourceSetting,
   withCreatorFees,
   type LedgerCut,
 } from "./ledger-market";
+
+test("the API live-ring row bound matches the writer", () => {
+  assert.equal(ledgerLiveTradeRows, ledgerStream.liveTradeRows);
+});
 
 test("MARKET_SOURCE: unset or broad serves the broad rollups, ledger the ledger, anything else refuses to start", () => {
   assert.equal(marketSourceSetting(undefined), "broad");
@@ -19,7 +27,7 @@ test("MARKET_SOURCE: unset or broad serves the broad rollups, ledger the ledger,
     assert.throws(() => marketSourceSetting(value), /Invalid MARKET_SOURCE/);
 });
 
-test("ledger windows are whole hours ending with the newest hour, and whole hours cannot answer 1h", () => {
+test("ledger windows are whole hours ending with the newest hour, and 1h is the rolling hour the ring holds", () => {
   const cut: LedgerCut = {
     block: 1,
     hash: "0x" + "1".repeat(64),
@@ -34,9 +42,34 @@ test("ledger windows are whole hours ending with the newest hour, and whole hour
   assert.equal(ledgerWindowHour(cut, "30d"), 497121 - 719);
   assert.equal(ledgerWindowHour(cut, "All"), null);
   assert.equal(ledgerWindowHour({ ...cut, newestHour: 3 }, "24h"), 0);
-  assert.equal(ledgerAnswers("1h"), false);
+  assert.equal(ledgerWindowStart(cut, "24h"), (497121 - 23) * 3600);
+  assert.equal(ledgerWindowStart(cut, "All"), null);
+  // 09:02:57 through 10:02:57, not the three minutes of the newest hour:
+  // its first UTC hour is the one holding its start.
+  assert.equal(ledgerWindowStart(cut, "1h"), 497120 * 3600 + 177);
+  assert.equal(ledgerWindowHour(cut, "1h"), 497120);
+  const hour = {
+    start: 497120 * 3600 + 177,
+    afterBlock: 10,
+    beforeBlock: 11,
+    hourAfterBlock: 9,
+  };
+  assert.equal(ledgerFlow("1h", hour), "ring");
+  // A ring that does not hold the hour serves no 1h figure.
+  assert.equal(ledgerFlow("1h", null), "none");
   for (const window of ["6h", "24h", "7d", "30d", "All"] as const)
-    assert.equal(ledgerAnswers(window), true);
+    assert.equal(ledgerFlow(window, null), "hours");
+  assert.deepEqual(ledgerValues(cut, "1h", hour), [
+    1,
+    497120,
+    0,
+    497120 * 3600 + 177,
+    10,
+    11,
+    9,
+  ]);
+  assert.deepEqual(ledgerValues(cut, "1h", null), [1, 497120, 0]);
+  assert.deepEqual(ledgerValues(cut, "24h", hour), [1, 497121 - 23, 0]);
 });
 
 test("the creator-fee flag prefers the stored column, falls back to the publication, and is omitted rather than invented", () => {

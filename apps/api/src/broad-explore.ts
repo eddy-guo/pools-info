@@ -1,12 +1,14 @@
 import type { LiveWindow, MarketBoundary } from "@pools/core";
 import { catalogCte, type ReadQuery } from "./catalog-read";
 import {
-  ledgerAnswers,
   ledgerBaselineFoundSql,
-  ledgerBaselineSql,
   ledgerLaunchSql,
   ledgerPriceSql,
+  ledgerRingFlowSql,
+  ledgerRingParams,
   ledgerServedChangeSql,
+  ledgerWindowBaselineSql,
+  type LedgerFlow,
 } from "./ledger-market";
 import { RequestError } from "./request";
 
@@ -150,10 +152,11 @@ export const deepFlowSql = (
 // it over the whole catalog is what put that read past its statement budget.
 // Deep evidence is one probe of the launch's own deep trades; broad evidence
 // is one hash semi-join over broad_swaps at or below the served cutoff.
-// With `ledger` (the served window), the ledger's flow comes first for every
-// launch it covers whose deep publication, if any, is no newer than its
-// cursor ($7-$9 below), so the broad and deep rules only ever evaluate for
-// the launches it does not; a window whole hours cannot answer proves no flow.
+// With `ledger` (how it measures the served window), the ledger's flow comes
+// first for every launch it covers whose deep publication, if any, is no
+// newer than its cursor ($7-$13 below), so the broad and deep rules only ever
+// evaluate for the launches it does not; a 1h the ring does not cover proves
+// no flow.
 // With both, `own` for a ledger-served launch is the ledger's own evidence:
 // a position of the launch sender in that pool with a buy attributed to it
 // (`agg_positions.buys`, the beneficiary rule of `planLedgerBatch`: the
@@ -168,7 +171,7 @@ export const deepFlowSql = (
 // production-shaped creators read spent inside its 3s budget.
 export function rankedFlowCtes(
   where = "",
-  { ownBuys = null as string | null, ledger = null as LiveWindow | null } = {},
+  { ownBuys = null as string | null, ledger = null as LedgerFlow | null } = {},
 ) {
   // Own-buy evidence is only ever carried for the senders `ownBuys` names.
   const ofSenders = (column: string) =>
@@ -176,7 +179,7 @@ export function rankedFlowCtes(
   const broadSelected = `${broadCoverageSql("p.")} AND (a.through_block IS NULL OR $2 >= a.through_block)`;
   const ledgerSelected = (value: string) =>
     ledger
-      ? `WHEN ll.pool_id IS NOT NULL AND p.launch_block BETWEEN $9 AND $7 AND (a.through_block IS NULL OR $7 >= a.through_block) THEN ${ledgerAnswers(ledger) ? value : "NULL"} `
+      ? `WHEN ll.pool_id IS NOT NULL AND p.launch_block BETWEEN $9 AND $7 AND (a.through_block IS NULL OR $7 >= a.through_block) THEN ${ledger !== "none" ? value : "NULL"} `
       : "";
   const ledgerOwn = ownBuys && ledger;
   return `${catalogCte}${broadFlowCte("catalog")}${
@@ -188,7 +191,7 @@ export function rankedFlowCtes(
       : ""
   }${
     ledger
-      ? `${ledgerFlowCtes}, ledger_flow_ids AS (
+      ? `${ledgerFlowCtes(ledger)}, ledger_flow_ids AS (
     SELECT ip.pool_id,f.trades,f.volume FROM ledger_flow f JOIN indexed_pools ip ON ip.pool_ref=f.pool_ref
   )`
       : ""
@@ -220,19 +223,32 @@ export function rankedFlowCtes(
     }${ledgerOwn ? "\n    LEFT JOIN ledger_own lo ON lo.pool_id=p.pool_id" : ""} ${where}
   )`;
 }
-// Ledger parameters, bound after the broad ones: $7 the ledger's cursor
-// block, $8 the window's first UTC hour (null for All), $9 the ledger's start
-// block. The launches the ledger covers and every pool's window flow, over the
-// whole catalog: All reads the pool state's lifetime totals, a window sums its
-// hours from the hour index. The flow is keyed by pool_ref; a catalog-keyed
-// read maps it to pool ids through the pool_ref index, so a window only looks
-// up the pools that traded in it rather than scanning the registry again.
-export const ledgerFlowCtes = `, ledger_launches AS (
+// Ledger parameters, bound after the broad ones (`ledgerValues`): $7 the
+// ledger's cursor block, $8 the window's first UTC hour (null for All), $9
+// the ledger's start block, and for the rolling hour $10-$13 (`LedgerHour`).
+// The launches the ledger covers and every pool's window flow, over the whole
+// catalog: All reads the pool state's lifetime totals, a window sums its
+// hours from the hour index, and the rolling hour its swaps in the ring. The
+// flow is keyed by pool_ref; a catalog-keyed read maps it to pool ids through
+// the pool_ref index, so a window only looks up the pools that traded in it
+// rather than scanning the registry again.
+// A flow-only statement reads none of the rolling hour's baseline bounds,
+// and Postgres refuses a statement with a parameter it cannot type, so the
+// ring's flow names every bound once in `ledger_hour`, which nothing reads.
+export const ledgerFlowCtes = (flow: LedgerFlow) => `${
+  flow === "ring"
+    ? `, ledger_hour AS (SELECT $8::integer AS hour,$10::bigint AS start,$11::bigint AS after_block,$12::bigint AS before_block,$13::bigint AS hour_after_block)`
+    : ""
+}, ledger_launches AS (
     SELECT DISTINCT pool_id FROM pool_launch_sources WHERE chain_id=4663 AND stream_key='launches:agg:v1' AND batch_end<=$7
-  ), ledger_flow AS (
+  ), ledger_flow AS (${
+    flow === "ring"
+      ? ledgerRingFlowSql(ledgerRingParams)
+      : `
     SELECT pool_ref,trades,volume_wei AS volume FROM agg_pool_state WHERE chain_id=4663 AND $8::integer IS NULL
     UNION ALL
-    SELECT pool_ref,sum(trades),sum(volume_wei) FROM agg_pool_hours WHERE chain_id=4663 AND hour>=$8::integer GROUP BY pool_ref
+    SELECT pool_ref,sum(trades),sum(volume_wei) FROM agg_pool_hours WHERE chain_id=4663 AND hour>=$8::integer GROUP BY pool_ref`
+  }
   )`;
 /** Every launch the ledger serves, ranked for a deep-ranked order on the
  * columns it needs: window flow, the deep liquidity (the ledger holds no ETH
@@ -247,10 +263,10 @@ export const ledgerFlowCtes = `, ledger_launches AS (
 export function ledgerRankedCte(
   where: string,
   mode: "change" | "gainers" | "liquidity",
-  window: LiveWindow,
+  flow: LedgerFlow,
 ) {
   const active = "f.pool_ref IS NOT NULL",
-    answers = ledgerAnswers(window);
+    answers = flow !== "none";
   return `, ledger_ranked AS (
     SELECT p.pool_id,p.launch_block,
       ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.trades,0) ELSE coalesce(f.trades,0) END" : "NULL::bigint"} AS trades,
@@ -276,7 +292,7 @@ export function ledgerRankedCte(
       mode === "liquidity"
         ? ""
         : `
-    LEFT JOIN LATERAL (${ledgerBaselineSql("p.pool_ref", "$8::integer", active)}) base ON true`
+    LEFT JOIN LATERAL (${ledgerWindowBaselineSql(flow, "p.pool_ref", active)}) base ON true`
     }
     WHERE p.chain_id=4663${where ? " AND " + where.replace(/^WHERE /, "") : ""} AND ${ledgerLaunchSql("p.", "$9", "$7")}
       AND (a.through_block IS NULL OR $7 >= a.through_block)
@@ -285,13 +301,13 @@ export function ledgerRankedCte(
 // Full per-pool market state (dated units, latest and baseline price states)
 // for the `page` relation being served. Never run over the whole catalog: the
 // per-pool lateral lookups cost seconds at catalog scale on a small host.
-// With `ledger` (the served window), `ledger_metrics` serves every page pool
+// With `ledger` (how it measures the window), `ledger_metrics` serves every page pool
 // the ledger covers and wins over broad and deep wherever no deep publication
 // is newer than its cursor; `ledger_selected` names those rows. Its units
 // conflict when a deep publication declares other decimals, exactly as
-// broad's do. A window whole hours cannot answer serves no flow or change.
-export function broadExploreCtes({ ledger = null as LiveWindow | null } = {}) {
-  const answers = !!ledger && ledgerAnswers(ledger);
+// broad's do. A 1h the ring does not cover serves no flow or change.
+export function broadExploreCtes({ ledger = null as LedgerFlow | null } = {}) {
+  const answers = !!ledger && ledger !== "none";
   const selected = `l.pool_id IS NOT NULL AND (a.through_block IS NULL OR $7>=a.through_block)`;
   const when = (value: string) =>
     ledger ? `WHEN ${selected} THEN ${value} ` : "";
@@ -303,8 +319,15 @@ export function broadExploreCtes({ ledger = null as LiveWindow | null } = {}) {
   SELECT p.pool_id,ip.pool_ref,ip.decimals FROM page p JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=p.pool_id
   WHERE ${ledgerLaunchSql("p.", "$9", "$7")}
 ), ledger_page_flow AS (
-  SELECT pool_ref,sum(trades) AS trades,sum(volume_wei) AS volume FROM agg_pool_hours
-  WHERE chain_id=4663 AND hour>=$8::integer AND pool_ref IN (SELECT pool_ref FROM ledger_page) GROUP BY pool_ref
+  ${
+    ledger === "ring"
+      ? ledgerRingFlowSql(
+          ledgerRingParams,
+          " AND pool_ref IN (SELECT pool_ref FROM ledger_page)",
+        )
+      : `SELECT pool_ref,sum(trades) AS trades,sum(volume_wei) AS volume FROM agg_pool_hours
+  WHERE chain_id=4663 AND hour>=$8::integer AND pool_ref IN (SELECT pool_ref FROM ledger_page) GROUP BY pool_ref`
+  }
 ), ledger_metrics AS (
   SELECT lp.pool_id,
     ${answers ? "CASE WHEN $8::integer IS NULL THEN coalesce(s.trades,0) ELSE coalesce(f.trades,0) END" : "NULL::bigint"} AS trades,
@@ -319,7 +342,7 @@ export function broadExploreCtes({ ledger = null as LiveWindow | null } = {}) {
   CROSS JOIN LATERAL (SELECT coalesce((a.market->>'decimals')::integer<>lp.decimals,false) AS conflict) units
   LEFT JOIN agg_pool_state s ON s.chain_id=4663 AND s.pool_ref=lp.pool_ref
   LEFT JOIN ledger_page_flow f ON f.pool_ref=lp.pool_ref
-  LEFT JOIN LATERAL (${ledgerBaselineSql("lp.pool_ref", "$8::integer", "f.pool_ref IS NOT NULL")}) base ON true
+  LEFT JOIN LATERAL (${ledgerWindowBaselineSql(ledger, "lp.pool_ref", "f.pool_ref IS NOT NULL")}) base ON true
 )`
       : ""
   }, broad_metrics AS (

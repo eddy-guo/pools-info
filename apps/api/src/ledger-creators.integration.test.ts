@@ -353,8 +353,9 @@ test(
           [201, "35"],
         ],
       );
-      // The hour window is one whole hours cannot answer: a covered launch
-      // is unmeasured under it, so only the newer publication measures.
+      // The ledger's live ring holds none of the rolling hour here, so a
+      // covered launch is unmeasured under 1h and only the newer
+      // publication measures.
       assert.deepEqual(rows(await read("ledger", "window=1h")), [
         [201, 4, 0, 0, null, null, null, null, null],
         [202, 1, 1, 1, "7", "7", 5, "7", true],

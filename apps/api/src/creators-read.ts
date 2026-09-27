@@ -15,7 +15,9 @@ import { catalogPool } from "./explore-read";
 import { ledgerCoverage } from "./ledger-leaderboard";
 import {
   ledgerCut,
-  ledgerWindowHour,
+  ledgerFlow,
+  ledgerHour,
+  ledgerValues,
   type MarketSource,
 } from "./ledger-market";
 
@@ -64,10 +66,13 @@ export async function readCreators(
     sort = options.sort ?? "launches",
     direction = options.direction === "asc" ? "ASC" : "DESC",
     offset = options.offset ?? 0,
-    limit = options.limit ?? 25;
+    limit = options.limit ?? 25,
+    rolling =
+      ledger && window === "1h" ? await ledgerHour(query, ledger) : null,
+    flow = ledger ? ledgerFlow(window, rolling) : null;
   // $1-$6 feed the broad and deep rules and, with the ledger, $7-$9 its
-  // cursor, the window's first hour and its start block, as explore binds
-  // them; the page's limit and offset follow.
+  // cursor, the window's first hour and its start block and for the rolling
+  // hour $10-$13, as explore binds them; the page's limit and offset follow.
   const values: unknown[] = [
     windowFrom(accounting, window),
     broadCut?.block ?? null,
@@ -75,9 +80,7 @@ export async function readCreators(
     broadCut?.startBlock ?? null,
     broadCut?.discoveryBatch ?? null,
     broadCut?.asOf ?? null,
-    ...(ledger
-      ? [ledger.block, ledgerWindowHour(ledger, window), ledger.startBlock]
-      : []),
+    ...(ledger ? ledgerValues(ledger, window, rolling) : []),
   ];
   // Launch-first: the launches order lists every creator; a metric order
   // lists only creators with a measured launch, before total and paging.
@@ -90,7 +93,7 @@ export async function readCreators(
   // middle element, or the floor of the two middle elements' mean for an
   // even count; both index expressions name the same element when the count
   // is odd. The best launch is the highest volume, lowest pool id on ties.
-  const ranked = rankedFlowCtes("", { ledger: ledger ? window : null });
+  const ranked = rankedFlowCtes("", { ledger: flow });
   const rows = (
     await query(
       `${ranked}, creators AS (
@@ -138,7 +141,7 @@ export async function readCreators(
       `WHERE p.launch_sender=ANY(${ownParam}::text[])`,
       {
         ownBuys: ownParam,
-        ledger: ledger ? window : null,
+        ledger: flow,
       },
     );
   // Its plan gathers two parallel workers over a parallel hash join, and a

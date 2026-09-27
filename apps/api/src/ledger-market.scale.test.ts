@@ -32,7 +32,9 @@ const H = 500000,
   cursorBlock = 23600000,
   cursorTime = H * 3600 + 1800,
   launchBatch = 23590000,
-  scalePools = 62000;
+  scalePools = 62000,
+  // Blocks the live ring spans, 0.864 s apart: the day before the cursor.
+  ringBlocks = 100000;
 const poolId = (i: number) => "0x" + (i + 200000).toString(16).padStart(64, "0");
 
 test(
@@ -81,10 +83,14 @@ test(
     await db.query(
       `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES(4663,'ledger:agg:v1',23467030,'tip')`,
     );
+    // The history pass's one batch, then the tip loop's: a batch every 100
+    // blocks (86 s) through the day before the cursor.
     await db.query(
       `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
-      VALUES(4663,'ledger:agg:v1',$1,23467030,decode(repeat('ab',32),'hex'),decode(lpad(to_hex($1::bigint),64,'0'),'hex'),$2,$3,$4,decode(repeat('cd',32),'hex'),'{}','{}',0,0,$4,0,0,0,1,1)`,
-      [cursorBlock, cursorTime, cursorBlock + 128, scalePools],
+      SELECT 4663,'ledger:agg:v1',t,f,decode(repeat('ab',32),'hex'),decode(lpad(to_hex(t),64,'0'),'hex'),$2::bigint-($1::bigint-t)*864/1000,t+128,$3,decode(repeat('cd',32),'hex'),'{}','{}',0,0,$3,0,0,0,1,1
+      FROM (SELECT $1::bigint-100*k AS t,$1::bigint-100*k-99 AS f FROM generate_series(0,$4::integer-1) k
+        UNION ALL SELECT $1::bigint-100*$4::integer,23467030) batches`,
+      [cursorBlock, cursorTime, scalePools, ringBlocks / 100],
     );
     await db.query(
       `UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode(lpad(to_hex($1::bigint),64,'0'),'hex'),cursor_timestamp=$2`,
@@ -131,12 +137,21 @@ test(
         decode(lpad(to_hex(pool_ref),64,'0'),'hex'),max(hour)::bigint*3600,min(hour)::bigint*3600,max(hour)::bigint*3600
       FROM agg_pool_hours WHERE chain_id=4663 GROUP BY pool_ref`,
     );
-    await db.query(
-      `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
-      SELECT 4663,'ledger:agg:v1',p.pool_ref,NULL,decode(lpad(to_hex(n),64,'0'),'hex'),0,$1::bigint-n,decode(lpad(to_hex($1::bigint-n),64,'0'),'hex'),$2::bigint-n,'buy',1000,1000,
-        1000000000000000000000000000000000,'unattributed',$1
-      FROM generate_series(0,79) n JOIN indexed_pools p ON p.chain_id=4663 AND p.pool_id=$3`,
-      [cursorBlock, cursorTime, poolId(1)],
+    // The live ring: the 24 hours ending at the cursor at the busiest
+    // rolling day measured (1,026,761 swaps, 5 to 6 Aug 2026), ten swaps a
+    // block. The busiest pool takes each block's first, and ninety of the
+    // hundred 400-hour pools share the rest, so the rolling hour's rank,
+    // flow and baselines read the whole ring's shape.
+    await seedBatches(0, ringBlocks - 1, 10000, (lo, hi) =>
+      db.query(
+        `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
+        SELECT 4663,'ledger:agg:v1',p.pool_ref,NULL,decode(lpad(to_hex(m*10+j),64,'0'),'hex'),j,$3::bigint-m,decode(lpad(to_hex($3::bigint-m),64,'0'),'hex'),$4::bigint-m*864/1000,
+          CASE WHEN mod(m+j,2)=0 THEN 'buy' ELSE 'sell' END,10000000000000000,1000,
+          1000000000000000000000000000000000::numeric+mod((m*10+j)::bigint*7919,1000000)*1000000000000000000000000::numeric,'unattributed',$3::bigint-100*(m/100)
+        FROM generate_series($1::integer,$2::integer) m CROSS JOIN generate_series(0,9) j
+        JOIN indexed_pools p ON p.chain_id=4663 AND p.pool_id='0x'||lpad(to_hex(CASE WHEN j=0 THEN 1 ELSE mod(m,10)*10+j+2 END+200000),64,'0')`,
+        [lo, hi, cursorBlock, cursorTime],
+      ),
     );
     // The wallets behind the catalog: every ledger launch sender, and the
     // broad fixture's own sender, whose 31 launches top the launches order.
@@ -331,20 +346,38 @@ test(
     assert(gainers.total > 0);
     for (const row of gainers.items as AnalyticsPoolRow[])
       assert(row.stats.change! > 0);
+    // 1h is the rolling hour in the ring: every covered launch answers it,
+    // and the busiest pool traded in each of its 4,168 blocks (a block m
+    // back is at cursorTime - floor(0.864m), at or after the start while
+    // m <= 4,167).
     const hour = await explore("volume1h", "window=1h&sort=volume&limit=25");
-    assert.equal(hour.total, 30);
+    assert.equal(hour.total, scalePools + 30);
+    const busiest = (hour.items as AnalyticsPoolRow[]).find(
+      (row) => row.id === poolId(1),
+    )!;
+    assert.equal(busiest.stats.trades, 4168);
+    assert.equal(busiest.stats.completeWindow, true);
+    await explore("trades1h", "window=1h&sort=trades&limit=25");
+    const hourChange = await explore("change1h", "window=1h&sort=change&limit=25");
+    assert(hourChange.total > 0);
+    await explore("gainers1h", "window=1h&view=gainers&sort=volume&limit=25");
+    await explore("launch1h", "window=1h&view=new&sort=launch&limit=25");
+    await explore("volume1h100", "window=1h&sort=volume&limit=100");
     const liquidity = await explore("liquidity7d", "window=7d&sort=liquidity&limit=25");
     assert.equal(liquidity.total, 0);
     await explore("search24h", "window=24h&q=Ledger%20launch%2061&sort=change&limit=25");
     // The busiest pool's page: 1,170 hours, the newest thousand as candles.
-    for (const window of ["24h", "All"]) {
+    for (const window of ["1h", "24h", "All"]) {
       const read = await timed(`/v1/pools/${poolId(1)}?window=${window}`);
       reads.push([`pool${window}`, read.ms]);
       validatePoolResponse(read.data, poolId(1), window);
       assert.equal(read.data.market.history.candles.length, 1000);
       assert.equal(read.data.market.history.truncated, true);
       assert.equal(read.data.market.observations.length, 50);
-      assert.equal(read.data.market.trades, window === "All" ? 468000 : 9600);
+      assert.equal(
+        read.data.market.trades,
+        { "1h": 4168, "24h": 9600, All: 468000 }[window],
+      );
       assert.equal(read.data.analytics, null);
     }
     // The creators aggregate warm, beside the cold reads above.
