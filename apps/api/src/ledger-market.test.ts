@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { assertObservedMarket, type ObservedMarket } from "@pools/core";
+import { ledgerStream } from "../../../packages/db/src/index";
 import {
   creatorFeeFlag,
   ledgerFlow,
+  ledgerLiveTradeRows,
   ledgerValues,
   ledgerWindowHour,
   ledgerWindowStart,
@@ -11,6 +13,10 @@ import {
   withCreatorFees,
   type LedgerCut,
 } from "./ledger-market";
+
+test("the API live-ring row bound matches the writer", () => {
+  assert.equal(ledgerLiveTradeRows, ledgerStream.liveTradeRows);
+});
 
 test("MARKET_SOURCE: unset or broad serves the broad rollups, ledger the ledger, anything else refuses to start", () => {
   assert.equal(marketSourceSetting(undefined), "broad");

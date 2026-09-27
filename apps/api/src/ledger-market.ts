@@ -89,14 +89,17 @@ export interface LedgerHour {
   beforeBlock: number;
   hourAfterBlock: number;
 }
+export const ledgerLiveTradeRows = 1_250_000;
 /** The rolling hour, or null while the ring does not hold every swap since
  * the start of `start`'s UTC hour (the hour's flow and the price it opened
- * at): a ledger younger than that, or a ring its row bound has cut into.
- * Then 1h serves no volume, trade count or change, and `completeWindow` is
- * false, rather than a partial hour under its name. */
+ * at). The age prune cannot reach that hour. An oldest row inside it is
+ * complete while the ring is below its row bound, but may have lost earlier
+ * swaps when the row bound is reached. An incomplete 1h serves no volume,
+ * trade count or change and has `completeWindow` false. */
 export async function ledgerHour(
   query: ReadQuery,
   cut: LedgerCut,
+  maxRows = ledgerLiveTradeRows,
 ): Promise<LedgerHour | null> {
   const start = cut.asOf - windows["1h"],
     hourStart = Math.floor(start / 3600) * 3600;
@@ -111,12 +114,18 @@ export async function ledgerHour(
   const r = rows[0];
   if (
     !r ||
-    r.oldest === null ||
-    whole(r.oldest) >= hourStart ||
     r.hour_after_block === null ||
     r.before_block === null
   )
     return null;
+  if (r.oldest === null || whole(r.oldest) >= hourStart) {
+    const atBound = await query(
+      `SELECT 1 FROM agg_live_trades WHERE chain_id=4663
+       ORDER BY block_number DESC,log_index DESC OFFSET $1 LIMIT 1`,
+      [maxRows - 1],
+    );
+    if (atBound.rows.length) return null;
+  }
   return {
     start,
     afterBlock: whole(r.after_block),

@@ -58,12 +58,12 @@ its oldest end (24 hours ending at the cursor, at most 1,250,000 rows), so it
 always holds every swap after its oldest row; walk-back removes a batch's rows
 with the batch, and the tip loop resumes from its cursor, so a restart leaves
 no gap. Its reads are ranges of the ring's block index, bounded by the batches'
-end times rather than scanned. 1h is served only while the ring's oldest row
-predates the start's UTC hour (the hour's flow and the price it opened at are
-both in it); otherwise, which production reaches only with a ledger younger
-than that or more than 1,250,000 swaps in about two hours, 1h serves no volume,
-trade count or change and its `completeWindow` is false, as before the ring
-served it.
+end times rather than scanned. The age prune removes only trades older than
+the cursor less 24 hours, before the rolling hour's first UTC hour. The ring
+covers that hour when its oldest row predates it or the ring holds fewer than
+1,250,000 rows. If the oldest row falls inside the hour and the ring is at
+its row bound, 1h serves no volume, trade count or change and its
+`completeWindow` is false.
 
 ## Figures
 

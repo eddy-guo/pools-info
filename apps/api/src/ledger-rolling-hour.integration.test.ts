@@ -23,6 +23,7 @@ import {
 } from "../../../packages/db/src/index";
 import { createReader } from "./reader";
 import { createApi } from "./server";
+import { ledgerCut, ledgerHour } from "./ledger-market";
 
 // 1h is the rolling hour ending at the ledger's cursor, read from its live
 // ring: production served every 1h figure as null (the screener's default
@@ -348,30 +349,40 @@ test(
     assert.equal(creators.items[0].traded, 3);
     assert.equal(creators.items[0].volumeWei, (10n * E).toString());
 
-    // A ring that no longer holds every swap since the start's UTC hour
-    // (its row bound cut into it, or a ledger younger than that) serves no
-    // 1h figure rather than a partial hour under its name: the rows say
-    // their window is incomplete and a metric order has nothing to rank.
+    await db.query(
+      "DELETE FROM agg_live_trades WHERE chain_id=4663 AND block_number<$1",
+      [base + 300],
+    );
+    const quiet = await explore("window=1h&sort=volume");
+    assert.equal(quiet.total, 5);
+    assert.deepEqual(ids(quiet), ids(byVolume));
+    for (const item of quiet.items)
+      assert.deepEqual(
+        item.stats,
+        byVolume.items.find((other) => other.id === item.id)!.stats,
+      );
+    const quietPage = await get<{ market: Record<string, any> }>(
+      `/v1/pools/${pools.A.id}?window=1h`,
+    );
+    assert.equal(quietPage.market.volumeWei, page.market.volumeWei);
+    assert.equal(quietPage.market.change, page.market.change);
+    const quietCreators = await get<CreatorsResponse>(
+      "/v1/creators?window=1h&sort=volume",
+    );
+    assert.deepEqual(quietCreators.items, creators.items);
+
     await db.query(
       "DELETE FROM agg_live_trades WHERE chain_id=4663 AND block_number<=$1",
       [base + 305],
     );
-    const cut = await explore("window=1h&sort=volume");
-    assert.equal(cut.total, 0);
-    for (const item of (await explore("window=1h&sort=launch")).items) {
-      assert.equal(item.stats.volumeWei, null);
-      assert.equal(item.stats.trades, null);
-      assert.equal(item.stats.change, null);
-      assert.equal(item.stats.completeWindow, false);
-      assert.equal(item.marketCoverage!.windowStart, start);
-    }
-    const cutPage = await get<{ market: Record<string, any> }>(
-      `/v1/pools/${pools.A.id}?window=1h`,
+    const query = (sql: string, values?: unknown[]) => db.query(sql, values);
+    const boundary = await ledgerCut(query);
+    assert.ok(boundary);
+    const count = await db.query(
+      "SELECT count(*)::integer AS rows FROM agg_live_trades WHERE chain_id=4663",
     );
-    assert.equal(cutPage.market.volumeWei, null);
-    assert.equal(cutPage.market.coverage.completeWindow, false);
-    const cutCreators = await get<CreatorsResponse>("/v1/creators?window=1h");
-    assert.equal(cutCreators.items[0].measured, 0);
+    assert.equal(count.rows[0].rows, 5);
+    assert.equal(await ledgerHour(query, boundary, count.rows[0].rows), null);
     // Whole-hour windows never read the ring.
     assert.equal(
       row(await explore("window=6h&sort=volume"), "A").stats.volumeWei,
