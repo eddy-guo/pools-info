@@ -3948,14 +3948,15 @@ button.icon-button:disabled {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-/* A crowd row's subtitle: the line gives way to the chip after it. */
-.row-subtitle-line {
+/* A crowd launch's line (`CrowdLine` in ui.tsx): the line gives way to the
+   chip after it. */
+.crowd-line {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.row-subtitle-line > .row-subtitle {
+.crowd-line > :first-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

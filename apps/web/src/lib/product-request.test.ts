@@ -20,7 +20,10 @@ import {
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
-import { validateExploreResponse } from "./explore-response";
+import {
+  validateExploreResponse,
+  validateWalletLaunches,
+} from "./explore-response";
 import type {
   AnalyticsExploreResponse,
   AnalyticsLeaderboardResponse,
@@ -1450,4 +1453,51 @@ test("the committed dataset serves the crowd view as its crowd launches: none, a
   )) as AnalyticsExploreResponse;
   assert.ok(all.items.length > 0);
   assert.ok(all.items.every((row) => row.launchType === "instant"));
+});
+
+test("a wallet's own launches carry a launch type, through the proxy too", async (t) => {
+  for (const launchType of launchTypes.accepted)
+    validateWalletLaunches([exploreRow(launchType)]);
+  for (const launchType of launchTypes.rejected)
+    assert.throws(
+      () => validateWalletLaunches([exploreRow(launchType)]),
+      /Invalid wallet launch/,
+    );
+  assert.throws(() => validateWalletLaunches([null]), /Invalid wallet launch/);
+
+  const prior = process.env.INDEXER_API_URL,
+    disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const address = `0x${"a".repeat(40)}`;
+  let launchType: unknown = "crowd";
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({
+      coverage: { chainId: 4663 },
+      window: "24h",
+      wallet: { address },
+      positions: [],
+      trades: [],
+      curve: [],
+      launches: [exploreRow(launchType)],
+    }),
+  );
+  const path = ["wallets", address],
+    params = new URLSearchParams("window=24h");
+  const served = await readProduct<{ launches: { launchType: string }[] }>(
+    path,
+    params,
+  );
+  assert.equal(served.launches[0].launchType, "crowd");
+  launchType = "auction";
+  await assert.rejects(
+    readProduct(path, params),
+    (error: unknown) => error instanceof ProductUnavailableError,
+  );
 });

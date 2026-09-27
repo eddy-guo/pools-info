@@ -32,8 +32,8 @@ import { WatchlistControls } from "./watchlist-controls";
 import {
   AddressChip,
   Change,
+  CrowdLine,
   EmptyState,
-  ModeBadge,
   Price,
   UnavailableState,
   WatchButton,
@@ -99,7 +99,8 @@ function headIntoView(panel: HTMLElement | null, always = false) {
  * shorter, so only dropping the segment is correct for every row, not just
  * the ones with a large count to abbreviate. The full line still reaches
  * assistive tech and a mouse hover as this span's title/aria-label, so
- * nothing is lost, only not shown at every width.
+ * nothing is lost, only not shown at every width. A crowd launch's line
+ * carries the CROWD chip after it (`CrowdLine`), which never truncates.
  */
 function RowSubtitle({
   pool,
@@ -121,38 +122,29 @@ function RowSubtitle({
   /* Each part after the first carries its own leading separator, so a token
      without a symbol never opens on a dot. While nothing is known yet (a
      nameless token before the age resolves) the line holds its height. */
-  const line = (
-    <span className="row-subtitle" title={full} aria-label={full}>
-      {symbol && (
-        <span className="mono" aria-hidden="true">
-          {symbol}
-        </span>
-      )}
-      {age && (
-        <span aria-hidden="true">
-          {symbol && " · "}
-          {age}
-        </span>
-      )}
-      {tradeCount && (
-        <span className="row-subtitle-trades" aria-hidden="true">
-          {(symbol || age) && " · "}
-          {tradeCount}
-        </span>
-      )}
-      {!full && <span aria-hidden="true">{"\u00a0"}</span>}
-    </span>
-  );
-  /* A crowd launch carries the export's CROWD chip after the line, which
-     gives way to it: the chip never truncates, the line ends in its
-     ellipsis. An Instant launch, the default, carries none. */
-  return pool.launchType === "crowd" ? (
-    <span className="row-subtitle-line">
-      {line}
-      <ModeBadge mode="crowd" />
-    </span>
-  ) : (
-    line
+  return (
+    <CrowdLine launchType={pool.launchType}>
+      <span className="row-subtitle" title={full} aria-label={full}>
+        {symbol && (
+          <span className="mono" aria-hidden="true">
+            {symbol}
+          </span>
+        )}
+        {age && (
+          <span aria-hidden="true">
+            {symbol && " · "}
+            {age}
+          </span>
+        )}
+        {tradeCount && (
+          <span className="row-subtitle-trades" aria-hidden="true">
+            {(symbol || age) && " · "}
+            {tradeCount}
+          </span>
+        )}
+        {!full && <span aria-hidden="true">{"\u00a0"}</span>}
+      </span>
+    </CrowdLine>
   );
 }
 function PoolCell({

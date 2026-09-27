@@ -1,6 +1,9 @@
 import { validateCreatorsResponse } from "./creators-response";
 import { validateEthPriceResponse } from "./eth-price-response";
-import { validateExploreResponse } from "./explore-response";
+import {
+  validateExploreResponse,
+  validateWalletLaunches,
+} from "./explore-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
@@ -506,6 +509,8 @@ export async function readProduct<T>(
           !data.coverage)
       )
         throw Error("Invalid saved profile");
+      if (checked.endpoint.startsWith("wallets/"))
+        validateWalletLaunches(data.launches);
       if (checked.endpoint === "explore")
         validateExploreResponse(data, checked.params);
       if (checked.endpoint === "following")

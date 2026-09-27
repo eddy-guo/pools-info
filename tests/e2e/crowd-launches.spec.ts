@@ -280,3 +280,38 @@ test("the pool header names the launch mode the read API serves, and claims none
   );
   await expect(title).not.toContainText(/INSTANT|CROWD/);
 });
+
+test("a wallet's own launches carry the chip on a crowd launch only", async ({
+  page,
+}, testInfo) => {
+  /* A launching wallet from the committed dataset, one of whose launches
+     the mocked read API names a crowd launch. */
+  const sender = catalog.pools[0].launchSender.toLowerCase();
+  let crowdName = "";
+  await page.route(`**/api/product/wallets/${sender}/**`, async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.launches[0].launchType = "crowd";
+    crowdName = json.launches[0].name;
+    await route.fulfill({ response, json });
+  });
+  await page.goto(`/wallet/${sender}/?tab=launches`);
+  const list = page.locator(
+    desktop(testInfo)
+      ? ".wallet-launches-table tbody tr"
+      : ".mobile-wallet-rows .mobile-wallet-row",
+  );
+  await expect(list.first()).toBeVisible();
+  const chips = list.locator(".mode-badge");
+  await expect(chips).toHaveCount(1);
+  await expect(chips).toHaveText("Crowd");
+  await expect(list.first()).toContainText(crowdName);
+  const [chip, row] = await Promise.all([
+    chips.boundingBox(),
+    list.first().boundingBox(),
+  ]);
+  expect(
+    chip!.x + chip!.width,
+    "the chip sits whole inside its row",
+  ).toBeLessThanOrEqual(row!.x + row!.width);
+});

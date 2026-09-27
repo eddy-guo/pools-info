@@ -462,6 +462,24 @@ export function ModeBadge({ mode }: { mode: "instant" | "crowd" }) {
     </span>
   );
 }
+/** A launch's one-line identity with, for a crowd launch, the export's
+ * CROWD chip after it. The line gives way to the chip, which never
+ * truncates; an Instant launch, the default, carries no chip. */
+export function CrowdLine({
+  launchType,
+  children,
+}: {
+  launchType?: "instant" | "crowd";
+  children: React.ReactElement;
+}) {
+  if (launchType !== "crowd") return children;
+  return (
+    <span className="crowd-line">
+      {children}
+      <ModeBadge mode="crowd" />
+    </span>
+  );
+}
 export function WatchButton({ id }: { id: string }) {
   const { ids, toggle } = useWatchlist();
   const active = ids.includes(id);

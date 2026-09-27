@@ -28,6 +28,7 @@ import {
   Avatar,
   Change,
   Chart,
+  CrowdLine,
   EmptyState,
   UnavailableState,
   WinLossRecord,
@@ -836,7 +837,9 @@ export function ProductWallet({ address }: { address: string }) {
                           {data?.launches.map((p) => (
                             <tr key={p.id}>
                               <td>
-                                <Link href={poolHref(p)}>{tokenLine(p)}</Link>
+                                <CrowdLine launchType={p.launchType}>
+                                  <Link href={poolHref(p)}>{tokenLine(p)}</Link>
+                                </CrowdLine>
                               </td>
                               <td>{utc(p.launchedAt)}</td>
                               <td>
@@ -861,7 +864,9 @@ export function ProductWallet({ address }: { address: string }) {
                       {data?.launches.map((p) => (
                         <div className="mobile-wallet-row" key={p.id}>
                           <div className="mobile-wallet-row-top">
-                            <Link href={poolHref(p)}>{tokenLine(p)}</Link>
+                            <CrowdLine launchType={p.launchType}>
+                              <Link href={poolHref(p)}>{tokenLine(p)}</Link>
+                            </CrowdLine>
                             <a
                               href={`${explorer}/tx/${p.launchTx}`}
                               target="_blank"
