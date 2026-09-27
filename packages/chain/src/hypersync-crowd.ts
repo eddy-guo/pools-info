@@ -850,6 +850,15 @@ export async function collectCrowdRange(
   if (prior && !isDeepStrictEqual(prior, cutoff))
     throw Error("HyperSync returned conflicting blocks");
   allBlocks.set(toBlock, cutoff);
+  // A migration's block is joined to its log; a page without it is refused.
+  for (const { migration } of launched) {
+    const block = allBlocks.get(migration.block_number);
+    if (
+      migration.block_number <= toBlock &&
+      (!block || !same(block.hash, migration.block_hash))
+    )
+      throw Error("HyperSync crowd migration lacks its block");
+  }
   checkedRetainedBlocks([...allBlocks.values()], toBlock);
   // 6. Swap and transfer rows, each crowd token's from its pool's migration.
   const trades = ledgerTradeRows(swapLogs, transferLogs, {

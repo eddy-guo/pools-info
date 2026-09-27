@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { HyperSyncClient } from "./hypersync";
 import {
   collectCrowdRange,
@@ -254,4 +255,30 @@ test("a migration on the other strategy does not graduate an auction it did not 
   });
   assert.equal(c.launch.pools.length, 0);
   assert.deepEqual(c.launch.evidence.rejected, [{ auction: A, reason: "pool_mismatch" }]);
+});
+
+test("a launch-lane page without its migration's block is refused", async () => {
+  const l = launch();
+  const range = { fromBlock: start, toBlock: start + 1000 };
+  const fake: FakeHyperSync = new FakeHyperSync({
+    height: start + 2000,
+    logs: l.logs,
+    intercept: (request) => {
+      if (!isDeepStrictEqual(request.body, crowdLaunchQuery(range))) return undefined;
+      const page = fake.respond(request.body!);
+      const [chunk] = page.data as { blocks?: { number: number }[] }[];
+      chunk.blocks = chunk.blocks?.filter((b) => b.number !== start + 500);
+      return Response.json(page);
+    },
+  });
+  await assert.rejects(
+    collectCrowdRange(client(fake), fakeMetadataRpc(), {
+      ...range,
+      parentHash: null,
+      height: fake.height,
+      registry: [],
+      pending: [],
+    }),
+    /HyperSync crowd migration lacks its block/,
+  );
 });
