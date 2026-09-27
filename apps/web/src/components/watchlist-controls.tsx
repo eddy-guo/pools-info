@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   MAX_SHARED_POOLS,
   MAX_WATCHLIST_QUERY_POOLS,
+  watchlistHeading,
   watchlistShareUrl,
   type SharedWatchlist,
 } from "@/lib/watchlist";
@@ -32,9 +33,7 @@ export function WatchlistControls({
       aria-label={shared ? "Shared watchlist" : "Saved watchlist"}
     >
       <div style={{ minWidth: 0 }}>
-        <strong>
-          {shared ? "Shared watchlist" : "Your watchlist"} · {ids.length} pools
-        </strong>
+        <strong>{watchlistHeading(shared !== null, ids.length)}</strong>
         <small>
           {shared
             ? "Stars change only your saved list. This link does not save anything automatically."

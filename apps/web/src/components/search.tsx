@@ -13,6 +13,7 @@ import { Avatar } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
 import { searchResultTitle } from "@/lib/token-identity";
+import { countLabel } from "@/lib/plural";
 const kindHints: Record<SearchResponse["kind"], string> = {
   text: "name",
   address: "address",
@@ -207,7 +208,8 @@ export function Search() {
             </p>
           )}
           <span className="sr-only" role="status">
-            {current?.error ?? (data ? `${data.total} results` : "Searching")}
+            {current?.error ??
+              (data ? countLabel(data.total, "result") : "Searching")}
           </span>
           {waiting && <SearchSkeleton />}
           {data?.kind === "ens" && !data.entries.length && (

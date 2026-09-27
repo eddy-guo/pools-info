@@ -24,6 +24,7 @@ import {
   WindowTabs,
   utc,
 } from "./live-ui";
+import { countLabel, plural } from "@/lib/plural";
 function RecordBar({ wins, losses }: { wins: number; losses: number }) {
   const total = wins + losses;
   return (
@@ -52,6 +53,7 @@ export function AuditLeaderboard({
     [oversold, setOversold] = useState(true),
     [fast, setFast] = useState(false),
     [flat, setFlat] = useState(false);
+  const incomplete = audit.wallets.filter((w) => w.realizedWei === null).length;
   const rows = audit.wallets
     .map((w) => walletMetrics(audit, w.address, window)!)
     .filter(
@@ -125,7 +127,9 @@ export function AuditLeaderboard({
                 {w.roi === null ? <Unavailable /> : <Change value={w.roi} />}
               </div>
               <RecordBar wins={w.wins} losses={w.losses} />
-              <span className="podium-trades">{w.trades.length} swaps</span>
+              <span className="podium-trades">
+                {countLabel(w.trades.length, "swap")}
+              </span>
             </Link>
           ))}
         </div>
@@ -309,16 +313,19 @@ export function AuditLeaderboard({
           </span>
           <h3>No qualifying traders in this pool and window</h3>
           <p>
-            The minimum stays at {minimum} swaps.{" "}
-            {audit.wallets.filter((w) => w.realizedWei === null).length} senders
-            have incomplete or unsupported accounting.
+            The minimum stays at {countLabel(minimum, "swap")}.{" "}
+            {countLabel(incomplete, "sender")}{" "}
+            {plural(incomplete, "has", "have")} incomplete or unsupported
+            accounting.
           </p>
         </div>
       )}
       <div className="corpus-footer">
         <span>
-          Showing <strong>{rows.length}</strong> qualifying traders of{" "}
-          <strong>{audit.wallets.length}</strong> audited senders
+          Showing <strong>{rows.length}</strong> qualifying{" "}
+          {plural(rows.length, "trader")} of{" "}
+          <strong>{audit.wallets.length}</strong> audited{" "}
+          {plural(audit.wallets.length, "sender")}
         </span>
         <span>
           {audit.market.symbol} · {window}
@@ -326,7 +333,8 @@ export function AuditLeaderboard({
       </div>
       <details className="live-details">
         <summary>
-          Inspect all {audit.wallets.length} audited senders and exclusions
+          Inspect all {audit.wallets.length} audited{" "}
+          {plural(audit.wallets.length, "sender")} and exclusions
         </summary>
         <p className="panel-footnote">
           Unknown basis and unsupported attribution remain excluded regardless

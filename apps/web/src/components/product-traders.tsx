@@ -25,6 +25,7 @@ import {
 import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
 import { PODIUM_SIZE, RANKED_CAP as CAP, rankedShown } from "@/lib/ranked-rows";
+import { countLabel } from "@/lib/plural";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
     by the wallet's actual rank rather than row position so the Following
     tab's out-of-order rows never pick up a colour that isn't theirs. */
@@ -140,6 +141,8 @@ function useLeaderboard(
     pool page prints its trade count (30,160, never 30160). */
 const tradeCount = (w: AnalyticsWalletSummary) =>
   (w.rankingTradeCount ?? w.supportedTradeCount).toLocaleString("en-US");
+const tradeCountLabel = (w: AnalyticsWalletSummary) =>
+  countLabel(w.rankingTradeCount ?? w.supportedTradeCount, "trade");
 function DesktopTraderRow({
   w,
   index,
@@ -433,7 +436,7 @@ function PodiumCard({
             <span>
               {w.wins}W · {w.losses}L
             </span>
-            <span>{tradeCount(w)} trades</span>
+            <span>{tradeCountLabel(w)}</span>
           </>
         ) : (
           <span data-pending={pending}>{pending ? "Pending" : " "}</span>

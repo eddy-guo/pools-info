@@ -15,6 +15,7 @@ import { useEthPrice } from "./eth-price-provider";
 import { useLive } from "./live-provider";
 import { useQuery, useUnit } from "./state";
 import { QuietUnavailable, Unavailable, useUnavailable } from "./ui";
+import { countLabel, plural } from "@/lib/plural";
 export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
@@ -271,8 +272,9 @@ export function AuditAction({ market }: { market: ChainMarket }) {
       {a && (
         <p>
           Audited through block {a.toBlock.toLocaleString("en-US")} ·{" "}
-          {utc(a.toTimestamp)}. {a.transfersChecked} transfers checked;{" "}
-          {a.unattributedSwaps} unsupported swap legs.
+          {utc(a.toTimestamp)}. {countLabel(a.transfersChecked, "transfer")}{" "}
+          checked; {a.unattributedSwaps} unsupported swap{" "}
+          {plural(a.unattributedSwaps, "leg")}.
         </p>
       )}
     </div>
@@ -351,7 +353,9 @@ export function Trades({
         </div>
       )}
       <div className="pagination">
-        <span>{trades.length} swap events</span>
+        <span>
+          {trades.length} swap {plural(trades.length, "event")}
+        </span>
         <button
           className="button secondary"
           disabled={current <= 1}
