@@ -139,7 +139,8 @@ start. The start-block check on `agg_streams` is unchanged.
 
 A TEMPLATE copy of the local production-shaped ledger (main cursor
 65,409,776, 17 Sep 13:40Z; 62,896 Instant pools, 2.18M positions) was
-migrated to 023 and the crowd lane run over it through `runLedgerCrowdStep`,
+migrated with the crowd migration, now numbered 024, and the crowd lane was run
+over it through `runLedgerCrowdStep`,
 answered from recorded data only: the 1,007 graduations of
 `fixtures/crowd/graduations.json.br` and the 54 template creations'
 transactions and logs from Blockscout. It took 46 ranges and 225 requests
