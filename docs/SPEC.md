@@ -16,7 +16,7 @@ Read this first; several obvious-seeming assumptions are wrong.
 - **The Instant creator starts with zero tokens.** No dev allocation, no vesting. "Dev holding %" is structurally zero.
 - Liquidity is locked permanently — the LP NFT goes to a singleton `FeeSplitter` with no withdrawal function. LP fees autocompound back into the locked position.
 - **Every token's largest holder is the v4 PoolManager**, because all liquidity lives in the singleton. Raw top-10 concentration is meaningless without excluding it.
-- Two launch modes: **instant** (pool opens immediately) and **crowd** (a ~4h continuous clearing auction runs first, then a pool is built at the final clearing price; if it doesn't raise enough, everyone is refunded and no pool ever exists).
+- Two launch modes: **instant** (pool opens immediately) and **crowd** (a timed continuous clearing auction runs first, then a pool is built at the final clearing price; if it doesn't raise enough, everyone is refunded and no pool ever exists). See [Crowd launches](CROWD-LAUNCHES.md) for the verified strategy durations.
 
 ### Chain constraints that change the architecture
 

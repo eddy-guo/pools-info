@@ -1,4 +1,4 @@
-# Status - 15 Sep 2026, current settling pass
+# Status
 
 ## Crowd launches join the ledger (26 Sep 2026, branch fm/pools-cca-launch-scope-p29)
 

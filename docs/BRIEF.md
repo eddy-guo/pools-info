@@ -63,7 +63,7 @@ Consequences:
 
 | | Instant ("curve") | Crowd (CCA) |
 |---|---|---|
-| Format | Live immediately, one transaction | ~4-hour bidding window, then pool opens |
+| Format | Live immediately, one transaction | Timed bidding window, then pool opens; see [Crowd launches](CROWD-LAUNCHES.md) |
 | Mechanism | Single-sided v4 position; price discovered by trading | Continuous Clearing Auction in a per-token contract |
 | Anti-sniping | None | Each bid is split across all remaining intervals — the "TWAP bid" |
 | Threshold | None | 10k FDV or **all bids refunded** |
@@ -318,7 +318,7 @@ Official assets: [`Uniswap/brand-assets`](https://github.com/Uniswap/brand-asset
 
 **Solid:** pool mechanics, constants, fees, locked liquidity, distribution, and the v4 data model — all from Uniswap source, repo docs, or the blog.
 
-**Third-party only (Bitquery):** the $50,000 graduation target, the July-launcher addresses, the double-counted-legs warning, the ~4-hour auction duration, chain ID.
+**Third-party only (Bitquery):** the $50,000 graduation target, the July-launcher addresses, the double-counted-legs warning, chain ID. Crowd strategy durations are verified in [Crowd launches](CROWD-LAUNCHES.md).
 
 ---
 

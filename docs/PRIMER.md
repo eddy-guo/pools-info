@@ -102,19 +102,19 @@ pools.trade Instant model
 | | pump.fun | pools.trade Instant |
 |---|---|---|
 | Early price discovery | Separate bonding-curve contract | A real v4 pool, shaped like a curve |
-| Graduation | Real: liquidity migrates at a threshold | Instant: none; progress bar is cosmetic. Crowd: auction graduation builds a pool |
+| Graduation | Real: liquidity migrates at a threshold | None; progress bar is cosmetic |
 | Who holds liquidity after | Burned or locked LP tokens, varies | A contract with no withdrawal function, permanently |
 | Fees | ~1% plus launch fees | 0.25% total; 0.20% compounds, 0.05% optional to creator |
 | Creator's starting tokens | Often a dev allocation | **Zero.** They must buy their own launch |
-| Anti-sniping | None in the base design | Optional: a 4-hour auction splitting each bid over time |
+| Anti-sniping | None in the base design | None |
 | Chain | Solana | Robinhood Chain (an Ethereum L2) |
-| **What to track** | Migrations, dev wallets, LP burns | Instant: trading and locked-liquidity growth. Crowd: auction migration and trading |
+| **What to track** | Migrations, dev wallets, LP burns | Trading and locked-liquidity growth |
 
 ### The two launch modes, plainly
 
 **Instant launch:** pool opens immediately, first buyer gets the lowest price. Fast, and snipeable.
 
-**Crowd launch:** a ~4-hour auction runs first. Everyone bids a maximum price, every bid gets spread across the remaining time so being first doesn't help, and at the end everyone who cleared pays the *same* price. If it doesn't raise enough, everybody is refunded and the token never opens. Then a pool is built at that final clearing price.
+**Crowd launch:** a timed auction runs first. Everyone bids a maximum price, every bid gets spread across the remaining time so being first doesn't help, and at the end everyone who cleared pays the *same* price. If it doesn't raise enough, everybody is refunded and the token never opens. Then a pool is built at that final clearing price. The verified strategy durations are in [Crowd launches](CROWD-LAUNCHES.md).
 
 ---
 
