@@ -291,7 +291,7 @@ export interface PoolRecord {
    * Absent or null when the source did not carry it; stored once known, and
    * immutable, since two observations of one launch name one strategy. */
   creatorFees?: boolean | null;
-  /** Where the pool came from (migration 023): an Instant strategy's launch
+  /** Where the pool came from (migration 024): an Instant strategy's launch
    * unless a source says otherwise. Immutable, like the identity. */
   launchType?: "instant" | "crowd";
 }
@@ -567,7 +567,7 @@ export async function commitBatchInTransaction(
     if (launchType !== "instant" && launchType !== "crowd")
       throw Error("Invalid launch type");
     // An Instant launch leaves launch_type to its default, exact for
-    // every Instant row (migration 023), so the Instant lanes' statement is
+    // every Instant row (migration 024), so the Instant lanes' statement is
     // the one they always wrote; only a crowd launch names the column.
     const inserted = await db.query(
       `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block,creator_fees${launchType === "crowd" ? ",launch_type" : ""}) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17${launchType === "crowd" ? ",'crowd'" : ""}) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id`,
@@ -609,7 +609,7 @@ export async function commitBatchInTransaction(
         identity.launch_tx !== p.launchTx.toLowerCase() ||
         identity.launch_sender !== p.launchSender.toLowerCase() ||
         Number(identity.launched_at) !== p.launchedAt ||
-        // Every row written before migration 023 is an Instant launch.
+        // Every row written before migration 024 is an Instant launch.
         (identity.launch_type ?? "instant") !== launchType
       )
         throw Error("Conflicting launch identity");

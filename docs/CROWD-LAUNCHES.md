@@ -43,7 +43,7 @@ pools; `packages/chain/src/crowd.test.ts` replays every recorded graduation
 A crowd pool is registered at its migration: `launch_block`/`launch_tx`/
 `launched_at` are the migration, `launch_sender` is the wallet that created
 the auction (crediting the keeper would misattribute every crowd launch), and
-`indexed_pools.launch_type = 'crowd'` (migration 023).
+`indexed_pools.launch_type = 'crowd'` (migration 024).
 
 ## The crowd lane
 

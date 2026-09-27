@@ -181,7 +181,7 @@ export async function readData(
     // release ahead of it stays unready and the previous release keeps
     // serving until the column exists.
     await query("SELECT creator_fees FROM indexed_pools WHERE false");
-    // The launch type (migration 023) is named by the same CTE.
+    // The launch type (migration 024) is named by the same CTE.
     await query("SELECT launch_type FROM indexed_pools WHERE false");
     if (marketSource === "ledger") {
       await query("SELECT 1 FROM agg_streams WHERE false");

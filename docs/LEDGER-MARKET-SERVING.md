@@ -24,12 +24,12 @@ added.
 
 ## Which pools the ledger serves
 
-The ledger's cut is its stream cursor (`agg_streams`): block, hash and
+The main ledger's cut is its stream cursor (`agg_streams`): block, hash and
 timestamp, which must be the newest committed batch's end (`agg_batches`).
 A ledger with no cursor or no pool hour has folded nothing and every pool
 answers as with `broad`.
 
-A pool is covered when it launched between the ledger's start block and its
+An Instant pool is covered when it launched between the ledger's start block and its
 cursor and the ledger's own launch lane registered it
 (`pool_launch_sources.stream_key = 'launches:agg:v1'`) in a batch at or below
 the cursor. Every swap of a covered pool since launch is folded, so a covered
@@ -38,6 +38,10 @@ served from the ledger unless a deep publication is newer than the ledger's
 cursor (the newest-cutoff rule the broad and deep sources already follow); a
 pool launched past the cursor, a recent-only catalog row, or a pool with a
 newer deep publication answers as with `broad`.
+
+Crowd pools use a separate stream and a matching-cursor serving gate. Their
+catalog membership, unmeasured state and accounting rule are in
+[Crowd launches](CROWD-LAUNCHES.md).
 
 ## Windows
 

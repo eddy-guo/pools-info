@@ -96,15 +96,7 @@ test(
       await db.query(
         `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
         VALUES(4663,$1,$2,23467030,decode($3,'hex'),decode($4,'hex'),$5,$6,1,decode($7,'hex'),'{}','{}',0,0,1,0,0,0,1,1)`,
-        [
-          key,
-          to,
-          hex(23467029),
-          hex(hash),
-          time,
-          to + 128,
-          "e".repeat(64),
-        ],
+        [key, to, hex(23467029), hex(hash), time, to + 128, "e".repeat(64)],
       );
       await db.query(
         `UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4 WHERE stream_key=$1`,
@@ -236,15 +228,39 @@ test(
       await db.query(
         `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
          VALUES(4663,'ledger:crowd:v1',(SELECT pool_ref FROM indexed_pools WHERE pool_id=$1),NULL,decode($2,'hex'),0,$3,decode($4,'hex'),$5,'buy',$6,1000,$7,'unattributed',$8)`,
-        [X, hex(block), block, hex(block), time, eth.toString(), sqrt.toString(), cursor],
+        [
+          X,
+          hex(block),
+          block,
+          hex(block),
+          time,
+          eth.toString(),
+          sqrt.toString(),
+          cursor,
+        ],
       );
 
     const rollingRows = async (sort = "launch") =>
       (await get(`/v1/explore?window=1h&sort=${sort}&view=all&limit=100`))
-        .items as { id: string; stats: { volumeWei: string | null; trades: number | null; completeWindow: boolean }; marketCoverage?: { source: string } }[];
+        .items as {
+        id: string;
+        stats: {
+          volumeWei: string | null;
+          trades: number | null;
+          completeWindow: boolean;
+        };
+        marketCoverage?: { source: string };
+      }[];
     const rollingPage = async () =>
       (await get(`/v1/pools/${X}?window=1h`)) as {
-        market: { volumeWei: string | null; trades: number | null; coverage: { completeWindow: boolean; unitBasis: { source: string } | null } };
+        market: {
+          volumeWei: string | null;
+          trades: number | null;
+          coverage: {
+            completeWindow: boolean;
+            unitBasis: { source: string } | null;
+          };
+        };
       };
     const unmeasured = async () => {
       const row = (await rollingRows()).find((r) => r.id === X);
@@ -252,7 +268,10 @@ test(
       assert.equal(row.stats.volumeWei, null);
       assert.equal(row.stats.trades, null);
       assert.equal(row.stats.completeWindow, false);
-      assert.deepEqual((await rollingRows("volume")).map((r) => r.id), [I]);
+      assert.deepEqual(
+        (await rollingRows("volume")).map((r) => r.id),
+        [I],
+      );
       const market = (await rollingPage()).market;
       assert.equal(market.volumeWei, null);
       assert.equal(market.trades, null);
@@ -280,7 +299,10 @@ test(
     assert.equal(row.stats.trades, 1);
     assert.equal(row.stats.completeWindow, true);
     assert.equal(row.marketCoverage?.source, "aggregate_ledger");
-    assert.deepEqual((await rollingRows("volume")).map((r) => r.id), [X, I]);
+    assert.deepEqual(
+      (await rollingRows("volume")).map((r) => r.id),
+      [X, I],
+    );
     const market = (await rollingPage()).market;
     assert.equal(market.volumeWei, e18.toString());
     assert.equal(market.trades, 1);
