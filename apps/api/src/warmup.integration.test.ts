@@ -163,12 +163,12 @@ test(
       });
       assert.deepEqual(names, [
         "screener",
+        "creators",
         "home_leaderboard",
         "traders",
         "busy_pool",
         ...(source === "ledger" ? ["ledger_cut"] : []),
         "wallet",
-        "creators",
       ]);
     }
   },
