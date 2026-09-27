@@ -159,6 +159,84 @@ for (const route of routes) {
   });
 }
 
+/* At 320px the header's actions once ran left over the wordmark's "info.",
+   which no overflow check sees since nothing scrolls. Each item must sit
+   inside the viewport and the header, overlap no other item, and be the
+   topmost node at its own edges, in both wallet states, while the header
+   keeps the height it has at 390. */
+test("the header's items fit a 320px screen without overlapping or clipping", async ({
+  page,
+}) => {
+  const items = [
+    ".brand-orbits",
+    ".brand > span",
+    ".header-actions .search-trigger",
+    ".header-actions .unit-toggle",
+    ".wallet-profile-entry",
+    ".primary-nav a",
+  ];
+  const measure = () =>
+    page.evaluate(async (selectors) => {
+      await document.fonts.ready;
+      const header = document
+        .querySelector(".site-header")!
+        .getBoundingClientRect();
+      const nodes = selectors.flatMap((selector) => [
+        ...document.querySelectorAll<Element>(selector),
+      ]);
+      const rects = nodes.map((node) => node.getBoundingClientRect());
+      const problems: string[] = [];
+      const name = (i: number) =>
+        `${nodes[i].tagName.toLowerCase()}.${[...nodes[i].classList].join(".")} "${nodes[i].textContent?.trim()}"`;
+      rects.forEach((rect, i) => {
+        if (
+          rect.left < 0 ||
+          rect.right > innerWidth ||
+          rect.top < header.top ||
+          rect.bottom > header.bottom
+        )
+          problems.push(`${name(i)} leaves the header`);
+        if (nodes[i].scrollWidth > nodes[i].clientWidth + 1)
+          problems.push(`${name(i)} clips its own content`);
+        const y = rect.top + rect.height / 2;
+        for (const x of [rect.left + 1, rect.right - 1]) {
+          const top = document.elementFromPoint(x, y);
+          if (!top || !(nodes[i].contains(top) || top.contains(nodes[i])))
+            problems.push(`${name(i)} is covered at x=${x}`);
+        }
+        rects.forEach((other, j) => {
+          if (
+            j > i &&
+            rect.left < other.right &&
+            other.left < rect.right &&
+            rect.top < other.bottom &&
+            other.top < rect.bottom
+          )
+            problems.push(`${name(i)} overlaps ${name(j)}`);
+        });
+      });
+      return { problems, height: header.height };
+    }, items);
+
+  await page.setViewportSize({ width: 390, height: 640 });
+  await page.goto("/");
+  const wide = await measure();
+  expect(wide.problems).toEqual([]);
+
+  for (const stored of [false, true]) {
+    if (stored)
+      await page.evaluate((address) => {
+        localStorage.setItem("poolsinfo.my-wallet.v1", address);
+      }, wallet);
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto("/");
+    if (stored) await expect(page.locator(".wallet-chip")).toBeVisible();
+    const narrow = await measure();
+    expect(narrow.problems, `wallet stored: ${stored}`).toEqual([]);
+    expect(narrow.height).toBe(wide.height);
+  }
+});
+
 test("the H1 row carries a Trader leaderboard call to action at the right", async ({
   page,
 }) => {

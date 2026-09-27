@@ -6724,6 +6724,31 @@ a.wallet-top-pool:hover {
     margin-left: 0;
   }
 }
+/* The phone header's first row needs 312px at 17px (wordmark, search, unit
+   toggle, wallet, their gaps and the 14px gutters), so below 360px the
+   actions ran left over the wordmark. There the row tightens instead of
+   dropping anything: the export's phone mark (20x24, 8px gap), a 16px
+   wordmark, narrower gaps and 6px toggle padding free about 23px, the rest
+   of the header keeps its size and every row keeps its height. */
+@container site (max-width: 359px) {
+  .topbar {
+    column-gap: 8px;
+  }
+  .brand {
+    gap: 8px;
+    font-size: 16px;
+  }
+  .brand-orbits {
+    width: 20px;
+    height: 24px;
+  }
+  .header-actions {
+    gap: 6px;
+  }
+  .header-actions .unit-toggle button {
+    padding: 6px;
+  }
+}
 /* The leaderboard's "YOU · RANK N" row (the export's board route): one
    54px line between the heading and the panel at every state, so the panel
    below keeps its first-paint position whether the browser has marked a
