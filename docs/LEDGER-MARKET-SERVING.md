@@ -107,19 +107,22 @@ price, change, candles and FDV.
 
 ## Explore cold read after removing the frozen trade scan
 
-`rankedFlowCtes` now probes `analytics_accounting_trades` only for a launch
-whose deep publication supplies the served figure. The old catalog-wide
-aggregate scanned the frozen table even when every served launch used ledger
-figures. On a restored production copy with PostgreSQL 18, OS cache evicted
-before each round and system load 5-11, the unfiltered home screener measured:
+The explore rank (`rankedFlowCtes`), the served page's metrics and the creators
+read now probe `analytics_accounting_trades` only for launches whose deep
+publication supplies the figure. This still includes a deep publication newer
+than the ledger cursor; a ledger-served or broad-served figure skips the frozen
+trades. The old catalog-wide aggregate scanned the table even when every
+served launch used ledger figures. On a restored production copy with
+PostgreSQL 18, OS cache evicted before each round and system load 5-11, the
+unfiltered home screener measured:
 
-| Measure | Before | After |
-| --- | ---: | ---: |
-| Home screener volume read | 316-360 ms | 224-234 ms |
-| Volume-rank statement | 227-247 ms | 123-126 ms |
-| Volume-rank blocks read | 15,749 | 2,045 |
-| Both screener statements, blocks read | 20,393 | 6,653 |
-| Frozen trade-table blocks read | 13,779 | 0 |
+| Measure                               |     Before |      After |
+| ------------------------------------- | ---------: | ---------: |
+| Home screener volume read             | 316-360 ms | 224-234 ms |
+| Volume-rank statement                 | 227-247 ms | 123-126 ms |
+| Volume-rank blocks read               |     15,749 |      2,045 |
+| Both screener statements, blocks read |     20,393 |      6,653 |
+| Frozen trade-table blocks read        |     13,779 |          0 |
 
 All 525 compared responses were byte-identical. These are cold measurements
 on the restored copy, not a latency guarantee for the live service.
@@ -396,7 +399,7 @@ page-scoped query:
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Page-scoped own-buy evidence                                                         | 351-906 ms cold; 211-411 ms warm                     | No new storage or migration, scales with the served page, and was chosen.                                                                                                                                                                                                                            |
 | Raising the database container's shared memory                                       | Not measured                                         | A plan and money decision on Railway; the captain's, and not taken here.                                                                                                                                                                                                                             |
-| Chunking a large first paint into `limit<=25` requests in the website               | Not measured                                         | The fallback if the serial probe had been slow; it was not, so the read API keeps answering the page the URL asks for.                                                                                                                                                                              |
+| Chunking a large first paint into `limit<=25` requests in the website                | Not measured                                         | The fallback if the serial probe had been slow; it was not, so the read API keeps answering the page the URL asks for.                                                                                                                                                                               |
 | Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
 | Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
 

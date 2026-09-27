@@ -122,12 +122,11 @@ export function broadFlowCte(source: "catalog" | "page") {
 }
 /** One launch's deep flow: its deep trades inside the publication's window
  * ($1), or `where`, read through the pool's own trade index. Callers place it
- * inside the CASE branch that serves the deep publication, so it runs only for
- * the launches that fall through to it. The deep trades are frozen, and with
- * the ledger no deep-published launch falls through, so a read touches none of
- * them; a catalog-wide aggregate read the whole table (107 MB on production)
- * on every rank to feed no row. An aggregate scalar subquery is never hashed
- * into one whole-table read the way an EXISTS or IN sublink can be. */
+ * inside the CASE branch that serves the deep publication, so ledger- and
+ * broad-served launches do not read the frozen trades. A deep publication
+ * newer than the ledger cursor can still select this branch. The scalar
+ * aggregate keeps the read scoped to one pool instead of scanning the frozen
+ * table (107 MB on production) for every catalog rank. */
 export const deepFlowSql = (
   select: string,
   pool: string,

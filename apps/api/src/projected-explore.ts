@@ -275,19 +275,19 @@ export async function readProjectedExplore(
           r.volume !== null &&
           (Number(r.launched_at) >= ledgerWindowStart(r) || r.ledger_baseline)
         : r.broad_selected
-        ? r.price !== null &&
-          !r.units_conflict &&
-          r.volume !== null &&
-          (window === "All" ||
-            Number(r.launched_at) >= Number(r.window_start) ||
-            r.baseline_block !== null)
-        : !!r.market &&
-          !r.units_conflict &&
-          Number(r.asof_timestamp) >= coverage.asOf &&
-          (window === "All"
-            ? Number(r.from_block) <= Number(r.launch_block)
-            : Number(r.from_timestamp) <= Number(values[0]) ||
-              Number(r.launched_at) >= Number(values[0])),
+          ? r.price !== null &&
+            !r.units_conflict &&
+            r.volume !== null &&
+            (window === "All" ||
+              Number(r.launched_at) >= Number(r.window_start) ||
+              r.baseline_block !== null)
+          : !!r.market &&
+            !r.units_conflict &&
+            Number(r.asof_timestamp) >= coverage.asOf &&
+            (window === "All"
+              ? Number(r.from_block) <= Number(r.launch_block)
+              : Number(r.from_timestamp) <= Number(values[0]) ||
+                Number(r.launched_at) >= Number(values[0])),
     },
     asOf: r.asof_timestamp === null ? null : Number(r.asof_timestamp),
     throughBlock: r.through_block === null ? null : Number(r.through_block),
@@ -321,71 +321,75 @@ export async function readProjectedExplore(
           }
         : r.broad_selected && broadCut
           ? {
-            source: "canonical_broad",
-            startBlock: Math.max(broadCut.startBlock, Number(r.launch_block)),
-            cutoff: {
-              block: broadCut.block,
-              hash: broadCut.hash,
-              asOf: broadCut.asOf,
-            },
-            windowStart:
-              window === "All" ? Number(r.launched_at) : Number(r.window_start),
-            indexedAt: broadCut.indexedAt,
-            unitsConflict: !!r.units_conflict,
-            unitBasis:
-              r.decimals === null || r.units_conflict || Number(r.decimals) > 36
-                ? null
-                : {
-                    block: Number(r.unit_block),
-                    hash: r.unit_hash,
-                    asOf: Number(r.unit_time),
-                    decimals: Number(r.decimals),
-                    source: r.unit_source,
-                  },
-            rawPrice:
-              r.sqrt_price_x96 === null
-                ? null
-                : {
-                    sqrtPriceX96: String(r.sqrt_price_x96),
-                    block: Number(r.price_block),
-                    hash: r.price_hash,
-                    asOf: Number(r.price_time),
-                  },
-            priceBaseline:
-              r.baseline_block === null
-                ? null
-                : {
-                    block: Number(r.baseline_block),
-                    hash: r.baseline_hash,
-                    asOf: Number(r.baseline_time),
-                  },
-          }
-        : r.market
-          ? {
-              source: "deep_publication",
-              startBlock: Number(r.from_block),
+              source: "canonical_broad",
+              startBlock: Math.max(broadCut.startBlock, Number(r.launch_block)),
               cutoff: {
-                block: Number(r.through_block),
-                hash: r.deep_hash,
-                asOf: Number(r.asof_timestamp),
+                block: broadCut.block,
+                hash: broadCut.hash,
+                asOf: broadCut.asOf,
               },
               windowStart:
-                window === "All" ? Number(r.launched_at) : Number(values[0]),
-              indexedAt: new Date(r.generated_at).toISOString(),
+                window === "All"
+                  ? Number(r.launched_at)
+                  : Number(r.window_start),
+              indexedAt: broadCut.indexedAt,
               unitsConflict: !!r.units_conflict,
-              unitBasis: r.units_conflict
-                ? null
-                : {
-                    block: Number(r.through_block),
-                    hash: r.deep_hash,
-                    asOf: Number(r.asof_timestamp),
-                    decimals: r.market.decimals,
-                    source: "verified_deep_snapshot",
-                  },
-              rawPrice: null,
-              priceBaseline: null,
+              unitBasis:
+                r.decimals === null ||
+                r.units_conflict ||
+                Number(r.decimals) > 36
+                  ? null
+                  : {
+                      block: Number(r.unit_block),
+                      hash: r.unit_hash,
+                      asOf: Number(r.unit_time),
+                      decimals: Number(r.decimals),
+                      source: r.unit_source,
+                    },
+              rawPrice:
+                r.sqrt_price_x96 === null
+                  ? null
+                  : {
+                      sqrtPriceX96: String(r.sqrt_price_x96),
+                      block: Number(r.price_block),
+                      hash: r.price_hash,
+                      asOf: Number(r.price_time),
+                    },
+              priceBaseline:
+                r.baseline_block === null
+                  ? null
+                  : {
+                      block: Number(r.baseline_block),
+                      hash: r.baseline_hash,
+                      asOf: Number(r.baseline_time),
+                    },
             }
-          : null,
+          : r.market
+            ? {
+                source: "deep_publication",
+                startBlock: Number(r.from_block),
+                cutoff: {
+                  block: Number(r.through_block),
+                  hash: r.deep_hash,
+                  asOf: Number(r.asof_timestamp),
+                },
+                windowStart:
+                  window === "All" ? Number(r.launched_at) : Number(values[0]),
+                indexedAt: new Date(r.generated_at).toISOString(),
+                unitsConflict: !!r.units_conflict,
+                unitBasis: r.units_conflict
+                  ? null
+                  : {
+                      block: Number(r.through_block),
+                      hash: r.deep_hash,
+                      asOf: Number(r.asof_timestamp),
+                      decimals: r.market.decimals,
+                      source: "verified_deep_snapshot",
+                    },
+                rawPrice: null,
+                priceBaseline: null,
+              }
+            : null,
   }));
   return {
     // The newest data the response serves: the ledger's cutoff once it
