@@ -276,9 +276,10 @@ response is the accounting reader's, field for field; what its values mean:
   `curveSampled` says so. Nothing is interpolated: a wallet whose hours the
   ledger has not folded has no point for them.
 - **`trades`** is empty and `tradesTruncated` false: the ledger keeps no row
-  per sale (design decision D3), so the Trades tab reads 0 and no trade-share
-  link is emitted. It is never served from the frozen accounting tables,
-  which would put two worlds on one page.
+  per sale (design decision D3), and no trade-share link is emitted from this
+  response. The Trades tab reads explorer history separately (see
+  `docs/WALLET-TRADE-HISTORY.md`). The response is never served from the frozen
+  accounting tables, which would put two worlds on one page.
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
 

@@ -34,9 +34,9 @@ export interface FollowingActivityItem {
   supported: true;
 }
 
-/** One followed wallet's trade as the explorer lists it: the wallet's ERC-20
- * leg against the PoolManager in a token of the verified registry. It carries
- * no ETH amount and no price; those are not in the explorer's transfer. */
+/** One followed wallet's verified-registry token leg, settled directly with
+ * the PoolManager or confirmed through a swap in its transaction. It carries
+ * no ETH amount or price; those are not in the explorer's transfer. */
 export interface FollowingTrade {
   /** `txHash:logIndex`, unique in a response. */
   id: string;

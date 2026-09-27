@@ -423,10 +423,12 @@ empty one; 68 of them are wallets the accounting tables never saw at all.
 The slowest ledger read of the 200 was 46 ms warm.
 
 What the ledger route left empty on purpose at that walk: `trades` (no row
-per sale in the ledger, design decision D3, so the Trades tab reads 0 and no
-trade-share link is emitted from it; still empty) and `curve`, both of
+per sale in the ledger, design decision D3, so no trade-share link is emitted
+from it; still empty) and `curve`, both of
 which the page already rendered empty for every wallet the frozen route has
 no rows for, which is the state the frontend home captured as its "before".
+The current Trades tab reads explorer history separately; see
+`docs/WALLET-TRADE-HISTORY.md`.
 The curve landed in the next slice (PR https://github.com/eddy-guo/pools-info/pull/111): the hourly cumulative realized
 from `agg_wallet_hours`, one point at the end of each hour with a sale on a
 supported position, ending on the header's figure, so on a clean wallet the

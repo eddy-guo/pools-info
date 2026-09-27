@@ -86,8 +86,12 @@ test("a token with multiple pools stays ambiguous through later incremental rows
   );
   await registry.current();
   assert.equal(registry.poolOf("0xa"), null);
+  assert.deepEqual(registry.poolsOf("0xa"), ["0xpa", "0xpb"]);
   rows.push({ ref: 3, poolId: "0xpc", token: "0xa" });
   now += 30000;
   await registry.current();
   assert.equal(registry.poolOf("0xa"), null);
+  // Every pool stays known, so a relayed leg is checked against each of them.
+  assert.deepEqual(registry.poolsOf("0xa"), ["0xpa", "0xpb", "0xpc"]);
+  assert.deepEqual(registry.poolsOf("0xb"), []);
 });

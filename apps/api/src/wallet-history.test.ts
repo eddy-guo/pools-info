@@ -15,8 +15,11 @@ import {
   normalizeTransaction,
   pageParams,
   poolManager,
+  swapTopic,
+  type TradeLeg,
 } from "./blockscout-client";
 import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
+import { createFollowing } from "./following-read";
 import { parseRequest, RequestError } from "./request";
 import { createApi } from "./server";
 import { createTokenRegistry } from "./token-registry";
@@ -178,16 +181,20 @@ test("recorded pages normalize to the stable display shape", async () => {
   );
 });
 
-test("trades keep only the wallet's ERC-20 legs against the PoolManager, sided by direction", async () => {
+test("trades keep the wallet's ERC-20 legs against the PoolManager, sided by direction", async () => {
   const launcher = "0x78cc2ff0a2127c1bbb96b99124fadc8c41f89388";
   const rows = JSON.parse(await fixture("trades-page1")).items;
-  const trades = rows.map((row: unknown) => normalizeTrade(row, launcher));
-  // The two spoofed-token poisoning logs are the wallet's transfers but no
-  // trade; the sell and the launch's own buy are.
-  assert.deepEqual(
-    trades.map((t: { side: string } | null) => t?.side ?? null),
-    [null, null, "sell", "buy"],
+  const registered = new Set(["0xecff71414f3803d6d936c4b40b19feab060e38e7"]);
+  const legs = rows.map((row: unknown) =>
+    normalizeTrade(row, launcher, registered),
   );
+  // The two spoofed-token poisoning logs are the wallet's transfers but no
+  // trade; the sell and the launch's own buy are, and need no confirmation.
+  assert.deepEqual(
+    legs.map((l: TradeLeg | null) => l && [l.trade.side, l.relayed]),
+    [null, null, ["sell", false], ["buy", false]],
+  );
+  const trades = legs.map((l: TradeLeg | null) => l?.trade);
   assert.deepEqual(trades[2], {
     transactionHash:
       "0xc2157c941eeed5d29cdc94fcfb8350f62225500b1c99e8d3765952cb86533f16",
@@ -206,19 +213,33 @@ test("trades keep only the wallet's ERC-20 legs against the PoolManager, sided b
     method: "0x3593564c",
   });
   assert.equal(trades[3].tokenRaw, "373719220240263753683091868");
-  // The same legs seen from the PoolManager or a stranger are no trade.
-  assert.equal(normalizeTrade(rows[2], poolManager), null);
-  assert.equal(normalizeTrade(rows[2], wallet), null);
+  const managerLeg = normalizeTrade(rows[2], poolManager, registered);
+  assert.deepEqual(managerLeg && [managerLeg.trade.side, managerLeg.relayed], [
+    "buy",
+    true,
+  ]);
+  assert.equal(normalizeTrade(rows[2], wallet, registered), null);
   // A malformed row that is no trade never fails the page; a malformed or
   // non-fungible PoolManager leg does.
-  assert.equal(normalizeTrade({ ...rows[0], log_index: "x" }, launcher), null);
-  assert.equal(normalizeTrade({ from: null, to: 7 }, launcher), null);
+  assert.equal(
+    normalizeTrade({ ...rows[0], log_index: "x" }, launcher, registered),
+    null,
+  );
+  assert.equal(
+    normalizeTrade({ from: null, to: 7 }, launcher, registered),
+    null,
+  );
   assert.throws(
-    () => normalizeTrade({ ...rows[2], log_index: "x" }, launcher),
+    () => normalizeTrade({ ...rows[2], log_index: "x" }, launcher, registered),
     /invalid_item/,
   );
   assert.throws(
-    () => normalizeTrade({ ...rows[2], total: { token_id: "1" } }, launcher),
+    () =>
+      normalizeTrade(
+        { ...rows[2], total: { token_id: "1" } },
+        launcher,
+        registered,
+      ),
     /invalid_item/,
   );
 });
@@ -337,7 +358,19 @@ test("client reads trades from the ERC-20 transfer page with a filter no cursor 
     ),
   }));
   const c = client(baseUrl);
-  const first = await c.readPage("trades", launcher, null);
+  const rows = [
+    ...JSON.parse(await fixture("trades-page1")).items,
+    ...JSON.parse(await fixture("trades-page2")).items,
+  ];
+  const registry = {
+    tokens: new Set<string>(
+      rows.map((row: { token: { address_hash: string } }) =>
+        row.token.address_hash.toLowerCase(),
+      ),
+    ),
+    poolsOf: () => [],
+  };
+  const first = await c.readPage("trades", launcher, null, 0, registry);
   assert.equal(
     seen[0].url,
     `/addresses/${launcher}/token-transfers?type=ERC-20`,
@@ -353,16 +386,28 @@ test("client reads trades from the ERC-20 transfer page with a filter no cursor 
     block_number: "67884997",
     index: "14",
   });
-  const second = await c.readPage("trades", launcher, {
-    ...first.nextPageParams!,
-    type: "ERC-721",
-  });
+  const second = await c.readPage(
+    "trades",
+    launcher,
+    { ...first.nextPageParams!, type: "ERC-721" },
+    0,
+    registry,
+  );
   assert.equal(
     seen[1].url,
     `/addresses/${launcher}/token-transfers?block_number=67884997&index=14&type=ERC-20`,
   );
   assert.equal(second.items.length, 3);
   assert(second.items.every((i) => i.side === "sell"));
+  assert.equal(c.budget.snapshot().spent, 30 + 30);
+  await assert.rejects(
+    (c.readPage as (...args: unknown[]) => Promise<unknown>)(
+      "trades",
+      launcher,
+      null,
+    ),
+    /Trade registry required/,
+  );
   assert.equal(c.budget.snapshot().spent, 30 + 30);
 });
 
@@ -798,9 +843,16 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
   const served = JSON.stringify({ ...page, items: [spoof, sell, launchBuy] });
   const { baseUrl } = await upstream(t, async () => ({ body: served }));
   // Before: the explorer page alone lists the spoof as a sale.
-  const before = await client(baseUrl).readPage("trades", launcher, null);
+  const accepted = new Set(
+    [spoof, sell, launchBuy].map((row) =>
+      String(row.token.address_hash).toLowerCase(),
+    ),
+  );
+  const before = [spoof, sell, launchBuy].map(
+    (row) => normalizeTrade(row, launcher, accepted)!.trade,
+  );
   assert.deepEqual(
-    before.items.map((i) => [i.token.symbol, i.side]),
+    before.map((i) => [i.token.symbol, i.side]),
     [
       ["E឵T឵H", "sell"],
       ["FOMOEGG", "sell"],
@@ -808,7 +860,7 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
     ],
   );
   assert.equal(
-    before.items[0].token.address,
+    before[0].token.address,
     "0x57d00fb1e72c721a8bcd5a57221b930c2ce49c23",
   );
   // After: the trade list keeps only tokens the verified registry holds.
@@ -835,6 +887,601 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
       [47, "buy"],
     ],
   );
+});
+
+/** The registry rows and recorded `eth_getLogs` answers of the relayed-trade
+ * fixtures: each block's answer is what the gateway returned for the PoolManager's
+ * `Swap` logs of the leg's pool in that block. */
+async function relayedFixtures() {
+  const logs: Record<
+    string,
+    { request: { topics: [string, string[]] }; result: unknown[] }
+  > = JSON.parse(await fixture("swap-logs"));
+  const pages = {
+    launchpad: JSON.parse(await fixture("trades-launchpad-router")),
+    aggregator: JSON.parse(await fixture("trades-aggregator")),
+    send: JSON.parse(await fixture("trades-plain-send")),
+  };
+  const poolOfToken: Record<string, string> = {
+    // FEELSGOOD, New Olympus and EVOLVE, each a verified registry launch.
+    "0x43c1577577bafb86ec49f008f7274cc8e0b482e8":
+      "0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520",
+    "0x2274d027ef35ec21725b4bee8bb07464c4ea1d96":
+      "0x0311d9143d33f3a3efb2c3c39061b13cbcdcc74cb348a4062253f1a97a4caec1",
+    "0x349065655926a3f6968990246f986f2e19d75231":
+      "0x9d35297537fdf4a56fa9fa58d247792a7b519af877a084e4963c9920fc712b96",
+  };
+  const registry = createTokenRegistry(async () =>
+    Object.entries(poolOfToken).map(([token, poolId], i) => ({
+      ref: i + 1,
+      poolId,
+      token,
+    })),
+  );
+  return { logs, pages, registry, poolOfToken };
+}
+/** A fake PRO host serving a transfer page and the JSON-RPC gateway, which
+ * answers each `eth_getLogs` from the recorded block, narrowed to the pools
+ * the request names, the way the gateway filters. */
+async function relayedUpstream(
+  t: test.TestContext,
+  logs: Awaited<ReturnType<typeof relayedFixtures>>["logs"],
+  page: (req: IncomingMessage) => unknown,
+  rpc: (
+    batch: { id: number; params: [Record<string, unknown>] }[],
+  ) => { status?: number; body?: string } | undefined = () => undefined,
+) {
+  const batches: { id: number; params: [Record<string, unknown>] }[][] = [];
+  const bodies = new Map<IncomingMessage, string>();
+  const up = await upstream(t, async (req) => {
+    if (req.url !== "/json-rpc") return { body: JSON.stringify(page(req)) };
+    let text = "";
+    for await (const chunk of req) text += chunk;
+    bodies.set(req, text);
+    const batch = JSON.parse(text);
+    batches.push(batch);
+    const override = rpc(batch);
+    if (override) return override;
+    return {
+      body: JSON.stringify(
+        batch.map(
+          ({
+            id,
+            params: [filter],
+          }: {
+            id: number;
+            params: [{ fromBlock: string; topics: [string, string[]] }];
+          }) => ({
+            jsonrpc: "2.0",
+            id,
+            result: (
+              (logs[String(parseInt(filter.fromBlock, 16))]?.result ?? []) as {
+                topics: string[];
+              }[]
+            ).filter((log) => filter.topics[1].includes(log.topics[1])),
+          }),
+        ),
+      ),
+    };
+  });
+  return { ...up, batches, bodies };
+}
+
+test("a router-relayed leg is a trade once its transaction holds a PoolManager swap of the token's pool: the launchpad router, an aggregator, never a plain send", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  let served: unknown = pages.launchpad;
+  const { baseUrl, seen, batches } = await relayedUpstream(
+    t,
+    logs,
+    () => served,
+  );
+  const c = client(baseUrl);
+  const tokens = await registry.current();
+  const reg = { tokens, poolsOf: (x: string) => registry.poolsOf(x) };
+  const read = async (w: string) =>
+    (await c.readPage("trades", w, null, 0, reg)).items.map((i) => [
+      i.transactionHash.slice(0, 10),
+      i.logIndex,
+      i.side,
+      i.token.symbol,
+    ]);
+
+  // 0xb96de56c, 7d #22 on 25 Sep: its sells go through the launchpad's own
+  // router 0x8876...0904, which the old list dropped (2 of 22 shown). A
+  // spoofed "ETH" token's send stays out, being no registry token.
+  const b96 = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  assert.deepEqual(await read(b96), [
+    ["0x6fd48a1f", 52, "sell", "FEELSGOOD"],
+    ["0x24a2e4a6", 2, "sell", "FEELSGOOD"],
+    ["0x649b9328", 47, "buy", "FEELSGOOD"],
+  ]);
+  // One gateway batch asked the two relayed legs' blocks for the token's
+  // pool's swaps, and nothing about the direct leg.
+  assert.equal(seen[1].url, "/json-rpc");
+  assert.equal(seen[1].method, "POST");
+  assert.equal(seen[1].headers.authorization, `Bearer ${key}`);
+  assert.equal(seen[1].headers["content-type"], "application/json");
+  assert.deepEqual(batches[0], [
+    {
+      jsonrpc: "2.0",
+      id: 0,
+      method: "eth_getLogs",
+      params: [
+        {
+          fromBlock: "0x3fd0133",
+          toBlock: "0x3fd0133",
+          address: poolManager,
+          topics: [
+            swapTopic,
+            [
+              "0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520",
+            ],
+          ],
+        },
+      ],
+    },
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [
+        {
+          fromBlock: "0x3fcfe64",
+          toBlock: "0x3fcfe64",
+          address: poolManager,
+          topics: [
+            swapTopic,
+            [
+              "0xdbd1645ce9d4b0b978eb7535263451409c17bb238279fd9cf24a516b11309520",
+            ],
+          ],
+        },
+      ],
+    },
+  ]);
+  assert.equal(c.budget.snapshot().spent, 30 + 20);
+
+  // 0x6e7d7a4e: every leg through an aggregator (0xcc4c...641f here). Its
+  // blocks hold other wallets' swaps of the same pool; only its own
+  // transaction's swap confirms a leg.
+  served = pages.aggregator;
+  const agg = "0x6e7d7a4e13779ace82ab5916e75e3b39f9ada109";
+  assert.deepEqual(await read(agg), [
+    ["0x8fe68100", 45, "sell", "Olympus"],
+    ["0x4ed7fbc5", 43, "buy", "Olympus"],
+  ]);
+  assert.equal(
+    (logs["68740347"].result as unknown[]).length,
+    8,
+    "the aggregator sell's block holds eight swaps of its pool",
+  );
+
+  // 0xb5ba7f32: a registry token sent to another wallet in a transaction
+  // with no swap is no trade; the buy straight out of the PoolManager is.
+  served = pages.send;
+  const b5b = "0xb5ba7f3251ff385d3c95c2b7ec24a3ee079d40d3";
+  assert.deepEqual(await read(b5b), [["0x159d8231", 77, "buy", "EVOLVE"]]);
+  assert.equal(c.budget.snapshot().spent, 3 * 30 + 3 * 20);
+
+  // A mined transaction's logs never change: pages read again confirm from
+  // memory and spend only the page.
+  served = pages.launchpad;
+  await read(b96);
+  served = pages.send;
+  await read(b5b);
+  assert.equal(batches.length, 3);
+  assert.equal(c.budget.snapshot().spent, 5 * 30 + 3 * 20);
+
+  // A relayed leg whose block holds swaps of its pool, but none in its own
+  // transaction, is no trade.
+  const moved = structuredClone(pages.aggregator);
+  moved.items[0].transaction_hash = "0x" + "ab".repeat(32);
+  served = moved;
+  assert.deepEqual(await read(agg), [["0x4ed7fbc5", 43, "buy", "Olympus"]]);
+});
+
+test("relayed legs are confirmed five blocks per gateway batch, each batch billed once", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  const [relayed] = pages.launchpad.items.filter(
+    (i: { log_index: number }) => i.log_index === 2,
+  );
+  // Seven relayed sells in seven blocks, none of which holds a swap.
+  const page = {
+    items: Array.from({ length: 7 }, (_, i) => ({
+      ...relayed,
+      transaction_hash: "0x" + String(i + 1).padStart(64, "0"),
+      block_number: 1000 + i,
+    })),
+    next_page_params: null,
+  };
+  const { baseUrl, batches } = await relayedUpstream(t, logs, () => page);
+  const c = client(baseUrl);
+  const reg = {
+    tokens: await registry.current(),
+    poolsOf: (x: string) => registry.poolsOf(x),
+  };
+  const read = await c.readPage(
+    "trades",
+    "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
+    null,
+    0,
+    reg,
+  );
+  assert.deepEqual(read.items, []);
+  assert.deepEqual(
+    batches.map((b) => b.length),
+    [5, 2],
+  );
+  assert.equal(c.budget.snapshot().spent, 30 + 2 * 20);
+
+  // Two batches are in flight at most, and once one fails the page has
+  // failed, so the batches still queued are never paid for.
+  const wide = {
+    items: Array.from({ length: 15 }, (_, i) => ({
+      ...relayed,
+      transaction_hash: "0x" + String(i + 1).padStart(64, "0"),
+      block_number: 2000 + i,
+    })),
+    next_page_params: null,
+  };
+  const refused = await relayedUpstream(
+    t,
+    logs,
+    () => wide,
+    () => ({ status: 503, body: "{}" }),
+  );
+  const d = client(refused.baseUrl);
+  await assert.rejects(
+    d.readPage(
+      "trades",
+      "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
+      null,
+      0,
+      reg,
+    ),
+    (error: unknown) =>
+      error instanceof BlockscoutError && error.kind === "upstream_unavailable",
+  );
+  // Every call is counted before it is made: the third batch never started.
+  assert.equal(d.budget.snapshot().spent, 30 + 2 * 20);
+});
+
+test("a gateway that cannot answer fails the page instead of dropping its relayed trades", async (t) => {
+  const stderr = captureStderr(t);
+  const { logs, pages, registry } = await relayedFixtures();
+  let mode = "413";
+  const { baseUrl } = await relayedUpstream(
+    t,
+    logs,
+    () => pages.launchpad,
+    (batch) => {
+      if (mode === "413")
+        return {
+          status: 413,
+          body: '{"message":"Payload Too Large. Max batch size is 5","result":null,"status":"0"}',
+        };
+      if (mode === "error")
+        return {
+          body: JSON.stringify(
+            batch.map(({ id }) => ({
+              jsonrpc: "2.0",
+              id,
+              error: { code: -32000, message: "timeout" },
+            })),
+          ),
+        };
+      if (mode === "short") return { body: "[]" };
+      if (mode === "foreign")
+        return {
+          body: JSON.stringify(
+            batch.map(({ id }) => ({
+              jsonrpc: "2.0",
+              id,
+              result: [
+                {
+                  address: poolManager,
+                  topics: [swapTopic, "0x" + "cd".repeat(32)],
+                  blockNumber: "0x1",
+                  transactionHash: "0x" + "ef".repeat(32),
+                },
+              ],
+            })),
+          ),
+        };
+      return undefined;
+    },
+  );
+  const reg = {
+    tokens: await registry.current(),
+    poolsOf: (x: string) => registry.poolsOf(x),
+  };
+  for (mode of ["413", "error", "short", "foreign"])
+    await assert.rejects(
+      client(baseUrl).readPage(
+        "trades",
+        "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
+        null,
+        0,
+        reg,
+      ),
+      (error: unknown) =>
+        error instanceof BlockscoutError &&
+        error.kind === "upstream_unavailable",
+      mode,
+    );
+  assert(stderr.some((line) => line.includes('"kind":"swap-logs"')));
+  assert(!stderr.join("").includes(key));
+});
+
+test("duplicate gateway reply ids fail the page without caching absent swaps", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  let duplicate = true;
+  const { baseUrl, batches } = await relayedUpstream(
+    t,
+    logs,
+    () => pages.launchpad,
+    (batch) =>
+      duplicate
+        ? {
+            body: JSON.stringify(
+              batch.map(() => ({ jsonrpc: "2.0", id: 0, result: [] })),
+            ),
+          }
+        : undefined,
+  );
+  const c = client(baseUrl);
+  const reg = {
+    tokens: await registry.current(),
+    poolsOf: (token: string) => registry.poolsOf(token),
+  };
+  const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  await assert.rejects(
+    c.readPage("trades", wallet, null, 0, reg),
+    (error: unknown) =>
+      error instanceof BlockscoutError && error.kind === "upstream_unavailable",
+  );
+  duplicate = false;
+  const recovered = await c.readPage("trades", wallet, null, 0, reg);
+  assert.deepEqual(
+    recovered.items.map((item) => item.logIndex),
+    [52, 2, 47],
+  );
+  assert.equal(batches.length, 2);
+  assert.equal(c.budget.snapshot().spent, 2 * (30 + 20));
+});
+
+test("recent swap verdicts are rechecked after explorer indexing or a reorg", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const page = structuredClone(pages.launchpad);
+  page.items = page.items.filter((row: { log_index: number }) =>
+    [52, 2].includes(row.log_index),
+  );
+  for (const row of page.items)
+    row.timestamp = new Date(nowMs - 60_000).toISOString();
+  let visible = false;
+  const { baseUrl, batches } = await relayedUpstream(
+    t,
+    logs,
+    () => page,
+    (batch) =>
+      visible
+        ? undefined
+        : {
+            body: JSON.stringify(
+              batch.map(({ id }) => ({ jsonrpc: "2.0", id, result: [] })),
+            ),
+          },
+  );
+  const c = client(baseUrl, { now: () => nowMs });
+  const reg = {
+    tokens: await registry.current(),
+    poolsOf: (token: string) => registry.poolsOf(token),
+  };
+  const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    [],
+  );
+  visible = true;
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items.map(
+      (item) => item.logIndex,
+    ),
+    [52, 2],
+  );
+  visible = false;
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    [],
+  );
+  assert.equal(batches.length, 3);
+});
+
+test("Following bounds gateway work without caching a partial Trades page", async (t) => {
+  const { pages, registry, poolOfToken } = await relayedFixtures();
+  const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  const base = pages.launchpad.items.find(
+    (row: { log_index: number }) => row.log_index === 52,
+  );
+  const pool = poolOfToken[String(base.token.address_hash).toLowerCase()];
+  const rows = Array.from({ length: 11 }, (_, i) => ({
+    ...base,
+    block_number: 1000 + i,
+    transaction_hash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+    log_index: i,
+  }));
+  const byBlock = new Map(
+    rows.map((row) => [row.block_number, row.transaction_hash]),
+  );
+  const { baseUrl, batches } = await relayedUpstream(
+    t,
+    {},
+    () => ({ items: rows, next_page_params: null }),
+    (batch) => ({
+      body: JSON.stringify(
+        batch.map(({ id, params: [filter] }) => {
+          const blockNumber = String(filter.fromBlock);
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: [
+              {
+                address: poolManager,
+                topics: [swapTopic, pool],
+                blockNumber,
+                transactionHash: byBlock.get(parseInt(blockNumber, 16)),
+              },
+            ],
+          };
+        }),
+      ),
+    }),
+  );
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const history = createWalletHistory({
+    client: client(baseUrl, { now: () => nowMs }),
+    registry,
+    now: () => nowMs,
+  });
+  const following = createFollowing({
+    history,
+    registry,
+    activity: async () => null,
+    now: () => nowMs,
+  });
+  const first = await following.read([wallet], 50);
+  assert.equal(first.items.length, 10);
+  assert.deepEqual(
+    batches.map((batch) => batch.length),
+    [5, 5],
+  );
+  assert.equal(history.peekTrades(wallet), null);
+  const tab = await history.read({
+    wallet,
+    kind: "trades",
+    page: null,
+    scope: "s",
+  });
+  assert.equal(tab.items.length, 11);
+  assert.deepEqual(
+    batches.map((batch) => batch.length),
+    [5, 5, 1],
+  );
+  assert.equal(history.peekTrades(wallet)?.items.length, 11);
+  assert.equal((await following.read([wallet], 50)).items.length, 11);
+});
+
+test("Following shares two gateway batches across eight wallet reads", async (t) => {
+  const { pages, registry, poolOfToken } = await relayedFixtures();
+  const base = pages.launchpad.items.find(
+    (row: { log_index: number }) => row.log_index === 52,
+  );
+  const pool = poolOfToken[String(base.token.address_hash).toLowerCase()];
+  const wallets = Array.from(
+    { length: 8 },
+    (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  );
+  const rows = new Map(
+    wallets.map((wallet, i) => [
+      wallet,
+      {
+        ...base,
+        from: { ...base.from, hash: wallet },
+        block_number: 1000 + i,
+        transaction_hash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+      },
+    ]),
+  );
+  const hashes = new Map(
+    [...rows.values()].map((row) => [row.block_number, row.transaction_hash]),
+  );
+  const { baseUrl, batches, seen } = await relayedUpstream(
+    t,
+    {},
+    (req) => {
+      const wallet = new URL(req.url!, "http://local").pathname.split("/")[2];
+      const row = rows.get(wallet);
+      assert(row);
+      return { items: [row], next_page_params: null };
+    },
+    (batch) => ({
+      body: JSON.stringify(
+        batch.map(({ id, params: [filter] }) => {
+          const blockNumber = String(filter.fromBlock);
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: [
+              {
+                address: poolManager,
+                topics: [swapTopic, pool],
+                blockNumber,
+                transactionHash: hashes.get(parseInt(blockNumber, 16)),
+              },
+            ],
+          };
+        }),
+      ),
+    }),
+  );
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const history = createWalletHistory({
+    client: client(baseUrl, {
+      now: () => nowMs,
+      limiter: { acquire: async () => {} },
+    }),
+    registry,
+    now: () => nowMs,
+  });
+  const following = createFollowing({
+    history,
+    registry,
+    activity: async () => null,
+    now: () => nowMs,
+  });
+  const first = await following.read(wallets, 50);
+  assert.equal(first.items.length, 2);
+  assert.equal(seen.length, 10);
+  assert.equal(batches.length, 2);
+  let last = first;
+  for (let i = 2; i <= 4; i++) {
+    last = await following.read(wallets, 50);
+    assert.equal(last.items.length, i * 2);
+  }
+  assert.equal(last.items.length, 8);
+  assert.equal(batches.length, 8);
+});
+
+test("the wallet's trade list serves router-relayed trades beside direct ones", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  const { baseUrl } = await relayedUpstream(t, logs, () => pages.launchpad);
+  const history = createWalletHistory({ client: client(baseUrl), registry });
+  const body = await history.read({
+    wallet: "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
+    kind: "trades",
+    page: null,
+    scope: "s",
+  });
+  assert.deepEqual(
+    body.items.map((i) => ("side" in i ? [i.logIndex, i.side] : null)),
+    [
+      [52, "sell"],
+      [2, "sell"],
+      [47, "buy"],
+    ],
+  );
+  // The response shape is the one the website validates, unchanged.
+  assert.deepEqual(Object.keys(body.items[0]).sort(), [
+    "block",
+    "logIndex",
+    "method",
+    "side",
+    "timestamp",
+    "token",
+    "tokenRaw",
+    "transactionHash",
+  ]);
 });
 
 test("the trades kind needs the registry, and reads it before spending a credit", async () => {

@@ -13,9 +13,8 @@ failure behaviour are in `apps/api/README.md`, "Explorer wallet history".
 `&cursor=<nextCursor>` for each older page. `kind` defaults to `transactions`,
 so a trade list must always name it. The only other parameter is `cursor`: a
 cursor is bound to the wallet and the kind, and any other parameter or a cursor
-from another wallet or kind is a 400. The website's proxy does not forward
-`/history` today, since the old wallet tabs were cut. Serving this route means
-adding a proxy path for it, with its own trailing slash.
+from another wallet or kind is a 400. The website forwards the Trades tab's
+history requests through `/api/product/wallets/:address/history/` on demand.
 
 ## Response
 
@@ -40,7 +39,7 @@ interface WalletHistoryTrade {
   logIndex: number; // unique with transactionHash; one transaction can hold two legs
   block: number;
   timestamp: number | null; // Unix seconds
-  side: "buy" | "sell"; // buy: the token left the PoolManager for the wallet; sell: the wallet paid it in
+  side: "buy" | "sell"; // buy: the wallet received the token; sell: the wallet sent it
   token: {
     address: string; // lowercase
     symbol: string | null; // explorer display string, at most 256 characters
@@ -112,16 +111,44 @@ database warms), and spends no explorer credit.
 
 ## What a trade is here
 
-An ERC-20 transfer between the wallet and the Uniswap v4 PoolManager
-(`0x8366a39cc670b4001a1121b8f6a443a643e40951`), the settlement leg of every
-swap in a catalog pool, of a token in the verified registry (`indexed_pools`,
-whose pools are admitted only after their id is recomputed from the pool key).
-The API reads the wallet's explorer transfer pages and keeps only those legs,
-deriving `side` from their direction. The first page of the 7d board's top
-wallet on 25 Sep 2026 was 10 spoofed-token address-poisoning logs (a token
-named with invisible characters to pass for "ETH"), 8 NFT mints and 32
-PoolManager legs, so the raw `kind=token-transfers` list is not a trade list,
-and telling its rows apart needs this chain's contract addresses.
+A leg of the wallet's own ERC-20 transfers, in a token of the verified registry
+(`indexed_pools`, whose pools are admitted only after their id is recomputed
+from the pool key), in a transaction that carries a swap of that token's pool
+through the Uniswap v4 PoolManager
+(`0x8366a39cc670b4001a1121b8f6a443a643e40951`). `side` is the leg's
+direction: `buy` when the token came to the wallet, `sell` when the wallet
+paid it out. The API reads the wallet's explorer transfer pages and sorts
+their legs two ways:
+
+- **Direct.** The counterparty is the PoolManager, the settlement leg of the
+  swap itself. It is listed as read.
+- **Relayed.** The counterparty is any other address: a router or aggregator
+  that takes the swap's tokens from the PoolManager and passes them on, but
+  equally a plain send to another wallet or an airdrop. The transfer page
+  carries only the wallet's own legs, so the API asks the chain whether the
+  transaction holds the swap: one `eth_getLogs` per block for the
+  PoolManager's `Swap` logs of the legs' pools, sent through the explorer's
+  JSON-RPC gateway five blocks to a batch, and keeps a relayed leg only when
+  its own transaction is among them. Verdicts for legs at least five minutes
+  old are cached per transaction and pool for the life of the process; newer
+  legs are checked again so indexing lag or a recent reorg cannot freeze a
+  wrong answer. A plain send or an airdrop carries no swap and stays out.
+
+Relaying is common. On the 7d board of 25 Sep 2026, wallet `0xb96de56c` sold
+20 of its 22 trades through the launchpad's own router
+(`0x8876789976decbfcbbbe364623c63652db8c0904`), the heavy trader `0xb5ba7f32`
+settled 239 of its 680 legs through routers, and all 280 legs of `0x6e7d7a4e`
+went through aggregators (`0xf5576dee…`, `0xe7bf8da1…`, `0xcc4c6fa2…`
+and others). Before relayed legs were confirmed the list showed 2 of 22 and
+441 of 680 for the first two and none of the third's. Paged to the end through
+the route on 27 Sep 2026, the three list 22 of 22, 680 of 680 and 280 of 280,
+with no duplicate, no wrong side and no leg the chain does not show.
+
+The first page of the 7d board's top wallet on 25 Sep 2026 was 10 spoofed-token
+address-poisoning logs (a token named with invisible characters to pass for
+"ETH"), 8 NFT mints and 32 PoolManager legs, so the raw
+`kind=token-transfers` list is not a trade list, and telling its rows apart
+needs this chain's contract addresses.
 
 - **No ETH amount.** For many trades the ETH is paid or received by a router
   or bot contract, not the wallet, so no wallet-level explorer feed carries
@@ -148,11 +175,22 @@ and telling its rows apart needs this chain's contract addresses.
   in full hourly, so a token launched in the last half minute can be missing
   from a first read. Trades in pools outside the verified registry are not
   listed, the same scope as every other page on the site.
-- **Direct settlement only.** A trade where a contract other than the
-  PoolManager hands the wallet its tokens is not listed. None of the sampled
-  board wallets traded that way. A liquidity add or remove against the
-  PoolManager would show as a sell or buy. The launchpad's pools take no
-  outside liquidity, so this is rare.
+- **Legs in a swap's transaction, not decoded swaps.** A relayed leg is
+  listed because its transaction swapped the token's pool, not because the
+  leg was proven to be that swap's output. So a router's refund of unspent
+  tokens shows as a buy, and a send to another wallet inside a transaction
+  that also swaps the same pool shows as a sell. A liquidity add or remove
+  against the PoolManager would show as a sell or buy too; the launchpad's
+  pools take no outside liquidity, so this is rare. A swap whose tokens never
+  pass through the wallet (a router paying them straight to another
+  recipient) is not the wallet's leg and is not listed.
+- **The swap must be in the token's registered pool.** A leg whose
+  transaction swapped the token only in a pool outside the registry is not
+  listed, the same scope as the direct legs.
+- **Unconfirmed is never shown as confirmed or dropped silently.** When the
+  gateway cannot answer, or answers something malformed, the whole page fails
+  as `upstream_unavailable`: the cached page is served `stale`, otherwise the
+  route answers 503. A page never goes out with its relayed legs missing.
 
 ## Pagination
 
@@ -164,35 +202,69 @@ more whenever `nextCursor` is non-null, whatever the item count. Append by
 following `nextCursor` and never refetch a page already shown. Key rows on
 `transactionHash` and `logIndex`.
 
-One explorer page answers in about 2 s: measured on 25 Sep 2026, 1.5-2.1 s
-from a workstation (Blockscout itself took 1.8-2.0 s per page) and 2.0-4.6 s
-from Railway. The website's proxy aborts every upstream read at 8 s
+One explorer page answers in about 2 s: measured on 25 Sep 2026, 1.5-2.1 s from
+a workstation (Blockscout itself took 1.8-2.0 s per page) and 2.0-4.6 s from
+Railway. Confirming a page's relayed legs adds one gateway batch per five
+blocks, two batches in flight, each answering in 0.1-0.7 s. On 27 Sep 2026 a
+local build paging the heavy trader `0xb5ba7f32` through the route from a
+workstation answered each of its 19 pages in at most 1.8 s (median 1.4 s),
+confirmations included. The website's proxy aborts every upstream read at 8 s
 (`AbortSignal.timeout(8000)` in `apps/web/src/lib/product-server.ts`), which is
 why a response never reads more than the one page.
+
+Following caps confirmation at two gateway batches across all eight wallets
+refreshed in one answer. That makes at most ten billed calls in the answer:
+eight explorer pages and two gateway batches, with up to five block queries
+per batch. At the shared five-calls-per-second limit and with no other key
+traffic, the tenth call starts at most about one second after the first if
+calls are ready together. Using the observed slow end of 4.6 s per page and
+0.7 s per gateway batch gives an approximately 6.3 s envelope for this work,
+below the proxy's 8 s deadline. A slower upstream can still hit that deadline;
+the browser-visible worst case is then an unavailable response at 8 s. A
+relayed leg that did not fit the budget is left out of that Following answer
+and can be confirmed on a later poll. Such a partial page never enters the
+Trades tab's shared page cache, and the Trades tab keeps its full confirmation
+path.
 
 ## Credit budget
 
 The free Blockscout PRO key allows 100,000 credits per UTC day and 5 requests
-per second. An explorer page of transfers costs 30 credits.
+per second. An explorer page of transfers costs 30 credits. Confirming relayed
+legs costs 20 credits per gateway batch of up to five blocks (a batch is billed
+and rate-limited as one request; the gateway refuses more than five and bills
+the refusal), only for blocks holding relayed legs of registry tokens whose
+transaction and pool the process has not confirmed before, so a page of
+direct trades costs nothing extra and a page read again costs only the page.
 
-| event                                 | explorer pages | credits |
-| ------------------------------------- | -------------- | ------- |
-| wallet page load, first trades page   | 1              | 30      |
-| same wallet again within 30 s         | 0 (cached)     | 0       |
-| each Show more                        | 1              | 30      |
-| a page already read within 10 minutes | 0 (cached)     | 0       |
+| event                                     | explorer pages | gateway batches | credits  |
+| ----------------------------------------- | -------------- | --------------- | -------- |
+| wallet page load, first trades page       | 1              | 0 to 10         | 30 - 230 |
+| same wallet again within 30 s             | 0 (cached)     | 0               | 0        |
+| each Show more                            | 1              | 0 to 10         | 30 - 230 |
+| a page already read within 10 minutes     | 0 (cached)     | 0               | 0        |
+| that page again later, legs already known | 1              | 0               | 30       |
+
+Measured on 27 Sep 2026: `0x78cc2ff0`'s whole history (4 pages, all direct)
+cost 120 credits; `0xb96de56c`'s one page with 20 router-relayed sells cost 110
+(30 plus 4 batches); the heavy trader `0xb5ba7f32`'s whole history, 19 pages
+with 239 relayed legs, cost 1,750 (570 plus 59 batches), about 92 a page; and
+`0x6e7d7a4e`'s 30 pages, all 280 legs relayed by aggregators, cost 2,220.
 
 Each process may spend `BLOCKSCOUT_DAILY_CREDIT_CAP` (default 30,000) per day,
-which is 1,000 uncached wallet page loads or Show mores. Past that the route
-serves cached pages marked `stale` and otherwise answers 503 `budget_exhausted`
-until UTC midnight. The cap keeps three process lifetimes a day inside the
-key's allowance. At 16:27 UTC on 25 Sep 2026 the key had 99,900 credits left,
-so the route was barely being called.
+which is 1,000 uncached pages of direct trades, about 325 at the heavy trader's
+mix, and 130 at the worst case of 50 relayed legs in 50 blocks. Past that the
+route serves cached pages marked `stale` and otherwise answers 503
+`budget_exhausted` until UTC midnight. The cap keeps three process lifetimes a
+day inside the key's allowance. At 16:27 UTC on 25 Sep 2026 the key had 99,900
+credits left, so the route was barely being called.
 
 `GET /v1/following` spends from the same cap and cache (see
-`docs/FOLLOWING-AND-WATCHLISTS.md` for its refresh policy): at most 8 reads
-(240 credits) per answer. It reserves the cap's last fifth for wallet-page
-reads.
+`docs/FOLLOWING-AND-WATCHLISTS.md` for its refresh policy): at most 8 page
+reads (240 credits) and two gateway batches (40 credits) per answer. It
+reserves the cap's last fifth for wallet-page reads. The figures
+below count page reads at 30 credits; a followed wallet that trades through a
+router adds 20 per five blocks of new relayed trades when budget permits, since
+older legs a refresh has already confirmed are not asked again.
 
 | Following event                                          | explorer pages          | credits           |
 | -------------------------------------------------------- | ----------------------- | ----------------- |

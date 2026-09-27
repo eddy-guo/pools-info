@@ -49,7 +49,16 @@ export function TradeAmount({
 }) {
   const amount = formatTokenRaw(raw, decimals);
   if (amount === null) return <Unavailable />;
-  return symbol === undefined ? amount : `${amount} ${symbol ?? ""}`;
+  return symbol === undefined ? (
+    amount
+  ) : (
+    <span className="trade-amount-pair">
+      <span className="trade-amount-quantity">{amount}</span>{" "}
+      <span className="trade-amount-symbol" title={symbol ?? undefined}>
+        {symbol ?? ""}
+      </span>
+    </span>
+  );
 }
 
 /** Buy/sell in neutral ink: it is not a PnL signal (`.wallet-trade-side`). */

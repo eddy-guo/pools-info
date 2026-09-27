@@ -94,6 +94,8 @@ function registryOf(tokens: number[]): TokenRegistry {
     current: async () => set,
     poolOf: (t) =>
       set.has(t) ? hash(0xb000 + parseInt(t.slice(-4), 16)) : null,
+    poolsOf: (t) =>
+      set.has(t) ? [hash(0xb000 + parseInt(t.slice(-4), 16))] : [],
   };
 }
 /** An explorer cache over scripted first pages, counting reads per wallet. */
@@ -147,6 +149,7 @@ test("empty following reads nothing and reports no invented coverage", async () 
         throw Error("Unexpected registry read");
       },
       poolOf: () => null,
+      poolsOf: () => [],
     },
     activity: async () => {
       throw Error("Unexpected ledger read");
@@ -439,8 +442,15 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
         _wallet: string,
         _page: unknown,
         reserveShare = 0,
+        registry?: {
+          tokens: ReadonlySet<string>;
+          poolsOf(token: string): readonly string[];
+        },
       ) {
         assert.equal(kind, "trades");
+        assert(registry);
+        assert(registry.tokens.has(token(1)));
+        assert.deepEqual(registry.poolsOf(token(1)), [hash(1)]);
         budget.spend(30, Math.ceil(budget.snapshot().dailyCap * reserveShare));
         calls++;
         await new Promise((resolve) => setImmediate(resolve));

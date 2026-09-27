@@ -5679,14 +5679,32 @@ button.icon-button:disabled {
   text-overflow: ellipsis;
 }
 .wallet-trades-table {
-  min-width: 780px;
+  min-width: 830px;
 }
 .wallet-trades-table th:nth-child(2),
 .wallet-trades-table td:nth-child(2) {
   text-align: right;
 }
 .wallet-trades-table td:nth-child(2) .number {
-  min-width: 100%;
+  display: block;
+  width: 100%;
+}
+.wallet-trades-table .trade-amount-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+.wallet-trades-table .trade-amount-quantity {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.wallet-trades-table .trade-amount-symbol {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @container wallet-activity (width < 780px) {
   .wallet-positions-table {
@@ -5696,6 +5714,8 @@ button.icon-button:disabled {
   .wallet-positions-table :is(th, td):nth-child(3) {
     display: none;
   }
+}
+@container wallet-activity (width < 830px) {
   .wallet-trades-table {
     min-width: 630px;
   }
@@ -5942,9 +5962,8 @@ a.wallet-top-pool:hover {
    (`listCount` is zero) and drops this reservation, so its compact
    UnavailableState sits right under the toolbar instead of a screen below
    a blank, still-reserved board. */
-.leaderboard-panel .desktop-traders:not(.following-traders):not(
-    [data-failed="true"]
-  ) {
+.leaderboard-panel
+  .desktop-traders:not(.following-traders):not([data-failed="true"]) {
   min-height: calc(22 * 60px + 44px);
 }
 /* The ranked board alone grows with its URL: `--ranked-rows` is the row count
@@ -5954,9 +5973,9 @@ a.wallet-top-pool:hover {
    since a `limit` left in the URL beside `?pool=` is not its own count. This
    rule is more specific than the one above, so it must repeat that one's
    failed-read exclusion or a failed board reserves rows again. */
-.ranked-traders .leaderboard-panel .desktop-traders:not(.following-traders):not(
-    [data-failed="true"]
-  ) {
+.ranked-traders
+  .leaderboard-panel
+  .desktop-traders:not(.following-traders):not([data-failed="true"]) {
   min-height: calc(var(--ranked-rows, 22) * 60px + 44px);
 }
 .leaderboard-panel .data-table tbody tr,

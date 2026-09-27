@@ -58,9 +58,11 @@ empty selection reads nothing.
 The feed is the explorer's per-swap trade list of each followed wallet, the
 same code path, cache and verified-registry token check as the wallet page's
 Trades tab (`kind=trades` on `/v1/wallets/:address/history`,
-`docs/WALLET-TRADE-HISTORY.md`): a row is a followed wallet's ERC-20 leg
-settled directly with the v4 PoolManager in a launch token of `indexed_pools`,
-so a spoofed token never appears. It is explorer data for display only, never
+`docs/WALLET-TRADE-HISTORY.md`): a row is a followed wallet's ERC-20 leg, in
+a launch token of `indexed_pools`, of a transaction that swaps that token's
+pool through the v4 PoolManager, whether the wallet settled with the
+PoolManager directly or through a router or aggregator, so a spoofed token or
+a plain send never appears. It is explorer data for display only, never
 joined to accounting or PnL, and the pre-ledger accounting tables are no longer
 read by it (they stay in place). `apps/api/src/following-read.ts` holds the
 response types and the policy below.
@@ -81,8 +83,17 @@ trades may be missing while other wallets' trades at those blocks are listed.
 When no requested wallet could be read the route answers 503
 `wallet_history_unavailable` with a reason and `Retry-After`.
 
-One answer reads at most 8 wallets from the explorer (240 credits), never-read
-wallets first, so a list of 200 fills in over about 25 polls. A cached page is
+One answer reads at most 8 wallets from the explorer (240 credits for the
+pages) and confirms at most two gateway batches across those wallets (40 more
+credits, up to ten blocks). Relayed legs beyond that budget are omitted from
+this answer and retried on later polls; a budget-cut page is never cached as
+the wallet Trades tab's page. A `read` coverage status means the explorer page
+was read, not that every relayed leg was confirmed in this answer. At the
+shared five-call-per-second rate, at most ten calls start within about two
+one-second admission windows when no other traffic uses the key. With the
+observed slow page and gateway times (4.6 s and 0.7 s), the bound is about
+6.3 s; the browser proxy still aborts a slower upstream at 8 s. Never-read
+wallets go first, so a list of 200 fills in over about 25 polls. A cached page is
 read again when the ledger's All-window `last_timestamp` for the wallet
 (`agg_wallet_windows`) is newer than its newest listed trade and than what the
 ledger showed when the page was read (once the page is 2 minutes old); when

@@ -9,6 +9,7 @@ import {
   createBlockscoutClient,
   type BlockscoutClient,
   type PageParams,
+  type SwapBatchBudget,
 } from "./blockscout-client";
 import { encodeHistoryCursor } from "./history-cursor";
 import { RequestError } from "./request";
@@ -44,7 +45,7 @@ export interface WalletHistory {
    * the read fails as `budget_exhausted` without an explorer call. */
   refreshTrades(
     wallet: string,
-    options?: { reserveShare?: number },
+    options?: { reserveShare?: number; swapBatchBudget?: SwapBatchBudget },
   ): Promise<TradesSnapshot>;
 }
 interface Entry {
@@ -72,7 +73,7 @@ function unavailable(error: BlockscoutError): RequestError {
  * stale, whenever the explorer or the credit budget cannot answer. Trades
  * keep only legs whose token is in the verified registry, read before any
  * credit is spent; without a registry the trades kind is not configured.
- * Concurrent reads of one page share one explorer call. */
+ * Concurrent full reads of one page share one explorer call. */
 export function createWalletHistory({
   client,
   registry = null,
@@ -117,13 +118,27 @@ export function createWalletHistory({
     kind: WalletHistoryKind,
     page: PageParams | null,
     reserveShare = 0,
+    swapBatchBudget?: SwapBatchBudget,
   ): Promise<Entry> {
     const key = JSON.stringify([wallet, kind, page]);
-    let result = pending.get(key);
+    let result = swapBatchBudget ? undefined : pending.get(key);
     if (!result) {
       result = (async () => {
         const registered = kind === "trades" ? await registry!.current() : null;
-        const read = await client!.readPage(kind, wallet, page, reserveShare);
+        const read =
+          kind === "trades"
+            ? await client!.readPage(
+                "trades",
+                wallet,
+                page,
+                reserveShare,
+                {
+                  tokens: registered!,
+                  poolsOf: (t) => registry!.poolsOf(t),
+                },
+                swapBatchBudget,
+              )
+            : await client!.readPage(kind, wallet, page, reserveShare);
         const items = registered
           ? (read.items as { token: { address: string } }[]).filter((i) =>
               registered.has(i.token.address),
@@ -137,18 +152,25 @@ export function createWalletHistory({
             JSON.stringify([items, read.nextPageParams]),
           ),
         };
-        evict(key);
-        while (cache.size >= maxEntries || cacheBytes + entry.bytes > maxBytes)
-          evict(cache.keys().next().value!);
-        cache.set(key, entry);
-        cacheBytes += entry.bytes;
+        if (!read.incomplete) {
+          evict(key);
+          while (
+            cache.size >= maxEntries ||
+            cacheBytes + entry.bytes > maxBytes
+          )
+            evict(cache.keys().next().value!);
+          cache.set(key, entry);
+          cacheBytes += entry.bytes;
+        }
         return entry;
       })();
-      pending.set(key, result);
-      void result.then(
-        () => pending.delete(key),
-        () => pending.delete(key),
-      );
+      if (!swapBatchBudget) {
+        pending.set(key, result);
+        void result.then(
+          () => pending.delete(key),
+          () => pending.delete(key),
+        );
+      }
     }
     return result;
   }
@@ -206,12 +228,18 @@ export function createWalletHistory({
       const hit = cached(JSON.stringify([wallet, "trades", null]));
       return hit ? trades(hit, false, null) : null;
     },
-    async refreshTrades(wallet, { reserveShare = 0 } = {}) {
+    async refreshTrades(wallet, { reserveShare = 0, swapBatchBudget } = {}) {
       assertConfigured("trades");
       const key = JSON.stringify([wallet, "trades", null]);
       try {
         return trades(
-          await fetchEntry(wallet, "trades", null, reserveShare),
+          await fetchEntry(
+            wallet,
+            "trades",
+            null,
+            reserveShare,
+            swapBatchBudget,
+          ),
           false,
           null,
         );

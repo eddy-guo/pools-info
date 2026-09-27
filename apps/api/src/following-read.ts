@@ -4,9 +4,10 @@ import { RequestError } from "./request";
 import type { TokenRegistry } from "./token-registry";
 import type { TradesSnapshot, WalletHistory } from "./wallet-history";
 
-/** One followed wallet's trade as the explorer lists it: the wallet's ERC-20
- * leg against the PoolManager in a token of the verified registry. It carries
- * no ETH amount and no price; those are not in the explorer's transfer. */
+/** One followed wallet's trade as the explorer lists it: a verified-registry
+ * token leg settled directly with the PoolManager or confirmed through its
+ * swap log after a router or aggregator relayed it. It carries no ETH amount
+ * or price; those are not in the explorer's transfer. */
 export interface FollowingTrade {
   /** `txHash:logIndex`, unique in a response. */
   id: string;
@@ -80,10 +81,8 @@ export interface Following {
 }
 
 export const followingPolicy = Object.freeze({
-  /** Explorer reads one answer may start. The limiter starts 5 a second, so
-   * the last starts after 1 s and, at 2.0-4.6 s a page from Railway, the
-   * answer lands inside the website proxy's 8 s abort. */
   maxReadsPerAnswer: 8,
+  maxSwapBatchesPerAnswer: 2,
   /** A wallet whose ledger activity is newer than its newest listed trade
    * and than the activity its page was read under is read again once its
    * page is this old. */
@@ -218,6 +217,7 @@ export function createFollowing({
             (a < b ? -1 : 1),
         )
         .slice(0, policy.maxReadsPerAnswer);
+      const swapBatchBudget = { remaining: policy.maxSwapBatchesPerAnswer };
       const failures = new Map<string, RequestError>();
       await Promise.all(
         refresh.map(async (wallet) => {
@@ -225,6 +225,7 @@ export function createFollowing({
           try {
             const snapshot = await history.refreshTrades(wallet, {
               reserveShare: policy.reserveShare,
+              swapBatchBudget,
             });
             cached.set(wallet, snapshot);
             if (!snapshot.stale) {
