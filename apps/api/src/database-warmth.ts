@@ -55,7 +55,6 @@ export class DatabaseWarmth {
       cadenceMs?: number;
       attempts?: number;
       retryMs?: number;
-      retryMaxMs?: number;
       now?: () => number;
       log?: (event: Record<string, unknown>) => void;
     } = {},
@@ -189,7 +188,7 @@ export class DatabaseWarmth {
         const retryMs = Math.min(
           (this.options.retryMs ?? warmPolicy.retryMs) *
             2 ** Math.min(this.failedSets, 16),
-          this.options.retryMaxMs ?? warmPolicy.retryMaxMs,
+          warmPolicy.retryMaxMs,
         );
         this.failedSets++;
         this.nextAt = this.now() + retryMs;
