@@ -31,8 +31,13 @@ invent an identity. All warm connections are read-only and use autocommit.
 Startup and new database identities trigger warming. The API reads
 `pg_postmaster_start_time()` once per new pooled connection, before using it.
 Idle connection failures, product statement cancellation (`57014`) and slow or
-failed warm reads drop readiness. Three bounded attempts run sequentially;
-failure leaves the gate closed until a later retry. Each warm purpose must
+failed warm reads drop readiness. A warm set is three bounded attempts one
+second apart; a set that fails leaves the gate closed and the API retries the
+whole set after a back-off of 1, 2 and 4 seconds, then every 5 seconds until
+one warms, never waiting for the next cadence. One set runs at a time and the
+next is armed only once it settles. A new database identity restarts the
+back-off at one second, so a restart is served about two seconds after the
+new postmaster accepts. Each warm purpose must
 finish within the 2.8-second serving budget. Warm statements may run up to ten
 seconds to populate pages; a whole attempt is limited to one minute.
 
@@ -44,7 +49,8 @@ not promise absolute absence of timeouts. Never substituting stale preloaded
 figures is absolute.
 
 The ledger tip service reuses these readers and credentials. It reads database
-identity once per cycle, starts due warming only in its idle polling window,
+identity once per cycle, starts due warming only in its idle polling window
+(a failed set is due again after the same back-off, not a cadence later),
 and cancels the warm backend before disconnecting its connection as soon as
 the next cycle wins. It never waits for the warm set to finish, writes through
 that connection, or holds a warm transaction across loop writes. An
@@ -57,3 +63,12 @@ Regression coverage: `database-warmth.test.ts`, `warming-http.test.ts`,
 `apps/indexer/src/ledger-tip.test.ts`. Integration checks require the dedicated
 `TEST_DATABASE_URL`; never restart a shared test server or production to test
 this feature. Local restart evidence belongs with the task's acceptance record.
+
+Restart recovery, 27 Sep 2026: the API (`MARKET_SOURCE=ledger`) against a
+private, migrated Postgres 18 cluster, polling `/v1/explore` every 200 ms while
+`pg_ctl stop -m fast` held the database down 8 seconds (about a Railway
+restart) before `pg_ctl start`. Three restarts each way, seconds from the new
+postmaster accepting to the first served read: before the back-off 289.8, 288.6
+and 288.8 (the set exhausted during the outage, then the five-minute tick);
+with it 2.1, 2.1 and 2.1. The memory-cap canary had measured 71, 9 and 257
+seconds on Railway for the same cause.

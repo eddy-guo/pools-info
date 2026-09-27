@@ -157,3 +157,97 @@ test("a physical reconnect to the same database retries exhausted startup warmin
   assert.equal(calls, 2);
   state.assertReady();
 });
+
+test("a restart that refuses connections reopens the gate within seconds of the database accepting, not at the next cadence", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const flush = () => new Promise<void>((done) => setImmediate(done));
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await flush();
+  };
+  let identity = "before-restart",
+    acceptsAt = 0,
+    calls = 0,
+    inFlight = 0,
+    overlapping = false;
+  const events: Record<string, unknown>[] = [];
+  const state = new DatabaseWarmth(
+    async (c) => {
+      calls++;
+      overlapping ||= ++inFlight > 1;
+      try {
+        await flush();
+        if (Date.now() < acceptsAt)
+          throw Object.assign(Error("connect ECONNREFUSED"), {
+            code: "ECONNREFUSED",
+          });
+        c.identity(identity);
+      } finally {
+        inFlight--;
+      }
+    },
+    { log: (event) => events.push({ at: Date.now(), ...event }) },
+  );
+  t.after(() => state.close());
+  state.start();
+  await settle();
+  state.assertReady();
+
+  // Postmaster stops at 60 s and accepts again 8 s later with a new identity.
+  t.mock.timers.tick(60_000);
+  acceptsAt = 68_000;
+  identity = "after-restart";
+  const before = calls;
+  state.invalidate("database_disconnected");
+  let reopenedAt: number | null = null;
+  for (let at = 60_000; at < 5 * 60_000 && reopenedAt === null; at += 100) {
+    await settle();
+    try {
+      state.assertReady();
+      reopenedAt = Date.now();
+    } catch {
+      warming(state);
+      t.mock.timers.tick(100);
+    }
+  }
+  assert.ok(reopenedAt !== null, "the gate reopened before the cadence");
+  assert.ok(
+    reopenedAt - acceptsAt <= 5_000,
+    `reopened ${reopenedAt - acceptsAt} ms after the database accepted`,
+  );
+  assert.equal(overlapping, false, "one warm attempt in flight at a time");
+  // Two refused sets of three attempts (1 s, 2 s back-off), then the next
+  // set warms: bounded, not a retry storm.
+  assert.ok(calls - before <= 10, `${calls - before} attempts`);
+  const retries = events
+    .filter((e) => e.event === "database_warm_attempts_exhausted")
+    .map((e) => e.retryMs);
+  assert.deepEqual(retries, [1000, 2000, 4000].slice(0, retries.length));
+  assert.ok(retries.length >= 2);
+
+  // Once warm, the back-off resets and the five-minute keep-warm cadence holds.
+  const warmCalls = calls;
+  t.mock.timers.tick(5 * 60_000 - 1);
+  await settle();
+  assert.equal(calls, warmCalls);
+  t.mock.timers.tick(1);
+  await settle();
+  assert.equal(calls, warmCalls + 1);
+  state.assertReady();
+});
+
+test("failed sets back off from one second to a five-second ceiling", async () => {
+  const state = new DatabaseWarmth(
+    async () => {
+      throw Error("connect ECONNREFUSED");
+    },
+    { now: () => 0, attempts: 1 },
+  );
+  const delays = [];
+  for (let i = 0; i < 6; i++) {
+    await state.refresh();
+    delays.push(state.delayMs);
+    warming(state);
+  }
+  assert.deepEqual(delays, [1000, 2000, 4000, 5000, 5000, 5000]);
+  await state.close();
+});
