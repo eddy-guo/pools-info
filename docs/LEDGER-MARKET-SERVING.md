@@ -105,6 +105,25 @@ basis is the ledger's cutoff (`source: "aggregate_ledger"`); a verified deep
 snapshot that declares other decimals is a units conflict and suppresses the
 price, change, candles and FDV.
 
+## Explore cold read after removing the frozen trade scan
+
+`rankedFlowCtes` now probes `analytics_accounting_trades` only for a launch
+whose deep publication supplies the served figure. The old catalog-wide
+aggregate scanned the frozen table even when every served launch used ledger
+figures. On a restored production copy with PostgreSQL 18, OS cache evicted
+before each round and system load 5-11, the unfiltered home screener measured:
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Home screener volume read | 316-360 ms | 224-234 ms |
+| Volume-rank statement | 227-247 ms | 123-126 ms |
+| Volume-rank blocks read | 15,749 | 2,045 |
+| Both screener statements, blocks read | 20,393 | 6,653 |
+| Frozen trade-table blocks read | 13,779 | 0 |
+
+All 525 compared responses were byte-identical. These are cold measurements
+on the restored copy, not a latency guarantee for the live service.
+
 ## Failure behaviour
 
 With `ledger`, a cursor that is not the newest batch's end, a batch timestamp
