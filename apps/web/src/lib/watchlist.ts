@@ -1,3 +1,5 @@
+import { countLabel } from "./plural";
+
 export const MAX_SHARED_POOLS = 50;
 export const MAX_WATCHLIST_QUERY_POOLS = 200;
 export const MAX_WATCHLIST_URL_LENGTH = 4096;
@@ -22,6 +24,11 @@ export function parseSavedWatchlist(value: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The watchlist panel's heading: "Shared watchlist · 1 pool". */
+export function watchlistHeading(shared: boolean, count: number) {
+  return `${shared ? "Shared watchlist" : "Your watchlist"} · ${countLabel(count, "pool")}`;
 }
 
 export type SharedWatchlist = { ids: string[]; error: string | null };

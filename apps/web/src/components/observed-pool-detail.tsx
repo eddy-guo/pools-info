@@ -23,6 +23,7 @@ import {
   useHydrated,
   type ChartRange,
 } from "./candles";
+import { countLabel } from "@/lib/plural";
 
 export interface ObservedPoolIdentity {
   poolId: string;
@@ -387,11 +388,7 @@ export function ObservedPoolDetail({
         <Stat
           label={`Volume ${market?.window ?? "24h"}`}
           pending={pending}
-          note={
-            trades == null
-              ? undefined
-              : `${trades.toLocaleString("en-US")} trades`
-          }
+          note={trades == null ? undefined : countLabel(trades, "trade")}
         >
           <Eth wei={volume} pending={pending} digits={5} />
         </Stat>

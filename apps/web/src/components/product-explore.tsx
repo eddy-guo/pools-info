@@ -45,6 +45,7 @@ import {
   SHOW_MORE_STEP,
   ShowMore,
 } from "./product-common";
+import { countLabel } from "@/lib/plural";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -77,8 +78,6 @@ function headIntoView(panel: HTMLElement | null, always = false) {
   if (always ? offset !== 0 : offset < -HEAD_GAP)
     window.scrollTo({ top: window.scrollY + offset });
 }
-/** Whole counts with the export's thousands separators: `1,284 trades`. */
-const integers = new Intl.NumberFormat("en-US");
 /**
  * The table row's subtitle, as the export sets it: the symbol in mono, the
  * pool's age and (on desktop) its trade count in the window, separated by
@@ -114,7 +113,7 @@ function RowSubtitle({
   const tradeCount =
     launchOnly(pool) || !trades || pool.stats.trades === null
       ? null
-      : `${integers.format(pool.stats.trades)} trades`;
+      : countLabel(pool.stats.trades, "trade");
   const symbol = tokenSubSymbol(pool);
   const full = [symbol, age, tradeCount].filter(Boolean).join(" · ");
   /* Each part after the first carries its own leading separator, so a token
@@ -932,7 +931,7 @@ export function ProductExplore() {
                                 {p.stats.trades !== null && (
                                   <>
                                     {" · "}
-                                    {integers.format(p.stats.trades)} trades
+                                    {countLabel(p.stats.trades, "trade")}
                                   </>
                                 )}
                               </span>
