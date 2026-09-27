@@ -94,8 +94,8 @@ export class DatabaseWarmth {
     }
     const previous = this.identity;
     this.identity = value;
-    // A new postmaster answering is the end of an outage: restart the
-    // back-off so a set it failed is retried after a second, not five.
+    // A new postmaster answering ends the outage: reset the back-off so
+    // invalidation can make the next warm set due immediately.
     this.failedSets = 0;
     if (previous !== null) this.invalidate("database_restarted");
     else if (reconnected && !this.active) this.invalidate("database_connected");
