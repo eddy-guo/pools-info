@@ -87,7 +87,12 @@ test(
         `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES(4663,$1,23467030,'tip')`,
         [key],
       );
-    const batch = async (key: string, to: number, hash = to) => {
+    const batch = async (
+      key: string,
+      to: number,
+      hash = to,
+      time = cursorTime,
+    ) => {
       await db.query(
         `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
         VALUES(4663,$1,$2,23467030,decode($3,'hex'),decode($4,'hex'),$5,$6,1,decode($7,'hex'),'{}','{}',0,0,1,0,0,0,1,1)`,
@@ -96,14 +101,14 @@ test(
           to,
           hex(23467029),
           hex(hash),
-          cursorTime,
+          time,
           to + 128,
           "e".repeat(64),
         ],
       );
       await db.query(
         `UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4 WHERE stream_key=$1`,
-        [key, to, hex(hash), cursorTime],
+        [key, to, hex(hash), time],
       );
     };
     await batch("ledger:agg:v1", cursor);
@@ -201,5 +206,85 @@ test(
     const crowd = await get("/v1/explore?window=24h&view=crowd&limit=100");
     assert.equal(crowd.message, undefined);
     assert.equal(crowd.total, 1);
+
+    // The rolling hour starts halfway through H-1. Its bounds come from
+    // main-stream batches; X's two earlier trades establish its opening
+    // price, and its one current trade is the only one counted in 1h.
+    const start = cursorTime - 3600;
+    await batch("ledger:agg:v1", cursor - 30, cursor - 30, (H - 1) * 3600 - 10);
+    await batch("ledger:agg:v1", cursor - 20, cursor - 20, start - 10);
+    await batch("ledger:agg:v1", cursor - 10, cursor - 10, start + 10);
+    await db.query(
+      "UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode($2,'hex'),cursor_timestamp=$3 WHERE stream_key='ledger:agg:v1'",
+      [cursor, hex(cursor), cursorTime],
+    );
+    await db.query(
+      `UPDATE agg_pool_hours SET trades=1,buys=1,volume_wei=$2
+       WHERE pool_ref=(SELECT pool_ref FROM indexed_pools WHERE pool_id=$1) AND hour=$3`,
+      [X, e18.toString(), H],
+    );
+    await db.query(
+      `INSERT INTO agg_pool_hours(chain_id,pool_ref,hour,trades,buys,sells,unattributed,volume_wei,buyers,sellers,open_sqrt_price_x96,close_sqrt_price_x96,high_sqrt_price_x96,low_sqrt_price_x96,close_block,close_log_index)
+       VALUES(4663,(SELECT pool_ref FROM indexed_pools WHERE pool_id=$1),$2,2,2,0,0,$3,1,0,$4,$4,$4,$4,$5,0)`,
+      [X, H - 1, (4n * e18).toString(), sqrt.toString(), cursor - 21],
+    );
+    for (const [block, time, eth] of [
+      [cursor - 22, start - 30, 2n * e18],
+      [cursor - 21, start - 20, 2n * e18],
+      [cursor - 5, cursorTime - 100, e18],
+    ] as const)
+      await db.query(
+        `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
+         VALUES(4663,'ledger:crowd:v1',(SELECT pool_ref FROM indexed_pools WHERE pool_id=$1),NULL,decode($2,'hex'),0,$3,decode($4,'hex'),$5,'buy',$6,1000,$7,'unattributed',$8)`,
+        [X, hex(block), block, hex(block), time, eth.toString(), sqrt.toString(), cursor],
+      );
+
+    const rollingRows = async (sort = "launch") =>
+      (await get(`/v1/explore?window=1h&sort=${sort}&view=all&limit=100`))
+        .items as { id: string; stats: { volumeWei: string | null; trades: number | null; completeWindow: boolean }; marketCoverage?: { source: string } }[];
+    const rollingPage = async () =>
+      (await get(`/v1/pools/${X}?window=1h`)) as {
+        market: { volumeWei: string | null; trades: number | null; coverage: { completeWindow: boolean; unitBasis: { source: string } | null } };
+      };
+    const unmeasured = async () => {
+      const row = (await rollingRows()).find((r) => r.id === X);
+      assert(row);
+      assert.equal(row.stats.volumeWei, null);
+      assert.equal(row.stats.trades, null);
+      assert.equal(row.stats.completeWindow, false);
+      assert.deepEqual((await rollingRows("volume")).map((r) => r.id), [I]);
+      const market = (await rollingPage()).market;
+      assert.equal(market.volumeWei, null);
+      assert.equal(market.trades, null);
+      assert.equal(market.coverage.completeWindow, false);
+      assert.notEqual(market.coverage.unitBasis?.source, "aggregate_ledger");
+    };
+
+    await db.query(
+      "UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode($2,'hex') WHERE stream_key='ledger:crowd:v1'",
+      [cursor - 1, hex(cursor - 1)],
+    );
+    await unmeasured();
+    await db.query(
+      "UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode($2,'hex') WHERE stream_key='ledger:crowd:v1'",
+      [cursor, hex(cursor + 1)],
+    );
+    await unmeasured();
+    await db.query(
+      "UPDATE agg_streams SET cursor_hash=decode($1,'hex') WHERE stream_key='ledger:crowd:v1'",
+      [hex(cursor)],
+    );
+    const row = (await rollingRows()).find((r) => r.id === X);
+    assert(row);
+    assert.equal(row.stats.volumeWei, e18.toString());
+    assert.equal(row.stats.trades, 1);
+    assert.equal(row.stats.completeWindow, true);
+    assert.equal(row.marketCoverage?.source, "aggregate_ledger");
+    assert.deepEqual((await rollingRows("volume")).map((r) => r.id), [X, I]);
+    const market = (await rollingPage()).market;
+    assert.equal(market.volumeWei, e18.toString());
+    assert.equal(market.trades, 1);
+    assert.equal(market.coverage.completeWindow, true);
+    assert.equal(market.coverage.unitBasis?.source, "aggregate_ledger");
   },
 );
