@@ -54,10 +54,15 @@ production load.
 Startup and new database identities trigger warming. The API reads
 `pg_postmaster_start_time()` once per new pooled connection, before using it.
 Idle connection failures, product statement cancellation (`57014`) and slow or
-failed warm reads drop readiness. Three bounded attempts run sequentially;
-failure leaves the gate closed until a later retry. Each warm purpose must
-finish within the 2.8-second serving budget. Warm statements may run up to ten
-seconds to populate pages; a whole attempt is limited to one minute.
+failed warm reads drop readiness. A warm set is three bounded attempts one
+second apart; a set that fails leaves the gate closed and the API retries the
+whole set after a back-off of 1, 2 and 4 seconds, then every 5 seconds until
+one warms, never waiting for the next cadence. One set runs at a time and the
+next is armed only once it settles. A new database identity resets the
+back-off and makes warming due immediately; the gate reopens only after a
+successful set. Each warm purpose must finish within the 2.8-second serving
+budget. Warm statements may run up to ten seconds to populate pages; a whole
+attempt is limited to one minute.
 
 The five-minute keep-warm cadence also detects ordinary cache eviction.
 Restart identity is a fast path, not a cache-residency probe. Eviction between
@@ -67,7 +72,8 @@ not promise absolute absence of timeouts. Never substituting stale preloaded
 figures is absolute.
 
 The ledger tip service reuses these readers and credentials. It reads database
-identity once per cycle, starts due warming only in its idle polling window,
+identity once per cycle, starts due warming only in its idle polling window
+(a failed set is due again after the same back-off, not a cadence later),
 and cancels the warm backend before disconnecting its connection as soon as
 the next cycle wins. It never waits for the warm set to finish, writes through
 that connection, or holds a warm transaction across loop writes. An
@@ -79,4 +85,12 @@ Regression coverage: `database-warmth.test.ts`, `warming-http.test.ts`,
 `warmup.integration.test.ts` and the idle-preemption case in
 `apps/indexer/src/ledger-tip.test.ts`. Integration checks require the dedicated
 `TEST_DATABASE_URL`; never restart a shared test server or production to test
-this feature. Local restart evidence belongs with the task's acceptance record.
+this feature.
+
+Local restart verification, 27 Sep 2026: the API (`MARKET_SOURCE=ledger`) ran
+against a private, migrated Postgres 18 cluster. `/v1/explore` was polled every
+200 ms while `pg_ctl stop -m fast` held the database down for 8 seconds before
+`pg_ctl start`. Three restarts each way, in seconds from the new postmaster
+accepting to the first served read: before the back-off, 289.8, 288.6 and
+288.8; with the back-off, 2.1, 2.1 and 2.1. The earlier Railway memory-cap
+canary measured 71, 9 and 257 seconds across three restarts.
