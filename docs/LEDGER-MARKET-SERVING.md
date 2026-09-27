@@ -404,8 +404,10 @@ streamed through the page cache before each read:
 | `All`, launches, 100 (own-buy statement) | 790 ms, 12,630 disk reads | 183 ms, 1,564 disk reads |       185 ms |       69 ms |
 | `All`, launches, 25 (whole read)         | 785 ms                    | 437 ms                   |              |             |
 | `All`, launches, 25 (own-buy statement)  | 488 ms, 7,250 disk reads  | 143 ms, 1,161 disk reads |              |             |
-| `1h`, launches, 25 (whole read)          | 599 ms                    | 222 ms                   |              |             |
-| `1h`, launches, 25 (own-buy statement)   | 409 ms, 7,250 disk reads  | 33 ms, 33 disk reads     |              |             |
+| `1h`, launches, 25 (whole read)          | 713 ms                    | 339 ms                   |              |             |
+| `1h`, launches, 25 (own-buy statement)   | 430 ms, 7,250 disk reads  | 113 ms, 1,161 disk reads |              |             |
+| `1h`, launches, 100 (whole read)         | 1,212 ms                  | 410 ms                   |              |             |
+| `1h`, launches, 100 (own-buy statement)  | 957 ms, 12,630 disk reads | 164 ms, 1,564 disk reads |              |             |
 
 With `shared_buffers` at 16 MB standing in for cache pressure, the `All`
 page of 100's own-buy statement fetches 11,663 blocks from outside the
