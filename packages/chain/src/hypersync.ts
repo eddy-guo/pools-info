@@ -26,6 +26,9 @@ export const hypersyncPolicy = Object.freeze({
   maxSelectionsPerQuery: 4,
   maxResponseBytes: 32 * 1024 * 1024,
   maxRowsPerTable: 20000,
+  /** An address probe's rows are about 70 bytes: the response cap binds
+   * first, near 480,000. */
+  maxAddressRowsPerPage: 500000,
   requestTimeoutMs: 30000,
   maxAttempts: 4,
   /** Lag behind the archive height, matching the collectors' head - 128. */
@@ -372,12 +375,7 @@ function checkedRollbackGuard(v: unknown): HyperSyncRollbackGuard | null {
 /** Validate one JSON response for the query that produced it. The wire shape
  * carries `data` as an array of chunks; the documented struct form is also
  * accepted. Row caps bound memory before any row is inspected. */
-export function checkedPage(
-  query: HyperSyncQuery,
-  raw: unknown,
-  bytes: number,
-  maxRowsPerTable: number = hypersyncPolicy.maxRowsPerTable,
-): HyperSyncPage {
+function checkedEnvelope(query: HyperSyncQuery, raw: unknown) {
   const r = rowObject(raw);
   if (
     !integer(r.next_block) ||
@@ -389,7 +387,26 @@ export function checkedPage(
     !integer(r.total_execution_time)
   )
     throw Error("HyperSync returned an invalid response envelope");
-  const chunks = Array.isArray(r.data) ? r.data : [r.data];
+  return {
+    r,
+    chunks: Array.isArray(r.data) ? r.data : [r.data],
+    next: r.next_block,
+    archiveHeight:
+      r.archive_height === undefined
+        ? null
+        : (r.archive_height as number | null),
+    totalExecutionTime: r.total_execution_time,
+    rollbackGuard: checkedRollbackGuard(r.rollback_guard),
+  };
+}
+export function checkedPage(
+  query: HyperSyncQuery,
+  raw: unknown,
+  bytes: number,
+  maxRowsPerTable: number = hypersyncPolicy.maxRowsPerTable,
+): HyperSyncPage {
+  const { chunks, next, archiveHeight, totalExecutionTime, rollbackGuard } =
+    checkedEnvelope(query, raw);
   const logs: HyperSyncLogRow[] = [],
     transactions: HyperSyncTransactionRow[] = [],
     blocks: HyperSyncBlockRow[] = [];
@@ -408,7 +425,6 @@ export function checkedPage(
       for (const row of value) (rows as unknown[]).push(check(row));
     }
   }
-  const next = r.next_block;
   for (const l of logs)
     if (l.block_number < query.from_block || l.block_number >= next)
       throw Error("HyperSync returned a log outside the page");
@@ -421,15 +437,66 @@ export function checkedPage(
   return {
     fromBlock: query.from_block,
     nextBlock: next,
-    archiveHeight:
-      r.archive_height === undefined
-        ? null
-        : (r.archive_height as number | null),
-    totalExecutionTime: r.total_execution_time,
-    rollbackGuard: checkedRollbackGuard(r.rollback_guard),
+    archiveHeight,
+    totalExecutionTime,
+    rollbackGuard,
     logs,
     transactions,
     blocks,
+    bytes,
+  };
+}
+/** One Transfer log of an address probe: where it is and who emitted it. */
+export interface HyperSyncAddressRow {
+  block_number: number;
+  address: string;
+}
+export interface HyperSyncAddressPage extends Omit<
+  HyperSyncPage,
+  "logs" | "transactions" | "blocks"
+> {
+  logs: HyperSyncAddressRow[];
+}
+/** An address probe's page: every log row a block number inside the page and
+ * an address, lowercased; any other table the server adds is ignored. */
+export function checkedAddressPage(
+  query: HyperSyncQuery,
+  raw: unknown,
+  bytes: number,
+  maxRows: number = hypersyncPolicy.maxAddressRowsPerPage,
+): HyperSyncAddressPage {
+  const { chunks, next, archiveHeight, totalExecutionTime, rollbackGuard } =
+    checkedEnvelope(query, raw);
+  const logs: HyperSyncAddressRow[] = [];
+  for (const chunk of chunks) {
+    const value = chunk === undefined ? undefined : rowObject(chunk).logs;
+    if (value === undefined || value === null) continue;
+    if (!Array.isArray(value)) throw Error("HyperSync returned invalid data");
+    if (logs.length + value.length > maxRows)
+      throw new HyperSyncResponseCapacity();
+    for (const row of value) {
+      const r = rowObject(row);
+      if (
+        !integer(r.block_number) ||
+        r.block_number < query.from_block ||
+        r.block_number >= next ||
+        typeof r.address !== "string" ||
+        !hex40.test(r.address)
+      )
+        throw Error("HyperSync returned an invalid address row");
+      logs.push({
+        block_number: r.block_number,
+        address: r.address.toLowerCase(),
+      });
+    }
+  }
+  return {
+    fromBlock: query.from_block,
+    nextBlock: next,
+    archiveHeight,
+    totalExecutionTime,
+    rollbackGuard,
+    logs,
     bytes,
   };
 }
@@ -547,6 +614,26 @@ export function transferLogQuery(
       transaction: [...hypersyncFields.transaction],
       log: [...hypersyncFields.log],
     },
+    max_num_logs: hypersyncPolicy.maxLogsPerPage,
+  });
+}
+/** Which contracts emitted a Transfer over a range: every Transfer log on the
+ * chain (the topic is the only narrowing; an ERC-721 Transfer shares it)
+ * with its block number and emitting address and nothing else, no
+ * transaction or block joined. A log with its transaction and block is about
+ * 700 bytes and a tip range holds 12,000 to 30,000 of them in one page, past
+ * the client's response and row caps; these two fields are about 70. */
+export const transferAddressFields = ["block_number", "address"] as const;
+export function transferAddressQuery(range: {
+  fromBlock: number;
+  toBlock: number;
+}): HyperSyncQuery {
+  checkedRange(range.fromBlock, range.toBlock);
+  return checkedQuery({
+    from_block: range.fromBlock,
+    to_block: range.toBlock + 1,
+    logs: [{ topics: [[toEventSelector(transferEvent)]] }],
+    field_selection: { log: [...transferAddressFields] },
     max_num_logs: hypersyncPolicy.maxLogsPerPage,
   });
 }
@@ -768,6 +855,16 @@ export class HyperSyncClient {
     const { json, bytes } = await this.send("/query", checkedQuery(query));
     return checkedPage(query, json, bytes, this.maxRowsPerTable);
   }
+  /** A `transferAddressQuery` page: block numbers and addresses only. */
+  async addressQuery(query: HyperSyncQuery): Promise<HyperSyncAddressPage> {
+    if (
+      JSON.stringify(query.field_selection) !==
+      JSON.stringify({ log: transferAddressFields })
+    )
+      throw Error("Invalid HyperSync address query");
+    const { json, bytes } = await this.send("/query", checkedQuery(query));
+    return checkedAddressPage(query, json, bytes);
+  }
   async header(block: number): Promise<HyperSyncBlockRow> {
     const page = await this.query(headerQuery(block));
     const row = page.blocks[0];
@@ -874,6 +971,81 @@ export async function collectLogPages(
     logs,
     transactions,
     blocks,
+    toBlock: Math.min(requestedTo, next - 1),
+    archiveHeight,
+  };
+}
+/** An address probe's whole pages up to the range end or a cap, the way
+ * `collectLogPages` consumes log pages: a page over a cap ends the
+ * collection before it, and a first page over one cannot be split. */
+export async function collectAddressPages(
+  client: HyperSyncClient,
+  query: HyperSyncQuery,
+  caps: { maxPages: number; maxLogs: number; maxBytes: number },
+): Promise<{
+  pages: HyperSyncPageRecord[];
+  logs: HyperSyncAddressRow[];
+  toBlock: number;
+  archiveHeight: number;
+}> {
+  if (
+    query.to_block === undefined ||
+    !Number.isSafeInteger(caps.maxPages) ||
+    caps.maxPages < 1 ||
+    caps.maxPages > 64 ||
+    !Number.isSafeInteger(caps.maxLogs) ||
+    caps.maxLogs < 1 ||
+    !Number.isSafeInteger(caps.maxBytes) ||
+    caps.maxBytes < 1
+  )
+    throw Error("Invalid HyperSync page collection");
+  const requestedTo = query.to_block - 1;
+  const pages: HyperSyncPageRecord[] = [];
+  const logs: HyperSyncAddressRow[] = [];
+  let next = query.from_block,
+    bytes = 0,
+    archiveHeight = 0;
+  while (next <= requestedTo && pages.length < caps.maxPages) {
+    const page = await client.addressQuery({ ...query, from_block: next });
+    if (page.nextBlock <= next) throw Error("HyperSync page did not advance");
+    if (
+      page.archiveHeight === null ||
+      page.archiveHeight - hypersyncPolicy.safeDistance < requestedTo
+    )
+      throw Error("HyperSync archive height below the confirmed cutoff");
+    if (
+      logs.length + page.logs.length > caps.maxLogs ||
+      bytes + page.bytes > caps.maxBytes
+    ) {
+      if (!pages.length)
+        throw new HyperSyncPageCapacity(
+          next,
+          page.nextBlock,
+          page.logs.length,
+          page.bytes,
+        );
+      break;
+    }
+    logs.push(...page.logs);
+    pages.push({
+      fromBlock: page.fromBlock,
+      nextBlock: page.nextBlock,
+      archiveHeight: page.archiveHeight,
+      totalExecutionTime: page.totalExecutionTime,
+      rollbackGuard: page.rollbackGuard,
+      logs: page.logs.length,
+      transactions: 0,
+      blocks: 0,
+      bytes: page.bytes,
+    });
+    bytes += page.bytes;
+    archiveHeight = page.archiveHeight;
+    next = page.nextBlock;
+  }
+  if (!pages.length) throw Error("HyperSync returned no pages");
+  return {
+    pages,
+    logs,
     toBlock: Math.min(requestedTo, next - 1),
     archiveHeight,
   };

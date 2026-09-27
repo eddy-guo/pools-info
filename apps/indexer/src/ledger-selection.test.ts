@@ -19,6 +19,7 @@ import {
   type HyperSyncQuery,
   type LedgerRangeCollection,
   type LedgerSwapSelection,
+  type LedgerTransferSelection,
 } from "@pools/chain";
 import { ledgerContentHash } from "@pools/db";
 import { ledgerBatchOf } from "./ledger-pass";
@@ -73,6 +74,62 @@ const fixture = (range: string): Fixture =>
     ).toString(),
   );
 
+/** Every Transfer log (ERC-20 and ERC-721 share the topic) of the 811-block
+ * tip range 65,402,717-65,403,527 as Blockscout's copy of the chain answered
+ * `getLogs` for the Transfer topic on 25 Sep 2026, each kept as the two
+ * fields the transfer probe selects, its block and emitting contract (see
+ * fixtures/hypersync/README.md): what HyperSync's probe answer holds, taken
+ * from another indexer of the same chain, not a HyperSync recording. */
+interface ProbeRows {
+  fromBlock: number;
+  toBlock: number;
+  transfers: number;
+  addresses: string[];
+  rows: [number, number][];
+}
+const probeRows = (range: string): ProbeRows =>
+  JSON.parse(
+    brotliDecompressSync(
+      readFileSync(
+        new URL(
+          `../../../packages/chain/src/fixtures/hypersync/ledger-transfer-probe-${range}.json.br`,
+          import.meta.url,
+        ),
+      ),
+    ).toString(),
+  );
+const probeAnswer = (f: Fixture, probe: ProbeRows): Page[] => {
+  const count = Math.ceil(probe.rows.length / 5000);
+  const pages: Page[] = [];
+  const archiveHeight = Math.min(
+    ...f.responses.transfers.flat().map((p) => p.archive_height),
+  );
+  let start = 0;
+  for (let i = 0; i < count; i++) {
+    let end = start + Math.ceil((probe.rows.length - start) / (count - i));
+    while (
+      end < probe.rows.length &&
+      probe.rows[end - 1][0] === probe.rows[end][0]
+    )
+      end++;
+    pages.push({
+      data: [
+        {
+          logs: probe.rows.slice(start, end).map(([block, address]) => ({
+            block_number: block,
+            address: probe.addresses[address],
+          })),
+        },
+      ],
+      archive_height: archiveHeight,
+      next_block: end < probe.rows.length ? probe.rows[end][0] : f.toBlock + 1,
+      total_execution_time: 1,
+      rollback_guard: null,
+    });
+    start = end;
+  }
+  return pages;
+};
 /** The pages of one recorded query keyed by the block each was asked from. */
 function byFrom(fromBlock: number, pages: Page[]) {
   const map = new Map<number, Page>();
@@ -89,7 +146,11 @@ function byFrom(fromBlock: number, pages: Page[]) {
  * recorded answers of all of its chunks at that block as one page, which is
  * how the server answers one query with several selections. Nothing is
  * filtered here; what a selection keeps is the collector's own work. */
-function replay(f: Fixture, sent: HyperSyncQuery[]): typeof globalThis.fetch {
+function replay(
+  f: Fixture,
+  sent: HyperSyncQuery[],
+  probePages: Page[] = [],
+): typeof globalThis.fetch {
   const union = (lists: Map<number, Page>[], from: number): Page => {
     const pages = lists.map((l) => l.get(from));
     if (pages.some((p) => !p || p.next_block !== pages[0]!.next_block))
@@ -106,6 +167,7 @@ function replay(f: Fixture, sent: HyperSyncQuery[]): typeof globalThis.fetch {
   const manager = byFrom(f.fromBlock, f.responses.manager);
   const poolIds = f.responses.poolIds.map((p) => byFrom(f.fromBlock, p));
   const transfers = f.responses.transfers.map((p) => byFrom(f.fromBlock, p));
+  const probe = byFrom(f.fromBlock, probePages);
   return async (input, init) => {
     if (new URL(String(input)).pathname === "/height")
       return Response.json({ height: f.height });
@@ -119,9 +181,11 @@ function replay(f: Fixture, sent: HyperSyncQuery[]): typeof globalThis.fetch {
         ? launch.get(q.from_block)
         : selection!.topics![1]
           ? union(poolIds, q.from_block)
-          : selection!.address![0] === contracts.manager
-            ? manager.get(q.from_block)
-            : union(transfers, q.from_block);
+          : !selection!.address
+            ? probe.get(q.from_block)
+            : selection!.address[0] === contracts.manager
+              ? manager.get(q.from_block)
+              : union(transfers, q.from_block);
     if (!page) throw Error(`no recorded answer from ${q.from_block}`);
     return Response.json(page);
   };
@@ -163,12 +227,17 @@ function metadataRpc() {
   };
   return rpc;
 }
-async function collect(f: Fixture, swapSelection: LedgerSwapSelection) {
+async function collect(
+  f: Fixture,
+  swapSelection: LedgerSwapSelection,
+  transferSelection: LedgerTransferSelection | undefined,
+  probePages: Page[] = [],
+) {
   const sent: HyperSyncQuery[] = [];
   const client = new HyperSyncClient({
     token: "x".repeat(16),
     minIntervalMs: 0,
-    fetch: replay(f, sent),
+    fetch: replay(f, sent, probePages),
   });
   const c = await collectLedgerRange(client, metadataRpc(), {
     fromBlock: f.fromBlock,
@@ -181,6 +250,7 @@ async function collect(f: Fixture, swapSelection: LedgerSwapSelection) {
       launchBlock,
     })),
     swapSelection,
+    transferSelection,
   });
   return { c, sent };
 }
@@ -206,8 +276,9 @@ for (const [range, shape] of [
 ] as const)
   test(`recorded answers to both swap selections over ${shape} give the fold the same rows`, async () => {
     const f = fixture(range);
-    const lists = await collect(f, "pool_ids");
-    const manager = await collect(f, "manager");
+    // The transfer lane sends its lists in both: this compares the swaps.
+    const lists = await collect(f, "pool_ids", "tokens");
+    const manager = await collect(f, "manager", "tokens");
     assert.deepEqual(consumed(manager.c), consumed(lists.c));
     // The recorded range's content hash, as the live comparison computed it.
     for (const { c } of [lists, manager])
@@ -285,3 +356,117 @@ for (const [range, shape] of [
       ),
     );
   });
+
+test("a chain-wide Transfer probe over the recorded tip range lists only the tokens that moved and gives the fold the rows the full lists gave", async () => {
+  const range = "65402717-65403527";
+  const f = fixture(range);
+  const probe = probeRows(range);
+  assert.deepEqual(
+    [probe.fromBlock, probe.toBlock, probe.rows.length],
+    [f.fromBlock, f.toBlock, probe.transfers],
+  );
+  // Blockscout's rows name the same registered Transfers the recorded token
+  // lists returned, block for block.
+  const recorded = f.responses.transfers
+    .flat()
+    .flatMap((p) => p.data.flatMap((c) => c.logs ?? [])) as {
+    block_number: number;
+    address: string;
+  }[];
+  const registered = new Set(recorded.map((l) => l.address));
+  const named = probe.rows.filter(([, a]) =>
+    registered.has(probe.addresses[a]),
+  );
+  assert.deepEqual(
+    named.map(([block]) => block),
+    recorded.map((l) => l.block_number).sort((a, b) => a - b),
+  );
+  const pages = probeAnswer(f, probe);
+  assert.equal(pages.length, 6);
+  assert.ok(pages.length <= ledgerPassPolicy.chainTransferPages);
+  assert.ok(
+    pages.every((p) => {
+      const logs = p.data.flatMap((chunk) => chunk.logs ?? []);
+      return logs.length >= 3530 && logs.length <= 5965;
+    }),
+  );
+  const lists = await collect(f, "pool_ids", "tokens");
+  const local = await collect(f, "manager", "chain", pages);
+  // The tip loop's own choice for the range, unset, is the probe.
+  const unset = await collect(f, "manager", undefined, pages);
+  for (const run of [local, unset]) {
+    assert.deepEqual(consumed(run.c), consumed(lists.c));
+    assert.equal(
+      ledgerContentHash(ledgerBatchOf(run.c)),
+      f.expected.contentHash,
+    );
+    assert.deepEqual(
+      [
+        run.c.transferSelection,
+        run.c.unregisteredTransfers,
+        run.c.transferFallbackRequests,
+        run.c.transfers.length,
+      ],
+      [
+        "chain",
+        probe.transfers - f.expected.transfers,
+        0,
+        f.expected.transfers,
+      ],
+    );
+  }
+  assert.equal(
+    ledgerContentHash(ledgerBatchOf(lists.c)),
+    f.expected.contentHash,
+  );
+  // The lists sent the whole registry in two queries; the probe sends no
+  // address and the list after it names only the tokens that moved.
+  const bytes = (q: HyperSyncQuery) => Buffer.byteLength(JSON.stringify(q));
+  const transferQueries = (sent: HyperSyncQuery[]) =>
+    sent.filter((q) =>
+      q.logs?.every(
+        (s) =>
+          s.topics?.[0]?.[0] ===
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+      ),
+    );
+  const localTransferQueries = transferQueries(local.sent);
+  const probes = localTransferQueries.slice(0, pages.length);
+  const listQuery = localTransferQueries[pages.length];
+  assert.equal(localTransferQueries.length, pages.length + 1);
+  assert.deepEqual(
+    probes.map((q) => q.from_block),
+    [f.fromBlock, ...pages.slice(0, -1).map((p) => p.next_block)],
+  );
+  for (const probeQuery of probes) {
+    assert.deepEqual(probeQuery.field_selection, {
+      log: ["block_number", "address"],
+    });
+    assert.ok(bytes(probeQuery) < 1024);
+  }
+  assert.deepEqual(listQuery.logs![0].address, [...registered].sort());
+  assert.ok(bytes(listQuery) < 2048);
+  assert.equal(transferQueries(lists.sent).length, 1);
+  assert.deepEqual(
+    local.c.pages.transfers.map((p) => p.length),
+    [pages.length, 1],
+  );
+  const [record, list] = local.c.query.transfers;
+  assert.deepEqual(
+    record.selection === "chain" && {
+      ...record,
+      registry: { ...record.registry, sha256: record.registry.sha256.length },
+    },
+    {
+      from_block: f.fromBlock,
+      to_block: f.toBlock + 1,
+      selection: "chain",
+      registry: { count: f.pools.length + f.expected.launches, sha256: 66 },
+      unregistered: probe.transfers - f.expected.transfers,
+    },
+  );
+  assert.deepEqual(
+    list.selection === "tokens" && [list.count, local.c.query.transfers.length],
+    [registered.size, 2],
+  );
+});

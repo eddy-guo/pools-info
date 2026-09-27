@@ -34,7 +34,10 @@ import {
 } from "./multicall";
 import type { Rpc } from "./rpc";
 import {
+  HyperSyncBudgetExceeded,
   HyperSyncClient,
+  HyperSyncRateLimitExhausted,
+  HyperSyncUnauthorized,
   blockTimestamp,
   checkedBlockRow,
   checkedLogRow,
@@ -42,6 +45,7 @@ import {
   checkedRetainedBlocks,
   checkedTransactionRow,
   chunkValues,
+  collectAddressPages,
   collectLogPages,
   headerQuery,
   hypersyncFields,
@@ -50,7 +54,9 @@ import {
   logTopics,
   rawLogOf,
   swapLogQuery,
+  transferAddressQuery,
   transferLogQuery,
+  type HyperSyncAddressRow,
   type HyperSyncBlockRow,
   type HyperSyncLogRow,
   type HyperSyncPageRecord,
@@ -62,13 +68,15 @@ import {
  * (docs/AGGREGATE-LEDGER.md phase 2, design report section 7.1). One range
  * is three lanes over the same blocks: the strategies' TokenLaunched logs
  * with the factory metadata and the launchers' logs, the PoolManager swaps of
- * every registered pool (the registry as of the range end selects them, sent
- * as pool-id lists over a long range and applied locally to every manager
- * swap over a short one), and the ERC-20 transfers of every registered token.
- * Every row is validated and joined to a successful transaction and its
- * block; the range ends on the last whole page every lane completed; the
- * launches keep their evidence in the launch stream, the swaps and transfers
- * keep only their content hash in the ledger batch. Name, symbol and
+ * every registered pool, and the ERC-20 transfers of every registered token.
+ * The registry as of the range end selects the swaps and transfers: sent as
+ * pool-id and token lists over a long range; over a short one applied
+ * locally to every manager swap, and to a probe of every Transfer on the
+ * chain before a list of only the tokens that moved. Every row is validated
+ * and joined to a successful transaction and its block; the range ends on
+ * the last whole page every lane completed; the launches keep their evidence
+ * in the launch stream, the swaps and transfers keep only their content hash
+ * in the ledger batch. Name, symbol and
  * decimals are the one JSON-RPC read, over the public RPC through Multicall3
  * at its head, because that RPC serves no historical state. */
 export const ledgerLaunchStream = "launches:agg:v1" as const;
@@ -99,6 +107,41 @@ export const ledgerPassPolicy = Object.freeze({
    * catching up, where the lists answer 64,000 blocks in one page each but a
    * manager-wide query would be cut near 3,300 blocks. */
   managerSwapBlocks: 2000,
+  /** A transfer lane of at most this many blocks first probes every Transfer
+   * log on the chain for its block and emitting contract (the Transfer topic
+   * alone, a 209-byte body) and then sends a token list of only the
+   * registry's tokens it named, usually a few dozen; a longer one sends the
+   * whole registry as token lists (two bodies of 1.45 MB at 64,500 tokens,
+   * 2,904,754 bytes a range, which the tip loop re-sent every cycle).
+   * Measured 25 Sep 2026 on Blockscout's copy of the chain
+   * (fixtures/hypersync/README.md): Transfers run 8 to 84 a block (median
+   * 16, 90th percentile 32) against 0.05 of the registry's, so a tip range
+   * of 708 to 837 blocks holds 11,909 of them on a quiet evening and 27,441
+   * on 17 Sep's busy one. With their transactions and blocks that is 8 to 19
+   * MB, and one chain-wide page over 780 blocks overflowed the client's
+   * 32 MB response (PR 91), which is why the probe selects two fields, 81
+   * bytes a row: 0.96 and 2.2 MB. A longer range only happens while catching
+   * up, where the lists answer in one page each. */
+  chainTransferBlocks: 1000,
+  /** Whole pages allowed for the chain-wide Transfer probe before falling
+   * back to the full token lists. The 25 Sep tip logs show 233 ranges of
+   * 708-837 blocks (p50 741, p90 764, p95 about 770), eight requests per
+   * cycle, at most nine, and a 74 s cycle, about 6.5 requests/minute.
+   * Blockscout counted 11,909 Transfers in 781 tip blocks and 27,441 in
+   * 811 older blocks; 42 samples had median 15.87 and p90 32.23 per block.
+   * At 32/block for 770 blocks, 24,640 / the smallest recorded tip page
+   * of 3,530 logs rounds up to seven pages; using the exact p90 needs eight.
+   * The 27,441-log range needs eight at that floor. Ten leaves two pages of
+   * margin. At 32/block August's 1,300-log floor would need 19 and fall back
+   * (20 at the exact p90 density).
+   * Page boundaries did not change across default, logs+blocks, logs-only
+   * or max_num_logs=20,000 selections; the probe's two fields reduce bytes,
+   * not the expected logs per page. At the cap, the observed nine-request
+   * cycle maximum leaves seven non-transfer requests; the pre-probe cutoff
+   * header adds one, so ten probe pages and two fallback list queries total
+   * at most 20: 38 s of 2 s pacing plus the 60 s tip poll, about
+   * 12 requests/minute against the shared free tier's roughly 30. */
+  chainTransferPages: 10,
   /** Whole pages consumed per lane query before the range is cut short. */
   maxPages: 16,
   maxLogs: 80000,
@@ -181,14 +224,19 @@ export function ledgerLaunchQuery(range: LedgerBlockRange): HyperSyncQuery {
 /** How the swap lane selects: every PoolManager swap, filtered locally, or
  * the registry's pool ids sent as value lists. */
 export type LedgerSwapSelection = "manager" | "pool_ids";
+/** How the transfer lane selects: a probe of every Transfer on the chain
+ * filtered locally to the registry's tokens that moved, which the lists then
+ * name, or the whole registry's tokens sent as value lists. */
+export type LedgerTransferSelection = "chain" | "tokens";
 const digest = (values: readonly string[]) =>
   "0x" + createHash("sha256").update(values.join("\n")).digest("hex");
 /** What the batch row keeps of a lane query. A value-list query keeps its
  * range, the number of values and a digest of the sorted list, never the list
- * itself; the list is the registry as of the range end, reconstructible from
- * the catalog. A manager-wide swap query sent no list: it keeps its range, the
- * same count and digest of the registry it filtered by locally, and the
- * number of the batch range's manager swaps that registry left out. */
+ * itself; the list is the registry as of the range end (or its tokens a probe
+ * named), reconstructible from the catalog. A manager-wide swap query or a
+ * chain-wide transfer probe sent no list: it keeps its range, the same count
+ * and digest of the registry it filtered by locally, and the number of the
+ * batch range's logs that registry left out. */
 export type LedgerQueryRecord =
   | {
       from_block: number;
@@ -200,7 +248,7 @@ export type LedgerQueryRecord =
   | {
       from_block: number;
       to_block: number;
-      selection: "manager";
+      selection: "manager" | "chain";
       registry: { count: number; sha256: string };
       unregistered: number;
     };
@@ -213,13 +261,23 @@ const isManagerSwapQuery = (query: HyperSyncQuery) => {
     isDeepStrictEqual(selection!.topics[0], [swapTopic])
   );
 };
+const isChainTransferQuery = (query: HyperSyncQuery) => {
+  const selection = query.logs?.[0];
+  return (
+    query.logs?.length === 1 &&
+    selection!.address === undefined &&
+    selection!.topics?.length === 1 &&
+    isDeepStrictEqual(selection!.topics[0], [transferTopic])
+  );
+};
 export function ledgerQueryRecord(query: HyperSyncQuery): LedgerQueryRecord {
   const selection = query.logs?.[0];
   if (
     !selection ||
     query.logs!.length !== 1 ||
     query.to_block === undefined ||
-    isManagerSwapQuery(query)
+    isManagerSwapQuery(query) ||
+    isChainTransferQuery(query)
   )
     throw Error("Invalid HyperSync ledger query");
   const values = selection.topics?.[1] ?? selection.address ?? [];
@@ -239,17 +297,34 @@ export function ledgerManagerQueryRecord(
   poolIds: readonly string[],
   unregistered: number,
 ): LedgerQueryRecord {
-  if (
-    !isManagerSwapQuery(query) ||
-    query.to_block === undefined ||
-    !integer(unregistered)
-  )
+  if (!isManagerSwapQuery(query)) throw Error("Invalid HyperSync ledger query");
+  return localQueryRecord(query, "manager", poolIds, unregistered);
+}
+/** The record of a chain-wide transfer probe: `tokens` is the sorted
+ * registry it was filtered by, `unregistered` the Transfer logs in the batch
+ * range it named outside it. */
+export function ledgerChainQueryRecord(
+  query: HyperSyncQuery,
+  tokens: readonly string[],
+  unregistered: number,
+): LedgerQueryRecord {
+  if (!isChainTransferQuery(query))
+    throw Error("Invalid HyperSync ledger query");
+  return localQueryRecord(query, "chain", tokens, unregistered);
+}
+function localQueryRecord(
+  query: HyperSyncQuery,
+  selection: "manager" | "chain",
+  registry: readonly string[],
+  unregistered: number,
+): LedgerQueryRecord {
+  if (query.to_block === undefined || !integer(unregistered))
     throw Error("Invalid HyperSync ledger query");
   return {
     from_block: query.from_block,
     to_block: query.to_block,
-    selection: "manager",
-    registry: { count: poolIds.length, sha256: digest(poolIds) },
+    selection,
+    registry: { count: registry.length, sha256: digest(registry) },
     unregistered,
   };
 }
@@ -718,6 +793,10 @@ export interface LedgerRangeInput {
   /** The swap lane's selection; unset picks by the range's length
    * (`ledgerPassPolicy.managerSwapBlocks`). Both select the same rows. */
   swapSelection?: LedgerSwapSelection;
+  /** The transfer lane's selection; unset picks by the range's length
+   * (`ledgerPassPolicy.chainTransferBlocks`). Both select the same rows, and
+   * a probe over its page cap, or doubtful, falls back to the lists. */
+  transferSelection?: LedgerTransferSelection;
   multicall?: MulticallConfig;
 }
 export interface LedgerRangeCollection {
@@ -737,6 +816,12 @@ export interface LedgerRangeCollection {
    * the registry that a manager-wide selection dropped (0 for pool ids). */
   swapSelection: LedgerSwapSelection;
   unregisteredSwaps: number;
+  /** How the transfer lane selected, the Transfer logs in the range outside
+   * the registry that the probe named (0 for the lists), and the requests of
+   * a probe given up for the full lists (0 when none was). */
+  transferSelection: LedgerTransferSelection;
+  unregisteredTransfers: number;
+  transferFallbackRequests: number;
   /** Pools in the swap filter as of toBlock. */
   registryPools: number;
   query: {
@@ -778,6 +863,34 @@ function checkedTransferLog(log: HyperSyncLogRow) {
     throw Error("Unexpected HyperSync ledger transfer");
   return topics;
 }
+/** A failure that ends the range whichever way the transfer lane selects; a
+ * probe failing any other way is dropped for the lists. */
+const stopsTheLane = (error: unknown) =>
+  error instanceof HyperSyncRateLimitExhausted ||
+  error instanceof HyperSyncUnauthorized ||
+  error instanceof HyperSyncBudgetExceeded ||
+  (error instanceof Error && error.name === "AbortError");
+/** The registered tokens a swap in the range moved: a trade settles its token
+ * with an ERC-20 Transfer in the same transaction, so a probe of the range
+ * must name each of them. */
+function tradedTokens(
+  swapLogs: readonly HyperSyncLogRow[],
+  byPool: ReadonlyMap<string, LedgerRegistryPool>,
+  toBlock: number,
+) {
+  const traded = new Set<string>();
+  for (const log of swapLogs) {
+    const pool = byPool.get(String(log.topic1).toLowerCase());
+    if (!pool || log.block_number > toBlock) continue;
+    try {
+      if (BigInt(decodeSwap(rawLogOf(log)).tokenRaw) > 0n)
+        traded.add(pool.token);
+    } catch {
+      // Not a trade (amounts of one sign); step 6 counts it.
+    }
+  }
+  return traded;
+}
 /** Collect one range in whole pages, lane by lane. The launch lane runs
  * first so the range's own launches lead the swap filter; each lane query
  * may end the range early, and every later query is asked only up to the
@@ -803,7 +916,10 @@ export async function collectLedgerRange(
     (input.parentHash !== null && !hash(input.parentHash)) ||
     (input.swapSelection !== undefined &&
       input.swapSelection !== "manager" &&
-      input.swapSelection !== "pool_ids")
+      input.swapSelection !== "pool_ids") ||
+    (input.transferSelection !== undefined &&
+      input.transferSelection !== "chain" &&
+      input.transferSelection !== "tokens")
   )
     throw Error("Invalid HyperSync ledger range");
   if (input.toBlock > input.height - hypersyncPolicy.safeDistance)
@@ -923,26 +1039,6 @@ export async function collectLedgerRange(
     else managerQuery = query;
     swapPages.push(collected.pages);
   }
-  // 3. Transfers of every registered token.
-  const transferLogs: HyperSyncLogRow[] = [];
-  const transferRecords: LedgerQueryRecord[] = [];
-  const transferPages: HyperSyncPageRecord[][] = [];
-  const tokens = [...byToken.keys()].sort();
-  for (const chunk of ledgerChunks(tokens, ledgerPassPolicy.tokensPerQuery)) {
-    const query = transferLogQuery(
-      { fromBlock, toBlock },
-      chunk,
-      ledgerPassPolicy.tokensPerQuery,
-    );
-    const collected = await collectLogPages(client, query, caps);
-    toBlock = Math.min(toBlock, collected.toBlock);
-    archiveHeight = Math.min(archiveHeight, collected.archiveHeight);
-    merge(collected);
-    transferLogs.push(...collected.logs);
-    transferRecords.push(ledgerQueryRecord(query));
-    transferPages.push(collected.pages);
-  }
-  // 4. The boundary headers: the cutoff always, the parent on the first range.
   const headerPages: HyperSyncPageRecord[] = [];
   const header = async (n: number) => {
     const page = await client.query(headerQuery(n));
@@ -950,7 +1046,7 @@ export async function collectLedgerRange(
       page.blocks.length !== 1 ||
       page.blocks[0].number !== n ||
       page.archiveHeight === null ||
-      page.archiveHeight - hypersyncPolicy.safeDistance < toBlock
+      page.archiveHeight - hypersyncPolicy.safeDistance < n
     )
       throw Error("HyperSync returned an unexpected header");
     headerPages.push({
@@ -967,7 +1063,86 @@ export async function collectLedgerRange(
     archiveHeight = Math.min(archiveHeight, page.archiveHeight);
     return page.blocks[0];
   };
-  const cutoff = await header(toBlock);
+  // 3. Transfers of every registered token, the registry as of the range end
+  // selecting them: sent as token lists over a long range. Over a short one a
+  // probe first asks which contracts emitted a Transfer anywhere on the chain
+  // (block numbers and addresses only: whole rows over a tip range overflow
+  // a response), and the lists then name only the registry's tokens among
+  // them, usually a few dozen, so the same query returns the same rows. A
+  // probe that does not finish the range within its page cap, has a
+  // recoverable failure, or misses a token the swap lane saw trade is dropped
+  // for the full lists. A throttle, rejected credential, exhausted request
+  // budget, or stop ends the range instead.
+  const transferLogs: HyperSyncLogRow[] = [];
+  const transferRecords: LedgerQueryRecord[] = [];
+  const transferPages: HyperSyncPageRecord[][] = [];
+  const tokens = [...byToken.keys()].sort();
+  let transferSelection: LedgerTransferSelection =
+    input.transferSelection ??
+    (toBlock - fromBlock < ledgerPassPolicy.chainTransferBlocks
+      ? "chain"
+      : "tokens");
+  let probe: {
+    query: HyperSyncQuery;
+    logs: HyperSyncAddressRow[];
+  } | null = null;
+  let listed = tokens;
+  let transferFallbackRequests = 0;
+  const probeBoundary =
+    transferSelection === "chain" && tokens.length
+      ? await header(toBlock)
+      : null;
+  if (transferSelection === "chain" && tokens.length) {
+    const query = transferAddressQuery({ fromBlock, toBlock });
+    const requestsBefore = client.requests;
+    const collected = await collectAddressPages(client, query, {
+      ...caps,
+      maxPages: Math.min(maxPages, ledgerPassPolicy.chainTransferPages),
+    }).catch((error) => {
+      if (stopsTheLane(error)) throw error;
+      return null;
+    });
+    const moved = new Set(collected?.logs.map((l) => l.address));
+    if (
+      collected?.toBlock === toBlock &&
+      [...tradedTokens(swapLogs, byPool, toBlock)].every((t) => moved.has(t))
+    ) {
+      archiveHeight = Math.min(archiveHeight, collected.archiveHeight);
+      transferPages.push(collected.pages);
+      probe = { query, logs: collected.logs };
+      listed = tokens.filter((t) => moved.has(t));
+    } else {
+      transferFallbackRequests = client.requests - requestsBefore;
+      transferSelection = "tokens";
+    }
+  }
+  for (const chunk of ledgerChunks(listed, ledgerPassPolicy.tokensPerQuery)) {
+    const query = transferLogQuery(
+      { fromBlock, toBlock },
+      chunk,
+      ledgerPassPolicy.tokensPerQuery,
+    );
+    const collected = await collectLogPages(client, query, caps);
+    toBlock = Math.min(toBlock, collected.toBlock);
+    archiveHeight = Math.min(archiveHeight, collected.archiveHeight);
+    merge(collected);
+    transferLogs.push(...collected.logs);
+    transferRecords.push(ledgerQueryRecord(query));
+    transferPages.push(collected.pages);
+  }
+  // 4. The boundary headers: the cutoff always, the parent on the first range.
+  const probeCutoff =
+    probe && probeBoundary ? await header(probeBoundary.number) : null;
+  if (
+    probeCutoff &&
+    probeBoundary &&
+    !same(probeCutoff.hash, probeBoundary.hash)
+  )
+    throw Error("HyperSync transfer probe crossed a canonical range change");
+  const cutoff =
+    probeCutoff && probeCutoff.number === toBlock
+      ? probeCutoff
+      : await header(toBlock);
   merge({ transactions: new Map(), blocks: new Map([[toBlock, cutoff]]) });
   const parentHash =
     input.parentHash === null
@@ -1067,6 +1242,16 @@ export async function collectLedgerRange(
       value: args.value.toString(),
     });
   }
+  // The probe's Transfers outside the registry, ERC-721 ones among them.
+  const unregisteredTransfers = probe
+    ? probe.logs.filter(
+        (l) => l.block_number <= toBlock && !byToken.has(l.address),
+      ).length
+    : 0;
+  if (probe)
+    transferRecords.unshift(
+      ledgerChainQueryRecord(probe.query, tokens, unregisteredTransfers),
+    );
   // 8. The launch batch with its evidence, name, symbol and decimals.
   const rangeLaunchLogs = launchLogs.filter(inRange);
   const launchTransactions = new Set(
@@ -1147,6 +1332,9 @@ export async function collectLedgerRange(
     unsupportedSwaps,
     swapSelection,
     unregisteredSwaps,
+    transferSelection,
+    unregisteredTransfers,
+    transferFallbackRequests,
     registryPools,
     query: {
       launch: launchQuery,

@@ -200,10 +200,17 @@ requested per page, 16 pages, 24 MiB per lane query):
    transaction (the initiator, `to` for the route label) and its block, and
    decoded; a swap whose amounts share a sign is not a trade and is counted
    as `unsupportedSwaps`.
-3. The transfer lane: every registered token's `Transfer` logs split the same
-   way over queries of at most 40,000 addresses (two of about 31,400, 1.41
-   MB, where fixed 31,000-address chunks took three), validated and joined
-   the same way.
+3. The transfer lane: every registered token's `Transfer` logs, validated
+   and joined the same way. A range longer than
+   `ledgerPassPolicy.chainTransferBlocks` (1,000 blocks) sends the registry
+   split the same way over queries of at most 40,000 addresses (two of about
+   31,400, 1.41 MB, where fixed 31,000-address chunks took three). A range of
+   at most 1,000 blocks first probes every `Transfer` on the chain for its
+   block and emitting contract only (`transferAddressQuery`), then sends the
+   same list query naming only the registry's tokens the probe found, so the
+   rows are the lists' own; the Transfers of other contracts it named are
+   counted as `unregisteredTransfers` (phase 3, "The transfer lane at the
+   tip").
 
 A lane query that hits a cap ends the range on its last whole page, every
 later query is asked only up to that block, rows beyond it are dropped, and
@@ -238,13 +245,16 @@ the counters report sections 3.6 and 5 are checked against.
 
 **What the batch rows keep.** `agg_batches.query` holds the launch query
 body verbatim and, for each swap and transfer query, its range, the number
-of values and a SHA-256 of the sorted value list (the list is the registry as
-of the range end, reconstructible from the catalog); a manager-wide swap
-query (`selection: "manager"`) sent no list and keeps its range, the same
-count and digest of the registry it was filtered by, and the number of the
-range's manager swaps outside it (`unregistered`). `pages` holds the page
-records per query and the header reads. The content hash covers the rows, not
-the query, so a range folds to the same batch whichever selection fetched it;
+of values and a SHA-256 of the sorted value list. A manager-wide swap query
+(`selection: "manager"`) sent no list and keeps its range, the count and
+digest of the registry it was filtered by, and the number of the range's
+manager swaps outside it (`unregistered`). A chain-wide transfer probe
+(`selection: "chain"`) likewise keeps the registry count and digest, its
+range, and the number of transfers outside the registry; a subsequent
+token-list record, when present, identifies the selected tokens. `pages`
+holds the page records per query and the header reads. The content hash
+covers the rows, not the query, so a range folds to the same batch whichever
+selection fetched it;
 `agg_batches.unregistered_swaps` stays the writer's count of committed swaps
 whose pool it could not find, 0 in both. The launch stream's
 `indexer_batches.evidence` keeps the HyperSync launch variant: the launch,
@@ -255,9 +265,9 @@ the cutoff header, the metadata issues and the raw Multicall3 replies;
 ### Deviations from the report, and why
 
 - **Quiet ranges grow.** The report fixes ranges at 100,000 blocks. Measured
-  on HyperSync, a page holds about 1,300 to 2,300 logs whatever the field
-  selection or `max_num_logs` (pages end on the server's own block
-  partitions), so requests scale with logs, and in the sparse weeks of
+  on HyperSync, the recorded August pages held about 1,300 to 2,300 logs
+  whatever the field selection or `max_num_logs` (pages end on the server's
+  own block partitions), so requests scale with logs, and in the sparse weeks of
   August the fixed per-range cost (one launch query, up to seven selection
   queries, one header) dominates. A range whose lane queries all answered in
   one page doubles the next range, up to `LEDGER_PASS_MAX_RANGE_BLOCKS`
@@ -398,8 +408,9 @@ ends the loop on a committed batch.
   (5.3 MB a minute on Railway, most of the service's bill) to ask for a few
   hundred swaps. A range of at most `managerSwapBlocks` (2,000) blocks now
   sends one 527-byte manager-wide query and keeps the registry's swaps
-  locally; the transfer lane keeps its token lists, since a chain-wide
-  `Transfer` selection over 780 blocks overflowed HyperSync's 32 MB response.
+  locally; the transfer lane kept its token lists, since a chain-wide
+  `Transfer` selection over 780 blocks overflowed HyperSync's 32 MB response
+  (see the next entry for how it stopped re-sending them).
   Replaying the recorded answers of four 17 Sep tip ranges through the
   production client on a local TLS server, a cycle uploads 2.84 MB instead of
   7.19 MB (TLS bytes, handshakes and HTTP headers included) in 8 or 9
@@ -412,10 +423,33 @@ ends the loop on a committed batch.
   near 3,300 blocks at the busiest rate. Both selections gave identical rows and content hashes
   over seven real ranges (launches, the busiest morning, a quiet evening,
   the threshold); two are committed as recorded fixtures
-  (`apps/indexer/src/ledger-swap-selection.test.ts`) and
+  (`apps/indexer/src/ledger-selection.test.ts`) and
   `pnpm ledger:pass compare` reruns the comparison live. Envio does not
   accept a gzip request body (HTTP 400), so the transfer lists stay
   uncompressed.
+- **The transfer lane at the tip probes for the tokens that moved** (25 Sep
+  2026). After the swap lane's change the full token lists were the tip loop's
+  remaining large upload: 2,904,754 bytes a cycle, about 3.4 GB a day of
+  Railway egress. For a range of at most `chainTransferBlocks` (1,000) blocks,
+  `transferAddressQuery` selects only the block and emitting contract of every
+  chain `Transfer`. The collector then queries the registry tokens named by
+  that probe with the usual token-list query. It falls back to the full lists
+  if the probe cannot finish within `chainTransferPages` (10), exceeds the
+  byte cap, has a recoverable failure, or misses a registered token that a
+  swap moved. A throttle, rejected credential, exhausted request budget or
+  stop ends the range instead. The probe's two-field selection reduces bytes;
+  the recorded page boundaries are independent of field selection. The page
+  cap, request-budget math, density samples and simulated block-complete
+  replay are recorded in `packages/chain/src/fixtures/hypersync/README.md`;
+  `apps/indexer/src/ledger-selection.test.ts` requires the same rows and
+  content hash as the full-list selection. A chain change between the probe
+  and filtered list invalidates the range: the collector compares the
+  canonical cutoff header before and after those reads and fails the cycle
+  if its hash changed. The tip cycle log reports `transferSelection`,
+  `unregisteredTransfers`, `transferPages` and `transferFallbackRequests`
+  beside the cycle's `requests` and `sentBytes`. `pnpm ledger:pass compare`
+  collects a range with both lanes' lists and again with both short-range
+  selections.
 - **Ranks are row numbers kept for the top 100**, not the report's dense rank
   over every eligible wallet: the leaderboard today ranks by position with
   the address breaking ties, and serves no rank past 100 (captain, 17 Sep

@@ -19,6 +19,7 @@ import {
   instantDeployments,
   ledgerPassPolicy,
   swapEvent,
+  transferEvent,
   type HyperSyncRetryEvent,
 } from "@pools/chain";
 import {
@@ -510,15 +511,33 @@ test(
     );
     // Fifty new blocks without a launch or trade: the three lanes of the
     // three-pool registry and the cutoff header make it seven. A tip range
-    // selects every manager swap and sends no pool-id list.
+    // selects every manager swap and every Transfer on the chain and sends
+    // neither a pool-id nor a token list.
     fake.height += 50;
     const sent = fake.requests.length;
     const small = await runLedgerTipCycle(db, passClient(fake), cycleOptions);
     assert.deepEqual(
       [small.range?.from, small.range?.to, small.atTip, small.requests],
-      [start + 500, start + 549, true, 7],
+      [start + 500, start + 549, true, 8],
     );
     assert.equal(small.range?.swapSelection, "manager");
+    assert.deepEqual(
+      [
+        small.range?.transferSelection,
+        small.range?.transferPages,
+        small.range?.transferFallbackRequests,
+      ],
+      ["chain", 1, 0],
+    );
+    assert.deepEqual(
+      fake.requests
+        .slice(sent)
+        .map((r) => r.body)
+        .filter((b) => b?.logs?.length === 1 && !b.logs[0].address)
+        .map((b) => b!.logs),
+      [[{ topics: [[toEventSelector(transferEvent)]] }]],
+    );
+    assert.ok(small.sentBytes < 4096);
     const swapBodies = fake.requests
       .slice(sent)
       .map((r) => r.body)
@@ -675,10 +694,11 @@ test(
       )
         break;
     }
-    // A range cycle is seven requests: the first seven runs stop after each
+    // A range cycle is nine requests (the transfer probe and the list of
+    // the tokens it named among them): the first nine runs stop after each
     // of them in turn and commit nothing; the next three each commit a range
     // and stop inside the cycle after it, the last at the tip.
-    assert.equal(stops, 10);
+    assert.equal(stops, 12);
     assert.deepEqual(await snapshot(db, true), expected);
   },
 );
@@ -736,10 +756,10 @@ test(
     await writer(db);
     const { fake } = tipChain();
     await passTwoRanges(db, fake);
-    // The first cycle's seven requests pass; every later one is throttled.
+    // The first cycle's nine requests pass; every later one is throttled.
     let requests = 0;
     const throttledFetch: typeof globalThis.fetch = async (input, init) =>
-      ++requests > 7
+      ++requests > 9
         ? new Response("slow down", {
             status: 429,
             headers: { "retry-after": "0" },
@@ -765,7 +785,7 @@ test(
       [1, start + 299, 3, 0],
     );
     // One throttled request of four attempts, then nothing.
-    assert.equal(requests, 11);
+    assert.equal(requests, 13);
     assert.ok(!log.some((e) => e.event === "ledger_tip_cycle_failed"));
     assert.ok(
       log.some(
