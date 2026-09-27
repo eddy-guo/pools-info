@@ -134,7 +134,18 @@ export async function readCreators(
   // cold production-shaped read's 2.4s, inside a 3s statement budget; the
   // page's creators are the only ones whose flag is served, and the orders
   // above never read it. bought_own is null without a measured launch, since
-  // only measured launches carry swap evidence.
+  // only measured launches carry swap evidence. A ledger-served launch's
+  // evidence is a position probe (`probe` in `rankedFlowCtes`), and one hit
+  // answers for its sender, so each sender's ledger launches are probed one
+  // at a time and the probing stops at the first hit, and a sender whose
+  // other evidence already says true is not probed at all. Probing every
+  // launch read 12,463 positions at random for the top 100 by launches, the
+  // page that answered 503 on production under a memory cap; stopping at the
+  // first hit reads one for most creators and every launch only for the
+  // creator who never bought one of their own (docs/LEDGER-MARKET-SERVING.md,
+  // "The creators aggregate"). The LATERAL with its LIMIT keeps the planner
+  // on the primary-key probe rather than the wallet index's every position of
+  // the launching wallet.
   const senders = rows.map((r) => r.launch_sender),
     ownParam = `$${values.length + 1}`,
     ownRanked = rankedFlowCtes(
@@ -159,7 +170,16 @@ export async function readCreators(
     await query("SET LOCAL max_parallel_workers_per_gather = 0");
     probed = (
       await query(
-        `${ownRanked} SELECT launch_sender,bool_or(own) FILTER (WHERE volume IS NOT NULL) AS bought_own FROM ranked GROUP BY launch_sender`,
+        `${ownRanked}, senders AS (
+    SELECT launch_sender,bool_or(own) FILTER (WHERE volume IS NOT NULL) AS own,
+      array_agg(pool_id) FILTER (WHERE volume IS NOT NULL AND probe) AS probes
+    FROM ranked GROUP BY launch_sender
+  ) SELECT s.launch_sender,CASE WHEN s.own OR s.probes IS NULL THEN s.own ELSE EXISTS (
+      SELECT 1 FROM agg_wallets w CROSS JOIN unnest(s.probes) l(pool_id)
+      JOIN indexed_pools ip ON ip.chain_id=4663 AND ip.pool_id=l.pool_id
+      CROSS JOIN LATERAL (SELECT 1 FROM agg_positions ap WHERE ap.chain_id=4663 AND ap.pool_ref=ip.pool_ref AND ap.wallet_ref=w.wallet_ref AND ap.buys>0 LIMIT 1) ap
+      WHERE w.address=decode(substr(s.launch_sender,3),'hex')
+    ) END AS bought_own FROM senders s`,
         [...values, senders],
       )
     ).rows;
