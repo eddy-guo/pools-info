@@ -566,7 +566,9 @@ test(
       assert.equal(r.stats.completeWindow, true, window);
     }
     assert.equal(row(launchOrder("All"), pools.K.id).marketCoverage!.windowStart, pools.K.launchedAt);
-    // Whole hours cannot answer 1h: no bucket-rounded figure under its name.
+    // The live ring here holds only K's two newest trades, not the rolling
+    // hour, so 1h serves no figure rather than a partial hour under its name
+    // (ledger-rolling-hour.integration.test.ts serves it from a full ring).
     for (const id of covered) {
       const r = row(launchOrder("1h"), id);
       assert.equal(r.stats.volumeWei, null);

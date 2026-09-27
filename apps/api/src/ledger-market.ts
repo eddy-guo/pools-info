@@ -71,19 +71,141 @@ export async function ledgerCut(query: ReadQuery): Promise<LedgerCut | null> {
     indexedAt: new Date(r.collected_at).toISOString(),
   };
 }
-/** Whether whole hours can answer a window at all. The newest hour holds
- * only the minutes up to the cursor, so a 1h window of one bucket would be a
- * bucket-rounded figure (three minutes of trading at 09:03) under an hour's
- * name: the ledger serves no volume, trade count or change for it. */
-export const ledgerAnswers = (window: LiveWindow) => window !== "1h";
-/** The first UTC hour of a window: the window is that many whole hours
+/** The rolling hour 1h names: the swaps from `start` (the cutoff's time
+ * less an hour) through the cursor, read from the live ring, which holds
+ * every folded swap of the 24 hours ending at the cursor (`agg_live_trades`,
+ * written in the batch that folds each swap and pruned from its oldest end,
+ * so it is always every swap after its oldest row). Whole hours cannot
+ * answer it: the newest hour holds only the minutes up to the cursor, so an
+ * hour-bucketed 1h would be three minutes of trading at 09:03 under an
+ * hour's name. The block bounds come from the batches' end times, so each
+ * read is a range of the ring's block index rather than a scan: every swap
+ * at or below `afterBlock` is before `start`, every swap before `start` is at
+ * or below `beforeBlock`, and every swap at or below `hourAfterBlock` is
+ * before `start`'s UTC hour. */
+export interface LedgerHour {
+  start: number;
+  afterBlock: number;
+  beforeBlock: number;
+  hourAfterBlock: number;
+}
+/** The rolling hour, or null while the ring does not hold every swap since
+ * the start of `start`'s UTC hour (the hour's flow and the price it opened
+ * at): a ledger younger than that, or a ring its row bound has cut into.
+ * Then 1h serves no volume, trade count or change, and `completeWindow` is
+ * false, rather than a partial hour under its name. */
+export async function ledgerHour(
+  query: ReadQuery,
+  cut: LedgerCut,
+): Promise<LedgerHour | null> {
+  const start = cut.asOf - windows["1h"],
+    hourStart = Math.floor(start / 3600) * 3600;
+  const { rows } = await query(
+    `SELECT (SELECT timestamp FROM agg_live_trades WHERE chain_id=4663 ORDER BY block_number,log_index LIMIT 1) AS oldest,
+      after.to_block AS after_block,before.to_block AS before_block,
+      (SELECT max(to_block) FROM agg_batches WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND to_block<=$1 AND to_timestamp<$3) AS hour_after_block
+    FROM (SELECT max(to_block) AS to_block FROM agg_batches WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND to_block<=$1 AND to_timestamp<$2) after
+    CROSS JOIN LATERAL (SELECT min(to_block) AS to_block FROM agg_batches WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND to_block>after.to_block AND to_block<=$1) before`,
+    [cut.block, start, hourStart],
+  );
+  const r = rows[0];
+  if (
+    !r ||
+    r.oldest === null ||
+    whole(r.oldest) >= hourStart ||
+    r.hour_after_block === null ||
+    r.before_block === null
+  )
+    return null;
+  return {
+    start,
+    afterBlock: whole(r.after_block),
+    beforeBlock: whole(r.before_block),
+    hourAfterBlock: whole(r.hour_after_block),
+  };
+}
+/** How a ledger statement measures its window: `hours` sums the window's
+ * whole hours from $8 (All: the pool state's lifetime totals), `ring` reads
+ * the rolling hour from the live ring with $10-$13 bound to a `LedgerHour`,
+ * and `none` serves no flow or change (a 1h the ring does not cover). */
+export type LedgerFlow = "hours" | "ring" | "none";
+export const ledgerFlow = (
+  window: LiveWindow,
+  hour: LedgerHour | null,
+): LedgerFlow => (window !== "1h" ? "hours" : hour ? "ring" : "none");
+/** The first UTC hour a window reads: the window is that many whole hours
  * ending with the newest hour, so a 24h window is hours newest-23 through
- * newest. All has no first hour; it is the pool's whole history. */
+ * newest; 1h is the rolling hour, whose first hour holds its start. All has
+ * no first hour; it is the pool's whole history. */
 export function ledgerWindowHour(cut: LedgerCut, window: LiveWindow) {
   return window === "All"
     ? null
-    : Math.max(0, cut.newestHour - windows[window] / 3600 + 1);
+    : window === "1h"
+      ? Math.floor((cut.asOf - windows["1h"]) / 3600)
+      : Math.max(0, cut.newestHour - windows[window] / 3600 + 1);
 }
+/** Where a window starts: its first hour's start, or the rolling hour's own
+ * start for 1h; null for All (each pool's launch). */
+export const ledgerWindowStart = (cut: LedgerCut, window: LiveWindow) =>
+  window === "1h"
+    ? cut.asOf - windows["1h"]
+    : window === "All"
+      ? null
+      : ledgerWindowHour(cut, window)! * 3600;
+/** The ledger's statement values after the broad ones: $7 its cursor block,
+ * $8 the window's first hour, $9 its start block, and for the rolling hour
+ * $10-$13 its start and block bounds. */
+export const ledgerValues = (
+  cut: LedgerCut,
+  window: LiveWindow,
+  hour: LedgerHour | null,
+) => [
+  cut.block,
+  ledgerWindowHour(cut, window),
+  cut.startBlock,
+  ...(ledgerFlow(window, hour) === "ring"
+    ? [hour!.start, hour!.afterBlock, hour!.beforeBlock, hour!.hourAfterBlock]
+    : []),
+];
+/** The rolling hour's trades and volume per pool from the ring: its swaps
+ * at or after `start` through the cursor. `pools` further bounds the read. */
+export const ledgerRingFlowSql = (
+  b: { start: string; after: string; cursor: string },
+  pools = "",
+) =>
+  `SELECT pool_ref,count(*) AS trades,sum(eth_wei) AS volume FROM agg_live_trades
+    WHERE chain_id=4663 AND block_number>${b.after} AND block_number<=${b.cursor} AND timestamp>=${b.start}${pools} GROUP BY pool_ref`;
+/** The price a pool's rolling hour opened at: its last swap before the
+ * start, from the ring when that swap is inside the start's UTC hour, else
+ * the close of its last whole hour before it (every swap of that UTC hour
+ * before the start is in the ring). Probed only where `active`. */
+export const ledgerRingBaselineSql = (
+  poolRef: string,
+  active: string,
+  b: { start: string; before: string; hourAfter: string; hour: string },
+) =>
+  `SELECT sqrt FROM ((SELECT sqrt_price_x96 AS sqrt,0 AS source FROM agg_live_trades
+      WHERE chain_id=4663 AND pool_ref=${poolRef} AND block_number>${b.hourAfter} AND block_number<=${b.before} AND timestamp<${b.start} AND ${active}
+      ORDER BY block_number DESC,log_index DESC LIMIT 1)
+    UNION ALL (SELECT sqrt,1 FROM (${ledgerBaselineSql(poolRef, b.hour, active)}) closed)) opened ORDER BY source LIMIT 1`;
+/** The rolling hour's bounds as explore and the creators aggregate bind them. */
+export const ledgerRingParams = {
+  start: "$10::bigint",
+  after: "$11::bigint",
+  cursor: "$7",
+  before: "$12::bigint",
+  hourAfter: "$13::bigint",
+  hour: "$8::integer",
+};
+/** A window's baseline probe in explore's parameters, for either flow. */
+export const ledgerWindowBaselineSql = (
+  flow: LedgerFlow,
+  poolRef: string,
+  active: string,
+) =>
+  flow === "ring"
+    ? ledgerRingBaselineSql(poolRef, active, ledgerRingParams)
+    : ledgerBaselineSql(poolRef, "$8::integer", active);
 /** A launch the ledger covers: launched inside the ledger's range and
  * registered by its own launch lane in a batch at or below its cursor, so
  * every swap of the pool since launch is folded and a missing pool state is
@@ -197,17 +319,31 @@ export function withCreatorFees(
 }
 const price = (sqrt: string) => ledgerPriceSql(sqrt, "$4::integer");
 /** One pool's market from the ledger. $1 pool_ref, $2 the window's first
- * hour (null for All), $3 cutoff block, $4 decimals (null when unverified).
- * Trades and volume sum the window's hours. Candles are the pool's hours, the
+ * hour (null for All), $3 cutoff block, $4 decimals (null when unverified),
+ * and for the rolling hour $5-$8 its start and block bounds (`LedgerHour`).
+ * Trades and volume sum the window's hours, or the rolling hour's swaps in
+ * the ring. Candles are the pool's hours, the
  * newest thousand: an hour opens at the previous hour's close (the price
  * state its first swap starts from) or, for the pool's first hour, at its own
  * first swap's state, and its high and low price are the lowest and highest
  * sqrt among that opening state and its swaps, the price falling as the sqrt
  * rises. Observations are the pool's newest fifty trades in the ledger's live
  * ring (its last 24 hours), all the ring still holds of them. */
-const ledgerMarketSql = `WITH flow AS (
-    SELECT coalesce(sum(trades),0) AS trades,coalesce(sum(volume_wei),0) AS volume FROM agg_pool_hours
-    WHERE chain_id=4663 AND pool_ref=$1 AND hour>=coalesce($2::integer,0)
+const ringParams = {
+  start: "$5::bigint",
+  after: "$6::bigint",
+  cursor: "$3",
+  before: "$7::bigint",
+  hourAfter: "$8::bigint",
+  hour: "$2::integer",
+};
+const ledgerMarketSql = (ring: boolean) => `WITH flow AS (
+    ${
+      ring
+        ? `SELECT coalesce(sum(trades),0) AS trades,coalesce(sum(volume),0) AS volume FROM (${ledgerRingFlowSql(ringParams, " AND pool_ref=$1")}) ring`
+        : `SELECT coalesce(sum(trades),0) AS trades,coalesce(sum(volume_wei),0) AS volume FROM agg_pool_hours
+    WHERE chain_id=4663 AND pool_ref=$1 AND hour>=coalesce($2::integer,0)`
+    }
   ), hours AS (
     SELECT hour,volume_wei,open_sqrt_price_x96 AS open_sqrt,close_sqrt_price_x96 AS close_sqrt,
       low_sqrt_price_x96 AS min_sqrt,high_sqrt_price_x96 AS max_sqrt,
@@ -236,7 +372,7 @@ const ledgerMarketSql = `WITH flow AS (
     coalesce((SELECT jsonb_agg(jsonb_build_object('id',tx_hash||':'||log_index,'transactionHash',tx_hash,'logIndex',log_index,'block',block_number,'blockHash',block_hash,'timestamp',timestamp,'side',side,'ethWei',eth_wei,'tokenRaw',token_raw) ORDER BY block_number DESC,log_index DESC) FROM observations),'[]'::jsonb) AS observations
   FROM flow
   LEFT JOIN agg_pool_state state ON state.chain_id=4663 AND state.pool_ref=$1
-  LEFT JOIN LATERAL (${ledgerBaselineSql("$1", "$2::integer", "flow.trades>0")}) baseline ON true`;
+  LEFT JOIN LATERAL (${ring ? ledgerRingBaselineSql("$1", "flow.trades>0", ringParams) : ledgerBaselineSql("$1", "$2::integer", "flow.trades>0")}) baseline ON true`;
 
 /** The pool page's market from the ledger, in the observed-market shape. The
  * ledger keeps no block hash for a pool's price states, so the baseline is
@@ -256,7 +392,9 @@ export async function readLedgerMarket(
   if (cut.asOf < launchedAt) throw bad();
   const startBlock = Math.max(cut.startBlock, launchBlock),
     hour = ledgerWindowHour(cut, window),
-    windowStart = hour === null ? launchedAt : hour * 3600;
+    windowStart = ledgerWindowStart(cut, window) ?? launchedAt,
+    rolling = window === "1h" ? await ledgerHour(query, cut) : null,
+    flow = ledgerFlow(window, rolling);
   const unitsConflict =
     !!verifiedUnits &&
     covered.decimals !== null &&
@@ -268,10 +406,23 @@ export async function readLedgerMarket(
       ? null
       : covered.decimals;
   const row = (
-    await query(ledgerMarketSql, [covered.ref, hour, cut.block, decimals])
+    await query(ledgerMarketSql(flow === "ring"), [
+      covered.ref,
+      hour,
+      cut.block,
+      decimals,
+      ...(flow === "ring"
+        ? [
+            rolling!.start,
+            rolling!.afterBlock,
+            rolling!.beforeBlock,
+            rolling!.hourAfterBlock,
+          ]
+        : []),
+    ])
   ).rows[0];
   const cutoff = { block: cut.block, hash: cut.hash, asOf: cut.asOf },
-    answers = ledgerAnswers(window);
+    answers = flow !== "none";
   const market: ObservedMarket = {
     poolId: pool.pool_id,
     token: pool.token,
