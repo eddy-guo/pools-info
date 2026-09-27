@@ -14,6 +14,7 @@ import { reservedRowCount } from "./product-common";
 import {
   RowFiller,
   TradeAmount,
+  TradePhoneStats,
   TradeSide,
   TradeTime,
   TradeTransaction,
@@ -254,7 +255,7 @@ export function FollowActivity({ feed }: { feed: FollowActivityFeed }) {
         >
           {rows.map((t, index) => (
             <div
-              className="mobile-wallet-row"
+              className="mobile-wallet-row mobile-trade-row"
               key={index}
               aria-hidden={!t}
               data-row={t ? "resolved" : "reserved"}
@@ -269,18 +270,13 @@ export function FollowActivity({ feed }: { feed: FollowActivityFeed }) {
                     />
                     <TradeSide side={t.side} />
                   </div>
-                  <div className="mobile-wallet-row-stats">
-                    <TradeAmount raw={t.tokenRaw} decimals={t.decimals} />{" "}
-                    <TokenLink trade={t} />
-                  </div>
-                  <div className="mobile-wallet-row-stats">
-                    {t.timestamp !== null && (
-                      <>
-                        <TradeTime timestamp={t.timestamp} /> ·{" "}
-                      </>
-                    )}
-                    <TradeTransaction hash={t.txHash} />
-                  </div>
+                  <TradePhoneStats
+                    raw={t.tokenRaw}
+                    decimals={t.decimals}
+                    token={<TokenLink trade={t} />}
+                    timestamp={t.timestamp}
+                    hash={t.txHash}
+                  />
                 </Fragment>
               ) : (
                 <Fragment key={loaded ? "blank" : "pending"}>

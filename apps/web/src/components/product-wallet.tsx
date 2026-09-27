@@ -42,6 +42,7 @@ import { PnlCardModal } from "./pnl-card-modal";
 import {
   RowFiller,
   TradeAmount,
+  TradePhoneStats,
   TradeSide,
   TradeTime,
   TradeTransaction,
@@ -175,10 +176,11 @@ export function ProductWallet({ address }: { address: string }) {
      table's own `shown` reservation: a wallet with fewer trades than the
      step blank-fills the shortfall (RowFiller) rather than shrinking the
      region once the read resolves, so the skeleton-to-content transition
-     moves nothing. Growing past the step is a "Load more" click, which
-     Chrome never scores against CLS. */
+     moves nothing. A "Load more" that fetches reserves its step at the
+     click (`reservedRows`), inside the window Chrome leaves unscored after
+     an input, so an answer that lands seconds later only fills slots. */
   const tradeRowCount = reservedRowCount(
-    Math.max(TRADE_HISTORY_STEP, tradeHistory.trades.length),
+    tradeHistory.reservedRows,
     tradeHistory.failed,
   );
   const tradeRows = Array.from(
@@ -186,6 +188,9 @@ export function ProductWallet({ address }: { address: string }) {
     (_, index) => tradeHistory.trades[index],
   );
   const tradesLoaded = !tradeHistory.loading && !tradeHistory.failed;
+  /* A slot still waiting on a read (the first page or a Load more) reads
+     Pending; one no read will fill is blank. */
+  const tradeSlotsPending = tradeHistory.loading || tradeHistory.loadingMore;
   return (
     <div className={`page wallet-page ${styles.page}`}>
       <nav className={styles.breadcrumb} aria-label="Breadcrumb">
@@ -646,7 +651,7 @@ export function ProductWallet({ address }: { address: string }) {
                                 data-row={t ? "resolved" : "reserved"}
                                 data-row-index={index}
                               >
-                                <td data-pending={!t && tradeHistory.loading}>
+                                <td data-pending={!t && tradeSlotsPending}>
                                   {t ? (
                                     <AddressChip
                                       address={t.token.address}
@@ -654,10 +659,10 @@ export function ProductWallet({ address }: { address: string }) {
                                       external
                                     />
                                   ) : (
-                                    <RowFiller blank={tradesLoaded} />
+                                    <RowFiller blank={!tradeSlotsPending} />
                                   )}
                                 </td>
-                                <td data-pending={!t && tradeHistory.loading}>
+                                <td data-pending={!t && tradeSlotsPending}>
                                   {t ? (
                                     <span className="number">
                                       <TradeAmount
@@ -667,30 +672,30 @@ export function ProductWallet({ address }: { address: string }) {
                                       />
                                     </span>
                                   ) : (
-                                    <RowFiller blank={tradesLoaded} />
+                                    <RowFiller blank={!tradeSlotsPending} />
                                   )}
                                 </td>
-                                <td data-pending={!t && tradeHistory.loading}>
+                                <td data-pending={!t && tradeSlotsPending}>
                                   {t ? (
                                     <TradeTime timestamp={t.timestamp} />
                                   ) : (
-                                    <RowFiller blank={tradesLoaded} />
+                                    <RowFiller blank={!tradeSlotsPending} />
                                   )}
                                 </td>
-                                <td data-pending={!t && tradeHistory.loading}>
+                                <td data-pending={!t && tradeSlotsPending}>
                                   {t ? (
                                     <TradeSide side={t.side} />
                                   ) : (
-                                    <RowFiller blank={tradesLoaded} />
+                                    <RowFiller blank={!tradeSlotsPending} />
                                   )}
                                 </td>
-                                <td data-pending={!t && tradeHistory.loading}>
+                                <td data-pending={!t && tradeSlotsPending}>
                                   {t ? (
                                     <TradeTransaction
                                       hash={t.transactionHash}
                                     />
                                   ) : (
-                                    <RowFiller blank={tradesLoaded} />
+                                    <RowFiller blank={!tradeSlotsPending} />
                                   )}
                                 </td>
                               </tr>
@@ -705,7 +710,7 @@ export function ProductWallet({ address }: { address: string }) {
                       >
                         {tradeRows.map((t, index) => (
                           <div
-                            className="mobile-wallet-row"
+                            className="mobile-wallet-row mobile-trade-row"
                             key={index}
                             aria-hidden={!t}
                             data-row={t ? "resolved" : "reserved"}
@@ -721,28 +726,36 @@ export function ProductWallet({ address }: { address: string }) {
                                   />
                                   <TradeSide side={t.side} />
                                 </div>
-                                <div className="mobile-wallet-row-stats">
-                                  <TradeAmount
-                                    raw={t.tokenRaw}
-                                    decimals={t.token.decimals}
-                                    symbol={t.token.symbol}
-                                  />{" "}
-                                  · <TradeTime timestamp={t.timestamp} /> ·{" "}
-                                  <TradeTransaction hash={t.transactionHash} />
-                                </div>
+                                <TradePhoneStats
+                                  raw={t.tokenRaw}
+                                  decimals={t.token.decimals}
+                                  token={
+                                    t.token.symbol && (
+                                      <span
+                                        title={t.token.name ?? t.token.symbol}
+                                      >
+                                        {t.token.symbol}
+                                      </span>
+                                    )
+                                  }
+                                  timestamp={t.timestamp}
+                                  hash={t.transactionHash}
+                                />
                               </Fragment>
                             ) : (
-                              <Fragment key="pending">
+                              <Fragment
+                                key={tradeSlotsPending ? "pending" : "blank"}
+                              >
                                 <div className="mobile-wallet-row-top">
                                   <span data-pending="true">
-                                    {tradesLoaded ? " " : "Trade pending"}
+                                    {tradeSlotsPending ? "Trade pending" : " "}
                                   </span>
                                 </div>
                                 <div
                                   className="mobile-wallet-row-stats"
                                   data-pending="true"
                                 >
-                                  {tradesLoaded ? " " : "Pending"}
+                                  {tradeSlotsPending ? "Pending" : " "}
                                 </div>
                               </Fragment>
                             )}

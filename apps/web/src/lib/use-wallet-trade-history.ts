@@ -76,6 +76,12 @@ async function fetchPage(
 export interface WalletTradeHistoryState {
   /** Rows revealed so far; grows through `loadMore`. */
   trades: WalletHistoryTrade[];
+  /** Row slots the list holds: never fewer than `trades`, and never shrinking
+      until the list restarts. A `loadMore` that has to fetch reserves the
+      step it may reveal at the click itself, since its answer can land long
+      after the click and Chrome scores a shift that late; a page that
+      brings fewer rows leaves the rest blank rather than taking them back. */
+  reservedRows: number;
   /** The first page is in flight and nothing is on hand yet. */
   loading: boolean;
   /** A further page is in flight to satisfy a `loadMore` call. */
@@ -105,6 +111,7 @@ export function useWalletTradeHistory(
   enabled: boolean,
 ): WalletTradeHistoryState {
   const [shown, setShown] = useState(REVEAL_STEP);
+  const [reserved, setReserved] = useState(REVEAL_STEP);
   const [held, setHeld] = useState<WalletHistoryTrade[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -140,6 +147,7 @@ export function useWalletTradeHistory(
     setMoreFailed(false);
     setHeld([]);
     setShown(REVEAL_STEP);
+    setReserved(REVEAL_STEP);
     setCanRetry(true);
     cursorRef.current = null;
     setNextCursor(null);
@@ -210,6 +218,7 @@ export function useWalletTradeHistory(
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     setMoreFailed(false);
+    setReserved((r) => Math.max(r, shown + REVEAL_STEP));
     const controller = new AbortController();
     moreControllerRef.current = controller;
     const heldCount = held.length;
@@ -248,8 +257,10 @@ export function useWalletTradeHistory(
 
   const retry = useCallback(() => runInitial(), [runInitial]);
 
+  const trades = held.slice(0, shown);
   return {
-    trades: held.slice(0, shown),
+    trades,
+    reservedRows: Math.max(reserved, trades.length),
     loading,
     loadingMore,
     failed,

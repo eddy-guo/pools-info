@@ -5754,18 +5754,29 @@ button.icon-button:disabled {
     display: block;
   }
 }
-/* A following phone row carries the wallet and the token, so its figures
-   take two 24px lines where the wallet's own row has one: 13 + 44 + 10 +
-   24 + 24 + 12 + 1px of border. Neither line may push the page sideways. */
-.following-activity .mobile-wallet-row {
+/* An explorer trade's phone row (the wallet's Trades tab and Following,
+   `TradePhoneStats`) takes its figures on two 24px lines, since amount,
+   token, time and transaction on one line run past a 390px list: 13 + 44 +
+   10 + 24 + 24 + 12 + 1px of border. The amount keeps its full width and a
+   long symbol ellipsises beside it, so no piece reaches past the row. */
+.mobile-wallet-row.mobile-trade-row {
   height: 128px;
 }
-.following-activity .mobile-wallet-row-stats {
+.mobile-trade-row .mobile-wallet-row-stats + .mobile-wallet-row-stats {
+  margin-top: 0;
+}
+.mobile-trade-amount {
+  display: flex;
+  gap: 0.3em;
+}
+.mobile-trade-amount > * {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.following-activity .mobile-wallet-row-stats + .mobile-wallet-row-stats {
-  margin-top: 0;
+.mobile-trade-amount > :first-child {
+  flex-shrink: 0;
+  max-width: 100%;
 }
 /* The screener's phone row shape: the identity with its headline figure at
    the right on the 44px line, then one 24px line: 13 + 44 + 10 + 24 + 12 +
