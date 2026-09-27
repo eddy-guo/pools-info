@@ -1,4 +1,5 @@
 import type { CreatorsResponse } from "@pools/core";
+import { validLaunchType } from "./explore-response";
 
 const address = /^0x[0-9a-f]{40}$/;
 const hash = /^0x[0-9a-f]{64}$/;
@@ -22,7 +23,8 @@ function validBestLaunch(value: unknown): boolean {
     integer(pool.launchBlock) &&
     integer(pool.launchedAt) &&
     typeof pool.volumeWei === "string" &&
-    wei.test(pool.volumeWei)
+    wei.test(pool.volumeWei) &&
+    validLaunchType(pool.launchType)
   );
 }
 

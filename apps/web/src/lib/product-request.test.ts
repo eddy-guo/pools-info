@@ -19,6 +19,8 @@ import {
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { validatePoolResponse } from "./pool-response";
+import { validateCreatorsResponse } from "./creators-response";
+import { validateExploreResponse } from "./explore-response";
 import type {
   AnalyticsExploreResponse,
   AnalyticsLeaderboardResponse,
@@ -1333,4 +1335,119 @@ test("eth/usd price validates the upstream shape before trusting it", async (t) 
     readEthPrice(path, new URLSearchParams("")),
     EthPriceUnavailableError,
   );
+});
+
+/* The crowd launch contract: every catalogue row names its launch type,
+   "instant" or "crowd". An absent one reads as unknown (the read API spreads
+   it only when its row has one, and a release before the crowd lane sends
+   none); any other value is a contract break and the read is unusable. */
+const launchTypes = {
+  accepted: ["instant", "crowd", undefined] as unknown[],
+  rejected: ["Crowd", "auction", "", null, 1, true] as unknown[],
+};
+const exploreRow = (launchType: unknown) => ({
+  id: stackBtc,
+  token: stackToken,
+  name: "Stack Btc 7",
+  symbol: "STACK",
+  launchTx: `0x${"c".repeat(64)}`,
+  launchSender: `0x${"a".repeat(40)}`,
+  launchBlock: 63742277,
+  launchedAt: 1789483971,
+  ...(launchType === undefined ? {} : { launchType }),
+});
+
+test("explore rows carry a launch type, and the crowd view carries crowd launches only", () => {
+  const all = new URLSearchParams("view=all"),
+    crowd = new URLSearchParams("view=crowd");
+  for (const launchType of launchTypes.accepted)
+    validateExploreResponse({ items: [exploreRow(launchType)] }, all);
+  for (const launchType of launchTypes.rejected)
+    assert.throws(
+      () => validateExploreResponse({ items: [exploreRow(launchType)] }, all),
+      /Invalid explore row/,
+    );
+  validateExploreResponse(
+    { items: [exploreRow("crowd"), exploreRow("crowd")] },
+    crowd,
+  );
+  // A misrouted or stale answer must never list an Instant launch under Crowd.
+  for (const launchType of ["instant", undefined])
+    assert.throws(
+      () =>
+        validateExploreResponse(
+          { items: [exploreRow("crowd"), exploreRow(launchType)] },
+          crowd,
+        ),
+      /Invalid explore row/,
+    );
+  for (const bad of [null, {}, { items: null }, { items: [null] }])
+    assert.throws(() => validateExploreResponse(bad, all));
+});
+
+test("a creator's best launch carries a launch type", () => {
+  const response = (launchType: unknown) => ({
+    sort: "launches",
+    direction: "desc",
+    window: "All",
+    attribution: "launch_transaction_initiator",
+    total: 1,
+    nextOffset: null,
+    items: [
+      {
+        address: `0x${"a".repeat(40)}`,
+        launches: 2,
+        measured: 1,
+        traded: 1,
+        volumeWei: "1000",
+        medianVolumeWei: "1000",
+        bestLaunch: { ...exploreRow(launchType), volumeWei: "1000" },
+        boughtOwnLaunch: false,
+      },
+    ],
+  });
+  const params = new URLSearchParams();
+  for (const launchType of launchTypes.accepted)
+    validateCreatorsResponse(response(launchType), params);
+  for (const launchType of launchTypes.rejected)
+    assert.throws(
+      () => validateCreatorsResponse(response(launchType), params),
+      /Invalid creator row/,
+    );
+});
+
+test("a saved pool carries a launch type beside its launch", () => {
+  const pool = (launchType: unknown) => {
+    const saved = savedPool();
+    return {
+      ...saved,
+      pool: {
+        ...saved.pool,
+        ...(launchType === undefined ? {} : { launchType }),
+      },
+    };
+  };
+  for (const launchType of launchTypes.accepted)
+    validatePoolResponse(pool(launchType), stackBtc, "24h");
+  for (const launchType of launchTypes.rejected)
+    assert.throws(
+      () => validatePoolResponse(pool(launchType), stackBtc, "24h"),
+      /Invalid saved launch type/,
+    );
+});
+
+test("the committed dataset serves the crowd view as its crowd launches: none, and no placeholder", async () => {
+  const crowd = (await preloadedProduct(
+    "explore",
+    new URLSearchParams("view=crowd&limit=100"),
+  )) as AnalyticsExploreResponse;
+  assert.deepEqual(crowd.items, []);
+  assert.equal(crowd.total, 0);
+  assert.equal("message" in crowd, false);
+  const all = (await preloadedProduct(
+    "explore",
+    new URLSearchParams("view=all&limit=100"),
+  )) as AnalyticsExploreResponse;
+  assert.ok(all.items.length > 0);
+  assert.ok(all.items.every((row) => row.launchType === "instant"));
 });

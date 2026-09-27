@@ -33,6 +33,7 @@ import {
   AddressChip,
   Change,
   EmptyState,
+  ModeBadge,
   Price,
   UnavailableState,
   WatchButton,
@@ -120,7 +121,7 @@ function RowSubtitle({
   /* Each part after the first carries its own leading separator, so a token
      without a symbol never opens on a dot. While nothing is known yet (a
      nameless token before the age resolves) the line holds its height. */
-  return (
+  const line = (
     <span className="row-subtitle" title={full} aria-label={full}>
       {symbol && (
         <span className="mono" aria-hidden="true">
@@ -141,6 +142,17 @@ function RowSubtitle({
       )}
       {!full && <span aria-hidden="true">{"\u00a0"}</span>}
     </span>
+  );
+  /* A crowd launch carries the export's CROWD chip after the line, which
+     gives way to it: the chip never truncates, the line ends in its
+     ellipsis. An Instant launch, the default, carries none. */
+  return pool.launchType === "crowd" ? (
+    <span className="row-subtitle-line">
+      {line}
+      <ModeBadge mode="crowd" />
+    </span>
+  ) : (
+    line
   );
 }
 function PoolCell({
@@ -253,16 +265,14 @@ const SCREENER_SORTS: readonly string[] = [
   "change",
   "launch",
 ] satisfies ScreenerSort[];
-/* The read API accepts a crowd view, but this screener does not offer its tab;
-   a URL naming it reads as the default view. */
-type ScreenerView = Exclude<
-  NonNullable<AnalyticsExploreOptions["view"]>,
-  "crowd"
->;
+/* Crowd lists the pools.xyz crowd (auction) launches, as the export's tab
+   set places it: between New and Watchlist. */
+type ScreenerView = NonNullable<AnalyticsExploreOptions["view"]>;
 const SCREENER_VIEWS = [
   ["all", "All"],
   ["gainers", "Gainers"],
   ["new", "New"],
+  ["crowd", "Crowd"],
   ["watchlist", "Watchlist"],
 ] as const satisfies readonly (readonly [ScreenerView, string])[];
 const isScreenerView = (value: string): value is ScreenerView =>

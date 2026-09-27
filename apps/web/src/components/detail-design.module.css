@@ -79,6 +79,10 @@
   letter-spacing: 0.05em;
   padding: 3px 7px;
 }
+.crowd {
+  color: var(--purple);
+  border-color: #45184f;
+}
 .meta {
   display: flex;
   align-items: center;

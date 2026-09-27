@@ -212,6 +212,34 @@ test("unprocessed catalog and stored-wallet search work without RPC; missing mar
   );
 });
 
+test("the crowd view lists crowd launches only, measured or not, with no placeholder message", () => {
+  const one = publication(1, alice, [["buy", "100", "100", 1000]]);
+  const crowd: CatalogPool = {
+    ...catalog(one),
+    id: word(2),
+    token: address(2),
+    name: "Crowd Launch",
+    symbol: "CRWD",
+    launchType: "crowd",
+  };
+  const model = buildAnalyticsModel(
+    [{ ...catalog(one), launchType: "instant" }, crowd],
+    [one],
+  );
+  const view = exploreAnalytics(model, { view: "crowd" });
+  assert.deepEqual(
+    view.items.map((row) => [row.id, row.launchType, row.stats.volumeWei]),
+    [[word(2), "crowd", null]],
+  );
+  assert.equal(view.total, 1);
+  assert.equal("message" in view, false);
+  assert.deepEqual(
+    exploreAnalytics(model, { view: "crowd", sort: "volume" }).items,
+    [],
+  );
+  assert.equal(exploreAnalytics(model).total, 2);
+});
+
 test("duplicate captures cannot inflate volume, net flows or a wallet trade gate", () => {
   const p = publication(1, alice, [
     ["buy", "100", "100", 1000],

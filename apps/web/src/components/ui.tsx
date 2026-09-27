@@ -453,9 +453,11 @@ export function Change({
     </span>
   );
 }
+/** Where a launch came from, as the read API's `launchType` names it: the
+ * export's compact uppercase chip, lavender for a crowd (auction) launch. */
 export function ModeBadge({ mode }: { mode: "instant" | "crowd" }) {
   return (
-    <span className={`badge ${mode === "crowd" ? "lavender" : ""}`}>
+    <span className={`badge mode-badge ${mode === "crowd" ? "lavender" : ""}`}>
       {mode === "crowd" ? "Crowd" : "Instant"}
     </span>
   );

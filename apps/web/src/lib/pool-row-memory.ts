@@ -12,6 +12,7 @@ export interface RememberedPoolRow {
   name: string;
   symbol: string;
   imageUrl?: string;
+  launchType?: "instant" | "crowd";
   launch: {
     block: number;
     timestamp: number;
@@ -29,6 +30,7 @@ export function rememberPoolRow(pool: AnalyticsPoolRow): void {
     name: pool.name,
     symbol: pool.symbol,
     imageUrl: pool.imageUrl,
+    launchType: pool.launchType,
     launch: {
       block: pool.launchBlock,
       timestamp: pool.launchedAt,
@@ -54,7 +56,10 @@ function parse(raw: string | null): RememberedPoolRow | null {
       typeof row.launch?.block === "number" &&
       typeof row.launch.timestamp === "number" &&
       typeof row.launch.transactionHash === "string" &&
-      typeof row.launch.transactionInitiator === "string"
+      typeof row.launch.transactionInitiator === "string" &&
+      (row.launchType === undefined ||
+        row.launchType === "instant" ||
+        row.launchType === "crowd")
       ? row
       : null;
   } catch {

@@ -352,7 +352,7 @@ export function exploreAnalytics(
         (view !== "watchlist" || ids.has(p.id)) &&
         (view !== "gainers" ||
           (p.stats.change !== null && p.stats.change > 0)) &&
-        view !== "crowd",
+        (view !== "crowd" || p.launchType === "crowd"),
     );
   const sort = view === "new" ? "launch" : (options.sort ?? "launch");
   if (sort !== "launch") {
@@ -402,12 +402,6 @@ export function exploreAnalytics(
     items: rows.slice(offset, offset + limit),
     total: rows.length,
     nextOffset: offset + limit < rows.length ? offset + limit : null,
-    ...(view === "crowd"
-      ? {
-          message:
-            "Crowd launches are not included in the verified deployment registry yet.",
-        }
-      : {}),
   };
 }
 
