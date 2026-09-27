@@ -109,7 +109,8 @@ function RowSubtitle({
   now: number | null;
   trades?: boolean;
 }) {
-  const age = launchOnly(pool) || now === null ? null : since(pool.launchedAt, now);
+  const age =
+    launchOnly(pool) || now === null ? null : since(pool.launchedAt, now);
   const tradeCount =
     launchOnly(pool) || !trades || pool.stats.trades === null
       ? null
@@ -252,9 +253,8 @@ const SCREENER_SORTS: readonly string[] = [
   "change",
   "launch",
 ] satisfies ScreenerSort[];
-/* The read API also accepts a crowd view, which it answers with no rows
-   (crowd launches are outside the registry), so the screener offers no tab
-   for it and a URL naming it reads as the default view. */
+/* The read API accepts a crowd view, but this screener does not offer its tab;
+   a URL naming it reads as the default view. */
 type ScreenerView = Exclude<
   NonNullable<AnalyticsExploreOptions["view"]>,
   "crowd"

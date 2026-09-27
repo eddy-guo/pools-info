@@ -396,7 +396,6 @@ LIMIT 1000;
 | `didnt_buy` | Received by transfer, never bought → infinite ROI if unfiltered |
 | `sold_gt_bought` | Sold more than ever bought |
 | `fast_flip` | Buy + sell of one pool within N seconds. Tune N for ~100ms blocks |
-| `crowd_entry` | Holds a crowd-launch token with no purchase — basis unknown |
 
 ---
 
@@ -405,12 +404,14 @@ LIMIT 1000;
 | Case | Handling |
 |---|---|
 | **Not graduated** | No pool, no price. Own page layout — progress, clearing price, raised vs threshold. Excluded from PnL, volume, leaderboard |
-| **Graduated** | Pool and trading look normal, **but auction entrants still have no purchase in your swap data.** Flag `crowd_entry`, hold out of the ranked board |
+| **Graduated** | Pool and trading look normal, but auction entrants still have no purchase in swap data. Their affected positions need explicit exclusion; see [Crowd launches](CROWD-LAUNCHES.md) |
 
 The second case is the one people miss. Auction participants got tokens from `claimTokens()`, not a swap — so to a swap-only indexer they appear to have acquired tokens for free, and their PnL is overstated by their entire cost basis. **This persists forever after graduation**; it isn't a pending state that resolves.
 
-- **Fix 1 (20 min, default):** badge + flag + exclude from ranking. Realized PnL from sells is still correct; only the entry is missing.
-- **Fix 2 (+45 min), if crowd >10% of active pools:** read each auction's final `ClearingPriceUpdated` and its `TokensClaimed`, insert a synthetic buy of `claimed × clearingPrice`. Exact basis, nobody excluded. Two numbers per auction, not the full auction dataset.
+The current ledger treats auction claims and pre-migration token transfers as
+zero-cost inflows that exclude affected positions from supported PnL. It does
+not infer auction cost from the final clearing price. See
+[Crowd launches](CROWD-LAUNCHES.md) for the implemented scope and accounting rule.
 
 Also: migration liquidity arrives via `ModifyLiquidity`, not a swap. Make sure it never counts as volume or every crowd launch appears to open with a huge print.
 

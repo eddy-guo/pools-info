@@ -36,7 +36,7 @@ The gap it fills: pools.xyz and Uniswap's own Launch Aggregator have token disco
 | **Window** | 7 days to start; all-time is ~1 hour of backfill since pools.trade is only ~9 weeks old |
 | **Ranking** | Realized PnL, ETH-native, ≥10 trades to rank. USD is a display toggle |
 | **Live reads** | Current price only. Everything else from the store |
-| **Crowd launches** | Badge + hold out of the ranked board. Upgrade to synthetic buys if >10% of pools |
+| **Crowd launches** | See [Crowd launches](CROWD-LAUNCHES.md) for the current scope and accounting rule |
 
 **The portability rule:** put every data access behind a `Store` interface on day one, and store big numbers as strings (SQLite has no 256-bit numeric type; the same strings drop into Postgres `numeric(78,0)` unchanged). Do that and Phase 2 is one new class plus plumbing. Skip it and it's a rewrite.
 
