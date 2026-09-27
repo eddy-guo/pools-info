@@ -121,6 +121,11 @@ export function createWarmSet(
         await read("/v1/explore?window=24h&sort=launch&limit=6");
         return ranked;
       });
+      // The creators read is large. Run the smaller reads afterward so they
+      // retain their pages when shared cache is tight.
+      await measured("creators", () =>
+        read("/v1/creators?window=All&sort=launches&offset=0&limit=25"),
+      );
       const home = (await measured("home_leaderboard", () =>
         read("/v1/leaderboard?window=24h&limit=5&minTrades=10"),
       )) as AnalyticsLeaderboardResponse;

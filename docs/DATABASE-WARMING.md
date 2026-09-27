@@ -22,11 +22,34 @@ finally reported unavailable rather than retried forever.
 
 `apps/api/src/database-warmth.ts` owns the policy and readiness state.
 `apps/api/src/warm-set.ts` invokes the current serving readers in order:
-screener volume ranking and launch strip, home leaderboard (24h, five rows,
-minimum ten trades), traders (7d), the busiest ledger pool's 24h market,
-ledger cut and a wallet profile. With the broad source it uses the same broad
+screener volume ranking and launch strip, the creators page's first load (All
+window, launches order, 25 rows), home leaderboard (24h, five rows, minimum
+ten trades), traders (7d), the busiest ledger pool's 24h market, ledger cut
+and a wallet profile. Smaller reads follow creators so their pages remain in a
+tight shared cache. With the broad source it uses the same broad
 serving readers. Empty databases have no pool or wallet to warm; they do not
 invent an identity. All warm connections are read-only and use autocommit.
+
+The 27 Sep local PG 18.6 production-copy replay used `debug_io_direct=data`,
+a cold restart, one warm set, then a direct serving read. The figures below are
+8 KB `shared_blks_read` blocks from `pg_stat_statements`. Three cold restarts
+per warm-set order gave the same counts for the immediate creators read; a
+separate direct probe checked each other purpose after its own restart and
+warm-up.
+
+| Shared cache | Creators with no creators warm read | Creators before the smaller reads | Creators last | Other direct reads that increased when creators ran last       |
+| ------------ | ----------------------------------: | --------------------------------: | ------------: | -------------------------------------------------------------- |
+| 128 MB       |                              34,103 |                            33,405 | 31,807-31,814 | Home leaderboard 0 to 3; traders 0 to 34; busy pool 0 to 1,142 |
+| 256 MB       |                              33,633 |                            24,964 |        24,964 | None                                                           |
+
+At 128 MB, moving creators last saved about 1,600 blocks on its next read but
+made the home, traders and busy-pool reads fetch blocks from disk. The screener
+fell from 13,836 to 13,460 blocks; launch strip, wallet and ledger cut were
+unchanged. At 256 MB, the order made no measured difference. The earlier
+creators position retains the other reads' cache residency at 128 MB, while
+its own next read still fetches about 33,400 blocks. The large residual disk
+reads mean warming alone cannot rule out the original 3-second timeout under
+production load.
 
 Startup and new database identities trigger warming. The API reads
 `pg_postmaster_start_time()` once per new pooled connection, before using it.
