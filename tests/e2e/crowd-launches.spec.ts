@@ -147,7 +147,11 @@ test("the Crowd view lives in the URL: Show more, reload and Back restore it", a
   await page.goto("/?view=crowd&sort=launch");
   await expect(rows(page, testInfo)).toHaveCount(25);
   await page.getByRole("button", { name: /^Show \d+ more$/ }).click();
-  await expect.poll(() => search(page).get("limit")).toBe("50");
+  /* The request is clamped to the 40 launches the first page already
+     named, as every growable list does. */
+  await expect
+    .poll(() => search(page).get("limit"))
+    .toBe(String(launches.length));
   await expect(rows(page, testInfo)).toHaveCount(launches.length);
   await expect(
     page.getByRole("button", { name: /^Show \d+ more$/ }),
