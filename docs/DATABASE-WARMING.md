@@ -37,10 +37,10 @@ per warm-set order gave the same counts for the immediate creators read; a
 separate direct probe checked each other purpose after its own restart and
 warm-up.
 
-| Shared cache | Creators with no creators warm read | Creators before the smaller reads | Creators last | Other direct reads that increased when creators ran last |
-| --- | ---: | ---: | ---: | --- |
-| 128 MB | 34,103 | 33,405 | 31,807-31,814 | Home leaderboard 0 to 3; traders 0 to 34; busy pool 0 to 1,142 |
-| 256 MB | 33,633 | 24,964 | 24,964 | None |
+| Shared cache | Creators with no creators warm read | Creators before the smaller reads | Creators last | Other direct reads that increased when creators ran last       |
+| ------------ | ----------------------------------: | --------------------------------: | ------------: | -------------------------------------------------------------- |
+| 128 MB       |                              34,103 |                            33,405 | 31,807-31,814 | Home leaderboard 0 to 3; traders 0 to 34; busy pool 0 to 1,142 |
+| 256 MB       |                              33,633 |                            24,964 |        24,964 | None                                                           |
 
 At 128 MB, moving creators last saved about 1,600 blocks on its next read but
 made the home, traders and busy-pool reads fetch blocks from disk. The screener
