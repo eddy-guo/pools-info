@@ -31,6 +31,16 @@ const upstream: Record<
 /** The Uniswap v4 PoolManager every catalog pool swaps through, the same
  * address as `contracts.manager` in `packages/chain/src/events.ts`. */
 export const poolManager = "0x8366a39cc670b4001a1121b8f6a443a643e40951";
+/** topic0 of the PoolManager's `Swap(bytes32 indexed id, ...)`, whose topic1
+ * is the pool id (`swapEvent` in `packages/chain/src/events.ts`). */
+export const swapTopic =
+  "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f";
+/** The PRO host's JSON-RPC gateway answers at most 5 requests per batch (a
+ * larger one is refused as 413 and still billed) and bills a batch like one
+ * `default` call: 20 credits, measured 2026-09-27. */
+export const swapLogBatchSize = 5;
+export const swapLogBatchCost = 20;
+const swapLogConcurrency = 2;
 export const freeTierRequestsPerSecond = 5;
 /** Blockscout PRO answers wallet address pages in 2.0-4.6 s from Railway
  * (scout measurement, 2026-09-16); this leaves headroom for a slow page
@@ -273,14 +283,33 @@ export function normalizeTokenTransfer(
   };
 }
 
-/** The wallet's ERC-20 leg against the PoolManager as a trade, or null for
- * any other transfer: a spoofed-token poisoning log, an airdrop, a plain send.
- * Only the direction is read from a row that is not a trade, so a malformed
- * row the list would never show cannot fail the page. */
+/** The verified registry as a trade read needs it: its launch tokens, and the
+ * pool ids each one launched in. */
+export interface TradeRegistry {
+  tokens: ReadonlySet<string>;
+  poolsOf(token: string): readonly string[];
+}
+/** A wallet leg that may be a trade. `relayed` when its counterparty is not
+ * the PoolManager, so it is a trade only once its transaction is shown to hold
+ * a PoolManager swap of the token's pool. */
+export interface TradeLeg {
+  trade: WalletHistoryTrade;
+  relayed: boolean;
+}
+
+/** The wallet's ERC-20 leg as a trade candidate, sided by direction, or null
+ * for any row that cannot be one. A leg against the PoolManager is a direct
+ * trade. Any other counterparty (a router or an aggregator passing the swap's
+ * tokens on, but also a plain send or an airdrop) makes a relayed candidate,
+ * and only for a registry token: without `registered` the leg is dropped, as
+ * the caller could not confirm it. Only the direction and token are read from
+ * a row that is not a candidate, so a malformed row the list would never show
+ * cannot fail the page. */
 export function normalizeTrade(
   value: unknown,
   wallet: string,
-): WalletHistoryTrade | null {
+  registered?: ReadonlySet<string>,
+): TradeLeg | null {
   const t = item(value);
   const hashOf = (party: unknown) =>
     typeof party === "object" && party !== null
@@ -288,24 +317,29 @@ export function normalizeTrade(
       : null;
   const from = hashOf(t.from),
     to = hashOf(t.to);
-  const side =
-    from === poolManager && to === wallet
-      ? "buy"
-      : from === wallet && to === poolManager
-        ? "sell"
-        : null;
+  if (from === to) return null;
+  const side = to === wallet ? "buy" : from === wallet ? "sell" : null;
   if (!side) return null;
+  const relayed = (side === "buy" ? from : to) !== poolManager;
+  const token =
+    typeof t.token === "object" && t.token !== null
+      ? String((t.token as Item).address_hash).toLowerCase()
+      : null;
+  if (relayed && !(token && registered?.has(token))) return null;
   const transfer = normalizeTokenTransfer(value);
   if (transfer.token.type !== "ERC-20" || transfer.value === null) invalid();
   return {
-    transactionHash: transfer.transactionHash,
-    logIndex: transfer.logIndex,
-    block: transfer.block,
-    timestamp: transfer.timestamp,
-    side,
-    token: transfer.token,
-    tokenRaw: transfer.value,
-    method: transfer.method,
+    trade: {
+      transactionHash: transfer.transactionHash,
+      logIndex: transfer.logIndex,
+      block: transfer.block,
+      timestamp: transfer.timestamp,
+      side,
+      token: transfer.token,
+      tokenRaw: transfer.value,
+      method: transfer.method,
+    },
+    relayed,
   };
 }
 
@@ -319,23 +353,29 @@ export interface BlockscoutPage<K extends WalletHistoryKind> {
   nextPageParams: PageParams | null;
 }
 export interface BlockscoutClient {
+  /** With `registry`, a trades page keeps the wallet's legs in registry
+   * tokens: direct PoolManager legs, and relayed legs whose transaction the
+   * chain shows holding a PoolManager swap of the token's pool. */
   readPage<K extends WalletHistoryKind>(
     kind: K,
     wallet: string,
     page: PageParams | null,
     reserveShare?: number,
+    registry?: TradeRegistry,
   ): Promise<BlockscoutPage<K>>;
   budget: ReturnType<typeof createCreditBudget>;
 }
 
 /** The key never leaves this closure: it is sent only as a Bearer header to
- * the fixed base URL, and no error, log line, or response carries it. */
+ * the fixed base URL and its JSON-RPC gateway, and no error, log line, or
+ * response carries it. */
 export function createBlockscoutClient({
   key,
   baseUrl = blockscoutBaseUrl,
   dailyCreditCap,
   timeoutMs = defaultBlockscoutTimeoutMs,
   maxBytes = 4 * 1024 * 1024,
+  swapCacheEntries = 50000,
   now = Date.now,
   fetchImpl = fetch,
   limiter = createRateLimiter({ now }),
@@ -345,6 +385,7 @@ export function createBlockscoutClient({
   dailyCreditCap: number;
   timeoutMs?: number;
   maxBytes?: number;
+  swapCacheEntries?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
   limiter?: ReturnType<typeof createRateLimiter>;
@@ -354,9 +395,26 @@ export function createBlockscoutClient({
     throw Error("Invalid BLOCKSCOUT_API_URL");
   if (!(timeoutMs > 0 && timeoutMs <= defaultBlockscoutTimeoutMs))
     throw Error("Invalid timeout");
+  const root = baseUrl.replace(/\/+$/, "");
+  /** The gateway sits beside the REST API: `/4663/json-rpc` for `/4663/api/v2`. */
+  const rpcUrl = `${root.replace(/\/api\/v2$/, "")}/json-rpc`;
   const budget = createCreditBudget({ dailyCap: dailyCreditCap, now });
+  /** `${transaction}:${pool}` to whether that transaction holds a PoolManager
+   * swap of the pool. A mined transaction's logs never change, so a page read
+   * again spends nothing on the legs it has already confirmed or refused. */
+  const swaps = new Map<string, boolean>();
   function fail(event: string, detail: Record<string, unknown> = {}) {
     process.stderr.write(JSON.stringify({ event, ...detail }) + "\n");
+  }
+  function invalidResponse(kind: string, error: unknown) {
+    fail("blockscout_response_invalid", {
+      kind,
+      cause:
+        error instanceof Error
+          ? `${error.name}:${error.message}`.slice(0, 120)
+          : "unknown",
+    });
+    return new BlockscoutError("upstream_unavailable", 30);
   }
   async function readBody(response: Response): Promise<string> {
     const declared = Number(response.headers.get("content-length") ?? "0");
@@ -370,18 +428,183 @@ export function createBlockscoutClient({
     }
     return Buffer.concat(chunks).toString("utf8");
   }
+  /** One billed call: counted before it is made, paced by the limiter, and
+   * answered as parsed JSON or a `BlockscoutError`. */
+  async function request(
+    kind: string,
+    url: URL,
+    cost: number,
+    reserve: number,
+    body?: string,
+  ): Promise<unknown> {
+    budget.assertAvailable(cost, reserve);
+    await limiter.acquire();
+    budget.spend(cost, reserve);
+    let response: Response;
+    const started = now();
+    try {
+      response = await fetchImpl(url, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: "application/json",
+          "User-Agent": userAgent,
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        body,
+        redirect: "error",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      fail("blockscout_request_failed", {
+        kind,
+        cause: error instanceof Error ? error.name : "unknown",
+        ms: now() - started,
+      });
+      throw new BlockscoutError("upstream_unavailable", 30);
+    }
+    const remaining = response.headers.get("x-credits-remaining");
+    budget.observeRemaining(
+      remaining !== null && integerText.test(remaining) ? +remaining : null,
+      Math.max(...Object.values(creditCost)),
+    );
+    if (response.status !== 200) {
+      fail("blockscout_request_rejected", { kind, status: response.status });
+      await response.body?.cancel().catch(() => undefined);
+      if (response.status === 401 || response.status === 403)
+        throw new BlockscoutError("misconfigured_key", 3600);
+      if (response.status === 402)
+        throw new BlockscoutError("key_rejected", 3600);
+      throw new BlockscoutError(
+        "upstream_unavailable",
+        response.status === 429 ? 5 : 30,
+      );
+    }
+    try {
+      return JSON.parse(await readBody(response));
+    } catch (error) {
+      throw invalidResponse(kind, error);
+    }
+  }
+  /** The relayed legs whose transaction holds a PoolManager swap of their
+   * token's pool. The explorer's transfer rows carry only the wallet's own
+   * legs, so the swap is read from the chain: the PoolManager's `Swap` logs of
+   * the legs' pools in each leg's block, one `eth_getLogs` per block, five
+   * blocks per gateway batch. A filtered block answers a few hundred bytes
+   * where a relayed transaction's full receipt can run to megabytes (a
+   * 2,900-log airdrop, 2026-09-27). */
+  async function confirmSwaps(
+    legs: TradeLeg[],
+    registry: TradeRegistry,
+    reserve: number,
+  ): Promise<Set<TradeLeg>> {
+    const keysOf = ({ trade }: TradeLeg) =>
+      registry
+        .poolsOf(trade.token.address)
+        .map((pool) => `${trade.transactionHash}:${pool}`);
+    const asks = new Map<number, Set<string>>();
+    for (const leg of legs)
+      for (const pool of registry.poolsOf(leg.trade.token.address))
+        if (!swaps.has(`${leg.trade.transactionHash}:${pool}`)) {
+          const pools = asks.get(leg.trade.block) ?? new Set<string>();
+          asks.set(leg.trade.block, pools.add(pool));
+        }
+    const blocks = [...asks];
+    const batches: (typeof blocks)[] = [];
+    for (let i = 0; i < blocks.length; i += swapLogBatchSize)
+      batches.push(blocks.slice(i, i + swapLogBatchSize));
+    const found = new Set<string>();
+    const readBatch = async (batch: (typeof batches)[number]) => {
+      const answer = await request(
+        "swap-logs",
+        new URL(rpcUrl),
+        swapLogBatchCost,
+        reserve,
+        JSON.stringify(
+          batch.map(([block, pools], id) => ({
+            jsonrpc: "2.0",
+            id,
+            method: "eth_getLogs",
+            params: [
+              {
+                fromBlock: `0x${block.toString(16)}`,
+                toBlock: `0x${block.toString(16)}`,
+                address: poolManager,
+                topics: [swapTopic, [...pools]],
+              },
+            ],
+          })),
+        ),
+      );
+      try {
+        if (!Array.isArray(answer) || answer.length !== batch.length) invalid();
+        for (const reply of answer.map(item)) {
+          const asked =
+            typeof reply.id === "number" ? batch[reply.id] : undefined;
+          if (!asked || reply.error !== undefined) invalid();
+          if (!Array.isArray(reply.result)) invalid();
+          const [block, pools] = asked;
+          for (const log of reply.result.map(item)) {
+            if (log.removed === true) continue;
+            const topics = Array.isArray(log.topics) ? log.topics : [];
+            const pool = hash(topics[1]);
+            if (
+              address(log.address) !== poolManager ||
+              topics[0] !== swapTopic ||
+              !pools.has(pool) ||
+              typeof log.blockNumber !== "string" ||
+              !/^0x[0-9a-f]+$/i.test(log.blockNumber) ||
+              parseInt(log.blockNumber, 16) !== block
+            )
+              invalid();
+            found.add(`${hash(log.transactionHash)}:${pool}`);
+          }
+        }
+      } catch (error) {
+        throw invalidResponse("swap-logs", error);
+      }
+    };
+    // Two batches in flight at most: the key's 5 requests per second are
+    // shared with every other reader of it, and a burst right after the page
+    // read drew 429s on 2026-09-27.
+    const queue = [...batches];
+    const worker = async () => {
+      for (let batch = queue.shift(); batch; batch = queue.shift())
+        // A failed batch fails the page, so the rest are not worth paying for.
+        await readBatch(batch).catch((error: unknown) => {
+          queue.length = 0;
+          throw error;
+        });
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(swapLogConcurrency, queue.length) },
+        worker,
+      ),
+    );
+    const confirmed = new Set<TradeLeg>();
+    for (const leg of legs)
+      if (keysOf(leg).some((k) => found.has(k) || swaps.get(k) === true))
+        confirmed.add(leg);
+    for (const leg of legs)
+      for (const k of keysOf(leg))
+        if (!swaps.has(k)) {
+          swaps.set(k, found.has(k));
+          if (swaps.size > swapCacheEntries)
+            swaps.delete(swaps.keys().next().value!);
+        }
+    return confirmed;
+  }
   return {
     budget,
-    async readPage(kind, wallet, page, reserveShare = 0) {
+    async readPage(kind, wallet, page, reserveShare = 0, registry) {
       if (!addressHash.test(wallet)) throw Error("Invalid wallet");
       const cost = creditCost[kind];
       const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
-      budget.assertAvailable(cost, reserve);
-      await limiter.acquire();
-      budget.spend(cost, reserve);
+      const trades = kind === "trades";
       const address = wallet.toLowerCase();
       const url = new URL(
-        `${baseUrl.replace(/\/+$/, "")}/addresses/${address}/${upstream[kind].path}`,
+        `${root}/addresses/${address}/${upstream[kind].path}`,
       );
       // The kind's own filters go last, so a cursor can never replace them.
       for (const [k, v] of Object.entries({
@@ -389,68 +612,45 @@ export function createBlockscoutClient({
         ...upstream[kind].query,
       }))
         url.searchParams.set(k, v);
-      let response: Response;
-      const started = now();
+      const answer = await request(kind, url, cost, reserve);
+      let items: unknown[];
+      let legs: TradeLeg[] = [];
+      let nextPageParams: PageParams | null;
       try {
-        response = await fetchImpl(url, {
-          headers: {
-            Authorization: `Bearer ${key}`,
-            Accept: "application/json",
-            "User-Agent": userAgent,
-          },
-          redirect: "error",
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-      } catch (error) {
-        fail("blockscout_request_failed", {
-          kind,
-          cause: error instanceof Error ? error.name : "unknown",
-          ms: now() - started,
-        });
-        throw new BlockscoutError("upstream_unavailable", 30);
-      }
-      const remaining = response.headers.get("x-credits-remaining");
-      budget.observeRemaining(
-        remaining !== null && integerText.test(remaining) ? +remaining : null,
-        Math.max(...Object.values(creditCost)),
-      );
-      if (response.status !== 200) {
-        fail("blockscout_request_rejected", { kind, status: response.status });
-        await response.body?.cancel().catch(() => undefined);
-        if (response.status === 401 || response.status === 403)
-          throw new BlockscoutError("misconfigured_key", 3600);
-        if (response.status === 402)
-          throw new BlockscoutError("key_rejected", 3600);
-        throw new BlockscoutError(
-          "upstream_unavailable",
-          response.status === 429 ? 5 : 30,
-        );
-      }
-      try {
-        const body = JSON.parse(await readBody(response)) as Item;
+        const body = item(answer);
         if (!Array.isArray(body.items)) invalid();
+        nextPageParams = pageParams(body.next_page_params);
+        if (trades) {
+          legs = body.items
+            .map((value) => normalizeTrade(value, address, registry?.tokens))
+            .filter((leg) => leg !== null);
+          if (registry)
+            legs = legs.filter((leg) =>
+              registry.tokens.has(leg.trade.token.address),
+            );
+        }
         const normalize: (value: unknown) => unknown =
           kind === "transactions"
             ? normalizeTransaction
-            : kind === "trades"
-              ? (value) => normalizeTrade(value, address)
-              : normalizeTokenTransfer;
-        return {
-          items: body.items
-            .map(normalize)
-            .filter((i) => i !== null) as HistoryItem<typeof kind>[],
-          nextPageParams: pageParams(body.next_page_params),
-        };
+            : normalizeTokenTransfer;
+        items = trades ? [] : body.items.map(normalize);
       } catch (error) {
-        fail("blockscout_response_invalid", {
-          kind,
-          cause:
-            error instanceof Error
-              ? `${error.name}:${error.message}`.slice(0, 120)
-              : "unknown",
-        });
-        throw new BlockscoutError("upstream_unavailable", 30);
+        throw invalidResponse(kind, error);
       }
+      if (trades) {
+        const relayed = legs.filter((leg) => leg.relayed);
+        const confirmed =
+          registry && relayed.length
+            ? await confirmSwaps(relayed, registry, reserve)
+            : new Set<TradeLeg>();
+        items = legs
+          .filter((leg) => !leg.relayed || confirmed.has(leg))
+          .map((leg) => leg.trade);
+      }
+      return {
+        items: items as HistoryItem<typeof kind>[],
+        nextPageParams,
+      };
     },
   };
 }

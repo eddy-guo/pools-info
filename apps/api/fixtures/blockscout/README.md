@@ -42,3 +42,29 @@ PoolManager; 10 of that page's 50 rows were poisoning logs. The whole page
 answered in 1.8 s and page 2 in 2.0 s, and both were all ERC-20. The config
 table that day also priced `advanced-filters` at 50 credits; its wallet and
 PoolManager filter answered in 13-18 s, past the client's timeout.
+
+## Relayed trades
+
+Recorded on 2026-09-27 from the same host with the same free-tier key, for
+three wallets of the 25 Sep 7d board, trimmed the same way (the rows are
+unmodified; `next_page_params` is each page's own):
+
+| File                           | Request                                                                                                        | Status |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------ |
+| `trades-launchpad-router.json` | `/addresses/0xb96de56c…a83e/token-transfers?type=ERC-20`                                                       | 200    |
+| `trades-aggregator.json`       | `/addresses/0x6e7d7a4e…a109/token-transfers?type=ERC-20&block_number=68740347&index=46`                        | 200    |
+| `trades-plain-send.json`       | `/addresses/0xb5ba7f32…40d3/token-transfers?type=ERC-20&block_number=62851291&index=280`                       | 200    |
+| `swap-logs.json`               | `POST /json-rpc`, `eth_getLogs` of the PoolManager's `Swap` logs of the leg's pool in each relayed leg's block | 200    |
+
+`trades-launchpad-router.json` keeps a spoofed "ETH" token's send to another
+address, two sells relayed by the launchpad's router
+`0x8876789976decbfcbbbe364623c63652db8c0904` and a buy straight out of the
+PoolManager. `trades-aggregator.json` keeps a sell and a buy relayed by the
+aggregator `0xcc4c6fa295b24402d9c27efeb35205a32a7d641f`; the sell's block
+holds eight swaps of its pool, seven of them other wallets'.
+`trades-plain-send.json` keeps a registry token sent to another wallet in a
+transaction with no swap, and a direct buy. `swap-logs.json` maps each relayed
+leg's block to the filter sent and the logs the gateway returned for it. The
+gateway answered 413 "Max batch size is 5" to a larger batch and billed it; a
+batch of up to five cost 20 credits, the same as one request, and counted as
+one request against the 5 per second.

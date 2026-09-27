@@ -94,6 +94,8 @@ function registryOf(tokens: number[]): TokenRegistry {
     current: async () => set,
     poolOf: (t) =>
       set.has(t) ? hash(0xb000 + parseInt(t.slice(-4), 16)) : null,
+    poolsOf: (t) =>
+      set.has(t) ? [hash(0xb000 + parseInt(t.slice(-4), 16))] : [],
   };
 }
 /** An explorer cache over scripted first pages, counting reads per wallet. */
@@ -147,6 +149,7 @@ test("empty following reads nothing and reports no invented coverage", async () 
         throw Error("Unexpected registry read");
       },
       poolOf: () => null,
+      poolsOf: () => [],
     },
     activity: async () => {
       throw Error("Unexpected ledger read");

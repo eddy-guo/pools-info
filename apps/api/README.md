@@ -489,37 +489,46 @@ own `next_page_params`, and are validated before they reach the explorer.
 
 `kind=trades` is the wallet page's trade list. It reads the wallet's ERC-20
 transfer pages (`token-transfers?type=ERC-20`, a filter no cursor can replace)
-and keeps only the legs the wallet settled directly with the v4 PoolManager
-(`0x8366…0951`): a trade item has `transactionHash`, `logIndex`, `block`,
-`timestamp`, `side` (`buy` when the token left the PoolManager for the wallet,
-`sell` when the wallet paid it in), `token` (as above), `tokenRaw` (exact raw
-amount) and `method`. A leg is kept only when its token is a launch token of
-the verified registry (`indexed_pools`): a spoofed token's Transfer log can
-name the PoolManager as counterparty, but its token address is the contract
-that emitted it, which the EVM sets, so it can never carry a registered token's
-address. `token-registry.ts` holds those tokens in memory (one full read, then
-rows past the highest `pool_ref` every 30 s, a full reload hourly) and is read
-before any credit is spent; with no registry the trades kind answers 503
-`not_configured`. Everything else on those pages, such as poisoning logs,
-airdrops, plain sends and trades in pools outside the registry, is dropped.
-There is no ETH figure: the ETH side of a swap is often paid or received by a
-router or bot contract rather than the wallet, so the exact amount lives only
-in the Swap log, one explorer call per trade. A trade routed so that a contract
-other than the PoolManager hands the wallet its tokens is not listed. Like
-every kind, one response reads exactly one explorer page (30 credits), so a
-page can hold 0 to 50 trades beside a non-null cursor. The contract, an example
-payload and the credit arithmetic for one wallet page load are in
-`docs/WALLET-TRADE-HISTORY.md`.
+and keeps the wallet's legs in transactions that swap the leg's token through
+the v4 PoolManager (`0x8366…0951`): a trade item has `transactionHash`,
+`logIndex`, `block`, `timestamp`, `side` (`buy` when the token came to the
+wallet, `sell` when the wallet paid it out), `token` (as above), `tokenRaw`
+(exact raw amount) and `method`. A leg is kept only when its token is a launch
+token of the verified registry (`indexed_pools`): a spoofed token's Transfer
+log can name any counterparty, but its token address is the contract that
+emitted it, which the EVM sets, so it can never carry a registered token's
+address. `token-registry.ts` holds those tokens and their pool ids in memory
+(one full read, then rows past the highest `pool_ref` every 30 s, a full reload
+hourly) and is read before any credit is spent; with no registry the trades
+kind answers 503 `not_configured`. A leg against the PoolManager is the swap's
+own settlement and is kept as read. A leg against any other address (the
+launchpad's router, an aggregator, but also a plain send or an airdrop) is kept
+only when its transaction holds a PoolManager `Swap` of the token's registered
+pool, which the client reads with `eth_getLogs` on the explorer's JSON-RPC
+gateway (`/4663/json-rpc`, same key): one filtered query per block, five
+blocks per batch (the gateway's maximum), two batches in flight, 20 credits a
+batch, cached per transaction and pool for the life of the process. A gateway
+failure fails the page rather than dropping its relayed legs. Everything else
+on those pages, such as poisoning logs, airdrops, plain sends and trades in
+pools outside the registry, is dropped. There is no ETH figure: the ETH side
+of a swap is often paid or received by a router or bot contract rather than
+the wallet, so the exact amount lives only in the Swap log, one explorer call
+per trade. Like
+every kind, one response reads exactly one explorer page (30 credits, plus 20
+per five blocks holding relayed legs not yet confirmed), so a page can hold 0
+to 50 trades beside a non-null cursor. The contract, an example payload,
+what the list includes and leaves out, and the credit arithmetic for one wallet
+page load are in `docs/WALLET-TRADE-HISTORY.md`.
 
 Configuration, read from the environment at startup:
 
-| Variable                            | Default  | Meaning                                                                                                         |
-| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
-| `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs. |
-| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers or trades page).   |
-| `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                           |
-| `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                             |
-| `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                            |
+| Variable                            | Default  | Meaning                                                                                                                              |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs.                      |
+| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers or trades page, 20 per swap-log batch). |
+| `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                                                |
+| `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                                                  |
+| `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                                                 |
 
 Budget and failure behaviour. Every upstream call passes a sliding-window
 limiter (at most five starts in any second, the free tier's rate; a call that
@@ -540,8 +549,9 @@ whenever the explorer or the budget cannot answer, otherwise the route returns
 `reason` is `not_configured`, `budget_exhausted` (seconds to UTC midnight),
 `upstream_unavailable` (timeouts, 429, 5xx, or an unreadable page), or
 `key_rejected` (401, 402, or 403 from the explorer). Ordinary request limits
-and coalescing apply, the key never appears in any response or log line, and
-the route makes no chain RPC call.
+and coalescing apply, and the key never appears in any response or log line.
+The one chain RPC the route makes is the trades kind's `eth_getLogs` above,
+through the explorer's own gateway under the same key, limiter and budget.
 
 ## Following
 

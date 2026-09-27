@@ -8,15 +8,18 @@ export interface RegistryToken {
 
 /** The launch tokens of the verified registry (`indexed_pools`), whose rows are
  * admitted only after the pool id is recomputed from its key. The explorer's
- * trade list keeps a PoolManager leg only when its token is here: a Transfer
- * log's token is the contract that emitted it, which the EVM sets, so a
- * spoofing contract can write any `from` and `to` but never a registered
- * token's address. */
+ * trade list keeps a wallet leg only when its token is here: a Transfer log's
+ * token is the contract that emitted it, which the EVM sets, so a spoofing
+ * contract can write any `from` and `to` but never a registered token's
+ * address. */
 export interface TokenRegistry {
   current(): Promise<ReadonlySet<string>>;
   /** The pool of a token in the set `current()` last answered: null when the
    * token is not there, or when more than one registered pool launched it. */
   poolOf(token: string): string | null;
+  /** Every registered pool of a token in that set, empty when it is not
+   * there. */
+  poolsOf(token: string): readonly string[];
 }
 
 /** Holds the set in memory. It loads every token once, then only rows past the
@@ -34,7 +37,7 @@ export function createTokenRegistry(
   }: { now?: () => number; refreshMs?: number; fullReloadMs?: number } = {},
 ): TokenRegistry {
   let tokens: Set<string> | null = null;
-  let pools = new Map<string, string | null>();
+  let pools = new Map<string, string[]>();
   let lastRef = 0,
     refreshedAt = 0,
     fullAt = 0;
@@ -44,15 +47,13 @@ export function createTokenRegistry(
     const full = !tokens || t - fullAt >= fullReloadMs;
     const rows = await load(full ? 0 : lastRef);
     const next = full ? new Set<string>() : tokens!;
-    const nextPools = full ? new Map<string, string | null>() : pools;
+    const nextPools = full ? new Map<string, string[]>() : pools;
     let max = full ? 0 : lastRef;
     for (const row of rows) {
       next.add(row.token);
-      const held = nextPools.get(row.token);
-      nextPools.set(
-        row.token,
-        held === undefined ? row.poolId : held === row.poolId ? held : null,
-      );
+      const held = nextPools.get(row.token) ?? [];
+      if (!held.includes(row.poolId))
+        nextPools.set(row.token, [...held, row.poolId]);
       if (row.ref > max) max = row.ref;
     }
     tokens = next;
@@ -77,7 +78,11 @@ export function createTokenRegistry(
       return tokens!;
     },
     poolOf(token) {
-      return pools.get(token) ?? null;
+      const held = pools.get(token);
+      return held?.length === 1 ? held[0] : null;
+    },
+    poolsOf(token) {
+      return pools.get(token) ?? [];
     },
   };
 }
