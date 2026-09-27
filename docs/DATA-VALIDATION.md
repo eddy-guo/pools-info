@@ -51,8 +51,9 @@ leaderboard is per pool, not a completed cross-pool trader ranking.
 
 1. **Membership:** match the token's launch transaction, emitting strategy,
    chain 4663, token address and derived pool ID. A name or symbol match proves
-   nothing. The current registry has two Instant strategies, excludes Crowd and
-   starts at block 62625935. See INDEXING-SCOPE.md before claiming every launch.
+   nothing. At this audit, the registry had two Instant strategies, excluded
+   Crowd and started at block 62625935. See [Indexing scope](INDEXING-SCOPE.md)
+   and [Crowd launches](CROWD-LAUNCHES.md) for current membership boundaries.
 2. **Trades:** select one buy and sell in a completed database batch. Compare
    transaction hash, log index, block hash, emitting PoolManager, pool ID and
    raw amount0/amount1 against the transaction receipt. Token transfers must

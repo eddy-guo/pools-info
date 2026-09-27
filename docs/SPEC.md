@@ -408,10 +408,8 @@ LIMIT 1000;
 
 The second case is the one people miss. Auction participants got tokens from `claimTokens()`, not a swap — so to a swap-only indexer they appear to have acquired tokens for free, and their PnL is overstated by their entire cost basis. **This persists forever after graduation**; it isn't a pending state that resolves.
 
-The current ledger treats auction claims and pre-migration token transfers as
-zero-cost inflows that exclude affected positions from supported PnL. It does
-not infer auction cost from the final clearing price. See
-[Crowd launches](CROWD-LAUNCHES.md) for the implemented scope and accounting rule.
+For the implemented scope and accounting rule, see
+[Crowd launches](CROWD-LAUNCHES.md).
 
 Also: migration liquidity arrives via `ModifyLiquidity`, not a swap. Make sure it never counts as volume or every crowd launch appears to open with a huge print.
 
