@@ -262,6 +262,7 @@ export interface LedgerBatch {
   launches: readonly LedgerLaunch[];
   swaps: readonly LedgerSwap[];
   transfers: readonly LedgerTransfer[];
+  claims?: readonly LedgerTransfer[];
 }
 export interface LedgerApplied {
   changed: boolean;
@@ -277,6 +278,7 @@ export interface LedgerApplied {
 }
 
 const hex32 = /^0x[0-9a-f]{64}$/i;
+const hex20 = /^0x[0-9a-f]{40}$/i;
 const integer = (n: unknown): n is number =>
   Number.isSafeInteger(n) && (n as number) >= 0;
 const bytes = (hex: string) => hex.slice(2).toLowerCase();
@@ -337,6 +339,22 @@ export function ledgerContentHash(batch: LedgerBatch) {
         lower(t.to),
         t.value,
       ]),
+    ...(batch.claims?.length
+      ? {
+          claims: [...batch.claims]
+            .sort(logOrder)
+            .map((t) => [
+              t.block,
+              t.logIndex,
+              lower(t.txHash),
+              lower(t.blockHash),
+              lower(t.token),
+              lower(t.from),
+              lower(t.to),
+              t.value,
+            ]),
+        }
+      : {}),
   });
   return "0x" + createHash("sha256").update(canonical).digest("hex");
 }
@@ -408,7 +426,7 @@ export async function assertLedgerWriter(db: Client) {
   if (!r.rowCount) throw Error("ledger_writer_required");
 }
 
-function checkBatch(batch: LedgerBatch) {
+function checkBatch(batch: LedgerBatch, key: LedgerStreamKey) {
   if (
     !integer(batch.from) ||
     !integer(batch.to) ||
@@ -428,6 +446,29 @@ function checkBatch(batch: LedgerBatch) {
   for (const row of [...batch.launches, ...batch.swaps, ...batch.transfers])
     if (!integer(row.block) || row.block < batch.from || row.block > batch.to)
       throw Error("ledger_row_outside_batch");
+  if (batch.claims?.length) {
+    if (key !== crowdLedgerStream.key) throw Error("ledger_invalid_batch");
+    for (const claim of batch.claims) {
+      const launch = batch.launches.find(
+        (l) => lower(l.token) === lower(claim.token),
+      );
+      if (
+        !launch ||
+        !integer(claim.block) ||
+        claim.block < ledgerStream.start ||
+        claim.block >= launch.block ||
+        !integer(claim.logIndex) ||
+        !integer(claim.timestamp) ||
+        !hex32.test(claim.txHash) ||
+        !hex32.test(claim.blockHash) ||
+        !hex20.test(claim.from) ||
+        !hex20.test(claim.to) ||
+        !/^\d+$/.test(claim.value) ||
+        BigInt(claim.value) <= 0n
+      )
+        throw Error("ledger_invalid_claim");
+    }
+  }
   for (const l of batch.launches)
     if (
       !hex32.test(l.poolId) ||
@@ -469,7 +510,7 @@ export async function applyLedgerBatch(
     touched?: (db: Client, walletRefs: number[]) => Promise<unknown>;
   } = {},
 ): Promise<LedgerApplied> {
-  checkBatch(batch);
+  checkBatch(batch, key);
   checkedKey(key);
   const contentHash = ledgerContentHash(batch);
   await db.query("BEGIN");
@@ -490,7 +531,7 @@ export async function applyLedgerBatch(
         changed: false,
         contentHash,
         swaps: batch.swaps.length,
-        transfers: batch.transfers.length,
+        transfers: batch.transfers.length + (batch.claims?.length ?? 0),
         launches: batch.launches.length,
         attributed: 0,
         unattributed: 0,
@@ -520,6 +561,7 @@ export async function applyLedgerBatch(
         [
           ...new Set([
             ...batch.transfers.map((t) => lower(t.token)),
+            ...(batch.claims ?? []).map((t) => lower(t.token)),
             ...batch.launches.map((l) => lower(l.token)),
           ]),
         ],
@@ -557,10 +599,27 @@ export async function applyLedgerBatch(
     const transfers = batch.transfers.filter((t) =>
       byToken.has(lower(t.token)),
     );
-    const events = planLedgerBatch(
-      { swaps, transfers, registry: [...byPool.values()] },
-      ledgerRules,
-    );
+    const events = [
+      ...planLedgerBatch(
+        { swaps, transfers, registry: [...byPool.values()] },
+        ledgerRules,
+      ),
+      ...(batch.claims ?? []).map((claim) => {
+        const pool = byToken.get(lower(claim.token));
+        if (!pool) throw Error("ledger_unregistered_claim");
+        return {
+          kind: "inflow" as const,
+          txHash: lower(claim.txHash),
+          logIndex: claim.logIndex,
+          block: claim.block,
+          blockHash: lower(claim.blockHash),
+          timestamp: claim.timestamp,
+          poolId: pool.poolId,
+          wallet: lower(claim.to),
+          tokenRaw: BigInt(claim.value),
+        };
+      }),
+    ].sort(logOrder);
     const keys = ledgerKeys(events);
     const attributed = events.filter((e) => e.kind === "swap").length,
       unattributed = events.filter(
@@ -583,7 +642,7 @@ export async function applyLedgerBatch(
         JSON.stringify(batch.query),
         JSON.stringify(batch.pages),
         batch.swaps.length,
-        batch.transfers.length,
+        batch.transfers.length + (batch.claims?.length ?? 0),
         batch.launches.length,
         attributed,
         unattributed,
@@ -1030,7 +1089,7 @@ export async function applyLedgerBatch(
       changed: true,
       contentHash,
       swaps: batch.swaps.length,
-      transfers: batch.transfers.length,
+      transfers: batch.transfers.length + (batch.claims?.length ?? 0),
       launches: batch.launches.length,
       attributed,
       unattributed,

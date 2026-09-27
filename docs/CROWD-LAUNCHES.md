@@ -66,12 +66,13 @@ One crowd range (`collectCrowdRange`, `packages/chain/src/hypersync-crowd.ts`):
    logs and transactions, and the launch is verified from that read alone;
    a graduation that fails is recorded in the batch's `rejected` list.
 4. Swaps of every crowd pool by pool id, and transfers of every crowd token
-   from its pool's migration on (an auction moves the token long before the
-   pool exists).
+   from its pool's migration on. At each migration, a separate token Transfer
+   read from auction creation through the preceding block carries auction
+   claims into the exclusion fold.
 5. The cutoff header; name, symbol, decimals and supply over the public RPC.
 
-`verifyCrowdLaunchBatch` re-derives every pool, remembered auction, rejection
-and metadata issue from the retained rows before commit.
+`verifyCrowdLaunchBatch` re-derives every pool, remembered auction, claim,
+rejection and metadata issue from the retained rows before commit.
 
 ## Inside the tip loop
 
@@ -108,8 +109,8 @@ main range of every tip cycle, on the same HyperSync client, pacer and token:
 ## Serving
 
 `ledgerLaunchSql`/`ledgerSourceSql` (`apps/api/src/ledger-market.ts`) serve a
-crowd pool from the ledger while the crowd stream is within
-`crowdServedLagBlocks` (2,000) of the main cursor; otherwise it is listed but
+crowd pool from the ledger only while the crowd stream is level with the main
+cursor; otherwise it is listed but
 unmeasured, as any unmeasured launch is, rather than cut at an older block
 under the main cutoff. Every catalogue row carries `launchType` (explore
 items, the pool page's `pool`, a creator's `bestLaunch` and a wallet

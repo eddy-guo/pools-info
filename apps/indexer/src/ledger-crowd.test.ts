@@ -108,7 +108,7 @@ function trade(
   ];
 }
 /** An Instant launch A traded by W, and a pools.xyz crowd launch X created at
- * +20 and graduated at +150: an auction entrant V claims at +160 and sells,
+ * +20 and graduated at +150: an auction entrant V claims at +140, buys and sells,
  * W and the creator trade it inside the pass's range and W again at the tip.
  * Another template auction (Y) is created and never graduates. `fork`
  * changes W's sale at +380 into one at +381, from +350 on. */
@@ -146,7 +146,7 @@ function chain(options: { fork?: boolean } = {}) {
     ...trade(start + 7, a.poolId, TA, W, "sell", 12n, 200n),
     // V's claim of auction tokens: no swap, so a zero-cost inflow.
     fakeTransfer({
-      block: start + 160,
+      block: start + 140,
       logIndex: 0,
       token: TX,
       from: AX,
@@ -158,6 +158,7 @@ function chain(options: { fork?: boolean } = {}) {
     ...trade(start + 170, x.poolId, TX, W, "buy", 10n, 100n),
     ...trade(start + 175, x.poolId, TX, C, "buy", 3n, 30n),
     ...trade(start + 180, x.poolId, TX, W, "sell", 15n, 100n),
+    ...trade(start + 185, x.poolId, TX, V, "buy", 4n, 40n),
     ...trade(start + 190, x.poolId, TX, V, "sell", 7n, 50n),
     ...trade(start + 250, a.poolId, TA, W, "buy", 10n, 100n),
     ...trade(start + 260, x.poolId, TX, W, "buy", 10n, 100n),
@@ -353,10 +354,12 @@ test(
     assert.equal(position(W).realized_wei, 5 + 6);
     assert.equal(position(V).supported, false);
     assert.deepEqual(position(V).flags, ["zero_cost_inflow"]);
+    assert.equal(position(V).buys, 1);
+    assert.equal(position(V).inflow_raw, 50);
     assert.equal(position(C).supported, true);
     const state = JSON.parse(x.poolState[0].row);
-    assert.equal(state.trades, 7);
-    assert.equal(state.volume_wei, 10 + 3 + 15 + 7 + 10 + 2 + 16);
+    assert.equal(state.trades, 8);
+    assert.equal(state.volume_wei, 10 + 3 + 4 + 15 + 7 + 10 + 2 + 16);
     // The pending auction is remembered, not registered.
     const pending = await db.query(
       "SELECT auction FROM crowd_auctions ORDER BY auction",

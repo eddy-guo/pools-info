@@ -58,7 +58,6 @@ test("a crowd launch registers at its migration with its creator, metadata and t
     height: start + 2000,
     logs: [
       ...l.logs,
-      // An auction claim before the pool exists is not the pool's history.
       fakeTransfer({
         block: start + 400,
         logIndex: 0,
@@ -117,19 +116,36 @@ test("a crowd launch registers at its migration with its creator, metadata and t
     [[start + 600, W]],
   );
   assert.deepEqual(
+    c.claims.map((t) => [t.block, t.to, t.value]),
+    [[start + 400, W, "5"]],
+  );
+  assert.deepEqual(
     c.transfers.map((t) => t.block),
     [start + 600],
   );
   // Launch lane, the creation block read again, swaps, transfers, the cutoff
   // and (first range) the parent header.
-  assert.equal(c.requests, 6);
+  assert.equal(c.requests, 7);
   assert.deepEqual(c.query.creations, [crowdCreationQuery(start + 10)]);
   verifyCrowdLaunchBatch(c.launch);
 });
 
 test("a creation remembered from an earlier range graduates in a later one", async () => {
   const l = launch();
-  const fake = new FakeHyperSync({ height: start + 2000, logs: l.logs });
+  const fake = new FakeHyperSync({
+    height: start + 2000,
+    logs: [
+      ...l.logs,
+      fakeTransfer({
+        block: start + 200,
+        logIndex: 0,
+        token: T,
+        from: A,
+        to: W,
+        value: 7n,
+      }),
+    ],
+  });
   const first = await collectCrowdRange(client(fake), fakeMetadataRpc(), {
     fromBlock: start,
     toBlock: start + 100,
@@ -152,6 +168,10 @@ test("a creation remembered from an earlier range graduates in a later one", asy
   assert.deepEqual(
     second.launch.pools.map((p) => p.id),
     [l.poolId],
+  );
+  assert.deepEqual(
+    second.claims.map((t) => [t.block, t.to, t.value]),
+    [[start + 200, W, "7"]],
   );
   assert.equal(second.launch.auctions.length, 0);
   // Without the remembered creation, the migration is someone else's.
@@ -235,7 +255,20 @@ test("a graduation without pools.xyz's launcher in its creation is recorded and 
 
 test("the verifier refuses a crowd batch its evidence does not support", async () => {
   const l = launch();
-  const fake = new FakeHyperSync({ height: start + 2000, logs: l.logs });
+  const fake = new FakeHyperSync({
+    height: start + 2000,
+    logs: [
+      ...l.logs,
+      fakeTransfer({
+        block: start + 400,
+        logIndex: 0,
+        token: T,
+        from: A,
+        to: W,
+        value: 5n,
+      }),
+    ],
+  });
   const c = await collectCrowdRange(client(fake), fakeMetadataRpc(), {
     fromBlock: start,
     toBlock: start + 1000,
@@ -250,6 +283,8 @@ test("the verifier refuses a crowd batch its evidence does not support", async (
     (b) => ({ ...b, pools: [{ ...b.pools[0], creatorFees: false }] }),
     (b) => ({ ...b, pools: [] }),
     (b) => ({ ...b, auctions: [] }),
+    (b) => ({ ...b, claims: [] }),
+    (b) => ({ ...b, evidence: { ...b.evidence, claims: [] } }),
     (b) => ({
       ...b,
       auctions: [{ ...b.auctions[0], poolId: word(7) } as CrowdAuction],

@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { createClient, migrate } from "../../../packages/db/src/index";
 import { createReader } from "./reader";
 import { createApi } from "./server";
-import { crowdServedLagBlocks } from "./ledger-market";
 // The website validates a pool page's response with this exact module.
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
 
@@ -134,14 +133,15 @@ test(
       (await get(`/v1/pools/${id}?window=24h`)) as {
         pool: { launchType: string };
         market: {
-          volumeWei?: string;
-          coverage?: { unitBasis?: { source?: string } | null };
+          volumeWei?: string | null;
+          coverage?: {
+            completeWindow?: boolean;
+            unitBasis?: { source?: string } | null;
+          };
         } | null;
       };
 
-    // A crowd stream too far behind the main cursor: its pool is catalogued
-    // but not measured, while the Instant pool is.
-    await batch("ledger:crowd:v1", cursor - crowdServedLagBlocks - 1);
+    await batch("ledger:crowd:v1", cursor - 1);
     let rows = await explore("all", "launch");
     assert.deepEqual(rows.map((r) => r.launchType).sort(), [
       "crowd",
@@ -156,6 +156,8 @@ test(
     const ledgerServed = (p: typeof page) =>
       p.market?.coverage?.unitBasis?.source === "aggregate_ledger";
     assert.equal(ledgerServed(page), false);
+    assert.equal(page.market?.volumeWei, null);
+    assert.equal(page.market?.coverage?.completeWindow, false);
     assert.equal(ledgerServed(await served(I)), true);
 
     // Level again: the crowd pool is served from its hours and state, first

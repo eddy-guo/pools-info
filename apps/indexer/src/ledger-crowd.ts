@@ -247,6 +247,7 @@ export async function runLedgerCrowdRange(
   const pages =
     c.pages.launch.length +
     c.pages.creations.reduce((n, p) => n + p.length, 0) +
+    c.pages.claims.reduce((n, p) => n + p.length, 0) +
     c.pages.swaps.reduce((n, p) => n + p.length, 0) +
     c.pages.transfers.reduce((n, p) => n + p.length, 0) +
     c.pages.headers.length;

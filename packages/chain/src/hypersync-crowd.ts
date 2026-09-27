@@ -65,6 +65,7 @@ import {
   type LedgerQueryRecord,
   type LedgerRegistryPool,
 } from "./hypersync-ledger";
+import { contracts } from "./events";
 
 /** The crowd lane of the aggregate ledger (docs/CROWD-LAUNCHES.md): the
  * pools.xyz crowd launches, verified from their own events, and the swaps
@@ -121,6 +122,13 @@ export interface CrowdLaunchEvidence {
     transactions: HyperSyncTransactionRow[];
     blocks: HyperSyncBlockRow[];
   }[];
+  claims: {
+    query: HyperSyncQuery;
+    pages: HyperSyncPageRecord[];
+    logs: HyperSyncLogRow[];
+    transactions: HyperSyncTransactionRow[];
+    blocks: HyperSyncBlockRow[];
+  }[];
   /** Migrations of template auctions that were not admitted, and why. */
   rejected: { auction: string; reason: CrowdLaunchRejection }[];
   tokenMetadataIssues: {
@@ -143,6 +151,7 @@ export interface CrowdLaunchBatch {
   pools: CrowdCatalogPool[];
   /** Template auctions created in the range, for the caller to remember. */
   auctions: CrowdAuction[];
+  claims: LedgerTransfer[];
   evidence: CrowdLaunchEvidence;
 }
 
@@ -516,6 +525,75 @@ const admittedTokens = (
   launches.flatMap(({ launch }) =>
     typeof launch === "string" ? [] : [launch.auction.token],
   );
+const claimQuery = (auction: CrowdAuction, migrationBlock: number) => {
+  const query = transferLogQuery(
+    { fromBlock: auction.createdBlock, toBlock: migrationBlock - 1 },
+    [auction.token],
+    ledgerPassPolicy.tokensPerQuery,
+  );
+  query.logs![0].topics!.push(
+    [auction.auction, auction.strategy].map(
+      (address) => `0x${address.slice(2).padStart(64, "0")}`,
+    ),
+  );
+  return checkedQuery(query);
+};
+function crowdClaimRows(
+  launches: ReturnType<typeof crowdLaunchRows>["launches"],
+  reads: CrowdLaunchEvidence["claims"],
+): LedgerTransfer[] {
+  const admitted = launches.filter((l) => typeof l.launch !== "string");
+  if (!Array.isArray(reads) || reads.length !== admitted.length)
+    throw invalid();
+  return admitted.flatMap(({ migration, launch, declared }, i) => {
+    if (typeof launch === "string") throw invalid();
+    const read = reads[i];
+    const query = claimQuery(declared, migration.block_number);
+    if (!isDeepStrictEqual(read.query, query)) throw invalid();
+    checkedPages(read.pages, declared.createdBlock, migration.block_number - 1);
+    const logs = orderedLogs(
+      read.logs,
+      {
+        fromBlock: declared.createdBlock,
+        toBlock: migration.block_number - 1,
+      },
+      "claims",
+    );
+    const { transactions, blocks } = checkedEvidenceRows(read);
+    const rows = ledgerTradeRows([], logs, {
+      fromBlock: declared.createdBlock,
+      toBlock: migration.block_number - 1,
+      byPool: new Map(),
+      byToken: new Map([
+        [
+          declared.token,
+          {
+            poolId: declared.poolId,
+            token: declared.token,
+            launchBlock: migration.block_number,
+          },
+        ],
+      ]),
+      manager: false,
+      transactions,
+      blocks,
+    }).transfers;
+    if (
+      rows.some(
+        (r) => r.from !== declared.auction && r.from !== declared.strategy,
+      )
+    )
+      throw invalid();
+    return rows.filter(
+      (r) =>
+        r.to !== declared.auction &&
+        r.to !== declared.strategy &&
+        r.to !== "0x0000000000000000000000000000000000000000" &&
+        r.to !== contracts.manager &&
+        BigInt(r.value) > 0n,
+    );
+  });
+}
 /** Re-derive a crowd launch batch from its retained evidence with no network
  * and reject any pool, auction, rejection or issue it does not support. */
 export function verifyCrowdLaunchBatch(batch: CrowdLaunchBatch): void {
@@ -531,6 +609,7 @@ export function verifyCrowdLaunchBatch(batch: CrowdLaunchBatch): void {
     throw invalid();
   const { evidence, ...claimed } = batch;
   const rows = crowdLaunchRows(batch, evidence);
+  const claims = crowdClaimRows(rows.launches, evidence.claims);
   const replies = new Map<string, Hex | null>();
   const readBlocks = new Set<string>();
   for (const read of expandContractReads(evidence.calls)) {
@@ -564,6 +643,7 @@ export function verifyCrowdLaunchBatch(batch: CrowdLaunchBatch): void {
       toTimestamp: rows.toTimestamp,
       pools: derived.pools,
       auctions: rows.auctions,
+      claims,
     }) ||
     !isDeepStrictEqual(evidence.rejected, derived.rejected) ||
     !isDeepStrictEqual(evidence.tokenMetadataIssues, derived.issues)
@@ -594,6 +674,7 @@ export interface CrowdRangeCollection {
   launch: CrowdLaunchBatch;
   swaps: LedgerSwap[];
   transfers: LedgerTransfer[];
+  claims: LedgerTransfer[];
   unsupportedSwaps: number;
   swapSelection: "pool_ids";
   unregisteredSwaps: 0;
@@ -601,12 +682,14 @@ export interface CrowdRangeCollection {
   query: {
     launch: HyperSyncQuery;
     creations: HyperSyncQuery[];
+    claims: HyperSyncQuery[];
     swaps: LedgerQueryRecord[];
     transfers: LedgerQueryRecord[];
   };
   pages: {
     launch: HyperSyncPageRecord[];
     creations: HyperSyncPageRecord[][];
+    claims: HyperSyncPageRecord[][];
     swaps: HyperSyncPageRecord[][];
     transfers: HyperSyncPageRecord[][];
     headers: HyperSyncPageRecord[];
@@ -876,6 +959,24 @@ export async function collectCrowdRange(
   const kept = launched.filter(
     ({ migration }) => migration.block_number <= toBlock,
   );
+  const claimReads: CrowdLaunchEvidence["claims"] = [];
+  for (const { migration, auction, read } of kept) {
+    if (typeof launchOf(auction, migration, read) === "string") continue;
+    const query = claimQuery(auction, migration.block_number);
+    const collected = await collectLogPages(client, query, caps);
+    if (collected.toBlock !== migration.block_number - 1)
+      throw Error("HyperSync crowd claim read was cut short");
+    archiveHeight = Math.min(archiveHeight, collected.archiveHeight);
+    claimReads.push({
+      query,
+      pages: collected.pages,
+      logs: collected.logs,
+      transactions: sortedTransactions(collected.transactions.values()),
+      blocks: [...collected.blocks.values()].sort(
+        (a, b) => a.number - b.number,
+      ),
+    });
+  }
   const partial = {
     source: "hypersync" as const,
     stream: crowdLaunchStream,
@@ -902,9 +1003,11 @@ export async function collectCrowdRange(
       ...k.read,
       transactions: sortedTransactions(k.read.transactions),
     })),
+    claims: claimReads,
     archiveHeight,
   };
   const rows = crowdLaunchRows({ fromBlock, toBlock }, partial);
+  const claims = crowdClaimRows(rows.launches, claimReads);
   const metadata = await readLaunchMetadata(
     rpc,
     admittedTokens(rows.launches),
@@ -925,6 +1028,7 @@ export async function collectCrowdRange(
     toTimestamp: rows.toTimestamp,
     pools: derived.pools,
     auctions: rows.auctions,
+    claims,
     evidence: {
       ...partial,
       rejected: derived.rejected,
@@ -945,6 +1049,7 @@ export async function collectCrowdRange(
     launch,
     swaps: trades.swaps,
     transfers: trades.transfers,
+    claims,
     unsupportedSwaps: trades.unsupportedSwaps,
     swapSelection: "pool_ids",
     unregisteredSwaps: 0,
@@ -953,12 +1058,14 @@ export async function collectCrowdRange(
     query: {
       launch: launchQuery,
       creations: creationQueries,
+      claims: claimReads.map((r) => r.query),
       swaps: swapRecords,
       transfers: transferRecords,
     },
     pages: {
       launch: launchPages.pages,
       creations: creationPages,
+      claims: claimReads.map((r) => r.pages),
       swaps: swapPages,
       transfers: transferPages,
       headers: headerPages,

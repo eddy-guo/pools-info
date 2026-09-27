@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import type { LedgerTransfer } from "@pools/core";
 import {
   HyperSyncBudgetExceeded,
   HyperSyncClient,
@@ -340,12 +341,18 @@ export function ledgerBatchOf(
     | "swaps"
     | "transfers"
   > & {
+    claims?: readonly LedgerTransfer[];
     query: unknown;
     pages: unknown;
     launch: {
       pools: Pick<
         LedgerRangeCollection["launch"]["pools"][number],
-        "id" | "token" | "launchBlock" | "launchBlockHash" | "launchTx" | "launchLogIndex"
+        | "id"
+        | "token"
+        | "launchBlock"
+        | "launchBlockHash"
+        | "launchTx"
+        | "launchLogIndex"
       >[];
     };
   },
@@ -372,6 +379,7 @@ export function ledgerBatchOf(
     })),
     swaps: collection.swaps,
     transfers: collection.transfers,
+    ...(collection.claims ? { claims: collection.claims } : {}),
   };
 }
 /** One range: plan, collect, commit the launches, apply the ledger batch.
