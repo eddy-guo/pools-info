@@ -30,7 +30,9 @@ tight shared cache. With the broad source it uses the same broad
 serving readers. Empty databases have no pool or wallet to warm; they do not
 invent an identity. All warm connections are read-only and use autocommit.
 
-The 27 Sep local PG 18.6 production-copy replay used `debug_io_direct=data`,
+The following 27 Sep local PG 18.6 production-copy replay predates the
+first-hit creators probe described in `docs/LEDGER-MARKET-SERVING.md` ("The
+creators aggregate"). It used `debug_io_direct=data`,
 a cold restart, one warm set, then a direct serving read. The figures below are
 8 KB `shared_blks_read` blocks from `pg_stat_statements`. Three cold restarts
 per warm-set order gave the same counts for the immediate creators read; a
@@ -46,10 +48,11 @@ At 128 MB, moving creators last saved about 1,600 blocks on its next read but
 made the home, traders and busy-pool reads fetch blocks from disk. The screener
 fell from 13,836 to 13,460 blocks; launch strip, wallet and ledger cut were
 unchanged. At 256 MB, the order made no measured difference. The earlier
-creators position retains the other reads' cache residency at 128 MB, while
-its own next read still fetches about 33,400 blocks. The large residual disk
-reads mean warming alone cannot rule out the original 3-second timeout under
-production load.
+creators position retained the other reads' cache residency at 128 MB, while
+its own next read still fetched about 33,400 blocks. Those residual disk reads
+showed that warming alone could not rule out the original 3-second timeout
+under production load; they do not describe the current first-hit query's
+read cost.
 
 Startup and new database identities trigger warming. The API reads
 `pg_postmaster_start_time()` once per new pooled connection, before using it.
