@@ -21,6 +21,7 @@ import {
   ShowMore,
 } from "./product-common";
 import { useExploreRows } from "@/lib/use-explore-rows";
+import { tokenLine } from "@/lib/token-identity";
 
 /** Mapped onto the read API's own sort keys. */
 const CREATOR_SORTS = [
@@ -592,9 +593,7 @@ function CreatorProfile({ address }: { address: string }) {
                     >
                       <td data-pending={skeleton}>
                         {p ? (
-                          <Link href={poolHref(p)}>
-                            {p.name} ({p.symbol})
-                          </Link>
+                          <Link href={poolHref(p)}>{tokenLine(p)}</Link>
                         ) : skeleton ? (
                           "Token pending"
                         ) : (
@@ -661,9 +660,7 @@ function CreatorProfile({ address }: { address: string }) {
                 >
                   <div className="mobile-launch-top">
                     {p ? (
-                      <Link href={poolHref(p)}>
-                        {p.name} ({p.symbol})
-                      </Link>
+                      <Link href={poolHref(p)}>{tokenLine(p)}</Link>
                     ) : (
                       <span data-pending={skeleton}>
                         {skeleton ? "Token pending" : "\u00a0"}

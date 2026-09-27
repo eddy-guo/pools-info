@@ -48,6 +48,7 @@ import {
 } from "./trade-cells";
 import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
+import { tokenLine } from "@/lib/token-identity";
 const tabs = [
   { id: "positions", label: "Positions" },
   { id: "trades", label: "Trades" },
@@ -822,9 +823,7 @@ export function ProductWallet({ address }: { address: string }) {
                           {data?.launches.map((p) => (
                             <tr key={p.id}>
                               <td>
-                                <Link href={poolHref(p)}>
-                                  {p.name} ({p.symbol})
-                                </Link>
+                                <Link href={poolHref(p)}>{tokenLine(p)}</Link>
                               </td>
                               <td>{utc(p.launchedAt)}</td>
                               <td>
@@ -849,9 +848,7 @@ export function ProductWallet({ address }: { address: string }) {
                       {data?.launches.map((p) => (
                         <div className="mobile-wallet-row" key={p.id}>
                           <div className="mobile-wallet-row-top">
-                            <Link href={poolHref(p)}>
-                              {p.name} ({p.symbol})
-                            </Link>
+                            <Link href={poolHref(p)}>{tokenLine(p)}</Link>
                             <a
                               href={`${explorer}/tx/${p.launchTx}`}
                               target="_blank"
