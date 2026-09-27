@@ -12,8 +12,8 @@ entrants as excluded. Exact auction cost basis (option C) is deferred.
 
 Contracts (`packages/chain/src/crowd.ts`, verified source on Blockscout):
 
-| Contract | Address |
-| --- | --- |
+| Contract                         | Address                                      |
+| -------------------------------- | -------------------------------------------- |
 | ContinuousClearingAuctionFactory | `0x000000001f26a0044baa66024e7b6599c61963f8` |
 | LBPStrategy v1 (4-hour auctions) | `0x05d552391067389ee44fec3924157ed33f976000` |
 | LBPStrategy v2 (1-hour auctions) | `0xbf1ab81f7d534b2cc0da76fcf4d541322bb0e000` |
@@ -111,8 +111,11 @@ main range of every tip cycle, on the same HyperSync client, pacer and token:
 crowd pool from the ledger while the crowd stream is within
 `crowdServedLagBlocks` (2,000) of the main cursor; otherwise it is listed but
 unmeasured, as any unmeasured launch is, rather than cut at an older block
-under the main cutoff. Every catalogue row carries `launchType`, and
-`/v1/explore?view=crowd` lists the crowd launches.
+under the main cutoff. Every catalogue row carries `launchType` (explore
+items, the pool page's `pool`, a creator's `bestLaunch` and a wallet
+profile's `launches[]`, all through `catalogPool` in
+`apps/api/src/explore-read.ts`), and `/v1/explore?view=crowd` lists the crowd
+launches. A creator's launch count and medians include their crowd launches.
 
 ## Accounting
 
@@ -128,6 +131,39 @@ Every template auction was created after the ledger's start block (the first
 at 28,575,416, the ledger starts at 23,467,030), so no crowd pool has a
 truncated history, and the lane cannot admit one whose creation precedes its
 start. The start-block check on `agg_streams` is unchanged.
+
+## Acceptance on a production-shaped copy (27 Sep 2026)
+
+A TEMPLATE copy of the local production-shaped ledger (main cursor
+65,409,776, 17 Sep 13:40Z; 62,896 Instant pools, 2.18M positions) was
+migrated to 023 and the crowd lane run over it through `runLedgerCrowdStep`,
+answered from recorded data only: the 1,007 graduations of
+`fixtures/crowd/graduations.json.br` and the 54 template creations'
+transactions and logs from Blockscout. It took 46 ranges and 225 requests
+with no trade pages in them, and left the crowd stream level with the main
+cursor on the same hash.
+
+- Exactly the 54 template pools registered, each with its migration as the
+  launch, the auction's creator as `launch_sender`, the explorer's name and
+  symbol, and 49 with creator fees.
+- Every Instant row of `indexed_pools` (less `launch_type`), `agg_pool_hours`,
+  `agg_pool_state`, `agg_positions`, `agg_wallet_hours`, `agg_wallet_windows`,
+  `agg_wallets`, and the main stream's batches, journal, live trades and
+  window refreshes hashed the same before and after.
+- 229 read-API responses (explore every window and sort to offset 500,
+  gainers/new, the leaderboard every window and metric, creators every
+  window and sort, 39 pool pages and 24 wallet profiles), served by `main`'s
+  api code before and this code after, were identical apart from the added
+  `launchType`, `generatedAt` and `coverage.catalogPools` (+54). Instant rows
+  kept their figures and order; a crowd row takes its place in launch order,
+  and only crowd creators' rows changed on the creators board.
+
+Not yet measured: crowd trading. XBOW's volume against an on-chain recount
+(the sizing report counted 599 swaps and 133.13 ETH over 24 Sep 21:46Z to
+25 Sep 21:50Z) and its auction entrants' exclusion are checked on production
+once the crowd lane has caught up, reading the explorer at about one page
+every 3 s after its daily credit reset and stopping below 30,000 credits
+left, since the free key also serves the site's wallet Trades tab.
 
 ## Out of scope
 
