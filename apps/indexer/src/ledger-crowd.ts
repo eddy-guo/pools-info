@@ -269,6 +269,11 @@ export async function runLedgerCrowdRange(
     newWallets: created.wallets,
     registryPools: c.registryPools,
     swapSelection: "pool_ids",
+    // The crowd lane lists its few tokens every range; it never probes.
+    transferSelection: "tokens",
+    unregisteredTransfers: 0,
+    transferPages: c.pages.transfers.reduce((n, p) => n + p.length, 0),
+    transferFallbackRequests: 0,
     pages,
     requests: c.requests,
     bytes: c.bytes,
