@@ -42,7 +42,8 @@ export interface LedgerCut extends MarketBoundary {
  * sources exactly as with the switch off. The cursor must be the newest
  * committed batch's end, and no pool hour may start after it. */
 export async function ledgerCut(query: ReadQuery): Promise<LedgerCut | null> {
-  const { rows } = await query(`SELECT s.start_block,s.cursor_block,'0x'||encode(s.cursor_hash,'hex') AS cursor_hash,s.cursor_timestamp,
+  const { rows } =
+    await query(`SELECT s.start_block,s.cursor_block,'0x'||encode(s.cursor_hash,'hex') AS cursor_hash,s.cursor_timestamp,
     '0x'||encode(b.block_hash,'hex') AS batch_hash,b.to_timestamp AS batch_timestamp,b.collected_at,
     (SELECT max(hour) FROM agg_pool_hours WHERE chain_id=4663) AS newest_hour,
     EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=4663 AND a.through_block=s.cursor_block
@@ -112,12 +113,7 @@ export async function ledgerHour(
     [cut.block, start, hourStart],
   );
   const r = rows[0];
-  if (
-    !r ||
-    r.hour_after_block === null ||
-    r.before_block === null
-  )
-    return null;
+  if (!r || r.hour_after_block === null || r.before_block === null) return null;
   if (r.oldest === null || whole(r.oldest) >= hourStart) {
     const atBound = await query(
       `SELECT 1 FROM agg_live_trades WHERE chain_id=4663
@@ -219,11 +215,7 @@ export const ledgerWindowBaselineSql = (
  * registered by its own launch lane in a batch at or below its cursor, so
  * every swap of the pool since launch is folded and a missing pool state is
  * a proven zero. $start and $cursor name the statement's parameters. */
-export const ledgerLaunchSql = (
-  alias: string,
-  start: string,
-  cursor: string,
-) =>
+export const ledgerLaunchSql = (alias: string, start: string, cursor: string) =>
   `${alias}launch_block BETWEEN ${start} AND ${cursor} AND EXISTS(SELECT 1 FROM pool_launch_sources ps
     WHERE ps.chain_id=4663 AND ps.pool_id=${alias}pool_id AND ps.stream_key='launches:agg:v1' AND ps.batch_end<=${cursor})`;
 /** The display price in wei per whole token of a raw pool price state. Every
@@ -248,7 +240,11 @@ export const ledgerChangeSql = (latest: string, baseline: string) =>
  * the window, whose change is then not served under that window's name.
  * `active` is whether the pool has an hour inside the window: only those are
  * probed, one index probe each. */
-export const ledgerBaselineSql = (poolRef: string, hour: string, active: string) =>
+export const ledgerBaselineSql = (
+  poolRef: string,
+  hour: string,
+  active: string,
+) =>
   `SELECT close_sqrt_price_x96 AS sqrt FROM agg_pool_hours WHERE chain_id=4663 AND pool_ref=${poolRef} AND hour<${hour} AND ${active} ORDER BY hour DESC LIMIT 1`;
 /** A covered pool's served change over a window whose first hour is `hour`.
  * Null for All, for unverified or conflicting decimals and for a pool with

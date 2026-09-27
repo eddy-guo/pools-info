@@ -41,12 +41,12 @@ newer deep publication answers as with `broad`.
 
 ## Windows
 
-A window is whole UTC hours ending with the newest hour the pool hours hold
-(`max(hour)` in `agg_pool_hours`): 24h is hours newest-23 through newest, 7d
-the last 168 and 30d the last 720. The cutoff reported with every figure is
-the ledger's cursor, inside that newest hour, and `windowStart` is the first
-hour's start, so a label always spans the ledger's own last hours and never a
-stale capture's minutes. All is the pool's whole history.
+The 6h, 24h, 7d and 30d windows cover whole UTC hours ending with the newest
+pool hour (`max(hour)` in `agg_pool_hours`): 24h is hours newest-23 through
+newest, 7d the last 168 and 30d the last 720. The cutoff reported with every
+figure is the ledger's cursor, inside that newest hour, and `windowStart` is
+the first hour's start, so a label always spans the ledger's own last hours
+and never a stale capture's minutes. All is the pool's whole history.
 
 1h is the rolling hour instead: the swaps from the cursor's time less 3,600 s
 (inclusive, its `windowStart`) through the cursor, read from the live ring
@@ -54,15 +54,16 @@ stale capture's minutes. All is the pool's whole history.
 hours cannot answer it, since the newest hour holds only the minutes up to the
 cursor (three minutes of trading at 09:03 under an hour's name). The ring is
 written in the same transaction as the hours it mirrors and pruned only from
-its oldest end (24 hours ending at the cursor, at most 1,250,000 rows), so it
-always holds every swap after its oldest row; walk-back removes a batch's rows
-with the batch, and the tip loop resumes from its cursor, so a restart leaves
+its oldest end (24 hours ending at the cursor, with the row cap in
+`docs/AGGREGATE-LEDGER.md` under **The live ring**), so it always holds every
+swap after its oldest row; walk-back removes a batch's rows with the batch,
+and the tip loop resumes from its cursor, so a restart leaves
 no gap. Its reads are ranges of the ring's block index, bounded by the batches'
 end times rather than scanned. The age prune removes only trades older than
 the cursor less 24 hours, before the rolling hour's first UTC hour. The ring
 covers that hour when its oldest row predates it or the ring holds fewer than
-1,250,000 rows. If the oldest row falls inside the hour and the ring is at
-its row bound, 1h serves no volume, trade count or change and its
+the configured row cap. If the oldest row falls inside the hour and the ring
+is at its row bound, 1h serves no volume, trade count or change and its
 `completeWindow` is false.
 
 ## Figures
@@ -96,7 +97,7 @@ its row bound, 1h serves no volume, trade count or change and its
   first swap's state for the pool's first hour); its high and low prices are
   the lowest and highest sqrt among that opening state and its swaps.
 - **Observations**: the pool's newest fifty trades still in the ledger's live
-  ring (`agg_live_trades`, its last 24 hours or 1,250,000 rows).
+  ring (`agg_live_trades`; retention is defined in `docs/AGGREGATE-LEDGER.md`).
 - **FDV** (`market.fdvWei`, pool page only): the served price times the
   token's measured `indexed_pools.token_total_supply_raw` (migration 019) over
   `10^decimals`, null until the supply has been read. The supply is written by

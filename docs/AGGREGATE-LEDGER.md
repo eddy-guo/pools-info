@@ -95,9 +95,9 @@ database checks. `packages/db/src/ledger.test.ts` forges each of them.
   every row the plan can touch has its pre-image journaled before its first
   change (a null pre-image records creation), the fold runs, rows are
   upserted, `holders` is recounted for every touched pool, live trades are
-  inserted, the ring is pruned (24 hours, 250,000 rows), the journal is pruned
-  beyond the newest 256 batches and the cursor advances. Swaps of pools not
-  in `indexed_pools` are counted as `unregistered_swaps` and dropped.
+  inserted, the ring is pruned (see **The live ring** below), the journal is
+  pruned beyond the newest 256 batches and the cursor advances. Swaps of pools
+  not in `indexed_pools` are counted as `unregistered_swaps` and dropped.
 - `walkBackLedger` undoes every batch newer than an ancestor, newest first:
   the batch row goes (its live trades and journal cascade), each pre-image is
   restored or the row deleted, and the cursor returns to the ancestor. It
