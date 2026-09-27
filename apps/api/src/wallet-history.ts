@@ -123,15 +123,13 @@ export function createWalletHistory({
     if (!result) {
       result = (async () => {
         const registered = kind === "trades" ? await registry!.current() : null;
-        const read = await client!.readPage(
-          kind,
-          wallet,
-          page,
-          reserveShare,
-          registered
-            ? { tokens: registered, poolsOf: (t) => registry!.poolsOf(t) }
-            : undefined,
-        );
+        const read =
+          kind === "trades"
+            ? await client!.readPage("trades", wallet, page, reserveShare, {
+                tokens: registered!,
+                poolsOf: (t) => registry!.poolsOf(t),
+              })
+            : await client!.readPage(kind, wallet, page, reserveShare);
         const items = registered
           ? (read.items as { token: { address: string } }[]).filter((i) =>
               registered.has(i.token.address),

@@ -41,6 +41,7 @@ export const swapTopic =
 export const swapLogBatchSize = 5;
 export const swapLogBatchCost = 20;
 const swapLogConcurrency = 2;
+const swapCacheEntries = 50000;
 export const freeTierRequestsPerSecond = 5;
 /** Blockscout PRO answers wallet address pages in 2.0-4.6 s from Railway
  * (scout measurement, 2026-09-16); this leaves headroom for a slow page
@@ -301,14 +302,13 @@ export interface TradeLeg {
  * for any row that cannot be one. A leg against the PoolManager is a direct
  * trade. Any other counterparty (a router or an aggregator passing the swap's
  * tokens on, but also a plain send or an airdrop) makes a relayed candidate,
- * and only for a registry token: without `registered` the leg is dropped, as
- * the caller could not confirm it. Only the direction and token are read from
+ * and only for a registry token. Only the direction and token are read from
  * a row that is not a candidate, so a malformed row the list would never show
  * cannot fail the page. */
 export function normalizeTrade(
   value: unknown,
   wallet: string,
-  registered?: ReadonlySet<string>,
+  registered: ReadonlySet<string>,
 ): TradeLeg | null {
   const t = item(value);
   const hashOf = (party: unknown) =>
@@ -325,7 +325,7 @@ export function normalizeTrade(
     typeof t.token === "object" && t.token !== null
       ? String((t.token as Item).address_hash).toLowerCase()
       : null;
-  if (relayed && !(token && registered?.has(token))) return null;
+  if (relayed && !(token && registered.has(token))) return null;
   const transfer = normalizeTokenTransfer(value);
   if (transfer.token.type !== "ERC-20" || transfer.value === null) invalid();
   return {
@@ -353,15 +353,18 @@ export interface BlockscoutPage<K extends WalletHistoryKind> {
   nextPageParams: PageParams | null;
 }
 export interface BlockscoutClient {
-  /** With `registry`, a trades page keeps the wallet's legs in registry
-   * tokens: direct PoolManager legs, and relayed legs whose transaction the
-   * chain shows holding a PoolManager swap of the token's pool. */
-  readPage<K extends WalletHistoryKind>(
+  readPage(
+    kind: "trades",
+    wallet: string,
+    page: PageParams | null,
+    reserveShare: number,
+    registry: TradeRegistry,
+  ): Promise<BlockscoutPage<"trades">>;
+  readPage<K extends Exclude<WalletHistoryKind, "trades">>(
     kind: K,
     wallet: string,
     page: PageParams | null,
     reserveShare?: number,
-    registry?: TradeRegistry,
   ): Promise<BlockscoutPage<K>>;
   budget: ReturnType<typeof createCreditBudget>;
 }
@@ -375,7 +378,6 @@ export function createBlockscoutClient({
   dailyCreditCap,
   timeoutMs = defaultBlockscoutTimeoutMs,
   maxBytes = 4 * 1024 * 1024,
-  swapCacheEntries = 50000,
   now = Date.now,
   fetchImpl = fetch,
   limiter = createRateLimiter({ now }),
@@ -385,7 +387,6 @@ export function createBlockscoutClient({
   dailyCreditCap: number;
   timeoutMs?: number;
   maxBytes?: number;
-  swapCacheEntries?: number;
   now?: () => number;
   fetchImpl?: typeof fetch;
   limiter?: ReturnType<typeof createRateLimiter>;
@@ -538,7 +539,20 @@ export function createBlockscoutClient({
       );
       try {
         if (!Array.isArray(answer) || answer.length !== batch.length) invalid();
-        for (const reply of answer.map(item)) {
+        const replies = answer.map(item);
+        const ids = new Set<number>();
+        for (const reply of replies) {
+          if (
+            typeof reply.id !== "number" ||
+            !Number.isInteger(reply.id) ||
+            reply.id < 0 ||
+            reply.id >= batch.length ||
+            ids.has(reply.id)
+          )
+            invalid();
+          ids.add(reply.id);
+        }
+        for (const reply of replies) {
           const asked =
             typeof reply.id === "number" ? batch[reply.id] : undefined;
           if (!asked || reply.error !== undefined) invalid();
@@ -597,8 +611,16 @@ export function createBlockscoutClient({
   }
   return {
     budget,
-    async readPage(kind, wallet, page, reserveShare = 0, registry) {
+    async readPage<K extends WalletHistoryKind>(
+      kind: K,
+      wallet: string,
+      page: PageParams | null,
+      reserveShare = 0,
+      registry?: TradeRegistry,
+    ): Promise<BlockscoutPage<K>> {
       if (!addressHash.test(wallet)) throw Error("Invalid wallet");
+      if (kind === "trades" && !registry)
+        throw Error("Trade registry required");
       const cost = creditCost[kind];
       const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
       const trades = kind === "trades";
@@ -622,12 +644,11 @@ export function createBlockscoutClient({
         nextPageParams = pageParams(body.next_page_params);
         if (trades) {
           legs = body.items
-            .map((value) => normalizeTrade(value, address, registry?.tokens))
+            .map((value) => normalizeTrade(value, address, registry!.tokens))
             .filter((leg) => leg !== null);
-          if (registry)
-            legs = legs.filter((leg) =>
-              registry.tokens.has(leg.trade.token.address),
-            );
+          legs = legs.filter((leg) =>
+            registry!.tokens.has(leg.trade.token.address),
+          );
         }
         const normalize: (value: unknown) => unknown =
           kind === "transactions"
@@ -639,16 +660,15 @@ export function createBlockscoutClient({
       }
       if (trades) {
         const relayed = legs.filter((leg) => leg.relayed);
-        const confirmed =
-          registry && relayed.length
-            ? await confirmSwaps(relayed, registry, reserve)
-            : new Set<TradeLeg>();
+        const confirmed = relayed.length
+          ? await confirmSwaps(relayed, registry!, reserve)
+          : new Set<TradeLeg>();
         items = legs
           .filter((leg) => !leg.relayed || confirmed.has(leg))
           .map((leg) => leg.trade);
       }
       return {
-        items: items as HistoryItem<typeof kind>[],
+        items: items as HistoryItem<K>[],
         nextPageParams,
       };
     },
