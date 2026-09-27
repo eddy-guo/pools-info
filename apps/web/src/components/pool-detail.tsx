@@ -34,6 +34,7 @@ export function PoolDetail({
     symbol: string;
     token: string;
     imageUrl?: string | null;
+    launchType?: ObservedPoolIdentity["launchType"];
     launch?: ObservedPoolIdentity["launch"];
     pool?: {
       poolId: string;
@@ -94,7 +95,7 @@ export function PoolDetail({
           symbol: savedIdentity?.symbol ?? m?.symbol ?? remembered?.symbol,
           token: savedIdentity?.token ?? m?.token ?? remembered?.token,
           imageUrl: savedIdentity?.imageUrl ?? remembered?.imageUrl,
-          launchType: saved.data?.pool?.launchType ?? remembered?.launchType,
+          launchType: savedIdentity?.launchType ?? remembered?.launchType,
           launch:
             savedIdentity?.launch ??
             (m

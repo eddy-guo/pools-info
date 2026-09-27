@@ -146,10 +146,12 @@ test("the Crowd view lives in the URL: Show more, reload and Back restore it", a
 
   await page.goto("/?view=crowd&sort=launch");
   await expect(rows(page, testInfo)).toHaveCount(25);
-  await page.getByRole("button", { name: "Show more" }).click();
+  await page.getByRole("button", { name: /^Show \d+ more$/ }).click();
   await expect.poll(() => search(page).get("limit")).toBe("50");
   await expect(rows(page, testInfo)).toHaveCount(launches.length);
-  await expect(page.getByRole("button", { name: "Show more" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Show \d+ more$/ }),
+  ).toHaveCount(0);
 
   await page.reload();
   await expect(tab(page, "Crowd")).toHaveAttribute("aria-pressed", "true");

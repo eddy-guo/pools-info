@@ -3936,11 +3936,12 @@ button.icon-button:disabled {
   color: var(--purple);
   border-color: #45184f;
 }
-/* The export's launch mode chip: 10/600 uppercase on an 11px line, so with
-   its padding and border it stands 15px, the subtitle's own line, and a
-   crowd row keeps every other row's height. */
-.mode-badge {
+/* The export's launch mode chip: 10/600 uppercase on an 11px line, outlined
+   with no fill, so with its padding and border it stands 15px, the
+   subtitle's own line, and a crowd row keeps every other row's height. */
+.badge.mode-badge {
   flex: none;
+  background: transparent;
   padding: 1px 5px;
   font-size: 10px;
   font-weight: 600;
