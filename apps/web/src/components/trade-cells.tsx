@@ -1,4 +1,5 @@
 import { shortAddress } from "@pools/core";
+import type { ReactNode } from "react";
 import { explorer, utc } from "./live-ui";
 import { Unavailable } from "./ui";
 
@@ -67,6 +68,48 @@ export function TradeTransaction({ hash }: { hash: string }) {
     <a href={`${explorer}/tx/${hash}`} target="_blank" rel="noreferrer">
       {shortAddress(hash)} ↗
     </a>
+  );
+}
+
+/**
+ * A trade's figures in a phone row (`.mobile-trade-row`), on two lines: the
+ * amount and its token, then the time and the transaction. One line runs
+ * past a 390px list, so both lists that show explorer trades use this. The
+ * amount never gives way to a long symbol; the symbol ellipsises instead
+ * (`.mobile-trade-amount`), and a time the explorer did not send drops out
+ * with its separator.
+ */
+export function TradePhoneStats({
+  raw,
+  decimals,
+  token,
+  timestamp,
+  hash,
+}: {
+  raw: string;
+  decimals: number | null;
+  token: ReactNode;
+  timestamp: number | null;
+  hash: string;
+}) {
+  const amount = formatTokenRaw(raw, decimals);
+  return (
+    <>
+      <div className="mobile-wallet-row-stats mobile-trade-amount">
+        <span title={amount ?? undefined}>{amount ?? <Unavailable />}</span>
+        {/* Not rendered between flex items; kept so the row reads and
+            copies as "amount symbol". */}{" "}
+        {token}
+      </div>
+      <div className="mobile-wallet-row-stats">
+        {timestamp !== null && (
+          <>
+            <TradeTime timestamp={timestamp} /> ·{" "}
+          </>
+        )}
+        <TradeTransaction hash={hash} />
+      </div>
+    </>
   );
 }
 

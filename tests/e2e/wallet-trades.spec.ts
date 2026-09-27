@@ -240,3 +240,177 @@ for (const [name, viewport] of [
     expect(cls).toBeLessThan(0.001);
   });
 }
+
+// The phone row's figures sit on two lines (TradePhoneStats), since amount,
+// token, time and transaction on one line ran to about 445px on a 390px
+// phone and the list clipped the transaction link. Filled with the widest
+// figures the contract allows a real launch (a trillion-token amount at six
+// decimals, a thirteen-letter symbol) every piece must stay inside the list,
+// a symbol no row can fit must ellipsise rather than push the amount out, and
+// neither the load nor a Load more may move anything.
+const wideTrades = Array.from({ length: 30 }, (_, i) =>
+  trade({
+    logIndex: i,
+    transactionHash: `0x${String(i).padStart(64, "8")}`,
+    side: i % 2 ? "sell" : "buy",
+    timestamp: i === 3 ? null : 1789695885 - i * 60,
+    tokenRaw: "999999999999999999999999999999",
+    token: {
+      address: `0x${"b".repeat(40)}`,
+      symbol:
+        i === 1
+          ? "THEVERYLONGESTSYMBOLANYONECOULDMINTONCHAIN"
+          : i === 2
+            ? null
+            : "SUPERCALIFRAG",
+      name: "Wide token",
+      decimals: 18,
+      type: "ERC-20",
+    },
+  }),
+);
+for (const [width, height] of [
+  [320, 700],
+  [390, 844],
+  [1440, 1000],
+] as const)
+  test(`the trades tab fits long amounts and symbols at ${width} and never moves`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "mobile" && width > 500,
+      "The phone project covers the phone widths only",
+    );
+    // A 320px phone is the phone project's; a desktop window that narrow
+    // moves the wallet header on load on every tab, which is not this list.
+    test.skip(
+      testInfo.project.name !== "mobile" && width < 390,
+      "320 is a phone width",
+    );
+    await page.addInitScript(() => {
+      const state = { cls: 0, shifts: [] as unknown[] };
+      Object.assign(window, { tradesShifts: state });
+      new PerformanceObserver((list) => {
+        for (const raw of list.getEntries()) {
+          const shift = raw as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+            sources?: { node?: Node | null }[];
+          };
+          if (shift.hadRecentInput) continue;
+          state.cls += shift.value;
+          state.shifts.push({
+            value: shift.value,
+            nodes: shift.sources?.map((s) =>
+              s.node instanceof Element
+                ? `${s.node.tagName}.${[...s.node.classList].join(".")}`
+                : s.node?.nodeName,
+            ),
+          });
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    let calls = 0;
+    let release!: () => void;
+    const second = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(historyPath, async (route: Route) => {
+      calls++;
+      const url = new URL(route.request().url());
+      if (url.searchParams.get("cursor") === "page2") {
+        // Held until the page is scrolled to the foot, so the appended
+        // rows land while the reader watches them.
+        await second;
+        return route.fulfill({ json: envelope(wideTrades.slice(25), null) });
+      }
+      return route.fulfill({
+        json: envelope(wideTrades.slice(0, 25), "page2"),
+      });
+    });
+    await openTrades(page, { width, height });
+    const rows = resolvedRows(page);
+    await expect(rows).toHaveCount(25, { timeout: 20000 });
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+    const loadMore = page.getByRole("button", { name: "Load 25 more" });
+    await loadMore.scrollIntoViewIfNeeded();
+    await loadMore.click();
+    await expect(loadMore).toBeDisabled();
+    // Chrome marks every shift within 500ms of an input as expected and
+    // leaves it out of the score, so the append lands after that window.
+    await page.waitForTimeout(600);
+    release();
+    await expect(rows).toHaveCount(30);
+    expect(calls).toBe(2);
+    await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
+    const measured = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            tradesShifts: { cls: number; shifts: unknown[] };
+          }
+        ).tradesShifts,
+    );
+    expect(measured.cls, JSON.stringify(measured.shifts)).toBeLessThan(0.001);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    if (width > 500) return;
+    const list = page.locator(".wallet-activity .mobile-wallet-rows");
+    await list.scrollIntoViewIfNeeded();
+    await list.screenshot({
+      path: testInfo.outputPath(`trades-phone-${width}.png`),
+    });
+    const fit = await list.evaluate((region) => {
+      const edge = region.getBoundingClientRect();
+      const rows = [
+        ...region.querySelectorAll('.mobile-wallet-row[data-row="resolved"]'),
+      ];
+      const past = rows.flatMap((row) =>
+        [...row.querySelectorAll("*")]
+          .filter((el) => {
+            const r = el.getBoundingClientRect();
+            return (
+              r.width > 0 &&
+              (r.right > edge.right + 0.5 || r.left < edge.left - 0.5)
+            );
+          })
+          .map((el) => `${el.tagName}.${el.className}: ${el.textContent}`),
+      );
+      // A piece is cut when its own box holds less than its text.
+      const cut = (el: Element | null) =>
+        !!el && el.scrollWidth > el.clientWidth + 0.5;
+      const amounts = rows.map((row) =>
+        row.querySelector(".mobile-trade-amount > :first-child")!,
+      );
+      const symbols = rows.map((row) =>
+        row.querySelector(".mobile-trade-amount > :nth-child(2)"),
+      );
+      const lines = rows.map(
+        (row) => row.querySelectorAll(".mobile-wallet-row-stats")[1]!,
+      );
+      return {
+        past,
+        heights: [
+          ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
+        ],
+        amounts: amounts.map((el) => el.textContent),
+        cutAmounts: amounts.filter(cut).length,
+        cutLines: lines.filter(cut).map((el) => el.textContent),
+        cutSymbols: symbols.flatMap((el, i) => (cut(el) ? [i] : [])),
+        lastLine: lines[0]!.textContent,
+        timeless: lines[3]!.textContent,
+      };
+    });
+    expect(fit.past).toEqual([]);
+    expect(fit.heights).toEqual([128]);
+    expect(fit.amounts[0]).toBe("999,999,999,999.999999");
+    expect(fit.cutAmounts).toBe(0);
+    expect(fit.cutLines).toEqual([]);
+    // Only the symbol no phone row can hold gives way, and only by ellipsis.
+    expect(fit.cutSymbols).toEqual([1]);
+    expect(fit.lastLine).toBe("2026-09-18 01:44:45 UTC · 0x8888…8880 ↗");
+    expect(fit.timeless).toBe("0x8888…8883 ↗");
+  });
