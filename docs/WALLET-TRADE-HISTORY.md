@@ -13,9 +13,8 @@ failure behaviour are in `apps/api/README.md`, "Explorer wallet history".
 `&cursor=<nextCursor>` for each older page. `kind` defaults to `transactions`,
 so a trade list must always name it. The only other parameter is `cursor`: a
 cursor is bound to the wallet and the kind, and any other parameter or a cursor
-from another wallet or kind is a 400. The website's proxy does not forward
-`/history` today, since the old wallet tabs were cut. Serving this route means
-adding a proxy path for it, with its own trailing slash.
+from another wallet or kind is a 400. The website forwards the Trades tab's
+history requests through `/api/product/wallets/:address/history/` on demand.
 
 ## Response
 
@@ -40,7 +39,7 @@ interface WalletHistoryTrade {
   logIndex: number; // unique with transactionHash; one transaction can hold two legs
   block: number;
   timestamp: number | null; // Unix seconds
-  side: "buy" | "sell"; // buy: the token left the PoolManager for the wallet; sell: the wallet paid it in
+  side: "buy" | "sell"; // buy: the wallet received the token; sell: the wallet sent it
   token: {
     address: string; // lowercase
     symbol: string | null; // explorer display string, at most 256 characters

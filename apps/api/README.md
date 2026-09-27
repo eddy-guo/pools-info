@@ -489,36 +489,14 @@ own `next_page_params`, and are validated before they reach the explorer.
 
 `kind=trades` is the wallet page's trade list. It reads the wallet's ERC-20
 transfer pages (`token-transfers?type=ERC-20`, a filter no cursor can replace)
-and keeps the wallet's legs in transactions that swap the leg's token through
-the v4 PoolManager (`0x8366…0951`): a trade item has `transactionHash`,
-`logIndex`, `block`, `timestamp`, `side` (`buy` when the token came to the
-wallet, `sell` when the wallet paid it out), `token` (as above), `tokenRaw`
-(exact raw amount) and `method`. A leg is kept only when its token is a launch
-token of the verified registry (`indexed_pools`): a spoofed token's Transfer
-log can name any counterparty, but its token address is the contract that
-emitted it, which the EVM sets, so it can never carry a registered token's
-address. `token-registry.ts` holds those tokens and their pool ids in memory
-(one full read, then rows past the highest `pool_ref` every 30 s, a full reload
-hourly) and is read before any credit is spent; with no registry the trades
-kind answers 503 `not_configured`. A leg against the PoolManager is the swap's
-own settlement and is kept as read. A leg against any other address (the
-launchpad's router, an aggregator, but also a plain send or an airdrop) is kept
-only when its transaction holds a PoolManager `Swap` of the token's registered
-pool, which the client reads with `eth_getLogs` on the explorer's JSON-RPC
-gateway (`/4663/json-rpc`, same key): one filtered query per block, five
-blocks per batch (the gateway's maximum), two batches in flight, 20 credits a
-batch, cached per transaction and pool for the life of the process. A gateway
-failure fails the page rather than dropping its relayed legs. Everything else
-on those pages, such as poisoning logs, airdrops, plain sends and trades in
-pools outside the registry, is dropped. There is no ETH figure: the ETH side
-of a swap is often paid or received by a router or bot contract rather than
-the wallet, so the exact amount lives only in the Swap log, one explorer call
-per trade. Like
-every kind, one response reads exactly one explorer page (30 credits, plus 20
-per five blocks holding relayed legs not yet confirmed), so a page can hold 0
-to 50 trades beside a non-null cursor. The contract, an example payload,
-what the list includes and leaves out, and the credit arithmetic for one wallet
-page load are in `docs/WALLET-TRADE-HISTORY.md`.
+and keeps verified-registry token legs that settle with the v4 PoolManager
+directly or belong to a transaction whose registered pool swapped through it.
+`token-registry.ts` supplies the token and pool ids before any credit is spent;
+without it, the route answers 503 `not_configured`. Relayed legs require the
+explorer's JSON-RPC gateway, and a failed confirmation fails the page. Each
+response reads one transfer page; it can hold 0 to 50 trades with more behind
+the cursor. The trade definition, response shape, limitations, and credit
+arithmetic are in `docs/WALLET-TRADE-HISTORY.md`.
 
 Configuration, read from the environment at startup:
 

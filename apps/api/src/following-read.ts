@@ -4,9 +4,10 @@ import { RequestError } from "./request";
 import type { TokenRegistry } from "./token-registry";
 import type { TradesSnapshot, WalletHistory } from "./wallet-history";
 
-/** One followed wallet's trade as the explorer lists it: the wallet's ERC-20
- * leg against the PoolManager in a token of the verified registry. It carries
- * no ETH amount and no price; those are not in the explorer's transfer. */
+/** One followed wallet's trade as the explorer lists it: a verified-registry
+ * token leg settled directly with the PoolManager or confirmed through its
+ * swap log after a router or aggregator relayed it. It carries no ETH amount
+ * or price; those are not in the explorer's transfer. */
 export interface FollowingTrade {
   /** `txHash:logIndex`, unique in a response. */
   id: string;

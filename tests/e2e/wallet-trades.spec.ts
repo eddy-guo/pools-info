@@ -357,7 +357,24 @@ for (const [width, height] of [
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    if (width > 500) return;
+    if (width > 500) {
+      const amountCells = page.locator(
+        '.wallet-trades-table tbody tr[data-row="resolved"] td:nth-child(2)',
+      );
+      const overlapping = await amountCells.evaluateAll((cells) =>
+        cells.flatMap((cell) => {
+          const right = cell.getBoundingClientRect().right;
+          return [...cell.querySelectorAll("span")]
+            .filter((span) => span.getBoundingClientRect().right > right + 0.5)
+            .map((span) => span.textContent);
+        }),
+      );
+      expect(overlapping).toEqual([]);
+      await page.screenshot({
+        path: testInfo.outputPath("trades-desktop-1440.png"),
+      });
+      return;
+    }
     const list = page.locator(".wallet-activity .mobile-wallet-rows");
     await list.scrollIntoViewIfNeeded();
     await list.screenshot({

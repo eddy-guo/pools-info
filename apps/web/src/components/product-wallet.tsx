@@ -629,8 +629,8 @@ export function ProductWallet({ address }: { address: string }) {
                         <table className="data-table wallet-trades-table">
                           <colgroup>
                             <col />
-                            <col style={{ width: "150px" }} />
-                            <col style={{ width: "150px" }} />
+                            <col style={{ width: "220px" }} />
+                            <col style={{ width: "190px" }} />
                             <col style={{ width: "90px" }} />
                             <col style={{ width: "170px" }} />
                           </colgroup>

@@ -254,9 +254,10 @@ response is the accounting reader's, field for field; what its values mean:
   `curveSampled` says so. Nothing is interpolated: a wallet whose hours the
   ledger has not folded has no point for them.
 - **`trades`** is empty and `tradesTruncated` false: the ledger keeps no row
-  per sale (design decision D3), so the Trades tab reads 0 and no trade-share
-  link is emitted. It is never served from the frozen accounting tables,
-  which would put two worlds on one page.
+  per sale (design decision D3), and no trade-share link is emitted from this
+  response. The Trades tab reads explorer history separately (see
+  `docs/WALLET-TRADE-HISTORY.md`). The response is never served from the frozen
+  accounting tables, which would put two worlds on one page.
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
 
@@ -377,7 +378,7 @@ page-scoped query:
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Page-scoped own-buy evidence                                                         | 351-906 ms cold; 211-411 ms warm                     | No new storage or migration, scales with the served page, and was chosen.                                                                                                                                                                                                                            |
 | Raising the database container's shared memory                                       | Not measured                                         | A plan and money decision on Railway; the captain's, and not taken here.                                                                                                                                                                                                                             |
-| Chunking a large first paint into `limit<=25` requests in the website               | Not measured                                         | The fallback if the serial probe had been slow; it was not, so the read API keeps answering the page the URL asks for.                                                                                                                                                                              |
+| Chunking a large first paint into `limit<=25` requests in the website                | Not measured                                         | The fallback if the serial probe had been slow; it was not, so the read API keeps answering the page the URL asks for.                                                                                                                                                                               |
 | Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
 | Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
 

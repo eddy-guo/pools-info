@@ -16,7 +16,7 @@ The database stays private. The HTTP service exposes read-only public chain anal
 - `/`: searchable catalog, pending-metric pools included, global sorting and pagination, local watchlist.
 - `/pool/[id]/`: launch/creator facts, saved price/FDV candles, trades, pool wallet accounting and holders when processed.
 - `/traders/`: cross-pool supported-position rankings with a default 10-swap gate, windows and realized/net-ETH metrics.
-- `/wallet/[address]/`: positions, trades, PnL curve and creator launches from the same saved corpus. Arbitrary addresses work; an address outside coverage has no invented history.
+- `/wallet/[address]/`: ledger-backed positions and PnL, creator launches, and on-demand explorer trade history for verified launch tokens. Arbitrary addresses work; an address outside coverage has no invented accounting figures.
 - `/cards/[address].png?window=All`: 1200×630 image using the same wallet figures and default rank as the profile.
 - `/creators/`, `/creators/[address]/`: creator discovery and public profile surfaces.
 - Cmd/Ctrl+K: tokens, wallet addresses, creators, transaction hashes and ENS. Saved search results augment immediate local results.

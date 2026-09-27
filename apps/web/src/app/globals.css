@@ -5679,14 +5679,32 @@ button.icon-button:disabled {
   text-overflow: ellipsis;
 }
 .wallet-trades-table {
-  min-width: 780px;
+  min-width: 830px;
 }
 .wallet-trades-table th:nth-child(2),
 .wallet-trades-table td:nth-child(2) {
   text-align: right;
 }
 .wallet-trades-table td:nth-child(2) .number {
-  min-width: 100%;
+  display: block;
+  width: 100%;
+}
+.wallet-trades-table .trade-amount-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+.wallet-trades-table .trade-amount-quantity {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.wallet-trades-table .trade-amount-symbol {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @container wallet-activity (width < 780px) {
   .wallet-positions-table {
@@ -5696,6 +5714,8 @@ button.icon-button:disabled {
   .wallet-positions-table :is(th, td):nth-child(3) {
     display: none;
   }
+}
+@container wallet-activity (width < 830px) {
   .wallet-trades-table {
     min-width: 630px;
   }
