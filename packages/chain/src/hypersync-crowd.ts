@@ -930,7 +930,7 @@ export async function collectCrowdRange(
     fromBlock,
     toBlock,
     byPool: new Map([...byPool].filter(([, p]) => p.launchBlock <= toBlock)),
-    byToken: new Map([...byToken].filter(([, p]) => p.launchBlock <= toBlock)),
+    byToken,
     manager: false,
     transactions,
     blocks: allBlocks,

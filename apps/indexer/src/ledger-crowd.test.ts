@@ -1,12 +1,14 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   HyperSyncClient,
   HyperSyncPacer,
   contracts,
   crowdFactory,
   ledgerPassPolicy,
+  swapLogQuery,
 } from "@pools/chain";
 import {
   FakeHyperSync,
@@ -28,6 +30,7 @@ import {
   type Client,
 } from "@pools/db";
 import { runLedgerPass } from "./ledger-pass";
+import { runLedgerCrowdRange } from "./ledger-crowd";
 import {
   ledgerTipDefaults,
   runLedgerTip,
@@ -286,6 +289,72 @@ const mainBatches = async (db: Client) =>
       "SELECT to_block::text,encode(content_hash,'hex') AS content FROM agg_batches WHERE stream_key='ledger:agg:v1' ORDER BY to_block",
     )
   ).rows;
+
+test(
+  "a page cut before migration commits and the next crowd range graduates the pool",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake, poolX } = chain();
+    await passTwoRanges(db, fake);
+    const firstSwapQuery = swapLogQuery(
+      { fromBlock: start, toBlock: start + 199 },
+      [poolX],
+      ledgerPassPolicy.poolIdsPerQuery,
+    );
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      if (
+        typeof init?.body === "string" &&
+        isDeepStrictEqual(JSON.parse(init.body), firstSwapQuery)
+      )
+        return Response.json(
+          fake.respond({ ...firstSwapQuery, to_block: start + 145 }),
+        );
+      return fake.fetch(input, init);
+    };
+    const client = new HyperSyncClient({
+      token: apiToken,
+      minIntervalMs: 0,
+      fetch,
+    });
+    const options = {
+      rangeBlocks: 200,
+      maxPages: 1,
+      height: fake.height,
+      rpc,
+    };
+    const first = await runLedgerCrowdRange(db, client, options);
+    if (first.idle) throw Error("crowd range did not run");
+    assert.equal(first.to, start + 144);
+    assert.equal(first.launches, 0);
+    assert.equal(
+      (await readLedgerStream(db, crowdLedgerStream.key)).cursor,
+      first.to,
+    );
+
+    const second = await runLedgerCrowdRange(db, client, options);
+    if (second.idle) throw Error("crowd range did not continue");
+    assert.equal(second.from, start + 145);
+    assert.equal(second.to, start + 199);
+    assert.equal(second.launches, 1);
+    assert.equal(
+      (await readLedgerStream(db, crowdLedgerStream.key)).cursor,
+      second.to,
+    );
+    const crowd = await rows(db, [poolX]);
+    assert.deepEqual(
+      crowd.catalog.map((p) => p.pool_id),
+      [poolX],
+    );
+    assert.equal(
+      JSON.parse(crowd.positions.find((p) => p.wallet === R.slice(2))!.row)
+        .supported,
+      false,
+    );
+    await releaseLedgerWriter(db);
+  },
+);
 
 test(
   "the crowd lane catches a crowd launch up inside the tip loop, folds its pool like any other, excludes the auction entrant and leaves every Instant row as it was",

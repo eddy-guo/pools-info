@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
-import { HyperSyncClient } from "./hypersync";
+import { HyperSyncClient, swapLogQuery } from "./hypersync";
 import {
   collectCrowdRange,
   crowdCreationQuery,
@@ -196,6 +196,68 @@ test("a creation remembered from an earlier range graduates in a later one", asy
   });
   assert.equal(unknown.launch.pools.length, 0);
   assert.equal(unknown.launch.evidence.migrations.length, 0);
+});
+
+test("a swap page cut before migration skips auction transfers and the next range graduates", async () => {
+  const l = launch();
+  const range = { fromBlock: start, toBlock: start + 1000 };
+  const swapQuery = swapLogQuery(
+    range,
+    [l.poolId],
+    ledgerPassPolicy.poolIdsPerQuery,
+  );
+  const fake: FakeHyperSync = new FakeHyperSync({
+    height: start + 2000,
+    logs: [
+      ...l.logs,
+      fakeTransfer({
+        block: start + 400,
+        logIndex: 0,
+        token: T,
+        from: A,
+        to: W,
+        value: 7n,
+      }),
+    ],
+    intercept: (request) => {
+      if (!isDeepStrictEqual(request.body, swapQuery)) return undefined;
+      return Response.json(
+        fake.respond({ ...swapQuery, to_block: start + 450 }),
+      );
+    },
+  });
+  const first = await collectCrowdRange(client(fake), fakeMetadataRpc(), {
+    ...range,
+    parentHash: null,
+    height: fake.height,
+    registry: [],
+    pending: [],
+    maxPages: 1,
+  });
+  assert.equal(first.toBlock, start + 449);
+  assert.deepEqual(first.launch.pools, []);
+  assert.deepEqual(first.transfers, []);
+  assert.deepEqual(first.claims, []);
+  assert.equal(first.launch.auctions.length, 1);
+  verifyCrowdLaunchBatch(first.launch);
+
+  const second = await collectCrowdRange(client(fake), fakeMetadataRpc(), {
+    fromBlock: first.toBlock + 1,
+    toBlock: range.toBlock,
+    parentHash: first.blockHash,
+    height: fake.height,
+    registry: [],
+    pending: first.launch.auctions,
+  });
+  assert.deepEqual(
+    second.launch.pools.map((p) => p.id),
+    [l.poolId],
+  );
+  assert.deepEqual(
+    second.claims.map((t) => [t.block, t.to, t.value]),
+    [[start + 400, W, "7"]],
+  );
+  verifyCrowdLaunchBatch(second.launch);
 });
 
 test("the template rule keeps other launchpads' auctions out", async () => {
