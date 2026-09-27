@@ -305,10 +305,20 @@ test(
     assert.deepEqual(await rows(db, [poolA]), instantOff);
     // The crowd stream caught up in one range, then followed each cycle.
     const cycles = log.filter((e) => e.event === "ledger_tip_cycle") as {
-      crowd: { level: boolean; ranges: { from: number; to: number; launches: number; auctions: number }[] };
+      crowd: {
+        level: boolean;
+        ranges: {
+          from: number;
+          to: number;
+          launches: number;
+          auctions: number;
+        }[];
+      };
     }[];
     assert.deepEqual(
-      cycles.map((c) => c.crowd.ranges.map((r) => [r.from, r.to, r.launches, r.auctions])),
+      cycles.map((c) =>
+        c.crowd.ranges.map((r) => [r.from, r.to, r.launches, r.auctions]),
+      ),
       [
         [[start, start + 299, 1, 2]],
         [[start + 300, start + 399, 0, 0]],
@@ -348,8 +358,13 @@ test(
     assert.equal(state.trades, 7);
     assert.equal(state.volume_wei, 10 + 3 + 15 + 7 + 10 + 2 + 16);
     // The pending auction is remembered, not registered.
-    const pending = await db.query("SELECT auction FROM crowd_auctions ORDER BY auction");
-    assert.deepEqual(pending.rows.map((r) => r.auction), [AX, AY]);
+    const pending = await db.query(
+      "SELECT auction FROM crowd_auctions ORDER BY auction",
+    );
+    assert.deepEqual(
+      pending.rows.map((r) => r.auction),
+      [AX, AY],
+    );
     // The windows count the crowd trades, as a full rebuild does.
     const incremental = await windows(db);
     await db.query("DELETE FROM agg_window_refreshes");
@@ -358,7 +373,10 @@ test(
     assert.deepEqual(incremental, await windows(db));
     assert.ok(
       incremental.some(
-        (w) => w.window === "All" && w.wallet === W.slice(2) && w.realized_wei === String(2 + 1 + 5 + 6),
+        (w) =>
+          w.window === "All" &&
+          w.wallet === W.slice(2) &&
+          w.realized_wei === String(2 + 1 + 5 + 6),
       ),
     );
     await releaseLedgerWriter(db);
@@ -384,7 +402,10 @@ test(
     const log: Record<string, unknown>[] = [];
     // The crowd launch lane's queries are refused; everything else answers.
     const refusing: typeof globalThis.fetch = async (input, init) => {
-      if (typeof init?.body === "string" && init.body.includes(crowdFactory.address))
+      if (
+        typeof init?.body === "string" &&
+        init.body.includes(crowdFactory.address)
+      )
         return new Response("bad request", { status: 400 });
       return fake.fetch(input, init);
     };
@@ -422,7 +443,10 @@ test(
     await writer(straight);
     const forked = chain({ fork: true });
     await passTwoRanges(straight, forked.fake);
-    await runLedgerTip(straight, tipOptions(forked.fake, [], { crowdBudgetMs: 60000 }));
+    await runLedgerTip(
+      straight,
+      tipOptions(forked.fake, [], { crowdBudgetMs: 60000 }),
+    );
     const expected = await rows(straight);
     const expectedWindows = await windows(straight);
     await releaseLedgerWriter(straight);
@@ -431,12 +455,18 @@ test(
     await writer(db);
     const first = chain();
     await passTwoRanges(db, first.fake);
-    await runLedgerTip(db, tipOptions(first.fake, [], { crowdBudgetMs: 60000 }));
+    await runLedgerTip(
+      db,
+      tipOptions(first.fake, [], { crowdBudgetMs: 60000 }),
+    );
     // The provider now serves the fork from +350 on, and more blocks.
     const second = chain({ fork: true });
     second.fake.height += 100;
     const log: Record<string, unknown>[] = [];
-    await runLedgerTip(db, tipOptions(second.fake, log, { crowdBudgetMs: 60000 }));
+    await runLedgerTip(
+      db,
+      tipOptions(second.fake, log, { crowdBudgetMs: 60000 }),
+    );
     assert.ok(log.some((e) => e.event === "ledger_walk_back"));
     assert.ok(log.some((e) => e.event === "ledger_crowd_walk_back"));
     assert.deepEqual(await rows(db), expected);

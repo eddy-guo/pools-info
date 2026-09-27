@@ -161,7 +161,8 @@ export function fakeCrowdLaunch(options: {
   const strategy = (options.strategy ?? crowdStrategies[1].strategy) as Hex;
   const fee = 2500,
     tickSpacing = 25;
-  const topic = (a: string) => `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
+  const topic = (a: string) =>
+    `0x${a.slice(2).toLowerCase().padStart(64, "0")}`;
   const poolId = o.poolId ?? crowdPoolId(options.token, fee, tickSpacing);
   const start = options.creationBlock + 10;
   const config = encodeAbiParameters(
@@ -249,7 +250,10 @@ export function fakeCrowdLaunch(options: {
       ...creation,
       logIndex: 3,
       address: strategy,
-      topics: [toEventSelector(initializerCreatedEvent), topic(options.auction)],
+      topics: [
+        toEventSelector(initializerCreatedEvent),
+        topic(options.auction),
+      ],
       data: encodeAbiParameters(
         [initializerCreatedEvent.inputs[1]],
         [

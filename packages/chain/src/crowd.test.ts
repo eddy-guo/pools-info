@@ -99,8 +99,13 @@ test("a creation is refused when its logs are not one registration", () => {
   assert.throws(() =>
     crowdAuctionOf(g.created, { ...g.initializer, address: g.created.address }),
   );
-  assert.throws(() => crowdAuctionOf({ ...g.created, removed: true }, g.initializer));
+  assert.throws(() =>
+    crowdAuctionOf({ ...g.created, removed: true }, g.initializer),
+  );
   // A migration of another auction does not graduate this one.
   const a = crowdAuctionOf(g.created, g.initializer) as CrowdAuction;
-  assert.equal(migrationMatches(a, decodeCrowdMigration(other.migrated)), false);
+  assert.equal(
+    migrationMatches(a, decodeCrowdMigration(other.migrated)),
+    false,
+  );
 });

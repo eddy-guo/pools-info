@@ -33,7 +33,9 @@ const client = (fake: FakeHyperSync) =>
     minIntervalMs: 0,
     fetch: fake.fetch,
   });
-const launch = (overrides?: Parameters<typeof fakeCrowdLaunch>[0]["overrides"]) =>
+const launch = (
+  overrides?: Parameters<typeof fakeCrowdLaunch>[0]["overrides"],
+) =>
   fakeCrowdLaunch({
     creationBlock: start + 10,
     migrationBlock: start + 500,
@@ -42,7 +44,11 @@ const launch = (overrides?: Parameters<typeof fakeCrowdLaunch>[0]["overrides"]) 
     creator: C,
     creationTx: word(0xc1),
     migrationTx: word(0xc2),
-    metadata: { description: "crowd", website: "https://x.test", image: "https://x.test/a.png" },
+    metadata: {
+      description: "crowd",
+      website: "https://x.test",
+      image: "https://x.test/a.png",
+    },
     overrides,
   });
 
@@ -53,19 +59,45 @@ test("a crowd launch registers at its migration with its creator, metadata and t
     logs: [
       ...l.logs,
       // An auction claim before the pool exists is not the pool's history.
-      fakeTransfer({ block: start + 400, logIndex: 0, token: T, from: A, to: W, value: 5n }),
-      fakeSwap({ block: start + 600, logIndex: 1, poolId: l.poolId, from: W, transactionHash: word(0x601) }),
-      fakeTransfer({ block: start + 600, logIndex: 2, token: T, from: "0x8366a39cc670b4001a1121b8f6a443a643e40951", to: W, value: 200n, transactionHash: word(0x601), sender: W }),
+      fakeTransfer({
+        block: start + 400,
+        logIndex: 0,
+        token: T,
+        from: A,
+        to: W,
+        value: 5n,
+      }),
+      fakeSwap({
+        block: start + 600,
+        logIndex: 1,
+        poolId: l.poolId,
+        from: W,
+        transactionHash: word(0x601),
+      }),
+      fakeTransfer({
+        block: start + 600,
+        logIndex: 2,
+        token: T,
+        from: "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        to: W,
+        value: 200n,
+        transactionHash: word(0x601),
+        sender: W,
+      }),
     ],
   });
-  const c = await collectCrowdRange(client(fake), fakeMetadataRpc({ [T]: ["Crowd", "CRWD", 18] }), {
-    fromBlock: start,
-    toBlock: start + 1000,
-    parentHash: null,
-    height: fake.height,
-    registry: [],
-    pending: [],
-  });
+  const c = await collectCrowdRange(
+    client(fake),
+    fakeMetadataRpc({ [T]: ["Crowd", "CRWD", 18] }),
+    {
+      fromBlock: start,
+      toBlock: start + 1000,
+      parentHash: null,
+      height: fake.height,
+      registry: [],
+      pending: [],
+    },
+  );
   assert.equal(c.toBlock, start + 1000);
   assert.equal(c.launch.pools.length, 1);
   const pool = c.launch.pools[0];
@@ -156,7 +188,10 @@ test("the template rule keeps other launchpads' auctions out", async () => {
     assert.equal(c.launch.evidence.creations.length, 0);
   }
   // A hooked pool or an unpinned fee splitter is not admitted either.
-  for (const overrides of [{ hook: addr(0x99) }, { positionRecipient: addr(0x98) }]) {
+  for (const overrides of [
+    { hook: addr(0x99) },
+    { positionRecipient: addr(0x98) },
+  ]) {
     const l = launch(overrides);
     const fake = new FakeHyperSync({ height: start + 2000, logs: l.logs });
     const c = await collectCrowdRange(client(fake), fakeMetadataRpc(), {
@@ -192,7 +227,9 @@ test("a graduation without pools.xyz's launcher in its creation is recorded and 
     pending: [],
   });
   assert.equal(c.launch.pools.length, 0);
-  assert.deepEqual(c.launch.evidence.rejected, [{ auction: A, reason: "no_launcher" }]);
+  assert.deepEqual(c.launch.evidence.rejected, [
+    { auction: A, reason: "no_launcher" },
+  ]);
   verifyCrowdLaunchBatch(c.launch);
 });
 
@@ -217,23 +254,47 @@ test("the verifier refuses a crowd batch its evidence does not support", async (
       ...b,
       auctions: [{ ...b.auctions[0], poolId: word(7) } as CrowdAuction],
     }),
-    (b) => ({ ...b, evidence: { ...b.evidence, rejected: [{ auction: A, reason: "no_launcher" }] } }),
+    (b) => ({
+      ...b,
+      evidence: {
+        ...b.evidence,
+        rejected: [{ auction: A, reason: "no_launcher" }],
+      },
+    }),
     (b) => ({ ...b, evidence: { ...b.evidence, launches: [] } }),
     (b) => ({
       ...b,
       evidence: {
         ...b.evidence,
-        launches: [{ ...b.evidence.launches[0], logs: b.evidence.launches[0].logs.slice(1) }],
+        launches: [
+          {
+            ...b.evidence.launches[0],
+            logs: b.evidence.launches[0].logs.slice(1),
+          },
+        ],
       },
     }),
     (b) => ({
       ...b,
-      evidence: { ...b.evidence, query: crowdLaunchQuery({ fromBlock: start + 1, toBlock: start + 1000 }) },
+      evidence: {
+        ...b.evidence,
+        query: crowdLaunchQuery({
+          fromBlock: start + 1,
+          toBlock: start + 1000,
+        }),
+      },
     }),
-    (b) => ({ ...b, evidence: { ...b.evidence, creations: b.evidence.creations.slice(1) } }),
+    (b) => ({
+      ...b,
+      evidence: { ...b.evidence, creations: b.evidence.creations.slice(1) },
+    }),
   ];
   for (const [i, change] of tampered.entries())
-    assert.throws(() => verifyCrowdLaunchBatch(change(structuredClone(batch))), Error, `case ${i}`);
+    assert.throws(
+      () => verifyCrowdLaunchBatch(change(structuredClone(batch))),
+      Error,
+      `case ${i}`,
+    );
   verifyCrowdLaunchBatch(structuredClone(batch));
 });
 
@@ -254,7 +315,9 @@ test("a migration on the other strategy does not graduate an auction it did not 
     pending: [],
   });
   assert.equal(c.launch.pools.length, 0);
-  assert.deepEqual(c.launch.evidence.rejected, [{ auction: A, reason: "pool_mismatch" }]);
+  assert.deepEqual(c.launch.evidence.rejected, [
+    { auction: A, reason: "pool_mismatch" },
+  ]);
 });
 
 test("a launch-lane page without its migration's block is refused", async () => {
@@ -264,7 +327,8 @@ test("a launch-lane page without its migration's block is refused", async () => 
     height: start + 2000,
     logs: l.logs,
     intercept: (request) => {
-      if (!isDeepStrictEqual(request.body, crowdLaunchQuery(range))) return undefined;
+      if (!isDeepStrictEqual(request.body, crowdLaunchQuery(range)))
+        return undefined;
       const page = fake.respond(request.body!);
       const [chunk] = page.data as { blocks?: { number: number }[] }[];
       chunk.blocks = chunk.blocks?.filter((b) => b.number !== start + 500);

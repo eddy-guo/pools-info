@@ -134,9 +134,7 @@ export interface CrowdLaunchEvidence {
   archiveHeight: number;
 }
 export type CrowdLaunchRejection =
-  | CrowdRejection
-  | "no_launcher"
-  | "pool_mismatch";
+  CrowdRejection | "no_launcher" | "pool_mismatch";
 export interface CrowdLaunchBatch {
   fromBlock: number;
   toBlock: number;
@@ -357,7 +355,10 @@ const invalid = () => Error("Invalid HyperSync crowd evidence");
  * derived from its retained rows alone. Shared by collector and verifier. */
 function crowdLaunchRows(
   range: { fromBlock: number; toBlock: number },
-  evidence: Omit<CrowdLaunchEvidence, "calls" | "tokenMetadataIssues" | "rejected">,
+  evidence: Omit<
+    CrowdLaunchEvidence,
+    "calls" | "tokenMetadataIssues" | "rejected"
+  >,
 ) {
   if (
     evidence.source !== "hypersync" ||
@@ -864,12 +865,8 @@ export async function collectCrowdRange(
   const trades = ledgerTradeRows(swapLogs, transferLogs, {
     fromBlock,
     toBlock,
-    byPool: new Map(
-      [...byPool].filter(([, p]) => p.launchBlock <= toBlock),
-    ),
-    byToken: new Map(
-      [...byToken].filter(([, p]) => p.launchBlock <= toBlock),
-    ),
+    byPool: new Map([...byPool].filter(([, p]) => p.launchBlock <= toBlock)),
+    byToken: new Map([...byToken].filter(([, p]) => p.launchBlock <= toBlock)),
     manager: false,
     transactions,
     blocks: allBlocks,
@@ -895,9 +892,7 @@ export async function collectCrowdRange(
     blocks: checkedRetainedBlocks(
       [
         cutoff,
-        ...kept.map(
-          ({ migration }) => allBlocks.get(migration.block_number)!,
-        ),
+        ...kept.map(({ migration }) => allBlocks.get(migration.block_number)!),
       ].filter(
         (b, i, all) => all.findIndex((x) => x.number === b.number) === i,
       ),

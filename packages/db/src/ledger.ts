@@ -53,8 +53,7 @@ export const crowdLedgerStream = Object.freeze({
   start: ledgerStream.start,
 });
 export type LedgerStreamKey =
-  | typeof ledgerStream.key
-  | typeof crowdLedgerStream.key;
+  typeof ledgerStream.key | typeof crowdLedgerStream.key;
 /** The pools each ledger stream folds. */
 const streamLaunchType = (key: LedgerStreamKey) =>
   key === crowdLedgerStream.key ? "crowd" : "instant";

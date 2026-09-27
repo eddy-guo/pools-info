@@ -85,7 +85,11 @@ export async function reconcileLedgerCrowd(
   db: Client,
   client: HyperSyncClient,
   log: Log = quiet,
-): Promise<{ ledger: LedgerStreamState; launches: Stream; main: LedgerStreamState }> {
+): Promise<{
+  ledger: LedgerStreamState;
+  launches: Stream;
+  main: LedgerStreamState;
+}> {
   const main = await readLedgerStream(db);
   let ledger = await ensureLedgerStream(db, "pass", crowdKey);
   let launches = await ensureCrowdLaunchStream(db);

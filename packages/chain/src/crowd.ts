@@ -37,9 +37,15 @@ export interface CrowdStrategy {
 }
 export const crowdStrategies: readonly CrowdStrategy[] = Object.freeze([
   // 4-hour auctions, the first on 11 Jul 2026.
-  { generation: "lbp-v1", strategy: "0x05d552391067389ee44fec3924157ed33f976000" },
+  {
+    generation: "lbp-v1",
+    strategy: "0x05d552391067389ee44fec3924157ed33f976000",
+  },
   // 1-hour auctions, the first on 14 Sep 2026.
-  { generation: "lbp-v2", strategy: "0xbf1ab81f7d534b2cc0da76fcf4d541322bb0e000" },
+  {
+    generation: "lbp-v2",
+    strategy: "0xbf1ab81f7d534b2cc0da76fcf4d541322bb0e000",
+  },
 ]);
 const zero = "0x0000000000000000000000000000000000000000";
 /** The pools.xyz quick-launch ("Crowd") template: what separates pools.xyz's

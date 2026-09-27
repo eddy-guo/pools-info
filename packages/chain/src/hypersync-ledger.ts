@@ -914,8 +914,7 @@ export function ledgerTradeRows(
     transfersFromLaunch?: boolean;
   },
 ) {
-  const { fromBlock, toBlock, byPool, byToken, transactions, blocks } =
-    context;
+  const { fromBlock, toBlock, byPool, byToken, transactions, blocks } = context;
   const inRange = (l: HyperSyncLogRow) =>
     l.block_number >= fromBlock && l.block_number <= toBlock;
   const swaps: LedgerSwap[] = [];

@@ -113,7 +113,13 @@ test(
       await db.query(
         `INSERT INTO agg_pool_state(chain_id,pool_ref,trades,volume_wei,holders,sqrt_price_x96,liquidity,tick,price_block,price_log_index,price_tx,price_timestamp,first_trade_timestamp,last_trade_timestamp)
         VALUES(4663,${ref},3,$1,1,$2,1,0,$3,0,decode($4,'hex'),$5,$5,$5)`,
-        [volume.toString(), sqrt.toString(), cursor - 5, hex(7), cursorTime - 100],
+        [
+          volume.toString(),
+          sqrt.toString(),
+          cursor - 5,
+          hex(7),
+          cursorTime - 100,
+        ],
       );
     }
     const explore = async (view = "all", sort = "volume") =>
@@ -137,10 +143,10 @@ test(
     // but not measured, while the Instant pool is.
     await batch("ledger:crowd:v1", cursor - crowdServedLagBlocks - 1);
     let rows = await explore("all", "launch");
-    assert.deepEqual(
-      rows.map((r) => r.launchType).sort(),
-      ["crowd", "instant"],
-    );
+    assert.deepEqual(rows.map((r) => r.launchType).sort(), [
+      "crowd",
+      "instant",
+    ]);
     assert.deepEqual(
       (await explore()).map((r) => r.id),
       [I],
