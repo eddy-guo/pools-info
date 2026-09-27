@@ -177,6 +177,7 @@ test(
           launchTx: word(103),
           launchSender: address(101),
           launchedAt: 1000,
+          launchType: "instant",
           volumeWei: high.toString(),
         },
       });

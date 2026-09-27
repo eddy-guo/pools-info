@@ -2,7 +2,7 @@
 // the position, in (zero_cost_inflow) or out (unattributed_outflow). The
 // fold's side is in packages/core/src/ledger.test.ts; this file proves the
 // database side on rows written under the old rule (an actual pre-022
-// ledger, built through migrations 001 to 021 and the writer, with the rows
+// ledger, built through every migration but 022 and the writer, with the rows
 // the old fold wrote for the farm and the sender hand-laid, since the fold no
 // longer produces them): the re-flag, the hour rows, the journal's
 // pre-images, the windows rebuilt and re-ranked inside the migration and
@@ -152,7 +152,8 @@ function batch(from: number, to: number, rows: Rows): LedgerBatch {
     transfers: rows.transfers,
   };
 }
-/** A schema at migration 021, the ledger stream and the writer lock. */
+/** A schema with every migration but 022 (the later ones are additions the
+ * current writer needs), the ledger stream and the writer lock. */
 async function setupBefore022(t: test.TestContext) {
   const db = createClient(url);
   await db.connect();
@@ -174,7 +175,7 @@ async function setupBefore022(t: test.TestContext) {
   await db.query("BEGIN");
   await db.query("SELECT pg_advisory_xact_lock(4663, 19001)");
   for (const name of names) {
-    if (name >= migration) break;
+    if (name === migration) continue;
     const sql = await readFile(new URL(name, dir), "utf8");
     await db.query(sql);
     await db.query(
