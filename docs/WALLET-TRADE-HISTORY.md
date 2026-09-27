@@ -130,9 +130,10 @@ their legs two ways:
   transaction holds the swap: one `eth_getLogs` per block for the
   PoolManager's `Swap` logs of the legs' pools, sent through the explorer's
   JSON-RPC gateway five blocks to a batch, and keeps a relayed leg only when
-  its own transaction is among them. A transaction's logs never change, so the
-  answer is cached per transaction and pool for the life of the process. A
-  plain send or an airdrop carries no swap and stays out.
+  its own transaction is among them. Verdicts for legs at least five minutes
+  old are cached per transaction and pool for the life of the process; newer
+  legs are checked again so indexing lag or a recent reorg cannot freeze a
+  wrong answer. A plain send or an airdrop carries no swap and stays out.
 
 Relaying is common. On the 7d board of 25 Sep 2026, wallet `0xb96de56c` sold
 20 of its 22 trades through the launchpad's own router
@@ -212,6 +213,20 @@ confirmations included. The website's proxy aborts every upstream read at 8 s
 (`AbortSignal.timeout(8000)` in `apps/web/src/lib/product-server.ts`), which is
 why a response never reads more than the one page.
 
+Following caps confirmation at two gateway batches across all eight wallets
+refreshed in one answer. That makes at most ten billed calls in the answer:
+eight explorer pages and two gateway batches, with up to five block queries
+per batch. At the shared five-calls-per-second limit and with no other key
+traffic, the tenth call starts at most about one second after the first if
+calls are ready together. Using the observed slow end of 4.6 s per page and
+0.7 s per gateway batch gives an approximately 6.3 s envelope for this work,
+below the proxy's 8 s deadline. A slower upstream can still hit that deadline;
+the browser-visible worst case is then an unavailable response at 8 s. A
+relayed leg that did not fit the budget is left out of that Following answer
+and can be confirmed on a later poll. Such a partial page never enters the
+Trades tab's shared page cache, and the Trades tab keeps its full confirmation
+path.
+
 ## Credit budget
 
 The free Blockscout PRO key allows 100,000 credits per UTC day and 5 requests
@@ -246,11 +261,11 @@ credits left, so the route was barely being called.
 
 `GET /v1/following` spends from the same cap and cache (see
 `docs/FOLLOWING-AND-WATCHLISTS.md` for its refresh policy): at most 8 page
-reads (240 credits) per answer, plus the batches confirming their relayed
-legs. It reserves the cap's last fifth for wallet-page reads. The figures
+reads (240 credits) and two gateway batches (40 credits) per answer. It
+reserves the cap's last fifth for wallet-page reads. The figures
 below count page reads at 30 credits; a followed wallet that trades through a
-router adds 20 per five blocks of new relayed trades on each refresh, since
-the legs a refresh has already confirmed are not asked again.
+router adds 20 per five blocks of new relayed trades when budget permits, since
+older legs a refresh has already confirmed are not asked again.
 
 | Following event                                          | explorer pages          | credits           |
 | -------------------------------------------------------- | ----------------------- | ----------------- |

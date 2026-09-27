@@ -19,6 +19,7 @@ import {
   type TradeLeg,
 } from "./blockscout-client";
 import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
+import { createFollowing } from "./following-read";
 import { parseRequest, RequestError } from "./request";
 import { createApi } from "./server";
 import { createTokenRegistry } from "./token-registry";
@@ -213,10 +214,10 @@ test("trades keep the wallet's ERC-20 legs against the PoolManager, sided by dir
   });
   assert.equal(trades[3].tokenRaw, "373719220240263753683091868");
   const managerLeg = normalizeTrade(rows[2], poolManager, registered);
-  assert.deepEqual(
-    managerLeg && [managerLeg.trade.side, managerLeg.relayed],
-    ["buy", true],
-  );
+  assert.deepEqual(managerLeg && [managerLeg.trade.side, managerLeg.relayed], [
+    "buy",
+    true,
+  ]);
   assert.equal(normalizeTrade(rows[2], wallet, registered), null);
   // A malformed row that is no trade never fails the page; a malformed or
   // non-fungible PoolManager leg does.
@@ -224,7 +225,10 @@ test("trades keep the wallet's ERC-20 legs against the PoolManager, sided by dir
     normalizeTrade({ ...rows[0], log_index: "x" }, launcher, registered),
     null,
   );
-  assert.equal(normalizeTrade({ from: null, to: 7 }, launcher, registered), null);
+  assert.equal(
+    normalizeTrade({ from: null, to: 7 }, launcher, registered),
+    null,
+  );
   assert.throws(
     () => normalizeTrade({ ...rows[2], log_index: "x" }, launcher, registered),
     /invalid_item/,
@@ -839,9 +843,11 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
   const served = JSON.stringify({ ...page, items: [spoof, sell, launchBuy] });
   const { baseUrl } = await upstream(t, async () => ({ body: served }));
   // Before: the explorer page alone lists the spoof as a sale.
-  const accepted = new Set([spoof, sell, launchBuy].map((row) =>
-    String(row.token.address_hash).toLowerCase(),
-  ));
+  const accepted = new Set(
+    [spoof, sell, launchBuy].map((row) =>
+      String(row.token.address_hash).toLowerCase(),
+    ),
+  );
   const before = [spoof, sell, launchBuy].map(
     (row) => normalizeTrade(row, launcher, accepted)!.trade,
   );
@@ -920,7 +926,7 @@ async function relayedFixtures() {
 async function relayedUpstream(
   t: test.TestContext,
   logs: Awaited<ReturnType<typeof relayedFixtures>>["logs"],
-  page: () => unknown,
+  page: (req: IncomingMessage) => unknown,
   rpc: (
     batch: { id: number; params: [Record<string, unknown>] }[],
   ) => { status?: number; body?: string } | undefined = () => undefined,
@@ -928,7 +934,7 @@ async function relayedUpstream(
   const batches: { id: number; params: [Record<string, unknown>] }[][] = [];
   const bodies = new Map<IncomingMessage, string>();
   const up = await upstream(t, async (req) => {
-    if (req.url !== "/json-rpc") return { body: JSON.stringify(page()) };
+    if (req.url !== "/json-rpc") return { body: JSON.stringify(page(req)) };
     let text = "";
     for await (const chunk of req) text += chunk;
     bodies.set(req, text);
@@ -1072,7 +1078,6 @@ test("a router-relayed leg is a trade once its transaction holds a PoolManager s
   moved.items[0].transaction_hash = "0x" + "ab".repeat(32);
   served = moved;
   assert.deepEqual(await read(agg), [["0x4ed7fbc5", 43, "buy", "Olympus"]]);
-
 });
 
 test("relayed legs are confirmed five blocks per gateway batch, each batch billed once", async (t) => {
@@ -1243,6 +1248,209 @@ test("duplicate gateway reply ids fail the page without caching absent swaps", a
   );
   assert.equal(batches.length, 2);
   assert.equal(c.budget.snapshot().spent, 2 * (30 + 20));
+});
+
+test("recent swap verdicts are rechecked after explorer indexing or a reorg", async (t) => {
+  const { logs, pages, registry } = await relayedFixtures();
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const page = structuredClone(pages.launchpad);
+  page.items = page.items.filter((row: { log_index: number }) =>
+    [52, 2].includes(row.log_index),
+  );
+  for (const row of page.items)
+    row.timestamp = new Date(nowMs - 60_000).toISOString();
+  let visible = false;
+  const { baseUrl, batches } = await relayedUpstream(
+    t,
+    logs,
+    () => page,
+    (batch) =>
+      visible
+        ? undefined
+        : {
+            body: JSON.stringify(
+              batch.map(({ id }) => ({ jsonrpc: "2.0", id, result: [] })),
+            ),
+          },
+  );
+  const c = client(baseUrl, { now: () => nowMs });
+  const reg = {
+    tokens: await registry.current(),
+    poolsOf: (token: string) => registry.poolsOf(token),
+  };
+  const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    [],
+  );
+  visible = true;
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items.map(
+      (item) => item.logIndex,
+    ),
+    [52, 2],
+  );
+  visible = false;
+  assert.deepEqual(
+    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    [],
+  );
+  assert.equal(batches.length, 3);
+});
+
+test("Following bounds gateway work without caching a partial Trades page", async (t) => {
+  const { pages, registry, poolOfToken } = await relayedFixtures();
+  const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
+  const base = pages.launchpad.items.find(
+    (row: { log_index: number }) => row.log_index === 52,
+  );
+  const pool = poolOfToken[String(base.token.address_hash).toLowerCase()];
+  const rows = Array.from({ length: 11 }, (_, i) => ({
+    ...base,
+    block_number: 1000 + i,
+    transaction_hash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+    log_index: i,
+  }));
+  const byBlock = new Map(
+    rows.map((row) => [row.block_number, row.transaction_hash]),
+  );
+  const { baseUrl, batches } = await relayedUpstream(
+    t,
+    {},
+    () => ({ items: rows, next_page_params: null }),
+    (batch) => ({
+      body: JSON.stringify(
+        batch.map(({ id, params: [filter] }) => {
+          const blockNumber = String(filter.fromBlock);
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: [
+              {
+                address: poolManager,
+                topics: [swapTopic, pool],
+                blockNumber,
+                transactionHash: byBlock.get(parseInt(blockNumber, 16)),
+              },
+            ],
+          };
+        }),
+      ),
+    }),
+  );
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const history = createWalletHistory({
+    client: client(baseUrl, { now: () => nowMs }),
+    registry,
+    now: () => nowMs,
+  });
+  const following = createFollowing({
+    history,
+    registry,
+    activity: async () => null,
+    now: () => nowMs,
+  });
+  const first = await following.read([wallet], 50);
+  assert.equal(first.items.length, 10);
+  assert.deepEqual(
+    batches.map((batch) => batch.length),
+    [5, 5],
+  );
+  assert.equal(history.peekTrades(wallet), null);
+  const tab = await history.read({
+    wallet,
+    kind: "trades",
+    page: null,
+    scope: "s",
+  });
+  assert.equal(tab.items.length, 11);
+  assert.deepEqual(
+    batches.map((batch) => batch.length),
+    [5, 5, 1],
+  );
+  assert.equal(history.peekTrades(wallet)?.items.length, 11);
+  assert.equal((await following.read([wallet], 50)).items.length, 11);
+});
+
+test("Following shares two gateway batches across eight wallet reads", async (t) => {
+  const { pages, registry, poolOfToken } = await relayedFixtures();
+  const base = pages.launchpad.items.find(
+    (row: { log_index: number }) => row.log_index === 52,
+  );
+  const pool = poolOfToken[String(base.token.address_hash).toLowerCase()];
+  const wallets = Array.from(
+    { length: 8 },
+    (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  );
+  const rows = new Map(
+    wallets.map((wallet, i) => [
+      wallet,
+      {
+        ...base,
+        from: { ...base.from, hash: wallet },
+        block_number: 1000 + i,
+        transaction_hash: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+      },
+    ]),
+  );
+  const hashes = new Map(
+    [...rows.values()].map((row) => [row.block_number, row.transaction_hash]),
+  );
+  const { baseUrl, batches, seen } = await relayedUpstream(
+    t,
+    {},
+    (req) => {
+      const wallet = new URL(req.url!, "http://local").pathname.split("/")[2];
+      const row = rows.get(wallet);
+      assert(row);
+      return { items: [row], next_page_params: null };
+    },
+    (batch) => ({
+      body: JSON.stringify(
+        batch.map(({ id, params: [filter] }) => {
+          const blockNumber = String(filter.fromBlock);
+          return {
+            jsonrpc: "2.0",
+            id,
+            result: [
+              {
+                address: poolManager,
+                topics: [swapTopic, pool],
+                blockNumber,
+                transactionHash: hashes.get(parseInt(blockNumber, 16)),
+              },
+            ],
+          };
+        }),
+      ),
+    }),
+  );
+  const nowMs = Date.parse("2026-09-27T12:00:00Z");
+  const history = createWalletHistory({
+    client: client(baseUrl, {
+      now: () => nowMs,
+      limiter: { acquire: async () => {} },
+    }),
+    registry,
+    now: () => nowMs,
+  });
+  const following = createFollowing({
+    history,
+    registry,
+    activity: async () => null,
+    now: () => nowMs,
+  });
+  const first = await following.read(wallets, 50);
+  assert.equal(first.items.length, 2);
+  assert.equal(seen.length, 10);
+  assert.equal(batches.length, 2);
+  let last = first;
+  for (let i = 2; i <= 4; i++) {
+    last = await following.read(wallets, 50);
+    assert.equal(last.items.length, i * 2);
+  }
+  assert.equal(last.items.length, 8);
+  assert.equal(batches.length, 8);
 });
 
 test("the wallet's trade list serves router-relayed trades beside direct ones", async (t) => {

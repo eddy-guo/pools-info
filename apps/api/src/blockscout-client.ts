@@ -42,6 +42,7 @@ export const swapLogBatchSize = 5;
 export const swapLogBatchCost = 20;
 const swapLogConcurrency = 2;
 const swapCacheEntries = 50000;
+const recentSwapSeconds = 300;
 export const freeTierRequestsPerSecond = 5;
 /** Blockscout PRO answers wallet address pages in 2.0-4.6 s from Railway
  * (scout measurement, 2026-09-16); this leaves headroom for a slow page
@@ -290,6 +291,9 @@ export interface TradeRegistry {
   tokens: ReadonlySet<string>;
   poolsOf(token: string): readonly string[];
 }
+export interface SwapBatchBudget {
+  remaining: number;
+}
 /** A wallet leg that may be a trade. `relayed` when its counterparty is not
  * the PoolManager, so it is a trade only once its transaction is shown to hold
  * a PoolManager swap of the token's pool. */
@@ -351,6 +355,7 @@ export type HistoryItem<K extends WalletHistoryKind> = K extends "transactions"
 export interface BlockscoutPage<K extends WalletHistoryKind> {
   items: HistoryItem<K>[];
   nextPageParams: PageParams | null;
+  incomplete?: boolean;
 }
 export interface BlockscoutClient {
   readPage(
@@ -359,6 +364,7 @@ export interface BlockscoutClient {
     page: PageParams | null,
     reserveShare: number,
     registry: TradeRegistry,
+    swapBatchBudget?: SwapBatchBudget,
   ): Promise<BlockscoutPage<"trades">>;
   readPage<K extends Exclude<WalletHistoryKind, "trades">>(
     kind: K,
@@ -400,9 +406,6 @@ export function createBlockscoutClient({
   /** The gateway sits beside the REST API: `/4663/json-rpc` for `/4663/api/v2`. */
   const rpcUrl = `${root.replace(/\/api\/v2$/, "")}/json-rpc`;
   const budget = createCreditBudget({ dailyCap: dailyCreditCap, now });
-  /** `${transaction}:${pool}` to whether that transaction holds a PoolManager
-   * swap of the pool. A mined transaction's logs never change, so a page read
-   * again spends nothing on the legs it has already confirmed or refused. */
   const swaps = new Map<string, boolean>();
   function fail(event: string, detail: Record<string, unknown> = {}) {
     process.stderr.write(JSON.stringify({ event, ...detail }) + "\n");
@@ -498,7 +501,8 @@ export function createBlockscoutClient({
     legs: TradeLeg[],
     registry: TradeRegistry,
     reserve: number,
-  ): Promise<Set<TradeLeg>> {
+    swapBatchBudget?: SwapBatchBudget,
+  ): Promise<{ confirmed: Set<TradeLeg>; incomplete: boolean }> {
     const keysOf = ({ trade }: TradeLeg) =>
       registry
         .poolsOf(trade.token.address)
@@ -514,6 +518,14 @@ export function createBlockscoutClient({
     const batches: (typeof blocks)[] = [];
     for (let i = 0; i < blocks.length; i += swapLogBatchSize)
       batches.push(blocks.slice(i, i + swapLogBatchSize));
+    const selected = batches.slice(
+      0,
+      swapBatchBudget?.remaining ?? batches.length,
+    );
+    if (swapBatchBudget) swapBatchBudget.remaining -= selected.length;
+    const queriedBlocks = new Set(
+      selected.flatMap((batch) => batch.map(([block]) => block)),
+    );
     const found = new Set<string>();
     const readBatch = async (batch: (typeof batches)[number]) => {
       const answer = await request(
@@ -581,7 +593,7 @@ export function createBlockscoutClient({
     // Two batches in flight at most: the key's 5 requests per second are
     // shared with every other reader of it, and a burst right after the page
     // read drew 429s on 2026-09-27.
-    const queue = [...batches];
+    const queue = [...selected];
     const worker = async () => {
       for (let batch = queue.shift(); batch; batch = queue.shift())
         // A failed batch fails the page, so the rest are not worth paying for.
@@ -602,12 +614,17 @@ export function createBlockscoutClient({
         confirmed.add(leg);
     for (const leg of legs)
       for (const k of keysOf(leg))
-        if (!swaps.has(k)) {
+        if (
+          queriedBlocks.has(leg.trade.block) &&
+          leg.trade.timestamp !== null &&
+          now() / 1000 - leg.trade.timestamp >= recentSwapSeconds &&
+          !swaps.has(k)
+        ) {
           swaps.set(k, found.has(k));
           if (swaps.size > swapCacheEntries)
             swaps.delete(swaps.keys().next().value!);
         }
-    return confirmed;
+    return { confirmed, incomplete: selected.length < batches.length };
   }
   return {
     budget,
@@ -617,6 +634,7 @@ export function createBlockscoutClient({
       page: PageParams | null,
       reserveShare = 0,
       registry?: TradeRegistry,
+      swapBatchBudget?: SwapBatchBudget,
     ): Promise<BlockscoutPage<K>> {
       if (!addressHash.test(wallet)) throw Error("Invalid wallet");
       if (kind === "trades" && !registry)
@@ -660,12 +678,17 @@ export function createBlockscoutClient({
       }
       if (trades) {
         const relayed = legs.filter((leg) => leg.relayed);
-        const confirmed = relayed.length
-          ? await confirmSwaps(relayed, registry!, reserve)
-          : new Set<TradeLeg>();
+        const { confirmed, incomplete } = relayed.length
+          ? await confirmSwaps(relayed, registry!, reserve, swapBatchBudget)
+          : { confirmed: new Set<TradeLeg>(), incomplete: false };
         items = legs
           .filter((leg) => !leg.relayed || confirmed.has(leg))
           .map((leg) => leg.trade);
+        return {
+          items: items as HistoryItem<K>[],
+          nextPageParams,
+          incomplete,
+        };
       }
       return {
         items: items as HistoryItem<K>[],

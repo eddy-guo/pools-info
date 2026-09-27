@@ -84,8 +84,16 @@ When no requested wallet could be read the route answers 503
 `wallet_history_unavailable` with a reason and `Retry-After`.
 
 One answer reads at most 8 wallets from the explorer (240 credits for the
-pages, plus 20 per five blocks holding relayed legs not yet confirmed), never-read
-wallets first, so a list of 200 fills in over about 25 polls. A cached page is
+pages) and confirms at most two gateway batches across those wallets (40 more
+credits, up to ten blocks). Relayed legs beyond that budget are omitted from
+this answer and retried on later polls; a budget-cut page is never cached as
+the wallet Trades tab's page. A `read` coverage status means the explorer page
+was read, not that every relayed leg was confirmed in this answer. At the
+shared five-call-per-second rate, at most ten calls start within about two
+one-second admission windows when no other traffic uses the key. With the
+observed slow page and gateway times (4.6 s and 0.7 s), the bound is about
+6.3 s; the browser proxy still aborts a slower upstream at 8 s. Never-read
+wallets go first, so a list of 200 fills in over about 25 polls. A cached page is
 read again when the ledger's All-window `last_timestamp` for the wallet
 (`agg_wallet_windows`) is newer than its newest listed trade and than what the
 ledger showed when the page was read (once the page is 2 minutes old); when

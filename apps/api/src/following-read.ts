@@ -80,10 +80,8 @@ export interface Following {
 }
 
 export const followingPolicy = Object.freeze({
-  /** Explorer reads one answer may start. The limiter starts 5 a second, so
-   * the last starts after 1 s and, at 2.0-4.6 s a page from Railway, the
-   * answer lands inside the website proxy's 8 s abort. */
   maxReadsPerAnswer: 8,
+  maxSwapBatchesPerAnswer: 2,
   /** A wallet whose ledger activity is newer than its newest listed trade
    * and than the activity its page was read under is read again once its
    * page is this old. */
@@ -218,6 +216,7 @@ export function createFollowing({
             (a < b ? -1 : 1),
         )
         .slice(0, policy.maxReadsPerAnswer);
+      const swapBatchBudget = { remaining: policy.maxSwapBatchesPerAnswer };
       const failures = new Map<string, RequestError>();
       await Promise.all(
         refresh.map(async (wallet) => {
@@ -225,6 +224,7 @@ export function createFollowing({
           try {
             const snapshot = await history.refreshTrades(wallet, {
               reserveShare: policy.reserveShare,
+              swapBatchBudget,
             });
             cached.set(wallet, snapshot);
             if (!snapshot.stale) {
