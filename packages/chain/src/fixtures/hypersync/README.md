@@ -149,12 +149,13 @@ range also needs eight at that page floor; the 11,909-log tip range needs
 four. `chainTransferPages=10` allows two pages of margin. At the August
 1,300-log floor, the rounded 32/block case needs 19 pages (20 at the
 exact p90) and falls back to full token lists. A capped fallback costs
-at most ten probe requests plus two
-list requests. Adding the seven non-transfer requests in the observed
-maximum nine-request cycle gives 19 requests; 2-second pacing spans at
-least 36 seconds and the 60-second tip poll makes roughly 12 requests per
-minute, below the shared free tier's roughly 30. Even within the request
-burst, 19 is below 30 requests in a minute.
+at most ten probe requests plus two list requests. The observed maximum
+nine-request cycle had seven non-transfer requests. The pre-probe cutoff
+header adds one more, so the capped fallback costs at most 20 requests;
+2-second pacing spans at least 38 seconds, and the 60-second tip poll makes
+roughly 12 requests per minute,
+below the shared free tier's roughly 30. Even within the request burst,
+20 is below 30 requests in a minute.
 
 Ten pages at the 3,530-log tip floor cover about 45.8 Transfers/block for a
 770-block range. That exceeds the p90 density of the 42 Blockscout samples,

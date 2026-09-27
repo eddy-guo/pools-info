@@ -122,8 +122,7 @@ const probeAnswer = (f: Fixture, probe: ProbeRows): Page[] => {
         },
       ],
       archive_height: archiveHeight,
-      next_block:
-        end < probe.rows.length ? probe.rows[end][0] : f.toBlock + 1,
+      next_block: end < probe.rows.length ? probe.rows[end][0] : f.toBlock + 1,
       total_execution_time: 1,
       rollback_guard: null,
     });

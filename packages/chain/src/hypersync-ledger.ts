@@ -136,9 +136,10 @@ export const ledgerPassPolicy = Object.freeze({
    * (20 at the exact p90 density).
    * Page boundaries did not change across default, logs+blocks, logs-only
    * or max_num_logs=20,000 selections; the probe's two fields reduce bytes,
-   * not the expected logs per page. At the cap, eight other requests at the
-   * observed maximum plus ten probe pages and two fallback list queries
-   * total at most 20: 38 s of 2 s pacing plus the 60 s tip poll, about
+   * not the expected logs per page. At the cap, the observed nine-request
+   * cycle maximum leaves seven non-transfer requests; the pre-probe cutoff
+   * header adds one, so ten probe pages and two fallback list queries total
+   * at most 20: 38 s of 2 s pacing plus the 60 s tip poll, about
    * 12 requests/minute against the shared free tier's roughly 30. */
   chainTransferPages: 10,
   /** Whole pages consumed per lane query before the range is cut short. */
@@ -1068,9 +1069,10 @@ export async function collectLedgerRange(
   // (block numbers and addresses only: whole rows over a tip range overflow
   // a response), and the lists then name only the registry's tokens among
   // them, usually a few dozen, so the same query returns the same rows. A
-  // probe that does not finish the range within its page cap, fails for any
-  // reason but a stop, or misses a token the swap lane saw trade is dropped
-  // for the full lists.
+  // probe that does not finish the range within its page cap, has a
+  // recoverable failure, or misses a token the swap lane saw trade is dropped
+  // for the full lists. A throttle, rejected credential, exhausted request
+  // budget, or stop ends the range instead.
   const transferLogs: HyperSyncLogRow[] = [];
   const transferRecords: LedgerQueryRecord[] = [];
   const transferPages: HyperSyncPageRecord[][] = [];
@@ -1129,10 +1131,13 @@ export async function collectLedgerRange(
     transferPages.push(collected.pages);
   }
   // 4. The boundary headers: the cutoff always, the parent on the first range.
-  const probeCutoff = probe && probeBoundary
-    ? await header(probeBoundary.number)
-    : null;
-  if (probeCutoff && probeBoundary && !same(probeCutoff.hash, probeBoundary.hash))
+  const probeCutoff =
+    probe && probeBoundary ? await header(probeBoundary.number) : null;
+  if (
+    probeCutoff &&
+    probeBoundary &&
+    !same(probeCutoff.hash, probeBoundary.hash)
+  )
     throw Error("HyperSync transfer probe crossed a canonical range change");
   const cutoff =
     probeCutoff && probeCutoff.number === toBlock

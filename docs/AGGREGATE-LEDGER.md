@@ -245,13 +245,16 @@ the counters report sections 3.6 and 5 are checked against.
 
 **What the batch rows keep.** `agg_batches.query` holds the launch query
 body verbatim and, for each swap and transfer query, its range, the number
-of values and a SHA-256 of the sorted value list (the list is the registry as
-of the range end, reconstructible from the catalog); a manager-wide swap
-query (`selection: "manager"`) sent no list and keeps its range, the same
-count and digest of the registry it was filtered by, and the number of the
-range's manager swaps outside it (`unregistered`). `pages` holds the page
-records per query and the header reads. The content hash covers the rows, not
-the query, so a range folds to the same batch whichever selection fetched it;
+of values and a SHA-256 of the sorted value list. A manager-wide swap query
+(`selection: "manager"`) sent no list and keeps its range, the count and
+digest of the registry it was filtered by, and the number of the range's
+manager swaps outside it (`unregistered`). A chain-wide transfer probe
+(`selection: "chain"`) likewise keeps the registry count and digest, its
+range, and the number of transfers outside the registry; a subsequent
+token-list record, when present, identifies the selected tokens. `pages`
+holds the page records per query and the header reads. The content hash
+covers the rows, not the query, so a range folds to the same batch whichever
+selection fetched it;
 `agg_batches.unregistered_swaps` stays the writer's count of committed swaps
 whose pool it could not find, 0 in both. The launch stream's
 `indexer_batches.evidence` keeps the HyperSync launch variant: the launch,
@@ -262,9 +265,9 @@ the cutoff header, the metadata issues and the raw Multicall3 replies;
 ### Deviations from the report, and why
 
 - **Quiet ranges grow.** The report fixes ranges at 100,000 blocks. Measured
-  on HyperSync, a page holds about 1,300 to 2,300 logs whatever the field
-  selection or `max_num_logs` (pages end on the server's own block
-  partitions), so requests scale with logs, and in the sparse weeks of
+  on HyperSync, the recorded August pages held about 1,300 to 2,300 logs
+  whatever the field selection or `max_num_logs` (pages end on the server's
+  own block partitions), so requests scale with logs, and in the sparse weeks of
   August the fixed per-range cost (one launch query, up to seven selection
   queries, one header) dominates. A range whose lane queries all answered in
   one page doubles the next range, up to `LEDGER_PASS_MAX_RANGE_BLOCKS`
@@ -425,46 +428,27 @@ ends the loop on a committed batch.
   accept a gzip request body (HTTP 400), so the transfer lists stay
   uncompressed.
 - **The transfer lane at the tip probes for the tokens that moved** (25 Sep
-  2026). After the swap lane's change the token lists were the tip loop's
-  only large upload: 2,904,754 bytes a cycle, about 3.4 GB a day of Railway
-  egress, for 5 to 185 registered transfers a range (34 on average over 233
-  cycles of 25 Sep). A range of at most `chainTransferBlocks` (1,000) blocks
-  now sends a 209-byte probe for every `Transfer` on the chain with two
-  fields, `block_number` and `address`, and then the usual list query naming
-  only the registry's tokens among the answer (tens of addresses, 0.8 to
-  about 2 KB), so the kept rows come from the same query shape as before and the
-  content hash is unchanged. Whole rows are not an option: measured on
-  Blockscout's copy of the chain, Transfers run 8 to 84 a block (median 16,
-  90th percentile 32 over 42 samples across 18 to 25 Sep), 11,909 in the
-  781-block tip range of 25 Sep and 27,441 in the 811-block range of 17 Sep, 8
-  to 19 MB with their transactions and blocks against a client cap of 32 MB
-  and 20,000 rows a page; the probe's rows are 81 bytes, 0.96 and 2.2 MB.
-  Recorded tip pages held 3,530 to 5,965 logs, and the 27,441-log range
-  needs eight pages at that floor. A p95 tip range of about 770 blocks at
-  the sampled p90 density of 32.23 Transfers per block also needs eight;
-  the cap of `chainTransferPages` (10) leaves two pages of margin. The
-  probe's two-field selection reduces bytes, while recorded page boundaries
-  are independent of field selection. The probe and one list can cost more
-  requests than the previous two lists, and a burst is capped before it
-  falls back. With eight other requests at the observed cycle maximum,
-  ten probe requests and two fallback list requests, a cycle uses 20
-  requests: about 12 per minute with 2-second pacing and the 60-second tip
-  poll, below the shared free tier's roughly 30. Under the sampled density
-  distribution and the 3,530-log tip page floor, roughly 10% of
-  770-block ranges should fall back for page count; this is a model, not a
-  measured production rate. The probe is dropped for the full lists, counted
-  as `transferFallbackRequests`, when it cannot finish the range within the
-  cap or the byte cap, fails for any reason but a throttle, a rejected
-  token, the request budget or a stop, or misses a registered token that a
-  swap of the range moved (a trade settles its token with a Transfer in the
-  same transaction). The tip cycle log reports `transferSelection`,
+  2026). After the swap lane's change the full token lists were the tip loop's
+  remaining large upload: 2,904,754 bytes a cycle, about 3.4 GB a day of
+  Railway egress. For a range of at most `chainTransferBlocks` (1,000) blocks,
+  `transferAddressQuery` selects only the block and emitting contract of every
+  chain `Transfer`. The collector then queries the registry tokens named by
+  that probe with the usual token-list query. It falls back to the full lists
+  if the probe cannot finish within `chainTransferPages` (10), exceeds the
+  byte cap, has a recoverable failure, or misses a registered token that a
+  swap moved. A throttle, rejected credential, exhausted request budget or
+  stop ends the range instead. The probe's two-field selection reduces bytes;
+  the recorded page boundaries are independent of field selection. The page
+  cap, request-budget math, density samples and simulated block-complete
+  replay are recorded in `packages/chain/src/fixtures/hypersync/README.md`;
+  `apps/indexer/src/ledger-selection.test.ts` requires the same rows and
+  content hash as the full-list selection. A chain change between the probe
+  and filtered list invalidates the range: the collector compares the
+  canonical cutoff header before and after those reads and fails the cycle
+  if its hash changed. The tip cycle log reports `transferSelection`,
   `unregisteredTransfers`, `transferPages` and `transferFallbackRequests`
-  beside the cycle's `requests` and `sentBytes`. Blockscout's Transfers of
-  the 811-block range, block and contract, are replayed as six simulated
-  block-complete probe pages in
-  `apps/indexer/src/ledger-selection.test.ts`, which requires the rows and
-  content hash the recorded lists gave, and `pnpm ledger:pass compare` now
-  collects a range with both lanes' lists and again with both local
+  beside the cycle's `requests` and `sentBytes`. `pnpm ledger:pass compare`
+  collects a range with both lanes' lists and again with both short-range
   selections.
 - **Ranks are row numbers kept for the top 100**, not the report's dense rank
   over every eligible wallet: the leaderboard today ranks by position with
