@@ -323,40 +323,10 @@ time, its `agg_pool_state` count, and
 cutoff for the broad fallback source only, so it can still be null. Before the
 ledger has folded, the legacy accounting coverage is unchanged.
 
-The route is two ranked passes and an identity lookup. The ranking statement is
-one pass over explore's whole-catalog rank (`rankedFlowCtes` in
-`broad-explore.ts`, the same CTE that serves `sort=volume` and `sort=trades`)
-grouped by sender with ordered-array aggregates for the median and the best
-launch, then sorted and paged with `count(*) OVER ()`; it carries no `ownBuys`
-column. A second statement runs that same rank restricted to the page's launch
-senders, with `ownBuys` naming them, and answers
-`bool_or(own) FILTER (WHERE volume IS NOT NULL)` per sender, so own-buy
-evidence is derived for the creators the page serves and no others: deep
-evidence rides that statement's own deep-trades scan, broad evidence is one
-hash semi-join over `broad_swaps` for those senders, and a ledger-covered
-launch is one `agg_positions` probe per launch of those senders. No order this
-route offers reads the flag, so the page is the same page either way, and both
-statements read one snapshot inside the reader's `REPEATABLE READ` transaction.
-The page's best launches are then looked up by primary key. Like explore both
-ranked statements run with `jit = off`, because the planner prices the rank's
-per-launch coverage subplan far above `jit_optimize_above_cost` while each
-executes in well under a second. The own-buy statement additionally runs with
-`max_parallel_workers_per_gather = 0`, set `LOCAL` around it alone and
-restored before the identity lookup: its `Gather` of two workers over a
-`Parallel Hash Left Join` grew past the shared memory the database container
-gives parallel query at 50 senders or more, and answered 53100 rather than a
-page (`docs/LEDGER-MARKET-SERVING.md`, "The creators aggregate"). On the production-shaped copy (62,393
-launches, 25,718 senders, 1,364 deep publications, 1,853 broad summaries,
-165,417 broad swaps; Postgres 18) the ranking statement is the shape measured
-at 94-111 ms for every sort, first and last page, with a sub-millisecond
-identity lookup; the whole-catalog own-buy join that took the same statement to
-131-157 ms there is no longer part of it. The cold and warm cost of
-the split under `MARKET_SOURCE=ledger` is recorded in
-`docs/LEDGER-MARKET-SERVING.md` ("The creators aggregate"): 351-906 ms cold and
-211-411 ms warm over every window and sort, the two statements 284 ms and
-457 ms of a cold 842 ms. The 52k-launch serial scale phase
-(`broad-explore.scale.test.ts`) bounds each variant at 2,000 ms and prints a
-`52k creators serving` line.
+The ranking does not depend on `boughtOwnLaunch`, so computing that flag
+cannot change which creators appear on a page. For the query plan, probe
+limits, and measured serving costs, see `docs/LEDGER-MARKET-SERVING.md`
+("The creators aggregate").
 
 ## Token icon store
 

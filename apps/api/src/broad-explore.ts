@@ -157,18 +157,16 @@ export const deepFlowSql = (
 // newer than its cursor ($7-$13 below), so the broad and deep rules only ever
 // evaluate for the launches it does not; a 1h the ring does not cover proves
 // no flow.
-// With both, `own` for a ledger-served launch is the ledger's own evidence:
-// a position of the launch sender in that pool with a buy attributed to it
-// (`agg_positions.buys`, the beneficiary rule of `planLedgerBatch`: the
-// initiator when it received the tokens, else the one address that did),
-// over the pool's whole folded history, found by one primary-key probe per
-// launch after the senders are matched to their wallet rows: the LATERAL
-// with its LIMIT keeps the planner on that probe rather than the wallet
-// index's every position of every launching wallet (1.3M buffers, two
-// parallel workers and a temp spill). Those probes read the position heap at
-// random, so they cost what the named senders launched; over the whole
-// catalog they were 260k buffers and 2.1s of the 2.4s a cold
-// production-shaped creators read spent inside its 3s budget.
+// With both, a ledger-served launch's `own` is false and its `probe` is true:
+// its evidence is the ledger's own, a position of the launch sender in that
+// pool with a buy attributed to it (`agg_positions.buys`, the beneficiary
+// rule of `planLedgerBatch`: the initiator when it received the tokens, else
+// the one address that did), over the pool's whole folded history. The CTE
+// does not look it up. One such position answers for every launch of its
+// sender, so the caller probes a sender's ledger launches one primary key at
+// a time and stops at the first hit (`readCreators`). `probe` is false for
+// every launch without `ledger`; see `docs/LEDGER-MARKET-SERVING.md` for the
+// measured cost of probing all launches.
 export function rankedFlowCtes(
   where = "",
   { ownBuys = null as string | null, ledger = null as LedgerFlow | null } = {},
@@ -181,7 +179,6 @@ export function rankedFlowCtes(
     ledger
       ? `WHEN ll.pool_id IS NOT NULL AND p.launch_block BETWEEN $9 AND $7 AND (a.through_block IS NULL OR $7 >= a.through_block) THEN ${ledger !== "none" ? value : "NULL"} `
       : "";
-  const ledgerOwn = ownBuys && ledger;
   return `${catalogCte}${broadFlowCte("catalog")}${
     ownBuys
       ? `, broad_own AS (
@@ -195,22 +192,14 @@ export function rankedFlowCtes(
     SELECT ip.pool_id,f.trades,f.volume FROM ledger_flow f JOIN indexed_pools ip ON ip.pool_ref=f.pool_ref
   )`
       : ""
-  }${
-    ledgerOwn
-      ? `, ledger_own AS (
-    SELECT ip.pool_id FROM indexed_pools ip
-    JOIN agg_wallets w ON w.address=decode(substr(ip.launch_sender,3),'hex')
-    JOIN LATERAL (SELECT 1 FROM agg_positions ap WHERE ap.chain_id=4663 AND ap.pool_ref=ip.pool_ref AND ap.wallet_ref=w.wallet_ref AND ap.buys>0 LIMIT 1) ap ON true
-    WHERE ip.chain_id=4663${ofSenders("ip.launch_sender")}
-  )`
-      : ""
   }, ranked AS MATERIALIZED (
     SELECT p.pool_id,p.launch_sender,
       CASE ${ledgerSelected("coalesce(lf.trades,0)")}WHEN ${broadSelected} THEN coalesce(b.trades,0) WHEN a.pool_id IS NOT NULL THEN ${deepFlowSql("count(*)::integer", "p.pool_id")} END AS trades,
       CASE ${ledgerSelected("coalesce(lf.volume,0)")}WHEN ${broadSelected} THEN CASE WHEN coalesce(b.unsupported,0)=0 THEN coalesce(b.volume,0) END WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("sum(t.eth_wei)", "p.pool_id")},0) END AS volume${
         ownBuys
           ? `,
-      CASE ${ledgerSelected("lo.pool_id IS NOT NULL")}WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("bool_or(t.side='buy' AND t.wallet=p.launch_sender)", "p.pool_id", "true")},false) END AS own`
+      CASE ${ledgerSelected("false")}WHEN ${broadSelected} THEN bo.pool_id IS NOT NULL WHEN a.pool_id IS NOT NULL THEN coalesce(${deepFlowSql("bool_or(t.side='buy' AND t.wallet=p.launch_sender)", "p.pool_id", "true")},false) END AS own,
+      ${ledger ? `CASE ${ledgerSelected("true")}ELSE false END` : "false"} AS probe`
           : ""
       }
     FROM catalog p LEFT JOIN broad_flow b ON b.pool_id=p.pool_id${ownBuys ? " LEFT JOIN broad_own bo ON bo.pool_id=p.pool_id" : ""}
@@ -220,7 +209,7 @@ export function rankedFlowCtes(
     LEFT JOIN ledger_launches ll ON ll.pool_id=p.pool_id
     LEFT JOIN ledger_flow_ids lf ON lf.pool_id=p.pool_id`
         : ""
-    }${ledgerOwn ? "\n    LEFT JOIN ledger_own lo ON lo.pool_id=p.pool_id" : ""} ${where}
+    } ${where}
   )`;
 }
 // Ledger parameters, bound after the broad ones (`ledgerValues`): $7 the

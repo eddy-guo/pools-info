@@ -224,11 +224,20 @@ Cold cost, measured on a production-shape copy (Postgres 18, 370k All rows,
 index and one `agg_wallets` probe per row) plus the coverage's catalog count
 (3,950 pages of `indexed_pools`, the same statement explore's coverage runs)
 and the `agg_pool_state` count (1,559 pages); warm, 20 to 30 ms end to end.
-`metric=net` has no index and reads the window's whole eligible set through
-the partial index (about 8,600 heap pages on All, 5,300 on 30d, 27 to 46 ms
-warm); a gate under 10 reads the window's rows without an index. The warm
-set for a cutover (`docs/LEDGER-CUTOVER.md`) is therefore the four default
-boards, the four `metric=net` boards, and explore's catalog count.
+`metric=net` reads the same eligible rows in net order off migration 023's
+partial index (the realized index's predicate on `net_wei DESC`) and stops at
+the page's last row, as the default board does off its rank. Before it, the
+net board read the window's whole eligible set through the realized index and
+sorted it: on the 27 Sep 2026 production backup (Postgres 18.6, 392k All
+rows, 77.5k eligible), 6,706 pages for 7d, 8,727 for 30d and 18,843 with two
+parallel workers for All, of which a cold restart read 1,307, 4,253 and
+9,289 from disk; with the index every window reads about 510 pages, 171-177
+of them from disk cold and none past a 16 MB `shared_buffers`, and the
+index is 4 MB, built in 123 ms. Production had answered 7d and 30d net in
+0.7-1.7 s under a 1.5 GB memory cap, against 148-187 ms uncapped, because the
+tip loop's writes pushed those pages out between reads. A gate under 10 reads
+the window's rows without an index. `docs/DATABASE-WARMING.md` owns the current
+warm set.
 
 ## The wallet page
 
@@ -348,16 +357,20 @@ evidence: a position of the launch sender in that pool with `buys > 0`
 beneficiary rule of `planLedgerBatch` (the transaction's initiator when it
 received the tokens, otherwise the one address that did), over the pool's
 whole folded history. The broad and deep sources keep their sender-routed
-rule, and the response's `note` says which rule applies. The set is found by
-one `agg_wallets` lookup per launch sender and one `agg_positions`
-primary-key probe per launch, held on that probe by a `LATERAL ... LIMIT 1`:
-the wallet index's plan read 1.3M buffers with two parallel workers and a
-temp spill where this reads one index page and one heap page per launch.
+rule, and the response's `note` says which rule applies. The flag is
+found per sender: one `agg_wallets` lookup by address, then one
+`agg_positions` primary-key probe per ledger-served measured launch, held on
+that probe by a `LATERAL ... LIMIT 1` (the wallet index's plan read 1.3M
+buffers with two parallel workers and a temp spill), stopping at the first
+hit, since one own buy answers for the sender. A sender whose broad or deep
+launches already hold an own buy, or who has no ledger-served measured
+launch, is not probed at all. If the live ring cannot answer `1h`, no
+ledger-served launch is measured in that window, so none is probed.
 
 Those probes read the position heap at random, so the read carries them for
 the creators it serves and no others: the ranking statement measures the whole
 catalog without the flag, and a second statement, bound to the page's launch
-senders, answers `bool_or(own) FILTER (WHERE volume IS NOT NULL)` for them.
+senders, answers the flag for them.
 The orders the route offers never read the flag, so the page is the same page
 either way; asking for it over the whole catalog is what took the read past
 its budget. On the restored production copy (62,896 launches, 2.18M positions,
@@ -371,7 +384,44 @@ the two statements 284 ms and 457 ms of a cold 842 ms. Every window, sort,
 direction and the second page answer byte for byte what the whole-catalog
 probe answered.
 
-That second statement runs with `max_parallel_workers_per_gather = 0`, set
+Probing every launch of the page's creators was still what cost the largest
+page. The top 100 by launches hold 14,727 launches (a few prolific launchers
+dominate the order), so `window=All&sort=launches&limit=100` ran 12,463
+random position probes and a sequential scan of all 428k `agg_wallets` rows
+to hash them by address; production served it in 2.1-2.4 s uncapped with
+the cache warm, and answered 503 at 3.6-3.7 s on both paced passes under a
+1.5 GB memory cap, where the tip loop's writes keep the position heap out of
+cache (each 57014 also closed the readiness gate for every visitor until the
+next warm-up). 85 of those 100 creators bought one of their own launches, so
+stopping at the first hit probes 1,081 launches instead. On the 27 Sep 2026
+production backup (64,625 pools, 2.41M positions, Postgres 18.6,
+`shared_buffers` 128 MB), the server restarted and every other database
+streamed through the page cache before each read:
+
+| Read (statement)                         | Before, cold              | After, cold              | Before, warm | After, warm |
+| ---------------------------------------- | ------------------------- | ------------------------ | -----------: | ----------: |
+| `All`, launches, 100 (whole read)        | 1,078 ms                  | 464 ms                   |       397 ms |      281 ms |
+| `All`, launches, 100 (own-buy statement) | 790 ms, 12,630 disk reads | 183 ms, 1,564 disk reads |       185 ms |       69 ms |
+| `All`, launches, 25 (whole read)         | 785 ms                    | 437 ms                   |              |             |
+| `All`, launches, 25 (own-buy statement)  | 488 ms, 7,250 disk reads  | 143 ms, 1,161 disk reads |              |             |
+| `1h`, launches, 25 (whole read)          | 713 ms                    | 339 ms                   |              |             |
+| `1h`, launches, 25 (own-buy statement)   | 430 ms, 7,250 disk reads  | 113 ms, 1,161 disk reads |              |             |
+| `1h`, launches, 100 (whole read)         | 1,212 ms                  | 410 ms                   |              |             |
+| `1h`, launches, 100 (own-buy statement)  | 957 ms, 12,630 disk reads | 164 ms, 1,564 disk reads |              |             |
+
+With `shared_buffers` at 16 MB standing in for cache pressure, the `All`
+page of 100's own-buy statement fetches 11,663 blocks from outside the
+cache against 28,593; what remains is the ranked launches' sequential scans
+of the catalog tables the ranking statement reads too. The ranking
+statement (about 230 ms cold, 190 ms warm, 3,392 blocks from disk cold) is
+unchanged: it measures the whole catalog by design and plans no parallel
+worker here. The warm set's creators read goes from 654 ms to 344 ms cold
+and the whole warm set from 1,062 ms to 763 ms. Every window, sort,
+direction and page answered byte for byte what the per-launch probe
+answered, apart from `generatedAt`, on this backup and on the
+production-shaped ledger copy of 17 Sep.
+
+The own-buy statement runs with `max_parallel_workers_per_gather = 0`, set
 `LOCAL` around it and restored to the server's value before the identity
 lookup, so it is the only statement of the read the setting reaches. Its
 planned shape was a `Gather` of two workers over a `Parallel Hash Left Join`,
@@ -404,12 +454,13 @@ the precomputed trader board took 19-22 ms and the busiest pool page took
 78-88 ms. The disconfirming result was that a host-wide cold penalty would
 have taken the two controls into seconds too; neither did, cold-first or after
 creators. The creators ranking spent 2,436 ms of one 2,537 ms read in one
-statement, with 2,180 ms in its `ledger_own` hash alone. Finally, the
-deterministic scale regression fails before this rule with 62,031 own-buy
-probes for a page containing 103 launches, and passes when the served plan can
-probe no more than those page launches. That plan-scope assertion, rather than
-a machine-speed or cache-temperature wall-clock assertion, prevents the
-root-cause mechanism consistently across runners.
+statement, with 2,180 ms in its `ledger_own` hash alone. The deterministic
+scale regression failed before page scoping with 62,031 own-buy probes for a
+page containing 103 launches. It now checks the served plan against one probe
+for each buying creator and each launch of a creator who never bought one.
+That plan-scope assertion, rather than a machine-speed or cache-temperature
+wall-clock assertion, prevents both whole-catalog and redundant per-launch
+probing across runners.
 
 The alternatives were measured on that same cold copy before choosing the
 page-scoped query:
@@ -422,8 +473,8 @@ page-scoped query:
 | Partial covering index on `agg_positions(chain_id,pool_ref,wallet_ref) WHERE buys>0` | 962-1,009 ms cold; 56 MB                             | Faster than the old query but still catalog-scaled, and requires a migration. The local candidate index was dropped.                                                                                                                                                                                 |
 | Precompute/cache like traders                                                        | Existing `agg_wallet_windows` control: 19-22 ms cold | An equivalent creators rollup requires a migration, writer work, and a refresh path. Merely adding creators to the warm set is not a fix: the old 2,481-2,818 ms cold read approaches or exceeds `warmPolicy.servingMs` at 2,800 ms, so warming can mark it slow and keep the readiness gate closed. |
 
-No index, migration, precompute path, cache, timeout increase or production
-change is part of this rule.
+The earlier page-scoping change added no index, migration, precompute path,
+cache or timeout increase. Migration 023 is for the separate net board read.
 
 Response shape, ranking rule, the Launches column and every other field are
 unchanged, and no row goes empty that was not empty before: under `broad` on
@@ -437,8 +488,7 @@ cursor 65,409,776) the read answers over HTTP in 351-906 ms cold and
 211-411 ms warm across every window and sort. `ledger-market.scale.test.ts`
 bounds every one of them at 2,000 ms on caches its own seeding left cold,
 before its warm-up read, and asserts from the served statement's plan that the
-own-buy probe never reaches past the page's own launches (62,031 probes against
-the page's 103 before this rule). The population walk (the
+own-buy probe stops at each creator's first own buy. The population walk (the
 old and new top 100 by launches and by volume side by side) is
 `scripts/creators-walk.mjs <old api origin> <new api origin>`, recorded in the
 pull request that made the change.

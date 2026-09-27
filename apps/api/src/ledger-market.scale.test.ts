@@ -4,6 +4,7 @@ import { availableParallelism } from "node:os";
 import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
 import { readCreators } from "./creators-read";
+import { readLedgerLeaderboard } from "./ledger-leaderboard";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
@@ -24,10 +25,7 @@ const readBudgetMs = 2000;
 // its 3,000 ms budget on a cold production copy (62,896 pools, 2.18M
 // positions) while the traders and pool reads stayed at 19-22 ms and 78 ms,
 // and what production cancelled with 57014 on a first load.
-const senders = 26000,
-  // A creator with a position in every third launch, so boughtOwnLaunch is a
-  // real mix rather than uniformly true or false.
-  ownEvery = 3;
+const senders = 26000;
 const H = 500000,
   cursorBlock = 23600000,
   cursorTime = H * 3600 + 1800,
@@ -112,14 +110,18 @@ test(
       hourRows(
         "(SELECT 1 AS i) s",
         "(SELECT h,400 AS t FROM generate_series($4::integer-1169,$4::integer) h) hours",
-      ).replace("$3::bigint", "$1::bigint").replace(/\$4/g, "$2"),
+      )
+        .replace("$3::bigint", "$1::bigint")
+        .replace(/\$4/g, "$2"),
       [cursorBlock, H],
     );
     await db.query(
       hourRows(
         "generate_series(2,101) i",
         "(SELECT h,20 AS t FROM generate_series($4::integer-399,$4::integer) h) hours",
-      ).replace("$3::bigint", "$1::bigint").replace(/\$4/g, "$2"),
+      )
+        .replace("$3::bigint", "$1::bigint")
+        .replace(/\$4/g, "$2"),
       [cursorBlock, H],
     );
     await seedBatches(102, scalePools, 4000, (lo, hi) =>
@@ -164,10 +166,11 @@ test(
       `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE VALUES($1,decode(lpad(to_hex(99),40,'0'),'hex'),23467030)`,
       [senders + 1],
     );
-    // An even-indexed sender bought into every third launch of its own and
-    // an odd-indexed one into none, so the page's own-buy flags are a real
-    // mix and most probes find nothing, as production's do. Closed at a
-    // profit, so the row satisfies the ledger's own accounting constraints
+    // An even-indexed sender bought into every launch of its own and an
+    // odd-indexed one into none, so the page's own-buy flags are a real mix,
+    // one probe answers for a buying creator and a creator who never bought
+    // is probed on every launch. Closed at a profit, so the row satisfies
+    // the ledger's own accounting constraints
     // (realized = proceeds - disposed cost, invested = cost + disposed +
     // outflow cost) rather than standing outside them.
     await seedBatches(1, scalePools, 4000, (lo, hi) =>
@@ -177,8 +180,8 @@ test(
         SELECT 4663,p.pool_ref,mod(i,$3::integer)+1,0,0,1000,1200,1000,200,0,0,0,1,1,0,0,23467030+i,23467030+i,$4::bigint,true,'{}',1,0,120
         FROM generate_series($1::integer,$2::integer) i
         JOIN indexed_pools p ON p.chain_id=4663 AND p.pool_id='0x'||lpad(to_hex(i+200000),64,'0')
-        WHERE mod(i,$5::integer)=0 AND mod(mod(i,$3::integer),2)=0`,
-        [lo, hi, senders, H * 3600, ownEvery],
+        WHERE mod(mod(i,$3::integer),2)=0`,
+        [lo, hi, senders, H * 3600],
       ),
     );
     // The trader leaderboard's own source, so this phase carries the control
@@ -219,7 +222,10 @@ test(
       const data = (await response.json()) as any;
       const ms = performance.now() - started;
       assert.equal(response.status, 200, `${path} ${JSON.stringify(data)}`);
-      assert(ms < readBudgetMs, `${path} exceeded ${readBudgetMs}ms: ${ms.toFixed(1)}ms`);
+      assert(
+        ms < readBudgetMs,
+        `${path} exceeded ${readBudgetMs}ms: ${ms.toFixed(1)}ms`,
+      );
       return { data, ms };
     };
     const reads: [string, number][] = [];
@@ -243,7 +249,10 @@ test(
     const flags = creators.items.map(
       (c: { boughtOwnLaunch: boolean | null }) => c.boughtOwnLaunch,
     );
-    assert(flags.includes(true) && flags.includes(false), JSON.stringify(flags));
+    assert(
+      flags.includes(true) && flags.includes(false),
+      JSON.stringify(flags),
+    );
     // The whole board in one request, which a reload asks for once the page
     // has grown: production answered 53100 for every window=All page of 50
     // rows or more, `could not resize shared memory segment ... to 8388608
@@ -255,11 +264,17 @@ test(
     // own-buy evidence rather than from its text, on the page shape that
     // failed. The probe must reach the page's own launches and no others
     // (over the whole catalog the same probe was 260k buffers and 2.1 s of a
-    // cold read's 2.4 s), and it must plan no parallel worker: the shared
-    // memory a parallel hash asks its container for is what this page had
-    // none of, and a plan that asks for none can never be refused it.
-    const pageLaunches = whole.data.items.reduce(
-      (sum: number, c: { launches: number }) => sum + c.launches,
+    // cold read's 2.4 s), it must stop at a creator's first own buy (probing
+    // every launch of the top 100 by launches was 12,463 random reads of the
+    // position heap on the production-shaped copy, the page production
+    // answered 503 under a memory cap), and it must plan no parallel worker:
+    // the shared memory a parallel hash asks its container for is what this
+    // page had none of, and a plan that asks for none can never be refused
+    // it. A buying creator here bought every launch of its own, so its first
+    // probe hits whatever order the launches are probed in.
+    const pageProbes = whole.data.items.reduce(
+      (sum: number, c: { launches: number; boughtOwnLaunch: boolean | null }) =>
+        sum + (c.boughtOwnLaunch ? 1 : c.launches),
       0,
     );
     let probes = -1,
@@ -268,7 +283,7 @@ test(
     await db.query("BEGIN");
     await readCreators(
       async (sql: string, values?: unknown[]) => {
-        if (sql.includes("ledger_own")) {
+        if (sql.includes("agg_positions")) {
           const walk = (node: Record<string, any>) => {
             if (node["Relation Name"] === "agg_positions") {
               probes = Math.max(probes, 0) + (node["Actual Loops"] ?? 1);
@@ -294,20 +309,80 @@ test(
     await db.query("COMMIT");
     assert(probes >= 0, "no statement carried the own-buy evidence");
     assert(!sequential, "the own-buy probe scanned the whole position table");
-    assert.equal(parallel, "", `the own-buy probe planned a parallel ${parallel}`);
+    assert.equal(
+      parallel,
+      "",
+      `the own-buy probe planned a parallel ${parallel}`,
+    );
     assert(
-      probes <= pageLaunches,
-      `own-buy probes ${probes} exceeded the page's ${pageLaunches} launches (catalog ${counts.pools})`,
+      probes <= pageProbes,
+      `own-buy probes ${probes} exceeded the page's ${pageProbes} (catalog ${counts.pools})`,
     );
     // The controls, on the same cold fixture: the board the tip loop ranked
     // and, further down, the busiest pool's page.
-    const board = await timed("/v1/leaderboard?window=7d&limit=25&minTrades=10");
+    const board = await timed(
+      "/v1/leaderboard?window=7d&limit=25&minTrades=10",
+    );
     reads.push(["traders7d", board.ms]);
     assert.equal(board.data.total, 100);
     assert.equal(board.data.items.length, 25);
+    // The net order, which has no writer rank: it reads the window's
+    // eligible wallets in net order off migration 023's index and stops at
+    // the page's last row. Before it, the board read every eligible row of
+    // the window and sorted them (about 6,700 pages for 7d and 18,800 with two
+    // parallel workers for All on the 27 Sep production backup), and
+    // production answered 7d and 30d net in 0.7-1.7 s once those pages had
+    // left a smaller cache. Read from the plan, as the creators probe is.
+    const net = await timed(
+      "/v1/leaderboard?window=7d&metric=net&limit=100&minTrades=10",
+    );
+    reads.push(["tradersNet7d", net.ms]);
+    assert.equal(net.data.items.length, 100);
+    const netRows: number[] = [];
+    let netParallel = "";
+    await db.query("BEGIN");
+    await readLedgerLeaderboard(
+      async (sql: string, values?: unknown[]) => {
+        if (sql.includes("net_wei DESC")) {
+          const walk = (node: Record<string, any>) => {
+            if (node["Relation Name"] === "agg_wallet_windows")
+              netRows.push(
+                Math.round(node["Actual Rows"] * (node["Actual Loops"] ?? 1)),
+              );
+            if (node["Parallel Aware"] || node["Workers Planned"] !== undefined)
+              netParallel ||= String(node["Node Type"]);
+            for (const child of node.Plans ?? []) walk(child);
+          };
+          walk(
+            (
+              await db.query(
+                "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + sql,
+                values as unknown[],
+              )
+            ).rows[0]["QUERY PLAN"][0].Plan,
+          );
+        }
+        return db.query(sql, values as unknown[]) as any;
+      },
+      { window: "7d", metric: "net", minTrades: 10, limit: 100, offset: 0 },
+    );
+    await db.query("COMMIT");
+    assert(netRows.length > 0, "no statement read the net order");
+    assert(
+      netRows.every((rows) => rows <= 100),
+      `the net board read ${JSON.stringify(netRows)} window rows for a page of 100 of 5,000 eligible`,
+    );
+    assert.equal(
+      netParallel,
+      "",
+      `the net board planned a parallel ${netParallel}`,
+    );
     // One untimed read loads the relation caches the seeding left cold, so
     // the timings below measure the statements rather than a first touch.
-    assert.equal((await fetch(`${base}/v1/explore?window=All&limit=1`)).status, 200);
+    assert.equal(
+      (await fetch(`${base}/v1/explore?window=All&limit=1`)).status,
+      200,
+    );
     const explore = async (name: string, query: string) => {
       const read = await timed(`/v1/explore?${query}`);
       reads.push([name, read.ms]);
@@ -316,10 +391,16 @@ test(
     const launch = await explore("launch24h", "window=24h&limit=25");
     assert.equal(launch.total, scalePools + 31);
     assert.equal(launch.items[0].marketCoverage.source, "aggregate_ledger");
-    const volume = await explore("volume24h", "window=24h&sort=volume&limit=25");
+    const volume = await explore(
+      "volume24h",
+      "window=24h&sort=volume&limit=25",
+    );
     assert.equal(volume.total, scalePools + 30);
     assert.equal(volume.items[1].id, poolId(1));
-    const trades = await explore("tradesAll", "window=All&sort=trades&limit=25");
+    const trades = await explore(
+      "tradesAll",
+      "window=All&sort=trades&limit=25",
+    );
     assert.equal(trades.items[0].stats.trades, 1170 * 400);
     await explore("trades30d", "window=30d&sort=trades&limit=25&offset=975");
     // A change needs an hour before the window: a two-hour pool k hours back
@@ -340,9 +421,15 @@ test(
     };
     const day = await explore("change24h", "window=24h&sort=change&limit=25");
     assert.equal(day.total, scalePools - withoutBaseline(24));
-    const month = await explore("change30d", "window=30d&sort=change&direction=asc&limit=25");
+    const month = await explore(
+      "change30d",
+      "window=30d&sort=change&direction=asc&limit=25",
+    );
     assert.equal(month.total, scalePools - withoutBaseline(720) - 100);
-    const gainers = await explore("gainers7d", "window=7d&view=gainers&sort=volume&limit=25");
+    const gainers = await explore(
+      "gainers7d",
+      "window=7d&view=gainers&sort=volume&limit=25",
+    );
     assert(gainers.total > 0);
     for (const row of gainers.items as AnalyticsPoolRow[])
       assert(row.stats.change! > 0);
@@ -365,7 +452,10 @@ test(
     await explore("volume1h100", "window=1h&sort=volume&limit=100");
     const liquidity = await explore("liquidity7d", "window=7d&sort=liquidity&limit=25");
     assert.equal(liquidity.total, 0);
-    await explore("search24h", "window=24h&q=Ledger%20launch%2061&sort=change&limit=25");
+    await explore(
+      "search24h",
+      "window=24h&q=Ledger%20launch%2061&sort=change&limit=25",
+    );
     // The busiest pool's page: 1,170 hours, the newest thousand as candles.
     for (const window of ["1h", "24h", "All"]) {
       const read = await timed(`/v1/pools/${poolId(1)}?window=${window}`);
