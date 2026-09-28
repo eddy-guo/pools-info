@@ -148,6 +148,7 @@ BEGIN
       SELECT x.wallet_ref,row_number() OVER (ORDER BY x.realized_wei DESC,a.address) AS rn
       FROM agg_trader_windows x JOIN agg_wallets a USING (wallet_ref)
       WHERE x.chain_id=4663 AND x."window"=w.name AND x.supported_trades>=10 AND x.supported_positions>0
+        AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=a.address AND c.kind='contract')
       ORDER BY x.realized_wei DESC,a.address LIMIT 100
     )
     UPDATE agg_wallet_windows x SET rank=top.rn FROM top

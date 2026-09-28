@@ -276,12 +276,23 @@ test("a trader row leaves out the wallet's own launches, the board ranks trader 
     { wallet: K, rank: 2 },
     { wallet: D, rank: 3 },
   ]);
+  await db.query(
+    `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+     VALUES (4663,decode($1,'hex'),'contract',now())`,
+    [K.slice(2)],
+  );
+  await applyLedgerBatch(db, batch(base + 10, base + 11, new Rows()));
+  assert.ok(await refreshLedgerWindows(db, { minIntervalMs: 0 }));
+  assert.deepEqual(await ranks(db, "All"), [
+    { wallet: N, rank: 1 },
+    { wallet: D, rank: 2 },
+  ]);
   const writer = {
     traders: await traders(db),
     wallets: await walletRows(db),
     refreshes: await refreshes(db),
   };
-  assert.ok(writer.refreshes.every((r) => r.ranked === 3));
+  assert.equal(writer.refreshes.find((r) => r.window === "All")?.ranked, 2);
   // Migration 025's fill, run on the same rows from nothing, gives the
   // writer's trader rows, ranks and ranked counts exactly.
   const sql = await readFile(
