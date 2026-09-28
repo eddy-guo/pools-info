@@ -299,7 +299,7 @@ export function ProductExplore() {
     staleSort = requested !== null && !SCREENER_SORTS.includes(requested),
     sort =
       (staleSort ? null : requested) ??
-      (view === LAUNCH_VIEW ? "launch" : "volume"),
+      (view === LAUNCH_VIEW || view === "crowd" ? "launch" : "volume"),
     direction = (staleSort ? null : params.get("dir")) ?? "desc";
   const cleaned = (updates: Record<string, string | null>) => ({
     ...(staleView ? { view: null } : null),
@@ -745,7 +745,11 @@ export function ProductExplore() {
                   <thead>
                     <tr>
                       <th aria-label="Watchlist" />
-                      <th>Token</th>
+                      {view === "crowd" ? (
+                        sortable("Newest", "launch")
+                      ) : (
+                        <th>Token</th>
+                      )}
                       {launchPage ? (
                         <th colSpan={4}>Launch</th>
                       ) : (

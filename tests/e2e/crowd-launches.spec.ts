@@ -8,8 +8,7 @@ import {
 
 /* The crowd launch contract's explore answer, mocked: 40 crowd launches,
    newest first, of which every third carries the ledger's market figures and
-   the rest are listed but unmeasured, as they read during the crowd ledger's
-   catch-up after the deploy. */
+   the rest are unmeasured, as quiet pools can remain indefinitely. */
 const launches = crowdLaunches(40, 3);
 const measured = launches.filter((row) => row.stats.volumeWei !== null);
 const unmeasured = launches.find((row) => row.stats.volumeWei === null)!;
@@ -52,8 +51,12 @@ test("the Crowd tab lists crowd launches, measured or not, each with its chip", 
       request.url().includes("/api/product/explore") &&
       request.url().includes("view=crowd"),
   );
-  await page.goto("/?view=crowd&sort=launch");
-  await sent;
+  await page.goto("/?view=crowd");
+  expect(new URL((await sent).url()).searchParams.get("sort")).toBe("launch");
+  expect(
+    search(page).get("sort"),
+    "the default stays implicit in the URL",
+  ).toBeNull();
   await expect(tabs(page)).toHaveText([
     "All",
     "Gainers",
@@ -62,6 +65,9 @@ test("the Crowd tab lists crowd launches, measured or not, each with its chip", 
     "Watchlist",
   ]);
   await expect(tab(page, "Crowd")).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator(".desktop-pools th[aria-sort='descending']"),
+  ).toContainText("Newest");
   await expect(rows(page, testInfo)).toHaveCount(25);
   expect(await names(page, testInfo)).toEqual(
     launches.slice(0, 25).map((row) => row.name),
@@ -122,15 +128,37 @@ test("the Crowd tab lists crowd launches, measured or not, each with its chip", 
   expect(new Set(heights)).toEqual(new Set([desktop(testInfo) ? 62 : 104]));
 });
 
-test("a volume order leaves the unmeasured crowd launches out as the read API does, and the screener re-sorts nothing", async ({
+test("an explicit volume order leaves unmeasured crowd launches out and keeps the server's order", async ({
   page,
 }, testInfo) => {
   await serveCrowd(page);
-  await page.goto("/?view=crowd");
+  await page.goto("/?view=crowd&sort=volume");
+  expect(search(page).get("sort")).toBe("volume");
   await expect(rows(page, testInfo)).toHaveCount(measured.length);
   /* The mock answers in launch order, not by volume: the rows keep the
      server's order exactly. */
   expect(await names(page, testInfo)).toEqual(measured.map((row) => row.name));
+  await expect(
+    page.locator(".desktop-pools th[aria-sort='descending']"),
+  ).toContainText("Volume");
+});
+
+test("switching away from Crowd restores volume as the other tabs' default", async ({
+  page,
+}) => {
+  await serveCrowd(page);
+  await page.goto("/?view=crowd&sort=volume");
+  for (const name of ["All", "Gainers", "Watchlist"]) {
+    const sent = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/product/explore") &&
+        new URL(request.url()).searchParams.get("view") === name.toLowerCase(),
+    );
+    await tab(page, name).click();
+    expect(new URL((await sent).url()).searchParams.get("sort")).toBe("volume");
+    expect(search(page).get("sort")).toBeNull();
+    await tab(page, "Crowd").click();
+  }
 });
 
 test("the Crowd view lives in the URL: Show more, reload and Back restore it", async ({
@@ -142,7 +170,8 @@ test("the Crowd view lives in the URL: Show more, reload and Back restore it", a
   await tab(page, "Crowd").click();
   await expect(tab(page, "Crowd")).toHaveAttribute("aria-pressed", "true");
   expect(search(page).get("view")).toBe("crowd");
-  await expect(rows(page, testInfo)).toHaveCount(measured.length);
+  await expect(rows(page, testInfo)).toHaveCount(25);
+  expect(search(page).get("sort")).toBeNull();
 
   await page.goto("/?view=crowd&sort=launch");
   await expect(rows(page, testInfo)).toHaveCount(25);
@@ -224,7 +253,7 @@ test("the Crowd view paints its mixed rows with no layout shift", async ({
   });
   await serveCrowd(page);
   try {
-    await page.goto("/?view=crowd&sort=launch", { waitUntil: "commit" });
+    await page.goto("/?view=crowd", { waitUntil: "commit" });
     await expect(
       page
         .locator(".explore-page [data-row='skeleton']")
