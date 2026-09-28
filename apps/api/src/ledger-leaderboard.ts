@@ -15,7 +15,7 @@ import { RequestError } from "./request";
  * per window in `agg_trader_windows`, summed by the tip loop from whole UTC
  * hours ending with the ledger cursor's hour without the positions in pools
  * the wallet launched itself (`packages/db/src/ledger-windows.ts`). A
- * contract is never on the board. The board is the top 100 per window and
+ * observed contract is excluded from the board. The board is the top 100 per window and
  * nothing beyond it (captain, 17 Sep 2026): a page reaching past 100 is
  * refused, and `total` never exceeds 100. The writer's `ledgerWindowPolicy`
  * holds the same two numbers; this read service does not depend on the

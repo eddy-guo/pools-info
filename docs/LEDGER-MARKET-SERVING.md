@@ -186,7 +186,7 @@ changes:
   would have, none into the top 100 that day). The wallet's own row, its
   profile, keeps every position, and a wallet with no launch of its own has
   the same trader row as its own row, so its figures and its order are
-  unchanged. A contract is never on the ledger board: the api's census reads the
+  unchanged. An observed contract leaves the ledger board: the api's census reads the
   code of each wallet the board could show that the ledger never saw send a
   swap (every attributed swap of every position it holds went to it as the
   counterparty; a contract never sends a transaction), and one whose code is
@@ -335,8 +335,9 @@ per pool the wallet ever traded or received tokens in) joined to
 `indexed_pools` for the identity and to `agg_pool_state` for the mark. The
 response is the accounting reader's, field for field; what its values mean:
 
-- **`wallet`** is the board row with its meanings ("The trader leaderboard"
-  above): `rank` 1 to 100 or null, and null is not "unranked" copy but no
+- **`wallet`** is the wallet's full row with the board's metric meanings
+  ("The trader leaderboard" above); its figures can differ when it traded
+  its own launches. `rank` is 1 to 100 or null, and null is not "unranked" copy but no
   rank at all; `last` the wallet's last activity across its positions, the
   same in every window. A wallet the ledger knows that has no hour in the
   window has no row in it and reads as zero activity in the window (realized,
@@ -345,7 +346,7 @@ response is the accounting reader's, field for field; what its values mean:
   never attributed a swap or transfer to is the empty profile the accounting
   reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
   window's refresh cursor, `completeWindow` true.
-- **`wallet.unrealizedWei`** is the page's own addition to the board row: the
+- **`wallet.unrealizedWei`** is the page's own addition to the wallet row: the
   sum of the marks of every supported position (over the whole set, not the
   500 served), or null while any of them is unmarked. A position's mark is
   what its held units fetch at the pool's latest price state less their cost,

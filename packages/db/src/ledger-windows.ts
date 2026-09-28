@@ -161,7 +161,7 @@ const insertWindowRows = (
   ]);
 
 /** Rank the top of a window's trader board: eligible trader rows by
- * realized, address breaking ties, a contract never, kept for the first
+ * realized, address breaking ties, an observed contract never, kept for the first
  * `rankedWallets` rows and cleared elsewhere. The rank is the wallet's own
  * row's, so the wallet page reads it where it reads the wallet. The
  * candidates come off the partial index in one read, and only rows whose

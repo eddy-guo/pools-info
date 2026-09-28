@@ -1,7 +1,7 @@
 import pg from "pg";
 import { BlockscoutError, type BlockscoutClient } from "./blockscout-client";
 
-/** The trader board never ranks a contract (decided 28 Sep 2026; All-time
+/** The trader board excludes observed contracts (decided 28 Sep 2026; All-time
  * #29 of 27 Sep was a market-making contract many wallets call). The ledger
  * cannot tell one on its own: a deployed contract never sends a transaction,
  * so it never initiates a swap, but neither does a wallet whose trades are
@@ -97,10 +97,7 @@ export function createWalletCodeStore(
         `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
          SELECT 4663,decode(substr(a,3),'hex'),k,clock_timestamp() FROM unnest($1::text[],$2::text[]) AS o(a,k)
          ON CONFLICT (chain_id,address) DO UPDATE SET kind=EXCLUDED.kind,observed_at=EXCLUDED.observed_at`,
-        [
-          observations.map((o) => o.address),
-          observations.map((o) => o.kind),
-        ],
+        [observations.map((o) => o.address), observations.map((o) => o.kind)],
       );
     },
     close: () => pool.end(),
