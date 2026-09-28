@@ -1,4 +1,10 @@
-# Status - 15 Sep 2026, current settling pass
+# Status
+
+## Crowd launches join the ledger (26 Sep 2026, branch fm/pools-cca-launch-scope-p29)
+
+The crowd ledger lane is implemented for eligible pools.xyz auction launches.
+The template, catch-up, serving and accounting rules are in
+`docs/CROWD-LAUNCHES.md`.
 
 ## Production serves from the aggregate ledger (18 Sep 2026, 00:12 UTC)
 

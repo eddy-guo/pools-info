@@ -10,6 +10,7 @@ export function catalogPool(r: Record<string, any>): CatalogPool {
     launchTx: r.launch_tx,
     launchSender: r.launch_sender,
     launchedAt: Number(r.launched_at),
+    ...(r.launch_type ? { launchType: r.launch_type } : {}),
     ...(r.image_url ? { imageUrl: r.image_url } : {}),
     ...(r.description ? { description: r.description } : {}),
     ...(r.external_url ? { externalUrl: r.external_url } : {}),

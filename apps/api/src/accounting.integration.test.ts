@@ -215,6 +215,8 @@ test(
             launchTx: m.launchTx,
             launchSender: m.launchSender,
             launchedAt: m.launchedAt,
+            // Every pool a publication verified is an Instant launch.
+            launchType: "instant" as const,
           };
         }),
         publications,

@@ -36,7 +36,7 @@ The gap it fills: pools.xyz and Uniswap's own Launch Aggregator have token disco
 | **Window** | 7 days to start; all-time is ~1 hour of backfill since pools.trade is only ~9 weeks old |
 | **Ranking** | Realized PnL, ETH-native, ≥10 trades to rank. USD is a display toggle |
 | **Live reads** | Current price only. Everything else from the store |
-| **Crowd launches** | Badge + hold out of the ranked board. Upgrade to synthetic buys if >10% of pools |
+| **Crowd launches** | See [Crowd launches](CROWD-LAUNCHES.md) for the current scope and accounting rule |
 
 **The portability rule:** put every data access behind a `Store` interface on day one, and store big numbers as strings (SQLite has no 256-bit numeric type; the same strings drop into Postgres `numeric(78,0)` unchanged). Do that and Phase 2 is one new class plus plumbing. Skip it and it's a rewrite.
 
@@ -58,7 +58,7 @@ Full detail in SPEC.md §7. Every one is architecture-independent.
 
 ## Things that are commonly assumed and are wrong
 
-- Pools are **not** bonding curves that graduate — every launch is a real Uniswap v4 pool from block one. No migration, no graduation event. The "$50k FDV graduation" bar is cosmetic UI.
+- Instant launches are **not** bonding curves that graduate: their v4 pool exists from the launch transaction, and the "$50k FDV graduation" bar is cosmetic. Crowd auctions migrate to a pool after graduation; see [Crowd launches](CROWD-LAUNCHES.md).
 - **ERC-20 has no holder enumeration.** There is no RPC call for holders. Use Blockscout.
 - **ENS is not on chain 4663.** Reverse lookups need a second client on Ethereum mainnet.
 - **Uniswap has no analytics API.** The Trading API is swap execution only, and there's no hosted v4 subgraph for this chain.
@@ -73,7 +73,7 @@ Five measurements, ~30 minutes, and two of them can change the plan (SPEC.md §2
 - [ ] Real block time (sources disagree: 100ms vs 250ms — this dominates the cost model)
 - [ ] Swaps per hour (decides 1-day vs 7-day window)
 - [ ] `eth_getLogs` range cap (sets page size)
-- [ ] Crowd vs instant launch ratio (decides the crowd-launch fix)
+- [ ] Crowd vs instant launch ratio (historical sizing question; see [Crowd launches](CROWD-LAUNCHES.md) for the selected scope)
 - [ ] Blockscout keyless access
 
 **Also verify the contract addresses on Blockscout.** Several in BRIEF.md come from a third-party indexer's documentation rather than Uniswap directly; provenance is marked per-address.

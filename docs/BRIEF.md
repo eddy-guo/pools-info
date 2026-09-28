@@ -11,7 +11,7 @@ Researched 12–14 September 2026. **Provenance is marked throughout** — sever
 
 | Assumption | Reality |
 |---|---|
-| Pools are like pump.fun — a curve that graduates | Every launch mints a **real Uniswap v4 pool in the same transaction as the token**. No curve contract, no migration, no graduation event |
+| Pools are like pump.fun — a curve that graduates | An **Instant** launch opens a real Uniswap v4 pool in the token's launch transaction; its progress bar is cosmetic. A **Crowd** auction migrates to a pool after graduation (see [Crowd launches](CROWD-LAUNCHES.md)) |
 | Holder lists come from an RPC call | **ERC-20 has no holder enumeration.** No RPC method exists. Use Blockscout's indexed endpoint |
 | ENS lookups work on-chain | **ENS is not deployed on chain 4663.** Reverse lookups need a second client on Ethereum mainnet |
 | Uniswap's API can supply the data | The Trading API is **swap execution and quoting only** — no pools, history, holders or traders, and it's gated behind an intake form. There's **no hosted v4 subgraph for 4663** either |
@@ -46,7 +46,7 @@ PoolKey({
 });
 ```
 
-Because fee, tickSpacing, hooks and currency0 are fixed, **you can derive any pool's id from its token address alone** — no need to wait for an `Initialize` event.
+For this Instant strategy, fee, tickSpacing, hooks and currency0 are fixed, so **you can derive its pool id from the token address alone**. Crowd pools require the verified migration key; see [Crowd launches](CROWD-LAUNCHES.md).
 
 ### The liquidity position is unusual
 
@@ -63,7 +63,7 @@ Consequences:
 
 | | Instant ("curve") | Crowd (CCA) |
 |---|---|---|
-| Format | Live immediately, one transaction | ~4-hour bidding window, then pool opens |
+| Format | Live immediately, one transaction | Timed bidding window, then pool opens; see [Crowd launches](CROWD-LAUNCHES.md) |
 | Mechanism | Single-sided v4 position; price discovered by trading | Continuous Clearing Auction in a per-token contract |
 | Anti-sniping | None | Each bid is split across all remaining intervals — the "TWAP bid" |
 | Threshold | None | 10k FDV or **all bids refunded** |
@@ -318,7 +318,7 @@ Official assets: [`Uniswap/brand-assets`](https://github.com/Uniswap/brand-asset
 
 **Solid:** pool mechanics, constants, fees, locked liquidity, distribution, and the v4 data model — all from Uniswap source, repo docs, or the blog.
 
-**Third-party only (Bitquery):** the $50,000 graduation target, the July-launcher addresses, the double-counted-legs warning, the ~4-hour auction duration, chain ID.
+**Third-party only (Bitquery):** the $50,000 graduation target, the July-launcher addresses, the double-counted-legs warning, chain ID. Crowd strategy durations are verified in [Crowd launches](CROWD-LAUNCHES.md).
 
 ---
 

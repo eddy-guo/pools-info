@@ -56,11 +56,11 @@ later deployments must not make an earlier historical capture fail.
 ## Boundaries and historical coverage
 
 The registry covers all Robinhood Instant entries in the pinned SDK revision.
-It does not make the whole product registry exhaustive: Crowd/LBP creation,
-auctions, migration and failed auctions have different lifecycle evidence and
-remain unsupported. Arc and other chains, arbitrary custom strategies, and
-unrelated Uniswap pools are not admitted. A matching pool shape alone does not
-prove Pools membership.
+It does not make the whole product registry exhaustive. Verified pools.xyz
+Crowd migrations use a separate ledger lane; its scope and lifecycle evidence
+are in [Crowd launches](CROWD-LAUNCHES.md). Arc and other chains, arbitrary
+custom strategies, and unrelated Uniswap pools are not admitted. A matching
+pool shape alone does not prove Pools membership.
 
 Old discovery checkpoints searched the original two strategies only. Appending
 registry entries does not retroactively verify their earlier ranges. Preserve

@@ -291,6 +291,9 @@ export interface PoolRecord {
    * Absent or null when the source did not carry it; stored once known, and
    * immutable, since two observations of one launch name one strategy. */
   creatorFees?: boolean | null;
+  /** Where the pool came from (migration 024): an Instant strategy's launch
+   * unless a source says otherwise. Immutable, like the identity. */
+  launchType?: "instant" | "crowd";
 }
 export interface EventRecord {
   txHash: string;
@@ -450,7 +453,9 @@ export async function commitPoolGroup(
   }
 }
 
-async function commitBatchInTransaction(
+/** commitBatch inside a transaction the caller holds, for a source that
+ * writes rows of its own beside the batch (crowd_auctions). */
+export async function commitBatchInTransaction(
   db: Client,
   expected: Stream,
   batch: Batch,
@@ -558,8 +563,14 @@ async function commitBatchInTransaction(
     const creatorFees = p.creatorFees ?? null;
     if (creatorFees !== null && typeof creatorFees !== "boolean")
       throw Error("Invalid launch creator fee flag");
+    const launchType = p.launchType ?? "instant";
+    if (launchType !== "instant" && launchType !== "crowd")
+      throw Error("Invalid launch type");
+    // An Instant launch leaves launch_type to its default, exact for
+    // every Instant row (migration 024), so the Instant lanes' statement is
+    // the one they always wrote; only a crowd launch names the column.
     const inserted = await db.query(
-      "INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block,creator_fees) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id",
+      `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,image_url,description,external_url,decimals,token_total_supply_raw,token_supply_block,creator_fees${launchType === "crowd" ? ",launch_type" : ""}) VALUES (4663,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17${launchType === "crowd" ? ",'crowd'" : ""}) ON CONFLICT (chain_id,pool_id) DO NOTHING RETURNING pool_id`,
       [
         p.id.toLowerCase(),
         p.token.toLowerCase(),
@@ -597,7 +608,9 @@ async function commitBatchInTransaction(
         Number(identity.launch_block) !== p.launchBlock ||
         identity.launch_tx !== p.launchTx.toLowerCase() ||
         identity.launch_sender !== p.launchSender.toLowerCase() ||
-        Number(identity.launched_at) !== p.launchedAt
+        Number(identity.launched_at) !== p.launchedAt ||
+        // Every row written before migration 024 is an Instant launch.
+        (identity.launch_type ?? "instant") !== launchType
       )
         throw Error("Conflicting launch identity");
       for (const [column, value] of [
@@ -802,6 +815,7 @@ export {
 
 export {
   ledgerStream,
+  crowdLedgerStream,
   ledgerRules,
   ledgerContentHash,
   ensureLedgerStream,
@@ -820,6 +834,7 @@ export {
   observeLedgerHead,
   pruneLedgerLiveTrades,
   type LedgerMode,
+  type LedgerStreamKey,
   type LedgerStreamState,
   type LedgerLaunch,
   type LedgerBatch,
@@ -827,11 +842,19 @@ export {
 } from "./ledger";
 export {
   refreshLedgerWindows,
+  recomputeLedgerWindowWallets,
   ledgerWindowPolicy,
   ledgerWindowStart,
   type LedgerWindowRefresh,
   type LedgerWindowsRefreshed,
 } from "./ledger-windows";
+export {
+  crowdLaunchStreamIdentity,
+  ensureCrowdLaunchStream,
+  commitCrowdLaunchBatch,
+  crowdPendingAuctions,
+  type CrowdLaunchCommit,
+} from "./crowd";
 export {
   migrateLedgerTransferProvenance,
   parseLedgerCounterpartyManifest,

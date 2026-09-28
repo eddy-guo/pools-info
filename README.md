@@ -4,12 +4,12 @@ Analytics for verified Pools launches on Robinhood Chain (4663). One pnpm reposi
 
 ## How data reaches a page
 
-1. The collector discovers launches from the configured Pools contracts and stores validated swap/transfer events with receipts, block hashes, and resumable checkpoints.
-2. The analytics worker reconstructs each pool's wallet inventory and average-cost PnL, verifies cutoff balances, and publishes a dated snapshot and holder ledger. Successful pools become due again after 30 minutes; that is a scheduling target, not a freshness guarantee.
-3. The API reads the full saved catalog and processed pool publications. Global sorting and wallet aggregation happen before pagination. Page requests do not run chain scans.
+1. The collectors discover verified Pools launches and store chain evidence with resumable checkpoints. The aggregate ledger has separate Instant and Crowd lanes; the Crowd lane reads HyperSync inside the ledger tip loop.
+2. The aggregate ledger folds swaps and transfers into market and supported-position accounting. The legacy analytics worker also publishes dated pool snapshots and holder ledgers for its own coverage.
+3. The API reads the saved catalog and the applicable ledger or published analytics. Global sorting and wallet aggregation happen before pagination. Page requests do not run chain scans.
 4. Next.js proxies the read API through server-only `INDEXER_API_URL`, and serves nothing else. A read it cannot answer is reported as unavailable and the page shows no figures: the committed dataset under `data/` is a build-time fixture for the browser suites and scripts, served only by a deployment that names it with `PRODUCT_FIXTURES=1`. No fictional, cached or stale market or wallet data is presented as current.
 
-The database stays private. The HTTP service exposes read-only public chain analytics, never SQL or credentials. Production uses the existing Alchemy endpoint for both logs and archival state, with ten-block log ranges. The public Robinhood endpoint worked for local historical captures but returned HTTP 403 from Railway, so it is not the hosted collector's source. Optional `INDEXER_LOG_RPC_URL` can select a separately verified log provider; production references the existing `ROBINHOOD_RPC_URL`. ENS uses Ethereum PublicNode RPC, independently of Robinhood.
+The database stays private. The HTTP service exposes read-only public chain analytics, never SQL or credentials. The legacy collector uses the existing Alchemy endpoint for logs and archival state, with ten-block log ranges. The aggregate ledger's Instant and Crowd lanes use HyperSync for event history and the public RPC for new launch state. The public Robinhood endpoint worked for local historical captures but returned HTTP 403 from Railway for the legacy collector. Optional `INDEXER_LOG_RPC_URL` can select a separately verified log provider for that collector; production references the existing `ROBINHOOD_RPC_URL`. ENS uses Ethereum PublicNode RPC, independently of Robinhood.
 
 ## Product routes
 
@@ -26,7 +26,9 @@ Account sign-in, account-synced watchlists and copy trading are design surfaces 
 
 ## Coverage and accounting
 
-The configured initial discovery boundary is block 62,625,935. It does not include earlier launches or prove that every historical Pools contract version is covered. All catalog rows are visible; calculated metrics require a published pool snapshot. Different pools can have different historical cutoffs, which are disclosed.
+The legacy collector's initial discovery boundary is block 62,625,935; that scan alone does not include earlier launches or prove every historical Pools contract version is covered. Ledger streams have their own start blocks and cutoffs. All registered catalog rows are visible, while market figures require coverage by the serving source. Different pools can have different historical cutoffs, which are disclosed.
+
+The read API includes eligible pools.xyz Crowd auction launches alongside Instant launches. Crowd market figures are served after the crowd ledger reaches the main ledger's matching block and hash; until then those pools remain listed with unmeasured figures. Auction entrants and recipients of pre-migration token transfers are excluded from supported PnL because their auction cost basis is unknown. See [Crowd launches](docs/CROWD-LAUNCHES.md) for the verified scope and coverage rule.
 
 PnL uses integer average cost, carrying earlier purchases into later windows. Only reconciled positions with supported transaction attribution contribute to profit. Unsupported routes, unexplained transfers and unknown basis are excluded and counted, not assigned zero profit. Values are ETH-denominated and before gas. These are supported-position totals over processed pools, not complete wallet returns. A leaderboard ranks the available qualifying wallets; it does not fabricate 100 rows.
 

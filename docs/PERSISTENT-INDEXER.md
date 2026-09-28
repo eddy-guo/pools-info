@@ -128,10 +128,12 @@ orphaned records and (for discovery) affected pool streams before replaying.
 
 The analytics worker now publishes holder snapshots and supported pool accounting,
 and the website reads the saved catalog, rankings and wallet profiles through the
-Railway API. This is still partial historical coverage. Crowd auctions remain
-unsupported, and discovering a launch does not automatically provide its financial
-history. Transfer coverage starts at each observed pool launch, which is not
-automatically proof of a token's birth. The accounting rules still determine
+Railway API. This is still partial historical coverage. The separate crowd ledger
+lane covers verified pools.xyz crowd launches; see [Crowd launches](CROWD-LAUNCHES.md).
+Discovering a launch does not automatically provide its financial history.
+The legacy pool collector starts Transfer coverage at each observed launch;
+the crowd lane also reads pre-migration transfers under the rule in
+[Crowd launches](CROWD-LAUNCHES.md). The accounting rules still determine
 whether PnL is supported.
 
 ### Worker commands

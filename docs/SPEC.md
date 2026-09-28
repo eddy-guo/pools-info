@@ -10,13 +10,13 @@ Stack: Vercel + GitHub Actions. No server, no database. Railway upgrade path in 
 Read this first; several obvious-seeming assumptions are wrong.
 
 - pools.trade is a front end over two public Uniswap repos: [`liquidity-launcher`](https://github.com/Uniswap/liquidity-launcher) and [`continuous-clearing-auction`](https://github.com/Uniswap/continuous-clearing-auction). The source is the documentation.
-- **Every launch mints a real Uniswap v4 pool in the same transaction as the token.** No bonding-curve contract, no migration, no graduation event. The "graduation progress" bar in their UI is cosmetic — nothing happens on-chain at $50k FDV.
-- Every pool is: native ETH as `currency0`, the token as `currency1`, fee `2500` (= 0.25%, pips not bps), no hooks, 1,000,000,000 supply, 18 decimals.
-- The entire supply goes in as **one single-sided, token-only position** spanning `[-160100, initialTick]`, with spot at the upper bound. At t=0 the pool holds 1B tokens and zero ETH.
-- **The creator starts with zero tokens.** No dev allocation, no vesting. "Dev holding %" is structurally zero.
+- **An Instant launch opens a real Uniswap v4 pool in the token's launch transaction.** It has no migration or graduation event; the "$50k FDV graduation" bar is cosmetic. A Crowd launch migrates to its pool after the auction graduates; see [Crowd launches](CROWD-LAUNCHES.md).
+- An Instant pool is: native ETH as `currency0`, the token as `currency1`, fee `2500` (= 0.25%, pips not bps), no hooks, 1,000,000,000 supply, 18 decimals.
+- For Instant, the entire supply goes in as **one single-sided, token-only position** spanning `[-160100, initialTick]`, with spot at the upper bound. At t=0 the pool holds 1B tokens and zero ETH.
+- **The Instant creator starts with zero tokens.** No dev allocation, no vesting. "Dev holding %" is structurally zero.
 - Liquidity is locked permanently — the LP NFT goes to a singleton `FeeSplitter` with no withdrawal function. LP fees autocompound back into the locked position.
 - **Every token's largest holder is the v4 PoolManager**, because all liquidity lives in the singleton. Raw top-10 concentration is meaningless without excluding it.
-- Two launch modes: **instant** (pool opens immediately) and **crowd** (a ~4h continuous clearing auction runs first, then a pool is built at the final clearing price; if it doesn't raise enough, everyone is refunded and no pool ever exists).
+- Two launch modes: **instant** (pool opens immediately) and **crowd** (a timed continuous clearing auction runs first, then a pool is built at the final clearing price; if it doesn't raise enough, everyone is refunded and no pool ever exists). See [Crowd launches](CROWD-LAUNCHES.md) for the verified strategy durations.
 
 ### Chain constraints that change the architecture
 
@@ -55,7 +55,7 @@ Read this first; several obvious-seeming assumptions are wrong.
 - [ ] **Block time.** Two blocks 10,000 apart, diff timestamps. Sizes every scan.
 - [ ] **Swaps per hour.** Scan one hour of `Swap` logs from PoolManager, count those in pools.trade pools. Decides 1-day vs 7-day window.
 - [ ] **`eth_getLogs` caps.** Binary-search the block range until it errors. Sets `PAGE`.
-- [ ] **Crowd vs instant ratio.** Count launches by strategy address. If crowd >10%, do the synthetic-buy fix (§9).
+- [ ] **Crowd vs instant ratio.** Historical sizing question; the selected Crowd scope and exclusion rule are in [Crowd launches](CROWD-LAUNCHES.md).
 - [ ] **Blockscout keyless.** `GET https://robinhoodchain.blockscout.com/api/v2/stats`. If 403, use `api.blockscout.com/4663/api/v2/…` with a free key.
 
 ### Constants
@@ -396,7 +396,6 @@ LIMIT 1000;
 | `didnt_buy` | Received by transfer, never bought → infinite ROI if unfiltered |
 | `sold_gt_bought` | Sold more than ever bought |
 | `fast_flip` | Buy + sell of one pool within N seconds. Tune N for ~100ms blocks |
-| `crowd_entry` | Holds a crowd-launch token with no purchase — basis unknown |
 
 ---
 
@@ -405,12 +404,12 @@ LIMIT 1000;
 | Case | Handling |
 |---|---|
 | **Not graduated** | No pool, no price. Own page layout — progress, clearing price, raised vs threshold. Excluded from PnL, volume, leaderboard |
-| **Graduated** | Pool and trading look normal, **but auction entrants still have no purchase in your swap data.** Flag `crowd_entry`, hold out of the ranked board |
+| **Graduated** | Pool and trading look normal, but auction entrants still have no purchase in swap data. Their affected positions need explicit exclusion; see [Crowd launches](CROWD-LAUNCHES.md) |
 
 The second case is the one people miss. Auction participants got tokens from `claimTokens()`, not a swap — so to a swap-only indexer they appear to have acquired tokens for free, and their PnL is overstated by their entire cost basis. **This persists forever after graduation**; it isn't a pending state that resolves.
 
-- **Fix 1 (20 min, default):** badge + flag + exclude from ranking. Realized PnL from sells is still correct; only the entry is missing.
-- **Fix 2 (+45 min), if crowd >10% of active pools:** read each auction's final `ClearingPriceUpdated` and its `TokensClaimed`, insert a synthetic buy of `claimed × clearingPrice`. Exact basis, nobody excluded. Two numbers per auction, not the full auction dataset.
+For the implemented scope and accounting rule, see
+[Crowd launches](CROWD-LAUNCHES.md).
 
 Also: migration liquidity arrives via `ModifyLiquidity`, not a swap. Make sure it never counts as volume or every crowd launch appears to open with a huge print.
 

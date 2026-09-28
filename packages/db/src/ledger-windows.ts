@@ -124,6 +124,51 @@ async function rankWindow(db: Client, window: LiveWindow) {
   return refs.length;
 }
 
+/** Recompute the window rows of these wallets at each window's current
+ * start and re-rank, inside the caller's transaction and writer lock. The
+ * crowd ledger stream folds history the main stream's journal never names,
+ * so its batches bring their own wallets' rows up to date here; the windows
+ * keep the cursor they reflect, and the next journal-driven refresh builds
+ * on rows that are already the current window's sums. Nothing to do before
+ * the first build, which sums every hour. */
+export async function recomputeLedgerWindowWallets(
+  db: Client,
+  walletRefs: readonly number[],
+) {
+  if (!walletRefs.length) return 0;
+  const saved = await db.query(
+    `SELECT "window",window_start,wallets FROM agg_window_refreshes WHERE chain_id=4663 FOR UPDATE`,
+  );
+  if (saved.rows.length !== ledgerWindowPolicy.windows.length) return 0;
+  const refs = [...walletRefs];
+  const stats = (
+    await db.query(positionStats(" AND wallet_ref=ANY($1::int[])", "text"), [
+      refs,
+    ])
+  ).rows;
+  for (const state of saved.rows) {
+    const window = state.window as LiveWindow;
+    const removed = await db.query(
+      `DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND "window"=$1 AND wallet_ref=ANY($2::int[])`,
+      [window, refs],
+    );
+    const inserted = await db.query(windowRows(true), [
+      window,
+      state.window_start,
+      refs,
+      stats.map((p) => p.wallet_ref),
+      stats.map((p) => p.supported),
+      stats.map((p) => p.excluded),
+      stats.map((p) => p.last_timestamp),
+    ]);
+    const ranked = await rankWindow(db, window);
+    await db.query(
+      `UPDATE agg_window_refreshes SET wallets=wallets+$2,ranked=$3 WHERE chain_id=4663 AND "window"=$1`,
+      [window, (inserted.rowCount ?? 0) - (removed.rowCount ?? 0), ranked],
+    );
+  }
+  return refs.length;
+}
 /** Refresh every window to the ledger cursor, under the writer lock and in
  * one transaction, so all six reflect the same cursor. Returns null when
  * nothing is due: the windows already reflect the cursor, or the last refresh

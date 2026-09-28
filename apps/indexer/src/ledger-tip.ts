@@ -31,6 +31,11 @@ import {
   type LedgerRangeProgress,
 } from "./ledger-pass";
 import {
+  ledgerCrowdDefaults,
+  runLedgerCrowdStep,
+  type LedgerCrowdStep,
+} from "./ledger-crowd";
+import {
   BROAD_CAPACITY_EXIT_CODE,
   HYPERSYNC_UNAUTHORIZED_EXIT_CODE,
   LEDGER_INSPECTION_EXIT_CODE,
@@ -45,7 +50,9 @@ import {
  * the cursor to at most `height - 128` collected and committed exactly as the
  * pass commits it (the launches with name, symbol, decimals and total supply,
  * then the swaps and transfers folded under the writer lock), then the
- * leaderboard windows refreshed when due. At the confirmed tip it waits
+ * crowd lane (ledger-crowd.ts) brought level with the new cursor within its
+ * time budget, then the leaderboard windows refreshed when due. At the
+ * confirmed tip, with the crowd lane level, it waits
  * `pollMs` between cycles; behind it, cycles run back to back and quiet ranges
  * grow. HyperSync paces at one request per 2 s or slower, and the only
  * JSON-RPC read is a new launch's contract state over the public RPC. */
@@ -61,6 +68,8 @@ export interface LedgerTipConfig {
   maxRequestsPerCycle: number;
   pollMs: number;
   windowRefreshMs: number;
+  /** Disable the crowd lane to preserve the shared free-tier token for the main ledger. */
+  crowdEnabled: boolean;
 }
 export const ledgerTipDefaults = Object.freeze({
   /** Blocks per range; a range that completes whole doubles the next one up
@@ -79,6 +88,9 @@ export const ledgerTipDefaults = Object.freeze({
    * minute's wait keeps the loop near 7 requests per minute. */
   pollMs: 60000,
   windowRefreshMs: 60000,
+  /** A catching-up crowd lane gets about as long as the loop's poll wait,
+   * so the main stream's lag stays under two minutes. */
+  crowdBudgetMs: 60000,
   /** Consecutive failed cycles before the loop exits for a restart. */
   maxFailures: 5,
 });
@@ -104,6 +116,9 @@ export function ledgerTipConfig(
     hostname !== "localhost"
   )
     throw Error("HYPERSYNC_URL must be chain 4663's HyperSync endpoint");
+  const crowd = env.LEDGER_CROWD_ENABLED;
+  if (crowd !== undefined && crowd !== "0" && crowd !== "1")
+    throw Error("Invalid LEDGER_CROWD_ENABLED; expected 0 or 1");
   const rangeBlocks = integer(
     env,
     "LEDGER_TIP_RANGE_BLOCKS",
@@ -153,6 +168,7 @@ export function ledgerTipConfig(
       0,
       3600000,
     ),
+    crowdEnabled: crowd !== "0",
   };
 }
 /** Both gates are required before any authenticated request is built. */
@@ -201,6 +217,8 @@ export interface LedgerTipCycle {
   range: LedgerRangeProgress | null;
   /** The cursor reached the confirmed cutoff of this cycle's height. */
   atTip: boolean;
+  /** The crowd lane's ranges this cycle; null when it did not run. */
+  crowd: LedgerCrowdStep | null;
   windows: LedgerWindowsRefreshed | null;
   requests: number;
   bytes: number;
@@ -212,6 +230,8 @@ export interface LedgerTipCycleOptions {
   rangeBlocks: number;
   maxPages: number;
   windowRefreshMs: number;
+  /** The crowd lane's step; unset leaves it out of the cycle. */
+  crowd?: { rangeBlocks: number; maxRangeBlocks: number; budgetMs: number };
   rpc: () => Rpc;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
@@ -248,6 +268,19 @@ export async function runLedgerTipCycle(
     });
     if (!result.idle) range = result;
   }
+  const crowd =
+    options.crowd && !options.signal?.aborted
+      ? await runLedgerCrowdStep(db, client, {
+          ...options.crowd,
+          maxPages: options.maxPages,
+          height,
+          rpc: options.rpc,
+          multicall: options.multicall,
+          signal: options.signal,
+          log,
+          safeError: ledgerTipSafeError,
+        })
+      : null;
   const windows = options.signal?.aborted
     ? null
     : await refreshLedgerWindows(db, {
@@ -263,6 +296,7 @@ export async function runLedgerTipCycle(
     lagSeconds: Math.max(0, headTimestamp - ledger.timestamp!),
     range,
     atTip: ledger.cursor! >= height - hypersyncPolicy.safeDistance,
+    crowd,
     windows,
     requests: client.requests,
     bytes: client.bytes,
@@ -322,6 +356,7 @@ export interface LedgerTipOptions {
   maxPages: number;
   pollMs: number;
   windowRefreshMs: number;
+  crowdEnabled?: boolean;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
   log?: Log;
@@ -442,6 +477,11 @@ export async function runLedgerTip(
   });
   let rangeBlocks = options.rangeBlocks;
   let failures = 0;
+  // The crowd lane's own range size and failure backoff: a failed step
+  // skips the lane for 1, 2, 4 ... cycles while the main stream carries on.
+  let crowdRangeBlocks: number = ledgerCrowdDefaults.rangeBlocks;
+  let crowdFailures = 0,
+    crowdSkip = 0;
   const catchUp = { at: performance.now(), blocks: 0 };
   for (;;) {
     if (options.signal?.aborted) return finish("aborted");
@@ -455,10 +495,20 @@ export async function runLedgerTip(
         const identity = await db.query(databaseIdentitySql);
         options.warmth.observeIdentity(identity.rows[0].identity);
       }
+      const crowd =
+        options.crowdEnabled && crowdSkip === 0
+          ? {
+              rangeBlocks: crowdRangeBlocks,
+              maxRangeBlocks: ledgerCrowdDefaults.maxRangeBlocks,
+              budgetMs: ledgerTipDefaults.crowdBudgetMs,
+            }
+          : undefined;
+      if (crowdSkip > 0) crowdSkip--;
       cycle = await runLedgerTipCycle(db, client, {
         rangeBlocks,
         maxPages: options.maxPages,
         windowRefreshMs: options.windowRefreshMs,
+        crowd,
         rpc: options.rpc,
         multicall: options.multicall,
         signal: options.signal,
@@ -505,6 +555,17 @@ export async function runLedgerTip(
     }
     failures = 0;
     summary.cycles++;
+    const c = cycle.crowd;
+    if (c) {
+      crowdRangeBlocks = c.rangeBlocks;
+      if (c.failed) {
+        crowdFailures++;
+        crowdSkip = Math.min(
+          ledgerCrowdDefaults.maxBackoffCycles,
+          2 ** (crowdFailures - 1),
+        );
+      } else crowdFailures = 0;
+    }
     summary.requests += cycle.requests;
     summary.bytes += cycle.bytes;
     summary.sentBytes += cycle.sentBytes;
@@ -534,6 +595,27 @@ export async function runLedgerTip(
       lagSeconds: cycle.lagSeconds,
       remainingBlocks: remaining,
       atTip: cycle.atTip,
+      crowd: c && {
+        level: c.level,
+        failed: c.failed,
+        skipCycles: crowdSkip,
+        ranges: c.ranges.map((x) => ({
+          from: x.from,
+          to: x.to,
+          cut: x.cut,
+          launches: x.launches,
+          auctions: x.auctions,
+          rejected: x.rejected,
+          swaps: x.swaps,
+          transfers: x.transfers,
+          attributed: x.attributed,
+          unattributed: x.unattributed,
+          positionsChanged: x.positionsChanged,
+          requests: x.requests,
+          replayed: x.replayed,
+          elapsedMs: x.elapsedMs,
+        })),
+      },
       range: r && {
         from: r.from,
         to: r.to,
@@ -589,7 +671,9 @@ export async function runLedgerTip(
     if (options.signal?.aborted) return finish("aborted");
     if (options.maxCycles !== undefined && summary.cycles >= options.maxCycles)
       return finish("cycles");
-    if (cycle.atTip) {
+    // A crowd lane still catching up takes the poll wait for its ranges.
+    const crowdBehind = !!c && !c.level && !c.failed;
+    if (cycle.atTip && !crowdBehind) {
       const idle = new AbortController();
       const abort = () => idle.abort();
       options.signal?.addEventListener("abort", abort, { once: true });

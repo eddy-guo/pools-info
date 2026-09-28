@@ -3,6 +3,7 @@ import { catalogCte, type ReadQuery } from "./catalog-read";
 import {
   ledgerBaselineFoundSql,
   ledgerLaunchSql,
+  ledgerSourceSql,
   ledgerPriceSql,
   ledgerRingFlowSql,
   ledgerRingParams,
@@ -229,7 +230,7 @@ export const ledgerFlowCtes = (flow: LedgerFlow) => `${
     ? `, ledger_hour AS (SELECT $8::integer AS hour,$10::bigint AS start,$11::bigint AS after_block,$12::bigint AS before_block,$13::bigint AS hour_after_block)`
     : ""
 }, ledger_launches AS (
-    SELECT DISTINCT pool_id FROM pool_launch_sources WHERE chain_id=4663 AND stream_key='launches:agg:v1' AND batch_end<=$7
+    SELECT DISTINCT pool_id FROM pool_launch_sources WHERE chain_id=4663 AND ${ledgerSourceSql("", "$7")}
   ), ledger_flow AS (${
     flow === "ring"
       ? ledgerRingFlowSql(ledgerRingParams)

@@ -83,7 +83,7 @@ On a normal launchpad, a new token can't have a real market yet — no liquidity
 
 Uniswap's insight: **a concentrated-liquidity position can be shaped so it already behaves like a bonding curve.** So they skipped the temporary contract entirely.
 
-Every pools.trade launch mints 1,000,000,000 tokens and deposits *all of them, and zero ETH*, into a real v4 pool as a single position — with the starting price at the very top of that position's range. Because there's no ETH in the pot yet, the only possible trade is a buy. As buyers arrive, ETH accumulates and price walks down the range. **Mechanically a bonding curve. Structurally just a Uniswap pool that has been one since block one.**
+An Instant launch mints 1,000,000,000 tokens and deposits *all of them, and zero ETH*, into a real v4 pool as a single position - with the starting price at the very top of that position's range. Because there's no ETH in the pot yet, the only possible trade is a buy. As buyers arrive, ETH accumulates and price walks down the range. **Mechanically a bonding curve. Structurally just a Uniswap pool that has been one since block one.** Crowd launches follow a separate auction and migration path (see [Crowd launches](CROWD-LAUNCHES.md)).
 
 ```
 pump.fun model
@@ -91,7 +91,7 @@ pump.fun model
                 (separate)     at threshold   price history restarts
                               ↑ the rug point, the discontinuity
 
-pools.trade model
+pools.trade Instant model
   [mint token + open real v4 pool] → people trade → (no migration)
    ONE transaction                    ETH accumulates  liquidity locked forever,
    all 1B tokens in, 0 ETH in         price walks      fees compound into it
@@ -99,22 +99,22 @@ pools.trade model
 
 ### pools.trade vs pump.fun
 
-| | pump.fun | pools.trade |
+| | pump.fun | pools.trade Instant |
 |---|---|---|
 | Early price discovery | Separate bonding-curve contract | A real v4 pool, shaped like a curve |
-| Graduation | Real: liquidity migrates at a threshold | Doesn't exist; progress bar is cosmetic |
+| Graduation | Real: liquidity migrates at a threshold | None; progress bar is cosmetic |
 | Who holds liquidity after | Burned or locked LP tokens, varies | A contract with no withdrawal function, permanently |
 | Fees | ~1% plus launch fees | 0.25% total; 0.20% compounds, 0.05% optional to creator |
 | Creator's starting tokens | Often a dev allocation | **Zero.** They must buy their own launch |
-| Anti-sniping | None in the base design | Optional: a 4-hour auction splitting each bid over time |
+| Anti-sniping | None in the base design | None |
 | Chain | Solana | Robinhood Chain (an Ethereum L2) |
-| **What to track** | Migrations, dev wallets, LP burns | **None of those exist.** Auctions, locked-liquidity growth, who's actually trading |
+| **What to track** | Migrations, dev wallets, LP burns | Trading and locked-liquidity growth |
 
 ### The two launch modes, plainly
 
 **Instant launch:** pool opens immediately, first buyer gets the lowest price. Fast, and snipeable.
 
-**Crowd launch:** a ~4-hour auction runs first. Everyone bids a maximum price, every bid gets spread across the remaining time so being first doesn't help, and at the end everyone who cleared pays the *same* price. If it doesn't raise enough, everybody is refunded and the token never opens. Then a pool is built at that final clearing price.
+**Crowd launch:** a timed auction runs first. Everyone bids a maximum price, every bid gets spread across the remaining time so being first doesn't help, and at the end everyone who cleared pays the *same* price. If it doesn't raise enough, everybody is refunded and the token never opens. Then a pool is built at that final clearing price. The verified strategy durations are in [Crowd launches](CROWD-LAUNCHES.md).
 
 ---
 
