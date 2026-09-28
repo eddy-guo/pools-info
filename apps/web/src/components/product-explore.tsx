@@ -32,6 +32,7 @@ import { WatchlistControls } from "./watchlist-controls";
 import {
   AddressChip,
   Change,
+  CrowdLine,
   EmptyState,
   Price,
   UnavailableState,
@@ -98,7 +99,8 @@ function headIntoView(panel: HTMLElement | null, always = false) {
  * shorter, so only dropping the segment is correct for every row, not just
  * the ones with a large count to abbreviate. The full line still reaches
  * assistive tech and a mouse hover as this span's title/aria-label, so
- * nothing is lost, only not shown at every width.
+ * nothing is lost, only not shown at every width. A crowd launch's line
+ * carries the CROWD chip after it (`CrowdLine`), which never truncates.
  */
 function RowSubtitle({
   pool,
@@ -121,26 +123,28 @@ function RowSubtitle({
      without a symbol never opens on a dot. While nothing is known yet (a
      nameless token before the age resolves) the line holds its height. */
   return (
-    <span className="row-subtitle" title={full} aria-label={full}>
-      {symbol && (
-        <span className="mono" aria-hidden="true">
-          {symbol}
-        </span>
-      )}
-      {age && (
-        <span aria-hidden="true">
-          {symbol && " · "}
-          {age}
-        </span>
-      )}
-      {tradeCount && (
-        <span className="row-subtitle-trades" aria-hidden="true">
-          {(symbol || age) && " · "}
-          {tradeCount}
-        </span>
-      )}
-      {!full && <span aria-hidden="true">{"\u00a0"}</span>}
-    </span>
+    <CrowdLine launchType={pool.launchType}>
+      <span className="row-subtitle" title={full} aria-label={full}>
+        {symbol && (
+          <span className="mono" aria-hidden="true">
+            {symbol}
+          </span>
+        )}
+        {age && (
+          <span aria-hidden="true">
+            {symbol && " · "}
+            {age}
+          </span>
+        )}
+        {tradeCount && (
+          <span className="row-subtitle-trades" aria-hidden="true">
+            {(symbol || age) && " · "}
+            {tradeCount}
+          </span>
+        )}
+        {!full && <span aria-hidden="true">{"\u00a0"}</span>}
+      </span>
+    </CrowdLine>
   );
 }
 function PoolCell({
@@ -253,16 +257,14 @@ const SCREENER_SORTS: readonly string[] = [
   "change",
   "launch",
 ] satisfies ScreenerSort[];
-/* The read API accepts a crowd view, but this screener does not offer its tab;
-   a URL naming it reads as the default view. */
-type ScreenerView = Exclude<
-  NonNullable<AnalyticsExploreOptions["view"]>,
-  "crowd"
->;
+/* Crowd lists the pools.xyz crowd (auction) launches, as the export's tab
+   set places it: between New and Watchlist. */
+type ScreenerView = NonNullable<AnalyticsExploreOptions["view"]>;
 const SCREENER_VIEWS = [
   ["all", "All"],
   ["gainers", "Gainers"],
   ["new", "New"],
+  ["crowd", "Crowd"],
   ["watchlist", "Watchlist"],
 ] as const satisfies readonly (readonly [ScreenerView, string])[];
 const isScreenerView = (value: string): value is ScreenerView =>

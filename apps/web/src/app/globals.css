@@ -3936,6 +3936,33 @@ button.icon-button:disabled {
   color: var(--purple);
   border-color: #45184f;
 }
+/* The export's launch mode chip: 10/600 uppercase on an 11px line, outlined
+   with no fill, so with its padding and border it stands 15px, the
+   subtitle's own line, and a crowd row keeps every other row's height. */
+.badge.mode-badge {
+  flex: none;
+  background: transparent;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+/* A crowd launch's line (`CrowdLine` in ui.tsx): the line gives way to the
+   chip after it. */
+.crowd-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.crowd-line > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .empty-state {
   padding: 44px 24px;
 }

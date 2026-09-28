@@ -1,5 +1,9 @@
 import { validateCreatorsResponse } from "./creators-response";
 import { validateEthPriceResponse } from "./eth-price-response";
+import {
+  validateExploreResponse,
+  validateWalletLaunches,
+} from "./explore-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
 import { validateTradeShareResponse } from "./trade-share-response";
@@ -32,6 +36,10 @@ import catalog from "../../../../data/catalog/chain.json";
 import { productRequest } from "./product-request";
 import type { Delivered } from "./use-product";
 
+/** Every pool in the committed dataset was discovered from an Instant
+ * strategy's `TokenLaunched` before crowd launches were indexed, so each one
+ * carries the launch type the read API gives such a pool. */
+const fixtureLaunchType = "instant";
 function preloadModel() {
   const snapshots = [
     initial as ChainSnapshot,
@@ -54,7 +62,7 @@ function preloadModel() {
     ...new Map(
       [...catalog.pools, ...snapshots.flatMap((s) => s.markets)].map((p) => [
         p.id,
-        p,
+        { ...p, launchType: fixtureLaunchType },
       ]),
     ).values(),
   ] as CatalogPool[];
@@ -120,6 +128,7 @@ function creatorsPreload(
             launchSender: best.launchSender,
             launchBlock: best.launchBlock,
             launchedAt: best.launchedAt,
+            launchType: best.launchType,
             imageUrl: best.imageUrl,
             description: best.description,
             externalUrl: best.externalUrl,
@@ -234,6 +243,7 @@ export function preloadedProduct(
       token: pool.token,
       name: pool.name,
       symbol: pool.symbol,
+      launchType: fixtureLaunchType,
       launch: {
         transactionHash: pool.launchTx,
         transactionInitiator: pool.launchSender,
@@ -499,6 +509,10 @@ export async function readProduct<T>(
           !data.coverage)
       )
         throw Error("Invalid saved profile");
+      if (checked.endpoint.startsWith("wallets/"))
+        validateWalletLaunches(data.launches);
+      if (checked.endpoint === "explore")
+        validateExploreResponse(data, checked.params);
       if (checked.endpoint === "following")
         validateFollowingResponse(data, checked.params);
       if (checked.endpoint === "creators")

@@ -1,4 +1,5 @@
 import { assertObservedMarket } from "@pools/core";
+import { validLaunchType } from "./explore-response";
 
 /**
  * A launch height or time, from either serialisation: the read API publishes
@@ -53,6 +54,8 @@ export function validatePoolResponse(
     typeof pool.symbol !== "string"
   )
     throw Error("Mismatched saved pool");
+  if (!validLaunchType(pool.launchType))
+    throw Error("Invalid saved launch type");
   // Older capture responses remain compatible; additive data must be validated.
   const analytics = value.analytics as
     Record<string, unknown> | null | undefined;

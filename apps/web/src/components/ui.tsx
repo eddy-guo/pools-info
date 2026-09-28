@@ -453,10 +453,30 @@ export function Change({
     </span>
   );
 }
+/** Where a launch came from, as the read API's `launchType` names it: the
+ * export's compact uppercase chip, lavender for a crowd (auction) launch. */
 export function ModeBadge({ mode }: { mode: "instant" | "crowd" }) {
   return (
-    <span className={`badge ${mode === "crowd" ? "lavender" : ""}`}>
+    <span className={`badge mode-badge ${mode === "crowd" ? "lavender" : ""}`}>
       {mode === "crowd" ? "Crowd" : "Instant"}
+    </span>
+  );
+}
+/** A launch's one-line identity with, for a crowd launch, the export's
+ * CROWD chip after it. The line gives way to the chip, which never
+ * truncates; an Instant launch, the default, carries no chip. */
+export function CrowdLine({
+  launchType,
+  children,
+}: {
+  launchType?: "instant" | "crowd";
+  children: React.ReactElement;
+}) {
+  if (launchType !== "crowd") return children;
+  return (
+    <span className="crowd-line">
+      {children}
+      <ModeBadge mode="crowd" />
     </span>
   );
 }

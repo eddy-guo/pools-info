@@ -31,6 +31,8 @@ export interface ObservedPoolIdentity {
   name: string;
   symbol: string;
   imageUrl?: string | null;
+  /** The read API's launch type; absent while it is not known. */
+  launchType?: "instant" | "crowd";
   launch: {
     block: number;
     timestamp: number;
@@ -107,7 +109,22 @@ export function PoolHeading({
                   {symbol ?? (pending ? "Pending" : <Unavailable />)}
                 </span>
               )}
-              <span className={styles.mode}>INSTANT</span>
+              {/* The launch mode as the read API names it, never assumed:
+                  a pending read holds the chip's place, and a pool whose
+                  launch type was not served shows none. */}
+              {pool?.launchType ? (
+                <span
+                  className={`${styles.mode} ${pool.launchType === "crowd" ? styles.crowd : ""}`}
+                >
+                  {pool.launchType === "crowd" ? "CROWD" : "INSTANT"}
+                </span>
+              ) : (
+                pending && (
+                  <span className={styles.mode} data-pending="true">
+                    INSTANT
+                  </span>
+                )
+              )}
             </Fragment>
           </div>
           <div className="pool-meta">
