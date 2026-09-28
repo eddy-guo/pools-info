@@ -1,4 +1,5 @@
--- The trader board leaves out a wallet's own launches and every contract
+-- The trader board leaves out a wallet's own launches and contracts once
+-- the census confirms them; unobserved contracts stay visible until checked
 -- (decided 28 Sep 2026). On the 7d board of 27 Sep, 51 of the top 100 traded
 -- only tokens they had launched themselves: each bought inside its own
 -- launch transaction and sold to the buyers who followed, at a 100 percent
@@ -8,8 +9,9 @@
 -- every position and stays its profile, and the new trader row
 -- (agg_trader_windows) is the same sums without the positions in pools the
 -- wallet launched, which the board ranks and serves. The writer's rank stays
--- on the wallet's own row as a snapshot. A wallet with no own launch has the same trader row
--- as its own row, so every such wallet keeps its figures and its order.
+-- on the wallet's own row as a snapshot. A wallet with no own launch has the
+-- same trader row as its own row, so its figures stay the same; its rank can
+-- move when other wallets are excluded.
 
 CREATE TABLE agg_trader_windows (
   chain_id integer NOT NULL CHECK (chain_id=4663),
@@ -158,6 +160,6 @@ BEGIN
   END LOOP;
 END $$;
 
-COMMENT ON TABLE agg_trader_windows IS 'Wallet totals per window without the positions in pools the wallet launched itself (its launch sender), summed from the same hours as agg_wallet_windows and refreshed with it; the trader board ranks and serves these rows, a contract never.';
-COMMENT ON COLUMN agg_wallet_windows.rank IS 'The wallet''s place on the trader board: its agg_trader_windows row among the eligible non-contract rows by realized (address breaks ties), kept for the top 100 only.';
-COMMENT ON TABLE wallet_code_observations IS 'Code classification at an address the trader board might rank, read by the api''s census at observed_at: contract (code that is not an EIP-7702 designator) or none (empty code or a 7702 designator). A contract is never ranked; the others are read again after a week.';
+COMMENT ON TABLE agg_trader_windows IS 'Wallet totals per window without the positions in pools the wallet launched itself (its launch sender), summed from the same hours as agg_wallet_windows and refreshed with it; the trader board ranks and serves these rows, excluding observed contracts.';
+COMMENT ON COLUMN agg_wallet_windows.rank IS 'The wallet''s place on the trader board: its agg_trader_windows row among eligible rows without observed contracts by realized (address breaks ties), kept for the top 100 only.';
+COMMENT ON TABLE wallet_code_observations IS 'Code classification at an address the trader board might rank, read by the api''s census at observed_at: contract (code that is not an EIP-7702 designator) or none (empty code or a 7702 designator). An observed contract is excluded from ranking; the others are read again after a week.';

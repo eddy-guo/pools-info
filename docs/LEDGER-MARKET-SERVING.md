@@ -185,9 +185,10 @@ changes:
   so a launcher cannot clear it on its own launches' trades (273 All wallets
   would have, none into the top 100 that day). The wallet's own row, its
   profile, keeps every position, and a wallet with no launch of its own has
-  the same trader row as its own row, so its figures and its order are
-  unchanged. An observed contract leaves the ledger board: the api's census reads the
-  code of each wallet the board could show that the ledger never saw send a
+  the same trader row as its own row, so its figures are unchanged; its rank
+  can move when other wallets are excluded. An observed contract leaves the
+  ledger board: the api's census reads the code of each wallet the board
+  could show that the ledger never saw send a
   swap (every attributed swap of every position it holds went to it as the
   counterparty; a contract never sends a transaction), and one whose code is
   not an EIP-7702 delegation designator (`0xef0100` and a 20-byte delegate)
@@ -215,10 +216,11 @@ changes:
   census, a newly arriving contract stays visible until checked; the board
   never removes a wallet on a guess. Empty code and EIP-7702 designators are
   both stored as `none` and read again after a week while the board could
-  still show the wallet. Every ledger board and wallet-rank read
-  excludes observed contracts immediately, without a ledger refresh; their
-  rows stay. On the 27 Sep backup the servable union held 2,312-2,331
-  wallets across the recorded cuts, 46 of which had never initiated a swap
+  still show the wallet. Subsequent ledger board and wallet-rank reads
+  exclude observed contracts without a ledger refresh; a cached response
+  can retain one for up to five seconds. Their rows stay. On the 27 Sep
+  backup the servable union held 2,312-2,331 wallets across the recorded
+  cuts, 46 of which had never initiated a swap
   (10 calls, about 200 credits). A whole-trader census would have considered
   287,798 ranked wallets and read 62,208 non-initiators (12,442 calls,
   about 248,840 credits), beyond the shared key's 100,000-credit daily cap.
