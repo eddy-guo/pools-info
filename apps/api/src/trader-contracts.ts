@@ -15,13 +15,11 @@ export const contractCensusPolicy = Object.freeze({
   /** The first run after start, then one every interval. */
   firstRunMs: 30000,
   intervalMs: 300000,
-  /** Addresses read per run and per UTC day: five to an explorer call of 20
-   * credits, so at most 100 and 1,000 credits. A board holds a handful. */
+  /** Addresses read per run: five to an explorer call of 20 credits. */
   addressesPerRun: 25,
-  addressesPerDay: 250,
   /** Never read while the key's stated balance is under this. */
   creditFloor: 30000,
-  /** The wallet page's own reads keep the last fifth of the day's credits. */
+  /** Reserve the last fifth of local credits for the live Trades tab and Following. */
   reserveShare: 0.2,
   /** A wallet with no code, or a delegated one, is read again after this
    * long while the board could still show it: an address can gain code. */
@@ -117,7 +115,6 @@ export interface ContractCensusRun {
   stopped:
     | "done"
     | "not_configured"
-    | "daily_cap"
     | "credit_floor"
     | "explorer_failed"
     | "database_failed";
@@ -130,18 +127,14 @@ export function createContractCensus({
   store,
   client,
   log = (event) => process.stdout.write(JSON.stringify(event) + "\n"),
-  now = Date.now,
   policy = contractCensusPolicy,
 }: {
   store: WalletCodeStore;
   client: BlockscoutClient | null;
   log?: (event: Record<string, unknown>) => void;
-  now?: () => number;
   policy?: ContractCensusPolicy;
 }) {
-  let day = "",
-    read = 0,
-    timer: NodeJS.Timeout | null = null,
+  let timer: NodeJS.Timeout | null = null,
     running: Promise<ContractCensusRun> | null = null,
     closed = false;
   const belowFloor = () => {
@@ -151,27 +144,16 @@ export function createContractCensus({
   async function census(): Promise<ContractCensusRun> {
     const observed: WalletCodeObservation[] = [];
     if (!client) return { stopped: "not_configured", observed };
-    const today = new Date(now()).toISOString().slice(0, 10);
-    if (today !== day) {
-      day = today;
-      read = 0;
-    }
-    const allowance = Math.min(
-      policy.addressesPerRun,
-      policy.addressesPerDay - read,
-    );
-    if (allowance <= 0) return { stopped: "daily_cap", observed };
     if (belowFloor()) return { stopped: "credit_floor", observed };
     let due: string[];
     try {
-      due = await store.candidates(allowance);
+      due = await store.candidates(policy.addressesPerRun);
     } catch {
       return { stopped: "database_failed", observed };
     }
     for (let i = 0; i < due.length; i += 5) {
       if (belowFloor()) return { stopped: "credit_floor", observed };
       const batch = due.slice(i, i + 5);
-      read += batch.length;
       let code: Map<string, string>;
       try {
         code = await client.readCode(batch, policy.reserveShare);

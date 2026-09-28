@@ -146,21 +146,17 @@ function explorer(
   return { client, asked };
 }
 
-test("a census run reads the due candidates five to a call, records each batch as it lands and keeps to its per-run and daily bounds", async () => {
-  const due = Array.from({ length: 60 }, (_, i) => addr(i + 1));
+test("a census run reads due candidates five to a call and continues across runs", async () => {
+  const due = Array.from({ length: 275 }, (_, i) => addr(i + 1));
   const { store, recorded } = memoryStore(due);
   const { client, asked } = explorer(
     (a) => (a === addr(2) ? marketMaker : a === addr(3) ? delegated : "0x"),
     () => 90000,
   );
-  let now = Date.parse("2026-09-28T10:00:00Z");
-  const policy = { ...contractCensusPolicy, addressesPerDay: 40 };
   const census = createContractCensus({
     store,
     client,
     log: () => undefined,
-    now: () => now,
-    policy,
   });
   const first = await census.run();
   assert.equal(first.stopped, "done");
@@ -168,7 +164,7 @@ test("a census run reads the due candidates five to a call, records each batch a
     asked.map((b) => b.length),
     [5, 5, 5, 5, 5],
   );
-  assert.equal(first.observed.length, policy.addressesPerRun);
+  assert.equal(first.observed.length, contractCensusPolicy.addressesPerRun);
   assert.deepEqual(first.observed.slice(0, 3), [
     { address: addr(1), kind: "none", codeBytes: 0 },
     { address: addr(2), kind: "contract", codeBytes: 23 },
@@ -178,12 +174,13 @@ test("a census run reads the due candidates five to a call, records each batch a
     recorded.map((r) => r.length),
     [5, 5, 5, 5, 5],
   );
-  // The day's 40 addresses: fifteen more, then nothing until midnight UTC.
-  const second = await census.run();
-  assert.equal(second.observed.length, 15);
-  assert.equal((await census.run()).stopped, "daily_cap");
-  now = Date.parse("2026-09-29T00:00:01Z");
-  assert.equal((await census.run()).observed.length, 20);
+  for (let i = 1; i < 11; i++) {
+    const run = await census.run();
+    assert.equal(run.stopped, "done");
+    assert.equal(run.observed.length, contractCensusPolicy.addressesPerRun);
+  }
+  assert.equal(recorded.flat().length, due.length);
+  assert.equal((await census.run()).observed.length, 0);
   await census.close();
 });
 
@@ -311,7 +308,6 @@ test(
       policy: {
         ...contractCensusPolicy,
         addressesPerRun: 200,
-        addressesPerDay: 200,
       },
       client: {
         budget: createCreditBudget({ dailyCap: 100000 }),

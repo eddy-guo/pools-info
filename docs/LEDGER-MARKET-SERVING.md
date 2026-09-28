@@ -197,10 +197,12 @@ changes:
   reads only bounded gate-index pages,
   then reads the due wallets'
   code with `eth_getCode` through the explorer's JSON-RPC gateway, five
-  addresses a 20-credit call, at most 25 addresses a run and 250 a UTC day,
-  never while the key's stated balance (`x-credits-remaining`) is under
-  30,000 or past four fifths of the api's own daily cap, and never retrying
-  a failed call inside a run. `wallet_code_observations` keeps each answer;
+  addresses a 20-credit call and at most 25 addresses a run, never while
+  the key's stated balance (`x-credits-remaining`) is under 30,000 or past
+  four fifths of the api's own daily cap, and never retrying a failed call
+  inside a run. The last fifth of local credits is reserved so the census
+  cannot starve the live Trades tab and Following, which share that key.
+  `wallet_code_observations` keeps each answer;
   a wallet with no code, or a delegated one, is read again after a week
   while the board could still show it. Every board and wallet-rank read
   excludes observed contracts immediately, without a ledger refresh; their
@@ -217,6 +219,9 @@ changes:
   its warm full candidate read fell from 765-798 ms and 139,781 buffer hits
   to 459-479 ms and 103,067 hits. Those local timings do not establish the
   latency on production's slower CPU and 1.5 GB memory trial.
+  On the 27 Sep production copy with the gate jump, the full candidate read
+  took 536-594 ms warm and about 92,500 shared-buffer hits for the same
+  2,331-wallet servable union.
   The first servable census found three contracts: All #31 `0x91f9…8faf` (15,739
   bytes; a market maker many wallets call, 44,992 relayed swaps), a
   13,587-byte contract on the 6h and 24h boards, and a 6,718-byte one on the

@@ -27,6 +27,7 @@ const readBudgetMs = 2000;
 // positions) while the traders and pool reads stayed at 19-22 ms and 78 ms,
 // and what production cancelled with 57014 on a first load.
 const senders = 26000;
+const censusWallets = 387000;
 const H = 500000,
   cursorBlock = 23600000,
   cursorTime = H * 3600 + 1800,
@@ -168,6 +169,14 @@ test(
       `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE VALUES($1,decode(lpad(to_hex(99),40,'0'),'hex'),23467030)`,
       [senders + 1],
     );
+    await seedBatches(1, censusWallets, 20000, (lo, hi) =>
+      db.query(
+        `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE
+        SELECT $3::integer+m,decode(lpad(to_hex(1000000+m),40,'0'),'hex'),23467030
+        FROM generate_series($1::integer,$2::integer) m`,
+        [lo, hi, senders + 1],
+      ),
+    );
     // An even-indexed sender bought into every launch of its own and an
     // odd-indexed one into none, so the page's own-buy flags are a real mix,
     // one probe answers for a buying creator and a creator who never bought
@@ -210,6 +219,29 @@ test(
         [window, cursorBlock, cursorTime, window === "All" ? 0 : H - 168],
       );
     }
+    for (const [window, rows, start] of [
+      ["1h", 2000, H - 1],
+      ["6h", 5000, H - 6],
+      ["24h", 20000, H - 24],
+      ["7d", 70000, H - 168],
+      ["30d", 180000, H - 720],
+      ["All", censusWallets, 0],
+    ] as const) {
+      await seedBatches(1, rows, 20000, (lo, hi) =>
+        db.query(
+          `INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
+            wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
+          SELECT 4663,$3,$4::integer+m,
+            CASE WHEN m<=100 THEN -m ELSE -10000-m END,
+            CASE WHEN m<=100 THEN -m ELSE -10000-m END,
+            100000,1000,CASE WHEN m<=100 THEN 999 ELSE mod(m*37,1000) END,
+            CASE WHEN m<=100 THEN 999 ELSE mod(m*37,1000) END,
+            1,0,1,600,CASE WHEN m<=100 THEN -m ELSE -10000-m END,$5::bigint,1,0,$6::integer,now()
+          FROM generate_series($1::integer,$2::integer) m`,
+          [lo, hi, window, senders + 1, H * 3600, start],
+        ),
+      );
+    }
     await db.query(
       `INSERT INTO wallet_code_observations(chain_id,address,kind,code_bytes,observed_at)
       SELECT 4663,address,'contract',100,now() FROM agg_wallets WHERE wallet_ref IN (1,2)`,
@@ -219,13 +251,23 @@ test(
     );
     const counts = (
       await db.query(
-        "SELECT (SELECT count(*) FROM indexed_pools)::integer AS pools,(SELECT count(*) FROM agg_pool_hours)::integer AS hours,(SELECT count(*) FROM agg_pool_state)::integer AS states",
+        `SELECT (SELECT count(*) FROM indexed_pools)::integer AS pools,
+          (SELECT count(*) FROM agg_pool_hours)::integer AS hours,
+          (SELECT count(*) FROM agg_pool_state)::integer AS states,
+          (SELECT count(*) FROM agg_trader_windows WHERE "window"='All')::integer AS traders,
+          (SELECT count(DISTINCT "window") FROM agg_trader_windows)::integer AS trader_windows,
+          (SELECT min(least(supported_trades,999)) FROM agg_trader_windows WHERE "window"='All')::integer AS min_gate,
+          (SELECT max(least(supported_trades,999)) FROM agg_trader_windows WHERE "window"='All')::integer AS max_gate`,
       )
     ).rows[0];
     assert.deepEqual(counts, {
       pools: scalePools + 31,
       hours: 1170 + 100 * 400 + (scalePools - 101) * 2,
       states: scalePools,
+      traders: censusWallets + 5000,
+      trader_windows: 6,
+      min_gate: 0,
+      max_gate: 999,
     });
     const seedMs = performance.now() - seedStarted;
 
@@ -350,7 +392,7 @@ test(
       Number(censusPlan["Shared Hit Blocks"]) +
       Number(censusPlan["Shared Read Blocks"]);
     assert(censusMs < 1500, `candidate read took ${censusMs} ms`);
-    assert(censusPages < 20000, `candidate read touched ${censusPages} pages`);
+    assert(censusPages < 150000, `candidate read touched ${censusPages} pages`);
     reads.push(["censusCandidates", censusMs]);
     process.stdout.write(`census candidate pages=${censusPages}\n`);
     const codeStore = createWalletCodeStore(
