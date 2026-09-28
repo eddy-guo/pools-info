@@ -285,6 +285,21 @@ test(
     await db.query(`INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,
     trades,supported_trades,wins,losses,closures,hold_seconds,supported_positions,excluded_positions,window_start,refreshed_at)
     VALUES(4663,'1h',105,3000,3000,100,100,10,10,0,0,0,0,1,0,0,now())`);
+    await db.query(`INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,
+      trades,supported_trades,wins,losses,closures,hold_seconds,supported_positions,excluded_positions,window_start,refreshed_at)
+      SELECT 4663,'6h',wallet_ref,
+        CASE WHEN wallet_ref<=100 THEN 1001-wallet_ref WHEN wallet_ref=101 THEN 0 ELSE 950 END,
+        CASE WHEN wallet_ref<=100 THEN 1001-wallet_ref WHEN wallet_ref=101 THEN 0 ELSE 950 END,
+        100,100,CASE WHEN wallet_ref<=100 THEN 900 WHEN wallet_ref=101 THEN 800 ELSE 700 END,
+        CASE WHEN wallet_ref<=100 THEN 900 WHEN wallet_ref=101 THEN 800 ELSE 700 END,
+        0,0,0,0,1,0,0,now() FROM agg_wallets WHERE wallet_ref<=102`);
+    const sixHour = (
+      await db.query(
+        "SELECT trader_servable_refs('6h','realized') AS wallet_ref",
+      )
+    ).rows.map((r) => Number(r.wallet_ref));
+    assert(sixHour.includes(102));
+    assert(!sixHour.includes(101));
     const due = await store.candidates(200);
     for (const ref of [100, 101, 102, 104, 105])
       assert(due.includes(addr(ref)), `missing servable wallet ${ref}`);

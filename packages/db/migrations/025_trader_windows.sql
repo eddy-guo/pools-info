@@ -95,9 +95,11 @@ BEGIN
       INTO top_rows USING top_rows,current_gate,selected_window,floor_metric;
     RETURN QUERY SELECT t.wallet_ref FROM unnest(top_rows) t WHERE t.gate=current_gate;
     IF cardinality(top_rows)=100 THEN floor_metric := (top_rows[100]).metric; END IF;
-    SELECT max(least(supported_trades,999)) INTO current_gate FROM agg_trader_windows
-      WHERE chain_id=4663 AND "window"=selected_window AND supported_positions>0
-        AND least(supported_trades,999)<current_gate;
+    EXECUTE format('SELECT least(x.supported_trades,999) FROM agg_trader_windows x
+      WHERE x.chain_id=4663 AND x."window"=$1 AND x.supported_positions>0
+        AND least(x.supported_trades,999)<$2 AND x.%I >= $3
+      ORDER BY least(x.supported_trades,999) DESC,x.%I DESC LIMIT 1',ordered_column,ordered_column)
+      INTO current_gate USING selected_window,current_gate,floor_metric;
   END LOOP;
 END $$;
 

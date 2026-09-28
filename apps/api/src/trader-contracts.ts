@@ -56,7 +56,7 @@ export interface WalletCodeStore {
  * saw initiate a swap (every attributed swap of every position it holds
  * went to it as the transaction's counterparty), and whose code has not
  * been read, or was read as no contract more than `recheckDays` ago. */
-const candidatesSql = `WITH top AS (
+export const candidatesSql = `WITH top AS (
     SELECT DISTINCT t.wallet_ref FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
     CROSS JOIN unnest(ARRAY['realized','net']) AS m(metric)
     CROSS JOIN LATERAL trader_servable_refs(v.name,m.metric) AS t(wallet_ref)

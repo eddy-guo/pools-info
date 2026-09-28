@@ -5,7 +5,7 @@ import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
 import { readCreators } from "./creators-read";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
-import { createWalletCodeStore } from "./trader-contracts";
+import { candidatesSql, createWalletCodeStore } from "./trader-contracts";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
@@ -341,15 +341,22 @@ test(
     assert.equal(board.data.items.length, 25);
     const censusPlan = (
       await db.query(
-        `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM trader_servable_refs('7d','realized')`,
+        "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + candidatesSql,
+        [25],
       )
     ).rows[0]["QUERY PLAN"][0].Plan;
-    assert.equal(censusPlan["Node Type"], "Function Scan");
-    assert(
-      censusPlan["Shared Hit Blocks"] + censusPlan["Shared Read Blocks"] < 5000,
-      `census read ${censusPlan["Shared Hit Blocks"] + censusPlan["Shared Read Blocks"]} pages`,
+    const censusMs = Number(censusPlan["Actual Total Time"]);
+    const censusPages =
+      Number(censusPlan["Shared Hit Blocks"]) +
+      Number(censusPlan["Shared Read Blocks"]);
+    assert(censusMs < 1500, `candidate read took ${censusMs} ms`);
+    assert(censusPages < 20000, `candidate read touched ${censusPages} pages`);
+    reads.push(["censusCandidates", censusMs]);
+    process.stdout.write(`census candidate pages=${censusPages}\n`);
+    const codeStore = createWalletCodeStore(
+      process.env.TEST_DATABASE_URL,
+      schema,
     );
-    const codeStore = createWalletCodeStore(process.env.TEST_DATABASE_URL, schema);
     try {
       assert.equal((await codeStore.candidates(25)).length, 25);
     } finally {

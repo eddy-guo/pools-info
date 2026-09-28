@@ -74,7 +74,8 @@ never saw send a swap, through the explorer's JSON-RPC gateway, on the same
 client and daily credit budget as the wallet page's reads, at most 250
 addresses (1,000 credits) a UTC day and never while the key's stated balance
 is under 30,000. Confirmed contracts leave every board and the wallet's board
-rank on the next read. The 27 Sep copy's union was 2,312 wallets, with 46
+rank on the next read. The 27 Sep copy's union was 2,312-2,331 wallets across
+the recorded cuts, with 46
 requiring code reads (10 calls, about 200 credits); reading all 287,798
 traders would require 12,442 calls for 62,208 non-initiators. A
 `contract_census` log line names each run that read or stopped early. What changes in the

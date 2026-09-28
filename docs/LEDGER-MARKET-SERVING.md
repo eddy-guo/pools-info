@@ -192,7 +192,9 @@ changes:
   runs in the api (`apps/api/src/trader-contracts.ts`, the api holds the
   explorer key): 30 s after start and every 5 minutes, over the exact union
   of wallets servable in any window, realized or net order, trade gate 0-999,
-  and offset page within the top 100. It reads only bounded gate-index pages,
+  and offset page within the top 100. After the running top 100 fills, its
+  index probe jumps past trade gates whose best metric cannot enter it. It
+  reads only bounded gate-index pages,
   then reads the due wallets'
   code with `eth_getCode` through the explorer's JSON-RPC gateway, five
   addresses a 20-credit call, at most 25 addresses a run and 250 a UTC day,
@@ -202,10 +204,19 @@ changes:
   a wallet with no code, or a delegated one, is read again after a week
   while the board could still show it. Every board and wallet-rank read
   excludes observed contracts immediately, without a ledger refresh; their
-  rows stay. On the 27 Sep backup the servable union held 2,312 wallets,
-  46 of which had never initiated a swap (10 calls, about 200 credits).
-  A whole-trader census would have read 62,208 such wallets (12,442 calls,
-  about 248,840 credits) and is outside the shared key's daily budget.
+  rows stay. On the 27 Sep backup the servable union held 2,312-2,331
+  wallets across the recorded cuts, 46 of which had never initiated a swap
+  (10 calls, about 200 credits). A whole-trader census would have considered
+  287,798 ranked wallets and read 62,208 non-initiators (12,442 calls,
+  about 248,840 credits), beyond the shared key's 100,000-credit daily cap.
+  Before the gate jump, the full candidate read on the 2,331-wallet cut
+  took 850-975 ms warm with about 128,600 shared-buffer hits on the 27 Sep
+  production copy; the sweep visited 943 gates in All, 750 in 30d, and 445
+  in 7d. In a worktree-local projection of that copy with the queried rows
+  and indexes, the exact 2,331 wallet refs were unchanged after the jump;
+  its warm full candidate read fell from 765-798 ms and 139,781 buffer hits
+  to 459-479 ms and 103,067 hits. Those local timings do not establish the
+  latency on production's slower CPU and 1.5 GB memory trial.
   The first servable census found three contracts: All #31 `0x91f9…8faf` (15,739
   bytes; a market maker many wallets call, 44,992 relayed swaps), a
   13,587-byte contract on the 6h and 24h boards, and a 6,718-byte one on the
