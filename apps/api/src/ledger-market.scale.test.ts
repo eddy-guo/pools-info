@@ -391,10 +391,10 @@ test(
     const censusPages =
       Number(censusPlan["Shared Hit Blocks"]) +
       Number(censusPlan["Shared Read Blocks"]);
+    process.stdout.write(`census candidate ms=${censusMs} pages=${censusPages}\n`);
     assert(censusMs < 1500, `candidate read took ${censusMs} ms`);
     assert(censusPages < 250000, `candidate read touched ${censusPages} pages`);
     reads.push(["censusCandidates", censusMs]);
-    process.stdout.write(`census candidate pages=${censusPages}\n`);
     const gateLevels = Number(
       (
         await db.query(`SELECT count(*)::integer AS gates FROM (

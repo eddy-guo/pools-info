@@ -75,36 +75,40 @@ VALUES (4663,decode('91f99c026126f60a35c4306cb288388848b48faf','hex'),'contract'
 CREATE TYPE trader_servable_row AS (wallet_ref integer, address bytea, metric numeric, gate integer);
 CREATE FUNCTION trader_servable_refs(selected_window text, selected_metric text)
 RETURNS SETOF integer LANGUAGE plpgsql STABLE AS $$
-DECLARE
-  current_gate integer;
-  floor_metric numeric := '-Infinity';
-  top_rows trader_servable_row[] := ARRAY[]::trader_servable_row[];
-  ordered_column text;
 BEGIN
   IF selected_metric NOT IN ('realized','net') THEN RAISE EXCEPTION 'invalid metric'; END IF;
-  ordered_column := selected_metric || '_wei';
-  SELECT max(least(supported_trades,999)) INTO current_gate FROM agg_trader_windows
-    WHERE chain_id=4663 AND "window"=selected_window AND supported_positions>0;
-  WHILE current_gate IS NOT NULL LOOP
-    EXECUTE format('SELECT coalesce(array_agg(ROW(wallet_ref,address,metric,gate)::trader_servable_row ORDER BY metric DESC,address),ARRAY[]::trader_servable_row[])
-      FROM (SELECT wallet_ref,address,metric,gate FROM (
-        SELECT t.wallet_ref,t.address,t.metric,t.gate FROM unnest($1) t
-        UNION ALL
-        SELECT x.wallet_ref,w.address,x.%I,$2 FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
-        WHERE x.chain_id=4663 AND x."window"=$3 AND x.supported_positions>0
-          AND least(x.supported_trades,999)=$2 AND x.%I >= $4
-          AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address AND c.kind=''contract'')
-        ORDER BY 3 DESC,2 LIMIT 100
-      ) merged ORDER BY metric DESC,address LIMIT 100) ranked',ordered_column,ordered_column)
-      INTO top_rows USING top_rows,current_gate,selected_window,floor_metric;
-    RETURN QUERY SELECT t.wallet_ref FROM unnest(top_rows) t WHERE t.gate=current_gate;
-    IF cardinality(top_rows)=100 THEN floor_metric := (top_rows[100]).metric; END IF;
-    EXECUTE format('SELECT least(x.supported_trades,999) FROM agg_trader_windows x
-      WHERE x.chain_id=4663 AND x."window"=$1 AND x.supported_positions>0
-        AND least(x.supported_trades,999)<$2 AND x.%I >= $3
-      ORDER BY least(x.supported_trades,999) DESC,x.%I DESC LIMIT 1',ordered_column,ordered_column)
-      INTO current_gate USING selected_window,current_gate,floor_metric;
-  END LOOP;
+  -- One planned statement carries the running top 100 across trade gates.
+  -- Replanning the gate and page probes thousands of times exceeded the
+  -- census statement budget on the production-shaped CI fixture.
+  RETURN QUERY EXECUTE format($query$
+    WITH RECURSIVE sweep(gate,top_rows,floor_metric) AS (
+      SELECT 1000,ARRAY[]::trader_servable_row[],'-Infinity'::numeric
+      UNION ALL
+      SELECT next.gate,ranked.top_rows,
+        CASE WHEN cardinality(ranked.top_rows)=100 THEN (ranked.top_rows[100]).metric ELSE prior.floor_metric END
+      FROM sweep prior
+      CROSS JOIN LATERAL (
+        SELECT least(x.supported_trades,999) AS gate FROM agg_trader_windows x
+        WHERE x.chain_id=4663 AND x."window"=$1 AND x.supported_positions>0
+          AND least(x.supported_trades,999)<prior.gate AND x.%I>=prior.floor_metric
+        ORDER BY least(x.supported_trades,999) DESC,x.%I DESC LIMIT 1
+      ) next
+      CROSS JOIN LATERAL (
+        SELECT coalesce(array_agg(ROW(wallet_ref,address,metric,gate)::trader_servable_row ORDER BY metric DESC,address),ARRAY[]::trader_servable_row[]) AS top_rows
+        FROM (
+          SELECT t.wallet_ref,t.address,t.metric,t.gate FROM unnest(prior.top_rows) t
+          UNION ALL
+          SELECT x.wallet_ref,w.address,x.%I,next.gate FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
+          WHERE x.chain_id=4663 AND x."window"=$1 AND x.supported_positions>0
+            AND least(x.supported_trades,999)=next.gate AND x.%I>=prior.floor_metric
+            AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address AND c.kind='contract')
+          ORDER BY 3 DESC,2 LIMIT 100
+        ) page
+      ) ranked
+    )
+    SELECT t.wallet_ref FROM sweep s CROSS JOIN LATERAL unnest(s.top_rows) t WHERE t.gate=s.gate
+  $query$,selected_metric || '_wei',selected_metric || '_wei',selected_metric || '_wei',selected_metric || '_wei')
+  USING selected_window;
 END $$;
 
 -- The trader rows at each window's refreshed start and the ranks from them,
