@@ -5,6 +5,7 @@ import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
 import { readCreators } from "./creators-read";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
+import { candidatesSql, createWalletCodeStore } from "./trader-contracts";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
@@ -26,6 +27,7 @@ const readBudgetMs = 2000;
 // positions) while the traders and pool reads stayed at 19-22 ms and 78 ms,
 // and what production cancelled with 57014 on a first load.
 const senders = 26000;
+const censusWallets = 387000;
 const H = 500000,
   cursorBlock = 23600000,
   cursorTime = H * 3600 + 1800,
@@ -33,7 +35,8 @@ const H = 500000,
   scalePools = 62000,
   // Blocks the live ring spans, 0.864 s apart: the day before the cursor.
   ringBlocks = 100000;
-const poolId = (i: number) => "0x" + (i + 200000).toString(16).padStart(64, "0");
+const poolId = (i: number) =>
+  "0x" + (i + 200000).toString(16).padStart(64, "0");
 
 test(
   "ledger market serving: every explore order, every creators window and sort, the trader board and the busiest pool page at production shape stay inside the read budget",
@@ -166,6 +169,14 @@ test(
       `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE VALUES($1,decode(lpad(to_hex(99),40,'0'),'hex'),23467030)`,
       [senders + 1],
     );
+    await seedBatches(1, censusWallets, 20000, (lo, hi) =>
+      db.query(
+        `INSERT INTO agg_wallets(wallet_ref,address,first_block) OVERRIDING SYSTEM VALUE
+        SELECT $3::integer+m,decode(lpad(to_hex(1000000+m),40,'0'),'hex'),23467030
+        FROM generate_series($1::integer,$2::integer) m`,
+        [lo, hi, senders + 1],
+      ),
+    );
     // An even-indexed sender bought into every launch of its own and an
     // odd-indexed one into none, so the page's own-buy flags are a real mix,
     // one probe answers for a buying creator and a creator who never bought
@@ -185,15 +196,22 @@ test(
       ),
     );
     // The trader leaderboard's own source, so this phase carries the control
-    // the creators bound is read against: the board the tip loop ranked.
+    // the creators bound is read against: the board the tip loop ranked,
+    // its ranks on the wallets' own rows and its figures on the trader rows,
+    // and two contracts the census observed at the top of the net order.
     for (const window of ["7d", "All"]) {
+      for (const table of ["agg_wallet_windows", "agg_trader_windows"])
+        await db.query(
+          `INSERT INTO ${table}(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
+            wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
+          SELECT 4663,$1,m+1,(5000-m)::numeric,(5000-m)::numeric,100000,1000,12+mod(m,100),12+mod(m,100),1,0,1,600,(5000-m)::numeric,$2::bigint,1,0,
+            $3::integer,now()
+          FROM generate_series(0,4999) m`,
+          [window, H * 3600, window === "All" ? 0 : H - 168],
+        );
       await db.query(
-        `INSERT INTO agg_wallet_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
-          wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,rank,window_start,refreshed_at)
-        SELECT 4663,$1,m+1,(5000-m)::numeric,(5000-m)::numeric,100000,1000,12,12,1,0,1,600,(5000-m)::numeric,$2::bigint,1,0,
-          CASE WHEN m<100 THEN m+1 END,$3::integer,now()
-        FROM generate_series(0,4999) m`,
-        [window, H * 3600, window === "All" ? 0 : H - 168],
+        `UPDATE agg_wallet_windows SET rank=wallet_ref-2 WHERE "window"=$1 AND wallet_ref BETWEEN 3 AND 102`,
+        [window],
       );
       await db.query(
         `INSERT INTO agg_window_refreshes(chain_id,stream_key,"window",through_block,through_timestamp,window_start,wallets,ranked,refreshed_at)
@@ -201,18 +219,55 @@ test(
         [window, cursorBlock, cursorTime, window === "All" ? 0 : H - 168],
       );
     }
+    for (const [window, rows, start, competitive] of [
+      ["1h", 2000, H - 1, 100],
+      ["6h", 5000, H - 6, 100],
+      ["24h", 20000, H - 24, 100],
+      ["7d", 70000, H - 168, 400],
+      ["30d", 180000, H - 720, 700],
+      ["All", censusWallets, 0, 900],
+    ] as const) {
+      await seedBatches(1, rows, 20000, (lo, hi) =>
+        db.query(
+          `INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
+            wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
+          SELECT 4663,$3,$4::integer+m,
+            CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,
+            CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,
+            100000,1000,CASE WHEN m<=$7::integer THEN 1000-m ELSE mod(m*37,1000) END,
+            CASE WHEN m<=$7::integer THEN 1000-m ELSE mod(m*37,1000) END,
+            1,0,1,600,CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,$5::bigint,1,0,$6::integer,now()
+          FROM generate_series($1::integer,$2::integer) m`,
+          [lo, hi, window, senders + 1, H * 3600, start, competitive],
+        ),
+      );
+    }
     await db.query(
-      "ANALYZE indexed_pools,pool_launch_sources,indexer_batches,agg_streams,agg_batches,agg_pool_hours,agg_pool_state,agg_live_trades,analytics_accounting_pools,broad_market_summaries,broad_market_buckets,agg_wallets,agg_positions,agg_wallet_windows,agg_window_refreshes",
+      `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+      SELECT 4663,address,'contract',now() FROM agg_wallets WHERE wallet_ref IN (1,2)`,
+    );
+    await db.query(
+      "ANALYZE indexed_pools,pool_launch_sources,indexer_batches,agg_streams,agg_batches,agg_pool_hours,agg_pool_state,agg_live_trades,analytics_accounting_pools,broad_market_summaries,broad_market_buckets,agg_wallets,agg_positions,agg_wallet_windows,agg_trader_windows,agg_window_refreshes,wallet_code_observations",
     );
     const counts = (
       await db.query(
-        "SELECT (SELECT count(*) FROM indexed_pools)::integer AS pools,(SELECT count(*) FROM agg_pool_hours)::integer AS hours,(SELECT count(*) FROM agg_pool_state)::integer AS states",
+        `SELECT (SELECT count(*) FROM indexed_pools)::integer AS pools,
+          (SELECT count(*) FROM agg_pool_hours)::integer AS hours,
+          (SELECT count(*) FROM agg_pool_state)::integer AS states,
+          (SELECT count(*) FROM agg_trader_windows WHERE "window"='All')::integer AS traders,
+          (SELECT count(DISTINCT "window") FROM agg_trader_windows)::integer AS trader_windows,
+          (SELECT min(least(supported_trades,999)) FROM agg_trader_windows WHERE "window"='All')::integer AS min_gate,
+          (SELECT max(least(supported_trades,999)) FROM agg_trader_windows WHERE "window"='All')::integer AS max_gate`,
       )
     ).rows[0];
     assert.deepEqual(counts, {
       pools: scalePools + 31,
       hours: 1170 + 100 * 400 + (scalePools - 101) * 2,
       states: scalePools,
+      traders: censusWallets + 5000,
+      trader_windows: 6,
+      min_gate: 0,
+      max_gate: 999,
     });
     const seedMs = performance.now() - seedStarted;
 
@@ -326,8 +381,44 @@ test(
     reads.push(["traders7d", board.ms]);
     assert.equal(board.data.total, 100);
     assert.equal(board.data.items.length, 25);
+    const censusPlan = (
+      await db.query(
+        "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) " + candidatesSql,
+        [25],
+      )
+    ).rows[0]["QUERY PLAN"][0].Plan;
+    const censusMs = Number(censusPlan["Actual Total Time"]);
+    const censusPages =
+      Number(censusPlan["Shared Hit Blocks"]) +
+      Number(censusPlan["Shared Read Blocks"]);
+    process.stdout.write(`census candidate ms=${censusMs} pages=${censusPages}\n`);
+    assert(censusMs < 1500, `candidate read took ${censusMs} ms`);
+    assert(censusPages < 250000, `candidate read touched ${censusPages} pages`);
+    reads.push(["censusCandidates", censusMs]);
+    const gateLevels = Number(
+      (
+        await db.query(`SELECT count(*)::integer AS gates FROM (
+          SELECT v.name,m.metric,least(x.supported_trades,999) AS gate
+          FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
+          CROSS JOIN unnest(ARRAY['realized','net']) AS m(metric)
+          CROSS JOIN LATERAL trader_servable_refs(v.name,m.metric) AS t(wallet_ref)
+          JOIN agg_trader_windows x ON x.chain_id=4663 AND x."window"=v.name AND x.wallet_ref=t.wallet_ref
+          GROUP BY v.name,m.metric,least(x.supported_trades,999)
+        ) levels`)
+      ).rows[0].gates,
+    );
+    assert(gateLevels > 4000, `candidate sweep visited ${gateLevels} gates`);
+    const codeStore = createWalletCodeStore(
+      process.env.TEST_DATABASE_URL,
+      schema,
+    );
+    try {
+      assert.equal((await codeStore.candidates(25)).length, 25);
+    } finally {
+      await codeStore.close();
+    }
     // The net order, which has no writer rank: it reads the window's
-    // eligible wallets in net order off migration 023's index and stops at
+    // eligible wallets in net order off migration 025's index and stops at
     // the page's last row. Before it, the board read every eligible row of
     // the window and sorted them (about 6,700 pages for 7d and 18,800 with two
     // parallel workers for All on the 27 Sep production backup), and
@@ -345,7 +436,7 @@ test(
       async (sql: string, values?: unknown[]) => {
         if (sql.includes("net_wei DESC")) {
           const walk = (node: Record<string, any>) => {
-            if (node["Relation Name"] === "agg_wallet_windows")
+            if (node["Relation Name"] === "agg_trader_windows")
               netRows.push(
                 Math.round(node["Actual Rows"] * (node["Actual Loops"] ?? 1)),
               );
@@ -368,8 +459,9 @@ test(
     );
     await db.query("COMMIT");
     assert(netRows.length > 0, "no statement read the net order");
+    // The page and the two contracts above it, whose rows the order passes.
     assert(
-      netRows.every((rows) => rows <= 100),
+      netRows.every((rows) => rows <= 102),
       `the net board read ${JSON.stringify(netRows)} window rows for a page of 100 of 5,000 eligible`,
     );
     assert.equal(
@@ -445,12 +537,18 @@ test(
     assert.equal(busiest.stats.trades, 4168);
     assert.equal(busiest.stats.completeWindow, true);
     await explore("trades1h", "window=1h&sort=trades&limit=25");
-    const hourChange = await explore("change1h", "window=1h&sort=change&limit=25");
+    const hourChange = await explore(
+      "change1h",
+      "window=1h&sort=change&limit=25",
+    );
     assert(hourChange.total > 0);
     await explore("gainers1h", "window=1h&view=gainers&sort=volume&limit=25");
     await explore("launch1h", "window=1h&view=new&sort=launch&limit=25");
     await explore("volume1h100", "window=1h&sort=volume&limit=100");
-    const liquidity = await explore("liquidity7d", "window=7d&sort=liquidity&limit=25");
+    const liquidity = await explore(
+      "liquidity7d",
+      "window=7d&sort=liquidity&limit=25",
+    );
     assert.equal(liquidity.total, 0);
     await explore(
       "search24h",

@@ -160,6 +160,17 @@ async function windows(db: Client) {
   );
   return r.rows;
 }
+/** The trader rows, as `windows` reads the wallets' own. */
+async function traders(db: Client) {
+  const r = await db.query(
+    `SELECT x."window",'0x'||encode(w.address,'hex') AS wallet,x.realized_wei::text AS realized,x.net_wei::text AS net,
+       x.volume_wei::text AS volume,x.disposed_cost_wei::text AS disposed,x.trades,x.supported_trades,x.wins,x.losses,
+       x.closures,x.hold_seconds::text AS hold,x.flash_closures AS flash,x.best_wei::text AS best,x.last_timestamp::text AS last,
+       x.supported_positions,x.excluded_positions
+     FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref) ORDER BY 1,2`,
+  );
+  return r.rows;
+}
 async function refreshes(db: Client) {
   return (
     await db.query(
@@ -300,8 +311,17 @@ test("later refreshes recompute only the wallets that changed or left a window, 
     ["0", 0, 11, 1, null],
   );
   const afterSecond = await windows(db);
+  const tradersAfterSecond = await traders(db);
+  // No wallet here launched the pool: each trader row is its own row.
+  assert.deepEqual(
+    tradersAfterSecond,
+    afterSecond.map((row) =>
+      Object.fromEntries(Object.entries(row).filter(([k]) => k !== "rank")),
+    ),
+  );
   assert.ok(await refreshLedgerWindows(db, { rebuild: true }));
   assert.deepEqual(await windows(db), afterSecond);
+  assert.deepEqual(await traders(db), tradersAfterSecond);
   // Two days on: every earlier hour leaves the timed windows but 7d and 30d.
   const later = base + 30 + 432;
   const third = new Rows().roundTrips(later, wallet(3), 5, 9n);
@@ -320,8 +340,10 @@ test("later refreshes recompute only the wallets that changed or left a window, 
     ],
   );
   const afterThird = await windows(db);
+  const tradersAfterThird = await traders(db);
   assert.ok(await refreshLedgerWindows(db, { rebuild: true }));
   assert.deepEqual(await windows(db), afterThird);
+  assert.deepEqual(await traders(db), tradersAfterThird);
   assert.deepEqual(await ranks(db, "24h"), [{ wallet: wallet(3), rank: 1 }]);
 });
 
@@ -381,8 +403,10 @@ test("hours leaving a window come off the rows of wallets the batches did not to
     [wallet(9)]: [2, "1", 1],
   });
   const incremental = await windows(db);
+  const incrementalTraders = await traders(db);
   assert.ok(await refreshLedgerWindows(db, { rebuild: true }));
   assert.deepEqual(await windows(db), incremental);
+  assert.deepEqual(await traders(db), incrementalTraders);
 });
 
 test("a refresh is not due inside its interval unless the cursor's hour moved, and needs the writer lock", async (t) => {
@@ -452,6 +476,7 @@ test("a walk-back takes the refresh state with its batch and the windows of the 
   await walkBackLedger(db, base + 9);
   assert.deepEqual(await refreshes(db), []);
   assert.ok(!(await windows(db)).some((r) => r.wallet === wallet(9)));
+  assert.ok(!(await traders(db)).some((r) => r.wallet === wallet(9)));
   const rebuilt = await refreshLedgerWindows(db, { minIntervalMs: 3_600_000 });
   assert.ok(rebuilt);
   assert.ok(rebuilt.windows.every((w) => w.mode === "rebuilt"));

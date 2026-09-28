@@ -1,7 +1,9 @@
 # Indexed chain read API
 
 This small Node service reads public chain evidence from the private Railway
-Postgres database. It makes no RPC calls and writes no account/profile data.
+Postgres database. Its optional trader contract census reads code through
+Blockscout's JSON-RPC gateway and stores public-chain code observations, never
+user account data.
 Product endpoints aggregate the published, supported pool positions using the
 same exact average-cost rules as the frontend. Indexer migrations, evidence
 verification, holder reconstruction and publication remain separate.
@@ -32,14 +34,13 @@ For Railway, use the existing repository and region, root `/`, Dockerfile
 Set `DATABASE_URL` through Railway's private Postgres reference; Railway supplies
 `PORT`, otherwise it defaults to 3102. Keep the database private. This read
 service can have a Railway HTTPS domain for the Next.js server to call. No new
-RPC key is required. Prefer a dedicated database role with SELECT access only
-to `indexed_pools`, `indexed_events`, `indexer_streams`, `indexer_batches`, and
-`analytics_pool_snapshots`, the four `analytics_accounting_*` tables and the
-four `recent_*` tables, plus schema USAGE, and SELECT, INSERT and UPDATE on
-`token_images` only (the icon store below). Even when using the existing connection initially, all API
-read transactions explicitly run READ ONLY; the icon store writes through its
-own three-connection pool and touches no other table. Database roles are infrastructure
-permissions and are unrelated to user accounts.
+RPC key is required. Prefer a dedicated database role with SELECT on the
+tables the configured market source reads (listed below), schema USAGE, and
+SELECT, INSERT and UPDATE on `token_images` (the icon store) and, when the
+census is enabled, `wallet_code_observations`. All API read transactions
+explicitly run READ ONLY; the icon store and census use separate pools and
+write only to their own tables. Database roles are infrastructure permissions
+and are unrelated to user accounts.
 
 Deploy the indexer first so its pre-deploy migration applies
 all migrations through `006_catalog_search.sql` before exposing the growing
@@ -60,11 +61,19 @@ page's `market`, the trader leaderboard and the wallet page, once at startup:
 unset or `broad` serves the broad rollups, deep publications and the
 accounting tables; `ledger` serves every pool the aggregate ledger covers from
 `agg_pool_hours` and `agg_pool_state`, the leaderboard from
-`agg_wallet_windows` and the wallet page from that row, `agg_positions` and
-`agg_wallet_hours`, and additionally needs SELECT on `agg_streams`,
-`agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades`,
-`agg_wallets`, `agg_positions`, `agg_wallet_hours`, `agg_wallet_windows`,
-`agg_window_refreshes` and `pool_launch_sources`. What changes in the
+`agg_trader_windows` and the wallet page from `agg_wallet_windows`,
+`agg_positions` and `agg_wallet_hours`, and additionally needs SELECT on
+`agg_streams`, `agg_batches`, `agg_pool_hours`, `agg_pool_state`,
+`agg_live_trades`, `agg_wallets`, `agg_positions`, `agg_wallet_hours`,
+`agg_wallet_windows`, `agg_trader_windows`, `agg_window_refreshes` and
+`pool_launch_sources`, and SELECT, INSERT and UPDATE on
+`wallet_code_observations`. The ledger board excludes own-launch positions and
+observed contracts; the broad and pre-cut accounting fallback retains its
+earlier ranking. With `ledger` and `BLOCKSCOUT_API_KEY` set, the api runs a
+contract census; its selection, cadence, shared-key reserve, observation
+rules and unclassified-contract caveat are in
+[The trader leaderboard](../../docs/LEDGER-MARKET-SERVING.md#the-trader-leaderboard).
+What changes in the
 responses (`aggregate_ledger` coverage and unit-basis sources, hourly candles,
 `market.fdvWei`, one price per pool, the top-100 board, the wallet page's
 empty `trades` and `curve`) is in `docs/LEDGER-MARKET-SERVING.md`.
@@ -187,14 +196,14 @@ cascades to that publication. A separately verified RPC capture records its own
 cutoff/evidence rather than pretending the raw indexer is caught up. Publication
 jobs have their own retry/success timestamps in `analytics_pool_jobs`.
 
-| Endpoint                                                                    | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. The Crowd view filters to verified crowd launches; their market figures remain unmeasured until the crowd and main ledger cursors match in block and hash (see `docs/CROWD-LAUNCHES.md`). Catalog rows include `launchType` (`instant` or `crowd`). Missing metrics always sort last.                                       |
-| `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination. With `MARKET_SOURCE=ledger` the board is the top 100 per window from the ledger's windows and nothing beyond: `total` is at most 100, `nextOffset` is null once 100 rows are reachable, `offset` plus `limit` past 100 answers 400 `invalid_offset`, and `unrealizedWei` is null on every row (see "The trader leaderboard" in `docs/LEDGER-MARKET-SERVING.md`).                                       |
-| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row, a top-100-per-window-and-sort leaderboard over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination; no rank beyond 100 is served.                                                                                                                                                                                                                                                                     |
-| `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted. With `MARKET_SOURCE=ledger` the summary is the wallet's row on the ledger's board for that window (`rank` is 1 to 100 or null, `unrealizedWei` the sum of its positions' marks), the positions are the ledger's with the window's own figures per pool, and `trades` and `curve` are empty (see "The wallet page" in `docs/LEDGER-MARKET-SERVING.md`). |
-| `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Endpoint                                                                    | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/v1/explore?window=24h&sort=volume&direction=desc&limit=25&offset=0`       | All discovered pools, including unprocessed pools. Filters and global metric ordering happen before pagination. `q` matches names, symbols, token/pool addresses and launch senders. `sort` is `volume`, `change`, `launch`, or `liquidity`. `view` is `all`, `gainers`, `new`, `crowd`, or `watchlist`; watchlist `ids` accepts up to 200 comma-separated pool IDs and filters the whole corpus. The Crowd view filters to verified crowd launches; their market figures remain unmeasured until the crowd and main ledger cursors match in block and hash (see `docs/CROWD-LAUNCHES.md`). Catalog rows include `launchType` (`instant` or `crowd`). Missing metrics always sort last.                                                                                   |
+| `/v1/leaderboard?window=All&minTrades=10&metric=realized&limit=25&offset=0` | One normalized wallet per row, with realized/net/unrealized values, wins/losses, ROI, trade counts, supported/excluded position counts, last activity and rank. `metric` can be `realized` or `net`. The minimum trade gate uses supported trades across pools, not per-pool gates. Ranking happens before pagination. With `MARKET_SOURCE=ledger` the board uses trader rows that omit the wallet's own launches and excludes observed contracts. It serves the top 100 per window and nothing beyond: `total` is at most 100, `nextOffset` is null once 100 rows are reachable, `offset` plus `limit` past 100 answers 400 `invalid_offset`, and `unrealizedWei` is null on every row (see "The trader leaderboard" in `docs/LEDGER-MARKET-SERVING.md`).                |
+| `/v1/creators?window=All&sort=launches&direction=desc&limit=25&offset=0`    | One launch transaction sender per row, a top-100-per-window-and-sort leaderboard over the whole discovered catalog, described under "Creators aggregate": `launches`, `measured`, `traded`, exact `volumeWei` and `medianVolumeWei`, `bestLaunch` and `boughtOwnLaunch`. `sort` is `launches` (every creator), `volume` or `median` (creators with a measured launch only). Grouping and ordering happen before pagination; no rank beyond 100 is served.                                                                                                                                                                                                                                                                                                                 |
+| `/v1/wallets/:address?window=All`                                           | Public wallet summary, bounded latest 500 recorded executions, up to 500 positions and 500 observed launches, and a sampled cumulative supported realized-PnL curve. Default rank matches the same-window, minimum-10-trade realized leaderboard used for share cards. Unknown wallets return an empty coverage-aware profile. `/v1/wallet/:address` is also accepted. With `MARKET_SOURCE=ledger` the summary is the wallet's own row for that window, every position included, with its rank on the ledger's board (`rank` is 1 to 100 or null, `unrealizedWei` the sum of its positions' marks), the positions are the ledger's with the window's own figures per pool, and `trades` and `curve` are empty (see "The wallet page" in `docs/LEDGER-MARKET-SERVING.md`). |
+| `/v1/pools/:poolId?window=24h`                                              | Existing raw response plus `analytics`, containing the saved one-pool snapshot, audit, holder ledger, price/volume/change/liquidity stats and coverage. Null analytics means the pool has no published result yet, not zero activity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `/v1/search?q=pepe&group=Tokens`                                            | Existing typed `SearchResponse`, searching all stored catalog entries, published wallets/launch senders and transaction identities. Supports indexed substring and fuzzy text through PostgreSQL pg_trgm. Exact unknown addresses/hashes produce labelled lookup links. No ENS or RPC request is made by this service.                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Windows support `1h`, `6h`, `24h`, `7d`, `30d`, and `All`. Their common endpoint
 is `coverage.asOf`, the latest published chain timestamp, not the current clock.
@@ -471,13 +480,13 @@ arithmetic are in `docs/WALLET-TRADE-HISTORY.md`.
 
 Configuration, read from the environment at startup:
 
-| Variable                            | Default  | Meaning                                                                                                                              |
-| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs.                      |
-| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers or trades page, 20 per swap-log batch). |
-| `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                                                |
-| `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                                                  |
-| `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                                                 |
+| Variable                            | Default  | Meaning                                                                                                                                                      |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `BLOCKSCOUT_API_KEY`                | unset    | Free-tier PRO key, sent only as a Bearer header. Absent: the route answers 503 `not_configured`, all else runs.                                              |
+| `BLOCKSCOUT_DAILY_CREDIT_CAP`       | `30000`  | Credits this process may spend per UTC day (20 per transactions page, 30 per token-transfers or trades page, 20 per swap-log batch or contract census call). |
+| `BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS` | `30`     | Freshness of a wallet's first page, which changes as the wallet acts.                                                                                        |
+| `BLOCKSCOUT_PAGE_TTL_SECONDS`       | `600`    | Freshness of deeper pages, which are effectively immutable history.                                                                                          |
+| `BLOCKSCOUT_API_URL`                | PRO host | Base URL override for tests only; request input can never change it.                                                                                         |
 
 Budget and failure behaviour. Every upstream call passes a sliding-window
 limiter (at most five starts in any second, the free tier's rate; a call that

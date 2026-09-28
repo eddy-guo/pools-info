@@ -363,6 +363,9 @@ async function snapshot(db: Client, windows = false) {
           windows: await q(
             `SELECT x."window",encode(w.address,'hex') AS wallet,(to_jsonb(x)-'wallet_ref'-'window_start'-'refreshed_at')::text AS row FROM agg_wallet_windows x JOIN agg_wallets w USING(wallet_ref) ORDER BY 1,2`,
           ),
+          traders: await q(
+            `SELECT x."window",encode(w.address,'hex') AS wallet,(to_jsonb(x)-'wallet_ref'-'window_start'-'refreshed_at')::text AS row FROM agg_trader_windows x JOIN agg_wallets w USING(wallet_ref) ORDER BY 1,2`,
+          ),
           refreshes: await q(
             `SELECT "window",through_block::text,window_start,wallets,ranked FROM agg_window_refreshes ORDER BY "window"`,
           ),

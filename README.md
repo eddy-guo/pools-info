@@ -15,7 +15,7 @@ The database stays private. The HTTP service exposes read-only public chain anal
 
 - `/`: searchable catalog, pending-metric pools included, global sorting and pagination, local watchlist.
 - `/pool/[id]/`: launch/creator facts, saved price/FDV candles, trades, pool wallet accounting and holders when processed.
-- `/traders/`: cross-pool supported-position rankings with a default 10-swap gate, windows and realized/net-ETH metrics.
+- `/traders/`: cross-pool supported-position rankings with a default 10-swap gate, windows and realized/net-ETH metrics. The ledger board excludes positions in a wallet's own launches and contracts confirmed by its code census; an unclassified contract can remain until checked. See [ledger board rules](docs/LEDGER-MARKET-SERVING.md#the-trader-leaderboard).
 - `/wallet/[address]/`: ledger-backed positions and PnL, creator launches, and on-demand explorer trade history for verified launch tokens. Arbitrary addresses work; an address outside coverage has no invented accounting figures.
 - `/cards/[address].png?window=All`: 1200×630 image using the same wallet figures and default rank as the profile.
 - `/creators/`, `/creators/[address]/`: creator discovery and public profile surfaces.

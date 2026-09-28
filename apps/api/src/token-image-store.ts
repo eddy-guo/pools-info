@@ -33,8 +33,9 @@ export interface TokenImageStore {
   close(): Promise<void>;
 }
 
-/** The store's own small pool: the reader's connections stay READ ONLY and
- * this is the only table the API writes. Never used for another statement. */
+/** The store's own small pool: the reader's connections stay READ ONLY, and
+ * this table and the contract census's (`trader-contracts.ts`) are the only
+ * ones the API writes. Never used for another statement. */
 export function createTokenImageStore(
   url = process.env.DATABASE_URL,
   testSchema?: string,

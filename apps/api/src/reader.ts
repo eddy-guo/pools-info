@@ -194,6 +194,10 @@ export async function readData(
       await query("SELECT 1 FROM agg_wallet_hours WHERE false");
       await query("SELECT 1 FROM agg_wallet_windows WHERE false");
       await query("SELECT 1 FROM agg_window_refreshes WHERE false");
+      // The trader board's rows and the census's observations (migration
+      // 025), which the tip loop's start applies.
+      await query("SELECT 1 FROM agg_trader_windows WHERE false");
+      await query("SELECT 1 FROM wallet_code_observations WHERE false");
       await query(
         "SELECT token_total_supply_raw,token_supply_block FROM indexed_pools WHERE false",
       );

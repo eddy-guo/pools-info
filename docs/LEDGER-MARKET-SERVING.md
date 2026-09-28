@@ -10,14 +10,15 @@ the trader leaderboard, from one of two stores, chosen once at startup by
   switch existed.
 - `ledger`: the aggregate ledger's `agg_pool_hours` and `agg_pool_state`
   (`docs/AGGREGATE-LEDGER.md`) for every pool the ledger covers, and its
-  `agg_wallet_windows` for the leaderboard ("The trader leaderboard" below).
+  `agg_trader_windows` for the leaderboard ("The trader leaderboard" below).
   Any other pool answers exactly as with `broad`.
 
 Any other value refuses to start. The `listening` log line names the source in
 effect. With `ledger`, `/ready` also checks read access to `agg_streams`,
 `agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades`,
-`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes` and the supply
-columns of migration 019. The code is `apps/api/src/ledger-market.ts`, the
+`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes`,
+`agg_trader_windows`, `wallet_code_observations` and the supply columns of
+migration 019. The code is `apps/api/src/ledger-market.ts`, the
 ledger branches of `broad-explore.ts` and `projected-explore.ts`, the ledger
 cut in `observed-market-read.ts` and `ledger-leaderboard.ts`. No endpoint is
 added.
@@ -158,25 +159,96 @@ broad source is unaffected by any ledger row.
 
 ## The trader leaderboard
 
-`GET /v1/leaderboard` is served from `agg_wallet_windows`
+With `MARKET_SOURCE=ledger` and a ledger cut, `GET /v1/leaderboard` is served
+from `agg_trader_windows`; production has served from the ledger since
+18 Sep 2026. With `MARKET_SOURCE=broad`, or in ledger mode before the first
+cut, the accounting fallback still ranks own-launch positions and contracts
+the old way. The exclusions below apply to the ledger board.
+
+The ledger board reads `agg_trader_windows`
 (`packages/db/src/ledger-windows.ts`): one row per wallet per window, summed
 by the tip loop from whole UTC hours ending with the ledger cursor's hour,
-with the top of the board by realized already ranked. The response is the
-accounting board's, field for field; what its values mean changes:
+with the top of the board by realized already ranked by the writer. The
+response is the accounting board's, field for field; what its values mean
+changes:
 
+- **Who is a trader** (decided 28 Sep 2026, migration 025). A wallet's
+  trader row is its window sums without every position in a pool it launched
+  itself (the pool's `launch_sender`, the creator the creators board
+  credits): a launcher's buy sits inside its own launch transaction and its
+  sales go to the buyers who follow, a creator's take that the creators
+  board already shows. On the 27 Sep production backup 43 of the 7d top 100
+  and 42 of the All top 100 traded nothing but their own launches (the 7d #1
+  to #5 made 98 to 58 ETH that way at a 100 percent win rate), and two more
+  All wallets stood on theirs (#10: 66.05 ETH, 0.96 ETH of it on others'
+  launches). The trade floor counts the trader row's supported trades alone,
+  so a launcher cannot clear it on its own launches' trades (273 All wallets
+  would have, none into the top 100 that day). The wallet's own row, its
+  profile, keeps every position, and a wallet with no launch of its own has
+  the same trader row as its own row, so its figures are unchanged; its rank
+  can move when other wallets are excluded. An observed contract leaves the
+  ledger board: the api's census reads the code of each wallet the board
+  could show that the ledger never saw send a
+  swap (every attributed swap of every position it holds went to it as the
+  counterparty; a contract never sends a transaction), and one whose code is
+  not an EIP-7702 delegation designator (`0xef0100` and a 20-byte delegate)
+  is a contract. A delegated wallet is still an externally owned one, however
+  its gas is paid: All #67 of 27 Sep (#32 once the launchers left),
+  `0x33b6…c577`, is a wallet delegated to Uniswap's Calibur whose every swap
+  is relayed, and stays. The census
+  runs in the api (`apps/api/src/trader-contracts.ts`, the api holds the
+  explorer key): immediately after start and every 5 minutes, over the exact
+  union of wallets servable in any window, realized or net order, trade gate 0-999,
+  and offset page within the top 100. After the running top 100 fills, its
+  index probe jumps past trade gates whose best metric cannot enter it. It
+  reads only bounded gate-index pages,
+  then reads the due wallets'
+  code with `eth_getCode` through the explorer's JSON-RPC gateway, five
+  addresses a 20-credit call and at most 25 addresses a run, never while
+  the key's stated balance (`x-credits-remaining`) is under 30,000 or past
+  four fifths of the api's own daily cap, and never retrying a failed call
+  inside a run. The last fifth of local credits is reserved so the census
+  cannot starve the live Trades tab and Following, which share that key.
+  `wallet_code_observations` keeps each answer. Migration 025 seeds only
+  `0x91f99c026126f60a35c4306cb288388848b48faf`, whose contract bytecode
+  was verified in the 27 Sep board spot-check, so the first ledger read
+  excludes it. If the explorer key is absent or the credit floor stops the
+  census, a newly arriving contract stays visible until checked; the board
+  never removes a wallet on a guess. Empty code and EIP-7702 designators are
+  both stored as `none` and read again after a week while the board could
+  still show the wallet. Subsequent ledger board and wallet-rank reads
+  exclude observed contracts without a ledger refresh; a cached response
+  can retain one for up to five seconds. Their rows stay. On the 27 Sep
+  backup the servable union held 2,312-2,331 wallets across the recorded
+  cuts, 46 of which had never initiated a swap
+  (10 calls, about 200 credits). A whole-trader census would have considered
+  287,798 ranked wallets and read 62,208 non-initiators (12,442 calls,
+  about 248,840 credits), beyond the shared key's 100,000-credit daily cap.
+  Before the gate jump, the full candidate read on the 2,331-wallet cut
+  took 850-975 ms warm with about 128,600 shared-buffer hits on the 27 Sep
+  production copy; the sweep visited 943 gates in All, 750 in 30d, and 445
+  in 7d. In a worktree-local projection of that copy with the queried rows
+  and indexes, the exact 2,331 wallet refs were unchanged after the jump;
+  its warm full candidate read fell from 765-798 ms and 139,781 buffer hits
+  to 459-479 ms and 103,067 hits. Those local timings do not establish the
+  latency on production's slower CPU and 1.5 GB memory trial.
+  On the 27 Sep production copy with the gate jump, the full candidate read
+  took 536-594 ms warm and about 92,500 shared-buffer hits for the same
+  2,331-wallet servable union.
+  The first servable census found three contracts: All #31 `0x91f9…8faf` (15,739
+  bytes; a market maker many wallets call, 44,992 relayed swaps), a
+  13,587-byte contract on the 6h and 24h boards, and a 6,718-byte one on the
+  6h net board.
 - **The board is the top 100 per window and nothing beyond** (captain, 17 Sep
   2026). `total` is the eligible wallets up to 100, `nextOffset` is null once
   100 rows are reachable, and `offset` plus `limit` past 100 answers 400
   `invalid_offset` rather than a page of unranked rows. The broad source keeps
   its deeper pages.
-- **Eligible** is the writer's rule: at least 10 supported trades in the
-  window on a supported position, the predicate migration 020's partial index
-  carries. `minTrades=10` and `metric=realized` (the website's default; it
-  never sends a gate) read the writer's own `rank` off the rank index, one
-  probe per address, and `total` is the refresh's ranked count. Any other gate or metric orders the
-  same eligible rows the same way (realized or net descending, the address
-  breaking ties, so the realized order equals the materialised ranks whenever
-  the gate is 10) and counts them up to 100; the page's last figure bounds
+- **Eligible** means at least the requested `minTrades` supported trades in
+  the window on a supported position of the trader row, and no observed
+  contract. Every order and gate, including the default realized board,
+  applies that rule at read time. The wallet page computes the same realized
+  rank from the current top 100. The page's last figure bounds
   the candidates first, as the writer's `rankWindow` does, so the tie-break
   sort touches a page of rows rather than the window's whole eligible set.
 - **Figures**: `realizedWei` is proceeds minus disposed cost of the window's
@@ -213,9 +285,9 @@ accounting board's, field for field; what its values mean changes:
   (design decision D2, taken 18 Sep 2026): its swaps are trades and volume
   on the row, never supported trades, wins, spent, realized or disposed
   cost, so a wallet with nothing but such positions stands on no board under
-  any gate or metric, a transfer to another wallet costs that position's
-  coverage rather than booking a loss, and the wallet page's header, read
-  from the same window row, agrees with the board to the wei.
+  any gate or metric, and a transfer to another wallet costs that position's
+  coverage rather than booking a loss. The wallet page's header agrees with
+  the board to the wei for every wallet with no launch of its own.
 
 Failure behaviour: a ledger with no cursor or no pool hour answers as with
 `broad` (the accounting tables); a window without a refresh row, which a
@@ -228,8 +300,8 @@ Cold cost, measured on a production-shape copy (Postgres 18, 370k All rows,
 index and one `agg_wallets` probe per row) plus the coverage's catalog count
 (3,950 pages of `indexed_pools`, the same statement explore's coverage runs)
 and the `agg_pool_state` count (1,559 pages); warm, 20 to 30 ms end to end.
-`metric=net` reads the same eligible rows in net order off migration 023's
-partial index (the realized index's predicate on `net_wei DESC`) and stops at
+`metric=net` reads the same eligible rows in net order off the net partial
+index (migration 023's, on the trader rows since 025) (the realized index's predicate on `net_wei DESC`) and stops at
 the page's last row, as the default board does off its rank. Before it, the
 net board read the window's whole eligible set through the realized index and
 sorted it: on the 27 Sep 2026 production backup (Postgres 18.6, 392k All
@@ -241,21 +313,33 @@ index is 4 MB, built in 123 ms. Production had answered 7d and 30d net in
 0.7-1.7 s under a 1.5 GB memory cap, against 148-187 ms uncapped, because the
 tip loop's writes pushed those pages out between reads. A gate under 10 reads
 the window's rows without an index. `docs/DATABASE-WARMING.md` owns the current
-warm set.
+warm set. Since migration 025 the default board also probes each row's
+trader row (about 1,030 pages warm on the 27 Sep backup against about 500
+before) and both orders probe `wallet_code_observations` once per row they
+pass; warm, every window and order answered in 11 to 23 ms through the
+reader. The refresh keeps both row sets: a typical one-batch refresh took
+40-47 ms on that backup against 128 ms and more before, and a refresh
+whose hour moved 0.6-0.7 s against 2.9-3.2 s (the old per-row probe of the
+hour index that decided which summed wallets had left a window, 2.9 s on
+7d, is one hashed read now), and a full rebuild 27-30 s. Migration 025 fills
+the trader rows and ranks in 14 s there.
 
 ## The wallet page
 
 `GET /v1/wallets/:address?window=` is served from the ledger by
 `apps/api/src/ledger-wallet.ts`: the summary from the wallet's row in
-`agg_wallet_windows` for the window, the very row the board above ranks, so
-the page's headline equals the board's figure to the wei at the same cursor;
+`agg_wallet_windows` for the window, with its rank on the board above, so
+the page's headline equals the board's figure to the wei at the same cursor
+for every wallet with no position in its own launches (the board leaves
+those positions out, the profile keeps them);
 the positions from `agg_positions` (the fold's whole state per pool, one row
 per pool the wallet ever traded or received tokens in) joined to
 `indexed_pools` for the identity and to `agg_pool_state` for the mark. The
 response is the accounting reader's, field for field; what its values mean:
 
-- **`wallet`** is the board row with its meanings ("The trader leaderboard"
-  above): `rank` 1 to 100 or null, and null is not "unranked" copy but no
+- **`wallet`** is the wallet's full row with the board's metric meanings
+  ("The trader leaderboard" above); its figures can differ when it traded
+  its own launches. `rank` is 1 to 100 or null, and null is not "unranked" copy but no
   rank at all; `last` the wallet's last activity across its positions, the
   same in every window. A wallet the ledger knows that has no hour in the
   window has no row in it and reads as zero activity in the window (realized,
@@ -264,7 +348,7 @@ response is the accounting reader's, field for field; what its values mean:
   never attributed a swap or transfer to is the empty profile the accounting
   reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
   window's refresh cursor, `completeWindow` true.
-- **`wallet.unrealizedWei`** is the page's own addition to the board row: the
+- **`wallet.unrealizedWei`** is the page's own addition to the wallet row: the
   sum of the marks of every supported position (over the whole set, not the
   500 served), or null while any of them is unmarked. A position's mark is
   what its held units fetch at the pool's latest price state less their cost,

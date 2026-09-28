@@ -552,6 +552,7 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
     day: "2026-09-15",
     spent: 50,
     dailyCap: 50,
+    remaining: null,
   });
   assert.throws(
     () => budget.spend(20),
@@ -565,8 +566,12 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
     day: "2026-09-16",
     spent: 20,
     dailyCap: 50,
+    remaining: null,
   });
   budget.observeRemaining(1000, 30);
+  assert.equal(budget.snapshot().remaining, 1000);
+  budget.observeRemaining(null, 30);
+  assert.equal(budget.snapshot().remaining, 1000);
   budget.spend(20);
   budget.observeRemaining(29, 30);
   assert.throws(
@@ -575,6 +580,10 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
       e.kind === "budget_exhausted" && e.retryAfter === 3600,
   );
   now += 3600_000;
+  budget.spend(1);
+  budget.observeRemaining(12, 30);
+  now = Date.parse("2026-09-17T00:00:00Z");
+  assert.equal(budget.snapshot().remaining, null);
   budget.spend(1);
   assert.throws(() => createCreditBudget({ dailyCap: 0 }), /cap/);
 });

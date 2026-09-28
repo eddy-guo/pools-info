@@ -845,6 +845,10 @@ export {
   recomputeLedgerWindowWallets,
   ledgerWindowPolicy,
   ledgerWindowStart,
+  ledgerWindowScopes,
+  ownLaunch,
+  notContract,
+  type LedgerWindowScope,
   type LedgerWindowRefresh,
   type LedgerWindowsRefreshed,
 } from "./ledger-windows";

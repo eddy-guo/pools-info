@@ -253,32 +253,52 @@ export function createWalletHistory({
   };
 }
 
-/** Reads BLOCKSCOUT_API_KEY by name at startup. Without it the route answers
- * 503 `not_configured`, so unconfigured deployments and CI stay green. */
+function envInteger(
+  env: NodeJS.ProcessEnv,
+  name: string,
+  fallback: number,
+  max: number,
+) {
+  const raw = env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 1 || n > max)
+    throw Error(`Invalid ${name}`);
+  return n;
+}
+/** Reads BLOCKSCOUT_API_KEY by name at startup: the one explorer client, and
+ * so the one daily credit budget, of every reader of the explorer in this
+ * process. Null without a key. */
+export function blockscoutClientFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): BlockscoutClient | null {
+  const key = env.BLOCKSCOUT_API_KEY;
+  return key
+    ? createBlockscoutClient({
+        key,
+        baseUrl: env.BLOCKSCOUT_API_URL || undefined,
+        dailyCreditCap: envInteger(
+          env,
+          "BLOCKSCOUT_DAILY_CREDIT_CAP",
+          30000,
+          99999,
+        ),
+      })
+    : null;
+}
+/** Without a key the route answers 503 `not_configured`, so unconfigured
+ * deployments and CI stay green. */
 export function createWalletHistoryFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   registry: TokenRegistry | null = null,
+  client: BlockscoutClient | null = blockscoutClientFromEnv(env),
 ): WalletHistory {
-  function integer(name: string, fallback: number, max: number) {
-    const raw = env[name];
-    if (raw === undefined || raw === "") return fallback;
-    const n = Number(raw);
-    if (!Number.isSafeInteger(n) || n < 1 || n > max)
-      throw Error(`Invalid ${name}`);
-    return n;
-  }
-  const key = env.BLOCKSCOUT_API_KEY;
   return createWalletHistory({
     registry,
-    client: key
-      ? createBlockscoutClient({
-          key,
-          baseUrl: env.BLOCKSCOUT_API_URL || undefined,
-          dailyCreditCap: integer("BLOCKSCOUT_DAILY_CREDIT_CAP", 30000, 99999),
-        })
-      : null,
+    client,
     firstPageTtlMs:
-      integer("BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS", 30, 86400) * 1000,
-    pageTtlMs: integer("BLOCKSCOUT_PAGE_TTL_SECONDS", 600, 86400) * 1000,
+      envInteger(env, "BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS", 30, 86400) * 1000,
+    pageTtlMs:
+      envInteger(env, "BLOCKSCOUT_PAGE_TTL_SECONDS", 600, 86400) * 1000,
   });
 }

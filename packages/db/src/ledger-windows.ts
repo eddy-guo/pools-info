@@ -1,8 +1,10 @@
 // The leaderboard windows of the aggregate ledger (docs/AGGREGATE-LEDGER.md
 // phase 3, design report section 7.3): agg_wallet_windows holds one row per
 // wallet per window, summed from the whole UTC hours ending with the ledger
-// cursor's hour, with the rank of the top of the board. A full rebuild over
-// three million hour rows takes seconds, so after the first build a refresh
+// cursor's hour, with the wallet's rank on the trader board, and
+// agg_trader_windows the same sums without the wallet's own launches, which
+// is what the trader board ranks and serves. A full rebuild over three
+// million hour rows takes seconds, so after the first build a refresh
 // recomputes only the wallets the batches since the last refresh journaled,
 // and subtracts the hours that left a window from the rows of the others. A
 // walk-back removes the refresh state with its batch, which forces a rebuild.
@@ -67,43 +69,115 @@ const hourSums = `sum(realized_wei) AS realized,sum(proceeds_wei)-sum(spent_wei)
   sum(disposed_cost_wei) AS disposed,sum(buys+sells)::int AS trades,sum(supported_trades)::int AS supported_trades,
   sum(wins)::int AS wins,sum(losses)::int AS losses,sum(closures)::int AS closures,sum(hold_seconds)::bigint AS hold_seconds,
   coalesce(sum(flash_closures),0)::int AS flash,bool_or(flash_closures IS NULL AND closures>0) AS untimed,max(best_wei) AS best`;
+
+/** The two rows a window keeps per wallet (decided 28 Sep 2026). The
+ * wallet's own row sums every position and is its profile. Its trader row,
+ * which the trader board ranks and serves, leaves out every position in a
+ * pool the wallet launched itself: the pool's launch sender, the creator the
+ * creators board credits. A launcher's buy sits inside its own launch
+ * transaction and its sales go to the buyers who follow, which is a
+ * creator's take, not trading. Whether a position is in the wallet's own
+ * launch never changes, so both rows follow the same journal. `x` names the
+ * hour or position row the filter reads. */
+export interface LedgerWindowScope {
+  table: "agg_wallet_windows" | "agg_trader_windows";
+  filter: (x: string) => string;
+}
+export const ownLaunch = (x: string) =>
+  `EXISTS (SELECT 1 FROM indexed_pools i JOIN agg_wallets o ON o.address=decode(substr(i.launch_sender,3),'hex')
+    WHERE i.chain_id=4663 AND i.pool_ref=${x}.pool_ref AND o.wallet_ref=${x}.wallet_ref)`;
+export const ledgerWindowScopes: readonly LedgerWindowScope[] = [
+  { table: "agg_wallet_windows", filter: () => "" },
+  { table: "agg_trader_windows", filter: (x) => ` AND NOT ${ownLaunch(x)}` },
+];
+/** A wallet the trader board never ranks: a deployed contract, as the api's
+ * census of the board's candidates observed its code (docs/LEDGER-MARKET-
+ * SERVING.md, "The trader leaderboard"). `w` names its agg_wallets row. */
+export const notContract = (w: string) =>
+  `NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=${w}.address AND c.kind='contract')`;
+
 // The wallet's position counts and last activity: the same in every window.
-const positionStats = (filter: string, lastAs = "bigint") =>
+const positionStats = (
+  scope: LedgerWindowScope,
+  filter: string,
+  lastAs = "bigint",
+) =>
   `SELECT wallet_ref,count(*) FILTER (WHERE supported AND buys+sells>0)::int AS supported,
      count(*) FILTER (WHERE NOT supported)::int AS excluded,
      (max(last_timestamp) FILTER (WHERE buys+sells>0))::${lastAs} AS last_timestamp
-   FROM agg_positions WHERE chain_id=4663${filter} GROUP BY wallet_ref`;
+   FROM agg_positions a WHERE chain_id=4663${filter}${scope.filter("a")} GROUP BY wallet_ref`;
+interface PositionStats {
+  wallet_ref: number;
+  supported: number;
+  excluded: number;
+  last_timestamp: string | null;
+}
+const walletPositionStats = async (
+  db: Client,
+  scope: LedgerWindowScope,
+  refs: number[],
+): Promise<PositionStats[]> =>
+  refs.length
+    ? (
+        await db.query(
+          positionStats(scope, " AND wallet_ref=ANY($1::int[])", "text"),
+          [refs],
+        )
+      ).rows
+    : [];
 /** Window rows from the hour rows: every wallet (a rebuild), or the wallets
- * in $3 with their position figures given as arrays in $4 to $7. */
-const windowRows = (given: boolean) => `
-  INSERT INTO agg_wallet_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,wins,losses,closures,hold_seconds,flash_closures,best_wei,last_timestamp,supported_positions,excluded_positions,rank,window_start,refreshed_at)
+ * in $3 with their position figures given as arrays in $4 to $7. The rank is
+ * set apart, by `rankWindow`. */
+const windowRows = (scope: LedgerWindowScope, given: boolean) => `
+  INSERT INTO ${scope.table}(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,wins,losses,closures,hold_seconds,flash_closures,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
   SELECT 4663,$1,h.wallet_ref,h.realized,h.net,h.volume,h.disposed,h.trades,h.supported_trades,h.wins,h.losses,h.closures,h.hold_seconds,
-    CASE WHEN h.untimed THEN NULL ELSE h.flash END,h.best,p.last_timestamp,coalesce(p.supported,0),coalesce(p.excluded,0),NULL,$2,clock_timestamp()
+    CASE WHEN h.untimed THEN NULL ELSE h.flash END,h.best,p.last_timestamp,coalesce(p.supported,0),coalesce(p.excluded,0),$2,clock_timestamp()
   FROM (
     SELECT wallet_ref,${hourSums}
-    FROM agg_wallet_hours WHERE chain_id=4663 AND hour>=$2${given ? " AND wallet_ref=ANY($3::int[])" : ""}
+    FROM agg_wallet_hours h WHERE chain_id=4663 AND hour>=$2${given ? " AND wallet_ref=ANY($3::int[])" : ""}${scope.filter("h")}
     GROUP BY wallet_ref
   ) h
   LEFT JOIN ${
     given
       ? "unnest($4::int[],$5::int[],$6::int[],$7::bigint[]) AS p(wallet_ref,supported,excluded,last_timestamp)"
-      : `(${positionStats("")}) p`
+      : `(${positionStats(scope, "")}) p`
   } USING (wallet_ref)`;
+const insertWindowRows = (
+  db: Client,
+  scope: LedgerWindowScope,
+  window: LiveWindow,
+  windowStart: number,
+  refs: number[],
+  stats: PositionStats[],
+) =>
+  db.query(windowRows(scope, true), [
+    window,
+    windowStart,
+    refs,
+    stats.map((p) => p.wallet_ref),
+    stats.map((p) => p.supported),
+    stats.map((p) => p.excluded),
+    stats.map((p) => p.last_timestamp),
+  ]);
 
-/** Rank the top of a window: eligible wallets by realized, address breaking
- * ties, kept for the first `rankedWallets` rows and cleared elsewhere. The
- * candidates come off the partial index in one read, and only rows whose rank
- * changes are written, each found by its key, so no plan walks the window. */
+/** Rank the top of a window's trader board: eligible trader rows by
+ * realized, address breaking ties, an observed contract never, kept for the first
+ * `rankedWallets` rows and cleared elsewhere. The rank is the wallet's own
+ * row's, so the wallet page reads it where it reads the wallet. The
+ * candidates come off the partial index in one read, and only rows whose
+ * rank changes are written, each found by its key, so no plan walks the
+ * window. */
 async function rankWindow(db: Client, window: LiveWindow) {
   const n = ledgerWindowPolicy.rankedWallets;
-  // A literal, so the planner matches migration 020's partial index.
+  // A literal, so the planner matches migration 025's partial index.
   const eligible = (x: string) =>
     `${x}supported_trades>=${ledgerWindowPolicy.minTrades} AND ${x}supported_positions>0`;
   const top = await db.query(
-    `SELECT x.wallet_ref FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
-     WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible("x.")}
-       AND x.realized_wei>=coalesce((SELECT realized_wei FROM agg_wallet_windows
-         WHERE chain_id=4663 AND "window"=$1 AND ${eligible("")} ORDER BY realized_wei DESC OFFSET $2 LIMIT 1),'-Infinity')
+    `SELECT x.wallet_ref FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
+     WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible("x.")} AND ${notContract("w")}
+       AND x.realized_wei>=coalesce((SELECT t.realized_wei FROM agg_trader_windows t JOIN agg_wallets v USING (wallet_ref)
+         WHERE t.chain_id=4663 AND t."window"=$1 AND ${eligible("t.")} AND ${notContract("v")}
+         ORDER BY t.realized_wei DESC OFFSET $2 LIMIT 1),'-Infinity')
      ORDER BY x.realized_wei DESC,w.address LIMIT $3`,
     [window, n - 1, n],
   );
@@ -141,30 +215,32 @@ export async function recomputeLedgerWindowWallets(
   );
   if (saved.rows.length !== ledgerWindowPolicy.windows.length) return 0;
   const refs = [...walletRefs];
-  const stats = (
-    await db.query(positionStats(" AND wallet_ref=ANY($1::int[])", "text"), [
-      refs,
-    ])
-  ).rows;
+  const stats = await Promise.all(
+    ledgerWindowScopes.map((scope) => walletPositionStats(db, scope, refs)),
+  );
   for (const state of saved.rows) {
     const window = state.window as LiveWindow;
-    const removed = await db.query(
-      `DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND "window"=$1 AND wallet_ref=ANY($2::int[])`,
-      [window, refs],
-    );
-    const inserted = await db.query(windowRows(true), [
-      window,
-      state.window_start,
-      refs,
-      stats.map((p) => p.wallet_ref),
-      stats.map((p) => p.supported),
-      stats.map((p) => p.excluded),
-      stats.map((p) => p.last_timestamp),
-    ]);
+    let wallets = 0;
+    for (const [i, scope] of ledgerWindowScopes.entries()) {
+      const removed = await db.query(
+        `DELETE FROM ${scope.table} WHERE chain_id=4663 AND "window"=$1 AND wallet_ref=ANY($2::int[])`,
+        [window, refs],
+      );
+      const inserted = await insertWindowRows(
+        db,
+        scope,
+        window,
+        state.window_start,
+        refs,
+        stats[i],
+      );
+      if (scope.table === "agg_wallet_windows")
+        wallets = (inserted.rowCount ?? 0) - (removed.rowCount ?? 0);
+    }
     const ranked = await rankWindow(db, window);
     await db.query(
       `UPDATE agg_window_refreshes SET wallets=wallets+$2,ranked=$3 WHERE chain_id=4663 AND "window"=$1`,
-      [window, (inserted.rowCount ?? 0) - (removed.rowCount ?? 0), ranked],
+      [window, wallets, ranked],
     );
   }
   return refs.length;
@@ -246,19 +322,11 @@ export async function refreshLedgerWindows(
       }
       return journals.get(through)!;
     };
-    // The wallets those batches changed, with their position figures read
-    // once for every window.
+    // The wallets those batches changed, with their position figures in
+    // each scope read once for every window.
     const touched = new Map<
       number,
-      {
-        refs: number[];
-        stats: {
-          wallet_ref: number;
-          supported: number;
-          excluded: number;
-          last_timestamp: string | null;
-        }[];
-      }
+      { refs: number[]; stats: PositionStats[][] }
     >();
     const touchedSince = async (through: number) => {
       if (!touched.has(through)) {
@@ -270,14 +338,11 @@ export async function refreshLedgerWindows(
         const refs = r.rows
           .map((row) => row.wallet_ref as number)
           .sort((a, b) => a - b);
-        const stats = refs.length
-          ? (
-              await db.query(
-                positionStats(" AND wallet_ref=ANY($1::int[])", "text"),
-                [refs],
-              )
-            ).rows
-          : [];
+        const stats = await Promise.all(
+          ledgerWindowScopes.map((scope) =>
+            walletPositionStats(db, scope, refs),
+          ),
+        );
         touched.set(through, { refs, stats });
       }
       return touched.get(through)!;
@@ -291,7 +356,7 @@ export async function refreshLedgerWindows(
       const windowStart = ledgerWindowStart(window, cursorTimestamp);
       const state = states.get(window);
       let mode: LedgerWindowRefresh["mode"];
-      let wallets: number,
+      let wallets = 0,
         recomputed: number,
         subtracted = 0;
       const journal = state && (await journalSince(state.throughBlock));
@@ -316,88 +381,101 @@ export async function refreshLedgerWindows(
         wallets = state.wallets;
         const since = await touchedSince(state.throughBlock);
         recomputed = since.refs.length;
-        if (windowStart > state.windowStart) {
-          // Hours left the window. A wallet the batches did not touch keeps
-          // its rows, so the leaving hours' sums come off its window row;
-          // only a wallet whose best sale or whose last unfolded closure sat
-          // in them is summed again, and one with no hour left goes.
-          const leaving = await db.query(
-            `SELECT DISTINCT wallet_ref FROM agg_wallet_hours
-             WHERE chain_id=4663 AND hour>=$1 AND hour<$2 AND NOT (wallet_ref=ANY($3::int[]))`,
-            [state.windowStart, windowStart, since.refs],
-          );
-          const left = leaving.rows.map((r) => r.wallet_ref as number);
-          const taken = await db.query(
-            `WITH gone AS (
-               SELECT wallet_ref,${hourSums} FROM agg_wallet_hours
-               WHERE chain_id=4663 AND hour>=$2 AND hour<$3 AND wallet_ref=ANY($4::int[]) GROUP BY wallet_ref
-             )
-             UPDATE agg_wallet_windows x SET realized_wei=x.realized_wei-g.realized,net_wei=x.net_wei-g.net,
-               volume_wei=x.volume_wei-g.volume,disposed_cost_wei=x.disposed_cost_wei-g.disposed,trades=x.trades-g.trades,
-               supported_trades=x.supported_trades-g.supported_trades,wins=x.wins-g.wins,losses=x.losses-g.losses,
-               closures=x.closures-g.closures,hold_seconds=x.hold_seconds-g.hold_seconds,flash_closures=x.flash_closures-g.flash,
-               window_start=$3,refreshed_at=clock_timestamp()
-             FROM gone g
-             WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=g.wallet_ref
-               AND (g.best IS NULL OR g.best<x.best_wei) AND NOT (x.flash_closures IS NULL AND g.untimed)
-             RETURNING x.wallet_ref`,
-            [window, state.windowStart, windowStart, left],
-          );
-          const done = new Set(taken.rows.map((r) => r.wallet_ref));
-          subtracted = done.size;
-          const summed = left.filter((w) => !done.has(w));
-          if (summed.length)
-            await db.query(
-              `WITH h AS (
-                 SELECT wallet_ref,${hourSums} FROM agg_wallet_hours
-                 WHERE chain_id=4663 AND hour>=$2 AND wallet_ref=ANY($3::int[]) GROUP BY wallet_ref
-               )
-               UPDATE agg_wallet_windows x SET realized_wei=h.realized,net_wei=h.net,volume_wei=h.volume,
-                 disposed_cost_wei=h.disposed,trades=h.trades,supported_trades=h.supported_trades,wins=h.wins,
-                 losses=h.losses,closures=h.closures,hold_seconds=h.hold_seconds,
-                 flash_closures=CASE WHEN h.untimed THEN NULL ELSE h.flash END,best_wei=h.best,
-                 window_start=$2,refreshed_at=clock_timestamp()
-               FROM h WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=h.wallet_ref`,
-              [window, windowStart, summed],
+        for (const [i, scope] of ledgerWindowScopes.entries()) {
+          const counted = scope.table === "agg_wallet_windows";
+          if (windowStart > state.windowStart) {
+            // Hours left the window. A wallet the batches did not touch
+            // keeps its rows, so the leaving hours' sums come off its window
+            // row; only a wallet whose best sale or whose last unfolded
+            // closure sat in them is summed again, and one with no hour left
+            // goes.
+            const leaving = await db.query(
+              `SELECT DISTINCT wallet_ref FROM agg_wallet_hours h
+               WHERE chain_id=4663 AND hour>=$1 AND hour<$2 AND NOT (wallet_ref=ANY($3::int[]))${scope.filter("h")}`,
+              [state.windowStart, windowStart, since.refs],
             );
-          const emptied = await db.query(
-            `DELETE FROM agg_wallet_windows x
-             WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=ANY($2::int[])
-               AND (x.trades=0 OR (x.wallet_ref=ANY($3::int[]) AND NOT EXISTS (
-                 SELECT 1 FROM agg_wallet_hours h WHERE h.chain_id=4663 AND h.wallet_ref=x.wallet_ref AND h.hour>=$4)))`,
-            [window, left, summed, windowStart],
-          );
-          wallets -= emptied.rowCount ?? 0;
-          recomputed += left.length;
-        }
-        if (since.refs.length) {
-          const removed = await db.query(
-            `DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND "window"=$1 AND wallet_ref=ANY($2::int[])`,
-            [window, since.refs],
-          );
-          const inserted = await db.query(windowRows(true), [
-            window,
-            windowStart,
-            since.refs,
-            since.stats.map((p) => p.wallet_ref),
-            since.stats.map((p) => p.supported),
-            since.stats.map((p) => p.excluded),
-            since.stats.map((p) => p.last_timestamp),
-          ]);
-          wallets += (inserted.rowCount ?? 0) - (removed.rowCount ?? 0);
+            const left = leaving.rows.map((r) => r.wallet_ref as number);
+            const taken = await db.query(
+              `WITH gone AS (
+                 SELECT wallet_ref,${hourSums} FROM agg_wallet_hours h
+                 WHERE chain_id=4663 AND hour>=$2 AND hour<$3 AND wallet_ref=ANY($4::int[])${scope.filter("h")} GROUP BY wallet_ref
+               )
+               UPDATE ${scope.table} x SET realized_wei=x.realized_wei-g.realized,net_wei=x.net_wei-g.net,
+                 volume_wei=x.volume_wei-g.volume,disposed_cost_wei=x.disposed_cost_wei-g.disposed,trades=x.trades-g.trades,
+                 supported_trades=x.supported_trades-g.supported_trades,wins=x.wins-g.wins,losses=x.losses-g.losses,
+                 closures=x.closures-g.closures,hold_seconds=x.hold_seconds-g.hold_seconds,flash_closures=x.flash_closures-g.flash,
+                 window_start=$3,refreshed_at=clock_timestamp()
+               FROM gone g
+               WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=g.wallet_ref
+                 AND (g.best IS NULL OR g.best<x.best_wei) AND NOT (x.flash_closures IS NULL AND g.untimed)
+               RETURNING x.wallet_ref`,
+              [window, state.windowStart, windowStart, left],
+            );
+            const done = new Set(taken.rows.map((r) => r.wallet_ref));
+            const summed = left.filter((w) => !done.has(w));
+            if (summed.length)
+              await db.query(
+                `WITH h AS (
+                   SELECT wallet_ref,${hourSums} FROM agg_wallet_hours h
+                   WHERE chain_id=4663 AND hour>=$2 AND wallet_ref=ANY($3::int[])${scope.filter("h")} GROUP BY wallet_ref
+                 )
+                 UPDATE ${scope.table} x SET realized_wei=h.realized,net_wei=h.net,volume_wei=h.volume,
+                   disposed_cost_wei=h.disposed,trades=h.trades,supported_trades=h.supported_trades,wins=h.wins,
+                   losses=h.losses,closures=h.closures,hold_seconds=h.hold_seconds,
+                   flash_closures=CASE WHEN h.untimed THEN NULL ELSE h.flash END,best_wei=h.best,
+                   window_start=$2,refreshed_at=clock_timestamp()
+                 FROM h WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=h.wallet_ref`,
+                [window, windowStart, summed],
+              );
+            // The wallets summed again that still have an hour, found once
+            // off the hour rows' key: probed per row, the planner walks the
+            // window's hour index for each (2.9 s on 7d on 27 Sep).
+            const emptied = await db.query(
+              `DELETE FROM ${scope.table} x
+               WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=ANY($2::int[])
+                 AND (x.trades=0 OR (x.wallet_ref=ANY($3::int[]) AND x.wallet_ref NOT IN (
+                   SELECT h.wallet_ref FROM agg_wallet_hours h
+                   WHERE h.chain_id=4663 AND h.wallet_ref=ANY($3::int[]) AND h.hour>=$4${scope.filter("h")})))`,
+              [window, left, summed, windowStart],
+            );
+            if (counted) {
+              subtracted = done.size;
+              wallets -= emptied.rowCount ?? 0;
+              recomputed += left.length;
+            }
+          }
+          if (since.refs.length) {
+            const removed = await db.query(
+              `DELETE FROM ${scope.table} WHERE chain_id=4663 AND "window"=$1 AND wallet_ref=ANY($2::int[])`,
+              [window, since.refs],
+            );
+            const inserted = await insertWindowRows(
+              db,
+              scope,
+              window,
+              windowStart,
+              since.refs,
+              since.stats[i],
+            );
+            if (counted)
+              wallets += (inserted.rowCount ?? 0) - (removed.rowCount ?? 0);
+          }
         }
       } else {
         mode = "rebuilt";
         await db.query("SET LOCAL work_mem='256MB'");
-        await db.query(
-          `DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND "window"=$1`,
-          [window],
-        );
-        const inserted = await db.query(windowRows(false), [
-          window,
-          windowStart,
-        ]);
-        wallets = inserted.rowCount ?? 0;
+        for (const scope of ledgerWindowScopes) {
+          await db.query(
+            `DELETE FROM ${scope.table} WHERE chain_id=4663 AND "window"=$1`,
+            [window],
+          );
+          const inserted = await db.query(windowRows(scope, false), [
+            window,
+            windowStart,
+          ]);
+          if (scope.table === "agg_wallet_windows")
+            wallets = inserted.rowCount ?? 0;
+        }
         recomputed = wallets;
       }
       refreshed.push({
@@ -412,7 +490,8 @@ export async function refreshLedgerWindows(
       });
     }
     if (refreshed.some((w) => w.mode === "rebuilt"))
-      await db.query("ANALYZE agg_wallet_windows");
+      for (const scope of ledgerWindowScopes)
+        await db.query(`ANALYZE ${scope.table}`);
     for (const w of refreshed) {
       if (w.mode === "unchanged") continue;
       const ranking = performance.now();
