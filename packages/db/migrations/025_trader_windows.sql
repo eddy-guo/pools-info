@@ -65,6 +65,11 @@ CREATE TABLE wallet_code_observations (
   PRIMARY KEY (chain_id, address)
 );
 
+-- Read-only board spot-check on 27 Sep 2026 found this unverified 15,739-byte
+-- contract created by 0x3408...E859; eth_getCode returned its bytecode on 28 Sep.
+INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+VALUES (4663,decode('91f99c026126f60a35c4306cb288388848b48faf','hex'),'contract',clock_timestamp());
+
 CREATE TYPE trader_servable_row AS (wallet_ref integer, address bytea, metric numeric, gate integer);
 CREATE FUNCTION trader_servable_refs(selected_window text, selected_metric text)
 RETURNS SETOF integer LANGUAGE plpgsql STABLE AS $$

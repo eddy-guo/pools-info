@@ -211,6 +211,19 @@ const first = () =>
 
 test("a trader row leaves out the wallet's own launches, the board ranks trader rows with the trade floor counted on them alone, and migration 025's fill is the writer's rebuild", async (t) => {
   const db = await setup(t);
+  assert.deepEqual(
+    (
+      await db.query(
+        `SELECT '0x'||encode(address,'hex') AS address,kind FROM wallet_code_observations`,
+      )
+    ).rows,
+    [
+      {
+        address: "0x91f99c026126f60a35c4306cb288388848b48faf",
+        kind: "contract",
+      },
+    ],
+  );
   await applyLedgerBatch(db, batch(base, base + 9, first()));
   assert.ok(await refreshLedgerWindows(db));
   // The wallets' own rows keep every position: the profile is unchanged.

@@ -146,6 +146,35 @@ function explorer(
   return { client, asked };
 }
 
+test("the census starts immediately", async () => {
+  const { store } = memoryStore([addr(1)]);
+  const { client, asked } = explorer(() => "0x", () => 90000);
+  let completed!: () => void;
+  const observed = new Promise<void>((resolve) => {
+    completed = resolve;
+  });
+  const record = store.record;
+  store.record = async (answers) => {
+    await record(answers);
+    completed();
+  };
+  const census = createContractCensus({ store, client, log: () => undefined });
+  let timeout: NodeJS.Timeout | undefined;
+  census.start();
+  try {
+    await Promise.race([
+      observed,
+      new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(Error("census did not start")), 2000);
+      }),
+    ]);
+    assert.deepEqual(asked, [[addr(1)]]);
+  } finally {
+    clearTimeout(timeout);
+    await census.close();
+  }
+});
+
 test("a census run reads due candidates five to a call and continues across runs", async () => {
   const due = Array.from({ length: 275 }, (_, i) => addr(i + 1));
   const { store, recorded } = memoryStore(due);

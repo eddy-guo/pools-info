@@ -196,8 +196,8 @@ changes:
   `0x33b6…c577`, is a wallet delegated to Uniswap's Calibur whose every swap
   is relayed, and stays. The census
   runs in the api (`apps/api/src/trader-contracts.ts`, the api holds the
-  explorer key): 30 s after start and every 5 minutes, over the exact union
-  of wallets servable in any window, realized or net order, trade gate 0-999,
+  explorer key): immediately after start and every 5 minutes, over the exact
+  union of wallets servable in any window, realized or net order, trade gate 0-999,
   and offset page within the top 100. After the running top 100 fills, its
   index probe jumps past trade gates whose best metric cannot enter it. It
   reads only bounded gate-index pages,
@@ -208,9 +208,13 @@ changes:
   four fifths of the api's own daily cap, and never retrying a failed call
   inside a run. The last fifth of local credits is reserved so the census
   cannot starve the live Trades tab and Following, which share that key.
-  `wallet_code_observations` keeps each answer;
-  a wallet with no code, or a delegated one, is read again after a week
-  while the board could still show it. Every ledger board and wallet-rank read
+  `wallet_code_observations` keeps each answer. Migration 025 seeds only
+  `0x91f99c026126f60a35c4306cb288388848b48faf`, whose contract bytecode
+  was verified in the 27 Sep board spot-check, so the first ledger read
+  excludes it. If the explorer key is absent or the credit floor stops the
+  census, a newly arriving contract stays visible until checked; the board
+  never removes a wallet on a guess. A wallet with no code, or a delegated
+  one, is read again after a week while the board could still show it. Every ledger board and wallet-rank read
   excludes observed contracts immediately, without a ledger refresh; their
   rows stay. On the 27 Sep backup the servable union held 2,312-2,331
   wallets across the recorded cuts, 46 of which had never initiated a swap

@@ -12,8 +12,7 @@ import { BlockscoutError, type BlockscoutClient } from "./blockscout-client";
  * and the board's reads apply (docs/LEDGER-MARKET-SERVING.md, "The trader
  * leaderboard"). */
 export const contractCensusPolicy = Object.freeze({
-  /** The first run after start, then one every interval. */
-  firstRunMs: 30000,
+  /** Delay between completed runs. */
   intervalMs: 300000,
   /** Addresses read per run: five to an explorer call of 20 credits. */
   addressesPerRun: 25,
@@ -214,7 +213,7 @@ export function createContractCensus({
   return {
     run,
     start() {
-      if (!timer && !closed) schedule(policy.firstRunMs);
+      if (!timer && !closed) schedule(0);
     },
     async close() {
       closed = true;
