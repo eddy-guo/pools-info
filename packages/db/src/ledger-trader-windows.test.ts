@@ -306,7 +306,7 @@ test("a trader row leaves out the wallet's own launches, the board ranks trader 
   );
 });
 
-test("the census's contracts never rank and its delegated wallets do, from the next refresh", async (t) => {
+test("the census's contracts never rank and its non-contract wallets do, from the next refresh", async (t) => {
   const db = await setup(t);
   await applyLedgerBatch(db, batch(base, base + 9, first()));
   assert.ok(await refreshLedgerWindows(db));
@@ -317,8 +317,9 @@ test("the census's contracts never rank and its delegated wallets do, from the n
       [who.slice(2), kind],
     );
   await observe(K, "contract");
-  await observe(D, "delegated");
+  await observe(D, "none");
   await observe(N, "none");
+  await assert.rejects(observe(wallet(9), "delegated"), /check/);
   // The next refresh (the cursor moved) applies them: K's rows stay, its
   // rank goes, and D keeps its place behind N.
   await applyLedgerBatch(

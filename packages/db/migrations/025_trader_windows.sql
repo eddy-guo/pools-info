@@ -60,7 +60,7 @@ DROP INDEX agg_wallet_windows_net;
 CREATE TABLE wallet_code_observations (
   chain_id integer NOT NULL CHECK (chain_id=4663),
   address bytea NOT NULL CHECK (octet_length(address)=20),
-  kind text NOT NULL CHECK (kind IN ('contract','delegated','none')),
+  kind text NOT NULL CHECK (kind IN ('contract','none')),
   observed_at timestamptz NOT NULL,
   PRIMARY KEY (chain_id, address)
 );
@@ -159,4 +159,4 @@ END $$;
 
 COMMENT ON TABLE agg_trader_windows IS 'Wallet totals per window without the positions in pools the wallet launched itself (its launch sender), summed from the same hours as agg_wallet_windows and refreshed with it; the trader board ranks and serves these rows, a contract never.';
 COMMENT ON COLUMN agg_wallet_windows.rank IS 'The wallet''s place on the trader board: its agg_trader_windows row among the eligible non-contract rows by realized (address breaks ties), kept for the top 100 only.';
-COMMENT ON TABLE wallet_code_observations IS 'Code at an address the trader board might rank, read by the api''s census at observed_at: contract (code that is not an EIP-7702 designator), delegated (a 7702 designator: an externally owned wallet) or none. A contract is never ranked; the others are read again after a week.';
+COMMENT ON TABLE wallet_code_observations IS 'Code classification at an address the trader board might rank, read by the api''s census at observed_at: contract (code that is not an EIP-7702 designator) or none (empty code or a 7702 designator). A contract is never ranked; the others are read again after a week.';

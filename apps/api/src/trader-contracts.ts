@@ -28,14 +28,14 @@ export type ContractCensusPolicy = Record<
   keyof typeof contractCensusPolicy,
   number
 >;
-export type WalletCodeKind = "contract" | "delegated" | "none";
+export type WalletCodeKind = "contract" | "none";
 /** A contract is code that is not an EIP-7702 delegation designator
  * (`0xef0100` and the 20-byte delegate): a delegated account is still an
  * externally owned wallet. */
 export function walletCodeKind(code: string): WalletCodeKind {
   if (!/^0x(?:[0-9a-f]{2})*$/i.test(code)) throw Error("Invalid code");
   if (code === "0x") return "none";
-  return /^0xef0100[0-9a-f]{40}$/i.test(code) ? "delegated" : "contract";
+  return /^0xef0100[0-9a-f]{40}$/i.test(code) ? "none" : "contract";
 }
 export interface WalletCodeObservation {
   address: string;

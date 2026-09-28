@@ -26,10 +26,10 @@ const delegated = "0xef0100e8b12077f4f9c3e1b239a62f283fe4ef6ec9c449";
 
 test("a contract is code that is not an EIP-7702 delegation designator", () => {
   assert.equal(walletCodeKind("0x"), "none");
-  assert.equal(walletCodeKind(delegated), "delegated");
+  assert.equal(walletCodeKind(delegated), "none");
   assert.equal(
     walletCodeKind(delegated.toUpperCase().replace("0X", "0x")),
-    "delegated",
+    "none",
   );
   assert.equal(walletCodeKind(marketMaker), "contract");
   // The designator's prefix on anything but exactly one delegate is code.
@@ -197,7 +197,7 @@ test("a census run reads due candidates five to a call and continues across runs
   assert.deepEqual(first.observed.slice(0, 3), [
     { address: addr(1), kind: "none" },
     { address: addr(2), kind: "contract" },
-    { address: addr(3), kind: "delegated" },
+    { address: addr(3), kind: "none" },
   ]);
   assert.deepEqual(
     recorded.map((r) => r.length),

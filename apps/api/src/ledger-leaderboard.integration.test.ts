@@ -823,7 +823,7 @@ test(
       stopped: "done",
       observed: [
         { address: W[4], kind: "contract" },
-        { address: W[5], kind: "delegated" },
+        { address: W[5], kind: "none" },
       ],
     });
     assert.deepEqual(await store.candidates(25), []);

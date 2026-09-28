@@ -213,8 +213,9 @@ changes:
   was verified in the 27 Sep board spot-check, so the first ledger read
   excludes it. If the explorer key is absent or the credit floor stops the
   census, a newly arriving contract stays visible until checked; the board
-  never removes a wallet on a guess. A wallet with no code, or a delegated
-  one, is read again after a week while the board could still show it. Every ledger board and wallet-rank read
+  never removes a wallet on a guess. Empty code and EIP-7702 designators are
+  both stored as `none` and read again after a week while the board could
+  still show the wallet. Every ledger board and wallet-rank read
   excludes observed contracts immediately, without a ledger refresh; their
   rows stay. On the 27 Sep backup the servable union held 2,312-2,331
   wallets across the recorded cuts, 46 of which had never initiated a swap
