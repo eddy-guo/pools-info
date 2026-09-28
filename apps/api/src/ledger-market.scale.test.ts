@@ -219,32 +219,32 @@ test(
         [window, cursorBlock, cursorTime, window === "All" ? 0 : H - 168],
       );
     }
-    for (const [window, rows, start] of [
-      ["1h", 2000, H - 1],
-      ["6h", 5000, H - 6],
-      ["24h", 20000, H - 24],
-      ["7d", 70000, H - 168],
-      ["30d", 180000, H - 720],
-      ["All", censusWallets, 0],
+    for (const [window, rows, start, competitive] of [
+      ["1h", 2000, H - 1, 100],
+      ["6h", 5000, H - 6, 100],
+      ["24h", 20000, H - 24, 100],
+      ["7d", 70000, H - 168, 400],
+      ["30d", 180000, H - 720, 700],
+      ["All", censusWallets, 0, 900],
     ] as const) {
       await seedBatches(1, rows, 20000, (lo, hi) =>
         db.query(
           `INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
             wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
           SELECT 4663,$3,$4::integer+m,
-            CASE WHEN m<=100 THEN -m ELSE -10000-m END,
-            CASE WHEN m<=100 THEN -m ELSE -10000-m END,
-            100000,1000,CASE WHEN m<=100 THEN 999 ELSE mod(m*37,1000) END,
-            CASE WHEN m<=100 THEN 999 ELSE mod(m*37,1000) END,
-            1,0,1,600,CASE WHEN m<=100 THEN -m ELSE -10000-m END,$5::bigint,1,0,$6::integer,now()
+            CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,
+            CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,
+            100000,1000,CASE WHEN m<=$7::integer THEN 1000-m ELSE mod(m*37,1000) END,
+            CASE WHEN m<=$7::integer THEN 1000-m ELSE mod(m*37,1000) END,
+            1,0,1,600,CASE WHEN m<=$7::integer THEN m ELSE -10000-m END,$5::bigint,1,0,$6::integer,now()
           FROM generate_series($1::integer,$2::integer) m`,
-          [lo, hi, window, senders + 1, H * 3600, start],
+          [lo, hi, window, senders + 1, H * 3600, start, competitive],
         ),
       );
     }
     await db.query(
-      `INSERT INTO wallet_code_observations(chain_id,address,kind,code_bytes,observed_at)
-      SELECT 4663,address,'contract',100,now() FROM agg_wallets WHERE wallet_ref IN (1,2)`,
+      `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+      SELECT 4663,address,'contract',now() FROM agg_wallets WHERE wallet_ref IN (1,2)`,
     );
     await db.query(
       "ANALYZE indexed_pools,pool_launch_sources,indexer_batches,agg_streams,agg_batches,agg_pool_hours,agg_pool_state,agg_live_trades,analytics_accounting_pools,broad_market_summaries,broad_market_buckets,agg_wallets,agg_positions,agg_wallet_windows,agg_trader_windows,agg_window_refreshes,wallet_code_observations",
@@ -392,9 +392,22 @@ test(
       Number(censusPlan["Shared Hit Blocks"]) +
       Number(censusPlan["Shared Read Blocks"]);
     assert(censusMs < 1500, `candidate read took ${censusMs} ms`);
-    assert(censusPages < 150000, `candidate read touched ${censusPages} pages`);
+    assert(censusPages < 250000, `candidate read touched ${censusPages} pages`);
     reads.push(["censusCandidates", censusMs]);
     process.stdout.write(`census candidate pages=${censusPages}\n`);
+    const gateLevels = Number(
+      (
+        await db.query(`SELECT count(*)::integer AS gates FROM (
+          SELECT v.name,m.metric,least(x.supported_trades,999) AS gate
+          FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
+          CROSS JOIN unnest(ARRAY['realized','net']) AS m(metric)
+          CROSS JOIN LATERAL trader_servable_refs(v.name,m.metric) AS t(wallet_ref)
+          JOIN agg_trader_windows x ON x.chain_id=4663 AND x."window"=v.name AND x.wallet_ref=t.wallet_ref
+          GROUP BY v.name,m.metric,least(x.supported_trades,999)
+        ) levels`)
+      ).rows[0].gates,
+    );
+    assert(gateLevels > 4000, `candidate sweep visited ${gateLevels} gates`);
     const codeStore = createWalletCodeStore(
       process.env.TEST_DATABASE_URL,
       schema,

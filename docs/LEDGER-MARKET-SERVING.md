@@ -159,7 +159,13 @@ broad source is unaffected by any ledger row.
 
 ## The trader leaderboard
 
-`GET /v1/leaderboard` is served from `agg_trader_windows`
+With `MARKET_SOURCE=ledger` and a ledger cut, `GET /v1/leaderboard` is served
+from `agg_trader_windows`; production has served from the ledger since
+18 Sep 2026. With `MARKET_SOURCE=broad`, or in ledger mode before the first
+cut, the accounting fallback still ranks own-launch positions and contracts
+the old way. The exclusions below apply to the ledger board.
+
+The ledger board reads `agg_trader_windows`
 (`packages/db/src/ledger-windows.ts`): one row per wallet per window, summed
 by the tip loop from whole UTC hours ending with the ledger cursor's hour,
 with the top of the board by realized already ranked by the writer. The
@@ -180,7 +186,7 @@ changes:
   would have, none into the top 100 that day). The wallet's own row, its
   profile, keeps every position, and a wallet with no launch of its own has
   the same trader row as its own row, so its figures and its order are
-  unchanged. A contract is never on the board: the api's census reads the
+  unchanged. A contract is never on the ledger board: the api's census reads the
   code of each wallet the board could show that the ledger never saw send a
   swap (every attributed swap of every position it holds went to it as the
   counterparty; a contract never sends a transaction), and one whose code is
@@ -204,7 +210,7 @@ changes:
   cannot starve the live Trades tab and Following, which share that key.
   `wallet_code_observations` keeps each answer;
   a wallet with no code, or a delegated one, is read again after a week
-  while the board could still show it. Every board and wallet-rank read
+  while the board could still show it. Every ledger board and wallet-rank read
   excludes observed contracts immediately, without a ledger refresh; their
   rows stay. On the 27 Sep backup the servable union held 2,312-2,331
   wallets across the recorded cuts, 46 of which had never initiated a swap

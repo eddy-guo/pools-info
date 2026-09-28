@@ -66,15 +66,19 @@ accounting tables; `ledger` serves every pool the aggregate ledger covers from
 `agg_live_trades`, `agg_wallets`, `agg_positions`, `agg_wallet_hours`,
 `agg_wallet_windows`, `agg_trader_windows`, `agg_window_refreshes` and
 `pool_launch_sources`, and SELECT, INSERT and UPDATE on
-`wallet_code_observations`. With `ledger` and `BLOCKSCOUT_API_KEY` set, the
-api also runs the trader board's contract census (`src/trader-contracts.ts`):
+`wallet_code_observations`. The own-launch and contract exclusions apply to
+the ledger board that production serves. With `MARKET_SOURCE=broad`, or in
+ledger mode before the first ledger cut, the accounting fallback still ranks
+own-launch positions and contracts the old way. With `ledger` and
+`BLOCKSCOUT_API_KEY` set, the api also runs the trader board's contract census
+(`src/trader-contracts.ts`):
 every 5 minutes it recomputes the servable union across every window, order,
 trade gate 0-999 and offset page, then reads the code of candidates the ledger
 never saw send a swap, through the explorer's JSON-RPC gateway, on the same
 client and daily credit budget as the wallet page's reads, at most 25
 addresses per run and never while the key's stated balance is under 30,000.
 It keeps the last fifth of local credits for the live Trades tab and Following,
-which share that key. Confirmed contracts leave every board and the wallet's board
+which share that key. Confirmed contracts leave every ledger board and the wallet's board
 rank on the next read. The 27 Sep copy's union was 2,312-2,331 wallets across
 the recorded cuts, with 46
 requiring code reads (10 calls, about 200 credits); reading all 287,798

@@ -61,11 +61,8 @@ CREATE TABLE wallet_code_observations (
   chain_id integer NOT NULL CHECK (chain_id=4663),
   address bytea NOT NULL CHECK (octet_length(address)=20),
   kind text NOT NULL CHECK (kind IN ('contract','delegated','none')),
-  code_bytes integer NOT NULL CHECK (code_bytes>=0),
   observed_at timestamptz NOT NULL,
-  PRIMARY KEY (chain_id, address),
-  CHECK ((kind='none') = (code_bytes=0)),
-  CHECK (kind<>'delegated' OR code_bytes=23)
+  PRIMARY KEY (chain_id, address)
 );
 
 CREATE TYPE trader_servable_row AS (wallet_ref integer, address bytea, metric numeric, gate integer);

@@ -822,8 +822,8 @@ test(
     assert.deepEqual(run, {
       stopped: "done",
       observed: [
-        { address: W[4], kind: "contract", codeBytes: 5 },
-        { address: W[5], kind: "delegated", codeBytes: 23 },
+        { address: W[4], kind: "contract" },
+        { address: W[5], kind: "delegated" },
       ],
     });
     assert.deepEqual(await store.candidates(25), []);
@@ -876,7 +876,7 @@ test(
     assert(deepBefore.items.some((i) => i.address === deepAddress));
     assert((await store.candidates(200)).includes(deepAddress));
     await store.record([
-      { address: deepAddress, kind: "contract", codeBytes: 5 },
+      { address: deepAddress, kind: "contract" },
     ]);
     const deepAfter = (await get(
       "/v1/leaderboard?window=All&limit=25&offset=75",

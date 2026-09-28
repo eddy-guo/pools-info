@@ -41,7 +41,6 @@ export function walletCodeKind(code: string): WalletCodeKind {
 export interface WalletCodeObservation {
   address: string;
   kind: WalletCodeKind;
-  codeBytes: number;
 }
 export interface WalletCodeStore {
   /** The wallets the board could show whose code is due a read. */
@@ -96,13 +95,12 @@ export function createWalletCodeStore(
     async record(observations) {
       if (!observations.length) return;
       await pool.query(
-        `INSERT INTO wallet_code_observations(chain_id,address,kind,code_bytes,observed_at)
-         SELECT 4663,decode(substr(a,3),'hex'),k,b,clock_timestamp() FROM unnest($1::text[],$2::text[],$3::int[]) AS o(a,k,b)
-         ON CONFLICT (chain_id,address) DO UPDATE SET kind=EXCLUDED.kind,code_bytes=EXCLUDED.code_bytes,observed_at=EXCLUDED.observed_at`,
+        `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+         SELECT 4663,decode(substr(a,3),'hex'),k,clock_timestamp() FROM unnest($1::text[],$2::text[]) AS o(a,k)
+         ON CONFLICT (chain_id,address) DO UPDATE SET kind=EXCLUDED.kind,observed_at=EXCLUDED.observed_at`,
         [
           observations.map((o) => o.address),
           observations.map((o) => o.kind),
-          observations.map((o) => o.codeBytes),
         ],
       );
     },
@@ -167,14 +165,10 @@ export function createContractCensus({
           observed,
         };
       }
-      const answers = batch.map((address) => {
-        const c = code.get(address)!;
-        return {
-          address,
-          kind: walletCodeKind(c),
-          codeBytes: (c.length - 2) / 2,
-        };
-      });
+      const answers = batch.map((address) => ({
+        address,
+        kind: walletCodeKind(code.get(address)!),
+      }));
       try {
         await store.record(answers);
       } catch {

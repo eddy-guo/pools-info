@@ -166,9 +166,9 @@ test("a census run reads due candidates five to a call and continues across runs
   );
   assert.equal(first.observed.length, contractCensusPolicy.addressesPerRun);
   assert.deepEqual(first.observed.slice(0, 3), [
-    { address: addr(1), kind: "none", codeBytes: 0 },
-    { address: addr(2), kind: "contract", codeBytes: 23 },
-    { address: addr(3), kind: "delegated", codeBytes: 23 },
+    { address: addr(1), kind: "none" },
+    { address: addr(2), kind: "contract" },
+    { address: addr(3), kind: "delegated" },
   ]);
   assert.deepEqual(
     recorded.map((r) => r.length),

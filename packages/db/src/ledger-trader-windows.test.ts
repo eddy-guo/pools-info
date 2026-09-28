@@ -275,8 +275,8 @@ test("a trader row leaves out the wallet's own launches, the board ranks trader 
     new URL("../migrations/025_trader_windows.sql", import.meta.url),
     "utf8",
   );
-  const fill = sql.slice(sql.indexOf("DO $$"), sql.indexOf("END $$;") + 7);
-  assert.ok(fill.startsWith("DO $$") && fill.endsWith("END $$;"));
+  const fillStart = sql.indexOf("DO $$");
+  const fill = sql.slice(fillStart, sql.indexOf("END $$;", fillStart) + 7);
   await db.query("DELETE FROM agg_trader_windows");
   await db.query("UPDATE agg_wallet_windows SET rank=NULL");
   await db.query("UPDATE agg_window_refreshes SET ranked=0");
@@ -297,18 +297,15 @@ test("the census's contracts never rank and its delegated wallets do, from the n
   const db = await setup(t);
   await applyLedgerBatch(db, batch(base, base + 9, first()));
   assert.ok(await refreshLedgerWindows(db));
-  const observe = (who: string, kind: string, bytes: number) =>
+  const observe = (who: string, kind: string) =>
     db.query(
-      `INSERT INTO wallet_code_observations(chain_id,address,kind,code_bytes,observed_at)
-       VALUES (4663,decode($1,'hex'),$2,$3,now())`,
-      [who.slice(2), kind, bytes],
+      `INSERT INTO wallet_code_observations(chain_id,address,kind,observed_at)
+       VALUES (4663,decode($1,'hex'),$2,now())`,
+      [who.slice(2), kind],
     );
-  await observe(K, "contract", 15739);
-  await observe(D, "delegated", 23);
-  await observe(N, "none", 0);
-  // The constraints hold the kinds to their code.
-  await assert.rejects(observe(wallet(9), "delegated", 40), /check/);
-  await assert.rejects(observe(wallet(9), "contract", 0), /check/);
+  await observe(K, "contract");
+  await observe(D, "delegated");
+  await observe(N, "none");
   // The next refresh (the cursor moved) applies them: K's rows stay, its
   // rank goes, and D keeps its place behind N.
   await applyLedgerBatch(
