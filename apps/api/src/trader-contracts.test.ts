@@ -148,7 +148,10 @@ function explorer(
 
 test("the census starts immediately", async () => {
   const { store } = memoryStore([addr(1)]);
-  const { client, asked } = explorer(() => "0x", () => 90000);
+  const { client, asked } = explorer(
+    () => "0x",
+    () => 90000,
+  );
   let completed!: () => void;
   const observed = new Promise<void>((resolve) => {
     completed = resolve;

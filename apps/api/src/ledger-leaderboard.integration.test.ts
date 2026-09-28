@@ -875,9 +875,7 @@ test(
     )) as AnalyticsLeaderboardResponse;
     assert(deepBefore.items.some((i) => i.address === deepAddress));
     assert((await store.candidates(200)).includes(deepAddress));
-    await store.record([
-      { address: deepAddress, kind: "contract" },
-    ]);
+    await store.record([{ address: deepAddress, kind: "contract" }]);
     const deepAfter = (await get(
       "/v1/leaderboard?window=All&limit=25&offset=75",
     )) as AnalyticsLeaderboardResponse;
