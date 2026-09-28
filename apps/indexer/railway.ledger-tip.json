@@ -5,6 +5,7 @@
     "dockerfilePath": "apps/indexer/Dockerfile",
     "watchPatterns": [
       "/apps/indexer/**",
+      "/apps/api/**",
       "/packages/**",
       "/pnpm-lock.yaml",
       "/pnpm-workspace.yaml",
