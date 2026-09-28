@@ -352,13 +352,22 @@ covered 15.2 hours of 17 Sep.
 **The windows** (`packages/db/src/ledger-windows.ts`). `agg_wallet_windows`
 holds one row per wallet per window (`1h`, `6h`, `24h`, `7d`, `30d`, `All`),
 summed from the whole UTC hours ending with the cursor's hour, with the
-wallet's position counts and last activity. `rank` is the wallet's place
-among the eligible (at least 10 supported trades on a supported position) by
-realized, the address breaking ties, and is kept for the top 100 only.
+wallet's position counts and last activity: the wallet page's figures.
+`agg_trader_windows` (migration 025, decided 28 Sep 2026) holds the same
+sums without every position in a pool the wallet launched itself (the pool's
+`launch_sender`): the trader board's figures. Whether a position is in its
+wallet's own launch never changes, so both follow the same refresh below, and
+a wallet with no launch of its own has the same row in each. `rank`, on the
+wallet's own row, is its place on the trader board: among the eligible trader
+rows (at least 10 supported trades on a supported position) by realized, the
+address breaking ties, never a wallet `wallet_code_observations` records as
+a contract, and is kept for the top 100 only (the census that fills that
+table is in `docs/LEDGER-MARKET-SERVING.md`, "The trader leaderboard").
 `agg_window_refreshes` (migration 020) records the cursor each window
 reflects. The first refresh rebuilds every window from the hour rows; after
 that a refresh recomputes only the wallets the journal names for the batches
-since, with their position figures read once for all six windows. When a
+since, in both row sets, with their position figures read once for all six
+windows. When a
 window's start moves, a wallet the batches did not touch has the leaving
 hours' sums subtracted from its row, exact since those hours did not change;
 it is summed again only when its best sale or its last unfolded closure sat in

@@ -552,6 +552,7 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
     day: "2026-09-15",
     spent: 50,
     dailyCap: 50,
+    remaining: null,
   });
   assert.throws(
     () => budget.spend(20),
@@ -565,8 +566,12 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
     day: "2026-09-16",
     spent: 20,
     dailyCap: 50,
+    remaining: null,
   });
   budget.observeRemaining(1000, 30);
+  assert.equal(budget.snapshot().remaining, 1000);
+  budget.observeRemaining(null, 30);
+  assert.equal(budget.snapshot().remaining, 1000);
   budget.spend(20);
   budget.observeRemaining(29, 30);
   assert.throws(

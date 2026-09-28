@@ -280,7 +280,10 @@ async function rows(db: Client, pools?: string[]) {
 const windows = async (db: Client) =>
   (
     await db.query(
-      `SELECT x."window",encode(w.address,'hex') AS wallet,x.realized_wei::text,x.trades,x.supported_positions,x.excluded_positions,x.rank FROM agg_wallet_windows x JOIN agg_wallets w USING(wallet_ref) ORDER BY 1,2`,
+      `SELECT 'wallet' AS scope,x."window",encode(w.address,'hex') AS wallet,x.realized_wei::text,x.trades,x.supported_positions,x.excluded_positions,x.rank
+       FROM agg_wallet_windows x JOIN agg_wallets w USING(wallet_ref)
+       UNION ALL SELECT 'trader',x."window",encode(w.address,'hex'),x.realized_wei::text,x.trades,x.supported_positions,x.excluded_positions,NULL
+       FROM agg_trader_windows x JOIN agg_wallets w USING(wallet_ref) ORDER BY 1,2,3`,
     )
   ).rows;
 const mainBatches = async (db: Client) =>

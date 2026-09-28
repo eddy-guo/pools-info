@@ -1211,10 +1211,11 @@ export async function walkBackLedger(
             );
             if (named.rows[0].named) continue;
             // A wallet the batch created may already stand in a window.
-            await db.query(
-              "DELETE FROM agg_wallet_windows WHERE chain_id=4663 AND wallet_ref=$1",
-              values,
-            );
+            for (const windows of ["agg_wallet_windows", "agg_trader_windows"])
+              await db.query(
+                `DELETE FROM ${windows} WHERE chain_id=4663 AND wallet_ref=$1`,
+                values,
+              );
           }
           await db.query(`DELETE FROM ${table} WHERE ${where}`, values);
           if (entry.before !== null)

@@ -7,8 +7,15 @@ import {
   tokenImageSettings,
 } from "./token-image-store";
 import { createTokenRegistry } from "./token-registry";
-import { createWalletHistoryFromEnv } from "./wallet-history";
+import {
+  blockscoutClientFromEnv,
+  createWalletHistoryFromEnv,
+} from "./wallet-history";
 import { createFollowing } from "./following-read";
+import {
+  createContractCensus,
+  createWalletCodeStore,
+} from "./trader-contracts";
 
 const port = Number(process.env.PORT ?? "3102");
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
@@ -27,7 +34,16 @@ const images = createTokenImageService(createTokenImageStore(), {
 const registry = createTokenRegistry((afterRef) =>
   reader.registeredTokens!(afterRef),
 );
-const history = createWalletHistoryFromEnv(process.env, registry);
+// One explorer client, so one daily credit budget, for every explorer read.
+const explorer = blockscoutClientFromEnv(process.env);
+const history = createWalletHistoryFromEnv(process.env, registry, explorer);
+// The trader board's contract census reads code only for the board the
+// ledger serves (docs/LEDGER-MARKET-SERVING.md, "The trader leaderboard").
+const census =
+  marketSource === "ledger" && explorer
+    ? createContractCensus({ store: createWalletCodeStore(), client: explorer })
+    : null;
+census?.start();
 const server = createApi(reader, {
   images,
   history,
@@ -50,7 +66,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     const timeout = setTimeout(() => process.exit(1), 10000);
     timeout.unref();
     server.close(() => {
-      void Promise.all([reader.close(), images.close()]).then(
+      void Promise.all([reader.close(), images.close(), census?.close()]).then(
         () => {
           clearTimeout(timeout);
           process.exit(0);

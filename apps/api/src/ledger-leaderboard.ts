@@ -12,13 +12,15 @@ import { RequestError } from "./request";
 
 /** The trader leaderboard from the aggregate ledger (`MARKET_SOURCE=ledger`,
  * docs/LEDGER-MARKET-SERVING.md "The trader leaderboard"): one row per wallet
- * per window in `agg_wallet_windows`, summed by the tip loop from whole UTC
- * hours ending with the ledger cursor's hour, with the top of the board by
- * realized already ranked (`packages/db/src/ledger-windows.ts`). The board is
- * the top 100 per window and nothing beyond it (captain, 17 Sep 2026): a page
- * reaching past 100 is refused, and `total` never exceeds 100. The writer's
- * `ledgerWindowPolicy` holds the same two numbers; this read service does not
- * depend on the writer package, and the integration test pins them equal. */
+ * per window in `agg_trader_windows`, summed by the tip loop from whole UTC
+ * hours ending with the ledger cursor's hour without the positions in pools
+ * the wallet launched itself, with the top of the board by realized already
+ * ranked on the wallet's own row (`packages/db/src/ledger-windows.ts`). A
+ * contract is never on the board. The board is the top 100 per window and
+ * nothing beyond it (captain, 17 Sep 2026): a page reaching past 100 is
+ * refused, and `total` never exceeds 100. The writer's `ledgerWindowPolicy`
+ * holds the same two numbers; this read service does not depend on the
+ * writer package, and the integration test pins them equal. */
 export const ledgerLeaderboardPolicy = Object.freeze({
   /** Eligible for a rank: at least this many supported trades in the window
    * on a supported position, the gate migration 020's partial index carries
@@ -92,9 +94,12 @@ export async function ledgerCoverage(
   };
 }
 /** Eligible for the board: the writer's own rule, as a literal so the planner
- * matches migration 020's partial index whenever the gate is its 10 or more. */
-const eligible = (minTrades: number) =>
-  `x.supported_trades>=${minTrades} AND x.supported_positions>0`;
+ * matches migration 025's partial index whenever the gate is its 10 or more,
+ * and never a wallet the census observed to be a contract (the writer's
+ * `notContract`; `w` names the row's agg_wallets row). */
+const eligible = (minTrades: number, w: string) =>
+  `x.supported_trades>=${minTrades} AND x.supported_positions>0
+   AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=${w}.address AND c.kind='contract')`;
 
 /** The board for the window, or null when the ledger has folded nothing yet
  * (no cursor or no pool hour), in which case the accounting tables answer
@@ -124,7 +129,8 @@ export async function readLedgerLeaderboard(
   );
   const asOf = refresh.asOf;
   // The writer's own ranking serves the board it ranked: the top 100 off the
-  // rank index, one probe per address. Any other gate or metric orders the
+  // rank index on the wallets' own rows, their trader rows and addresses one
+  // probe each. Any other gate or metric orders the
   // eligible rows the same way (the address breaking ties) and counts them up
   // to the cap, so its total is the same population's. That order is found
   // as the writer finds its ranks: the metric at the page's last position
@@ -136,21 +142,22 @@ export async function readLedgerLeaderboard(
   const rows = ranked
     ? (
         await query(
-          `SELECT x.rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
-           WHERE x.chain_id=4663 AND x."window"=$1 AND x.rank IS NOT NULL ORDER BY x.rank LIMIT $2 OFFSET $3`,
+          `SELECT r.rank,${summaryColumns("w.address")} FROM agg_wallet_windows r
+           JOIN agg_trader_windows x USING (chain_id,"window",wallet_ref) JOIN agg_wallets w USING (wallet_ref)
+           WHERE r.chain_id=4663 AND r."window"=$1 AND r.rank IS NOT NULL ORDER BY r.rank LIMIT $2 OFFSET $3`,
           [window, limit, offset],
         )
       ).rows
     : (
         await query(
           `WITH cut AS (
-             SELECT x.${column} AS threshold FROM agg_wallet_windows x
-             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades)}
+             SELECT x.${column} AS threshold FROM agg_trader_windows x JOIN agg_wallets v USING (wallet_ref)
+             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades, "v")}
              ORDER BY x.${column} DESC OFFSET $4 LIMIT 1
            )
            SELECT $3::int+row_number() OVER (ORDER BY x.${column} DESC,x.address) AS rank,${summaryColumns("x.address")} FROM (
-             SELECT x.*,w.address FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
-             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades)}
+             SELECT x.*,w.address FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
+             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades, "w")}
                AND x.${column}>=coalesce((SELECT threshold FROM cut),'-Infinity')
              ORDER BY x.${column} DESC,w.address LIMIT $2 OFFSET $3
            ) x ORDER BY x.${column} DESC,x.address`,
@@ -162,8 +169,8 @@ export async function readLedgerLeaderboard(
     : Number(
         (
           await query(
-            `SELECT count(*)::int AS count FROM (SELECT 1 FROM agg_wallet_windows x
-             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades)} LIMIT $2) c`,
+            `SELECT count(*)::int AS count FROM (SELECT 1 FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
+             WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades, "w")} LIMIT $2) c`,
             [window, ledgerLeaderboardPolicy.rankedWallets],
           )
         ).rows[0].count,

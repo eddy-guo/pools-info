@@ -10,14 +10,15 @@ the trader leaderboard, from one of two stores, chosen once at startup by
   switch existed.
 - `ledger`: the aggregate ledger's `agg_pool_hours` and `agg_pool_state`
   (`docs/AGGREGATE-LEDGER.md`) for every pool the ledger covers, and its
-  `agg_wallet_windows` for the leaderboard ("The trader leaderboard" below).
+  `agg_trader_windows` for the leaderboard ("The trader leaderboard" below).
   Any other pool answers exactly as with `broad`.
 
 Any other value refuses to start. The `listening` log line names the source in
 effect. With `ledger`, `/ready` also checks read access to `agg_streams`,
 `agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades`,
-`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes` and the supply
-columns of migration 019. The code is `apps/api/src/ledger-market.ts`, the
+`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes`,
+`agg_trader_windows`, `wallet_code_observations` and the supply columns of
+migration 019. The code is `apps/api/src/ledger-market.ts`, the
 ledger branches of `broad-explore.ts` and `projected-explore.ts`, the ledger
 cut in `observed-market-read.ts` and `ledger-leaderboard.ts`. No endpoint is
 added.
@@ -158,20 +159,61 @@ broad source is unaffected by any ledger row.
 
 ## The trader leaderboard
 
-`GET /v1/leaderboard` is served from `agg_wallet_windows`
+`GET /v1/leaderboard` is served from `agg_trader_windows`
 (`packages/db/src/ledger-windows.ts`): one row per wallet per window, summed
 by the tip loop from whole UTC hours ending with the ledger cursor's hour,
-with the top of the board by realized already ranked. The response is the
-accounting board's, field for field; what its values mean changes:
+with the top of the board by realized already ranked (the rank lives on the
+wallet's own `agg_wallet_windows` row, where the wallet page reads it). The
+response is the accounting board's, field for field; what its values mean
+changes:
 
+- **Who is a trader** (decided 28 Sep 2026, migration 025). A wallet's
+  trader row is its window sums without every position in a pool it launched
+  itself (the pool's `launch_sender`, the creator the creators board
+  credits): a launcher's buy sits inside its own launch transaction and its
+  sales go to the buyers who follow, a creator's take that the creators
+  board already shows. On the 27 Sep production backup 43 of the 7d top 100
+  and 42 of the All top 100 traded nothing but their own launches (the 7d #1
+  to #5 made 98 to 58 ETH that way at a 100 percent win rate), and two more
+  All wallets stood on theirs (#10: 66.05 ETH, 0.96 ETH of it on others'
+  launches). The trade floor counts the trader row's supported trades alone,
+  so a launcher cannot clear it on its own launches' trades (273 All wallets
+  would have, none into the top 100 that day). The wallet's own row, its
+  profile, keeps every position, and a wallet with no launch of its own has
+  the same trader row as its own row, so its figures and its order are
+  unchanged. A contract is never on the board: the api's census reads the
+  code of each wallet the board could show that the ledger never saw send a
+  swap (every attributed swap of every position it holds went to it as the
+  counterparty; a contract never sends a transaction), and one whose code is
+  not an EIP-7702 delegation designator (`0xef0100` and a 20-byte delegate)
+  is a contract. A delegated wallet is still an externally owned one, however
+  its gas is paid: All #67 of 27 Sep (#32 once the launchers left),
+  `0x33b6…c577`, is a wallet delegated to Uniswap's Calibur whose every swap
+  is relayed, and stays. The census
+  runs in the api (`apps/api/src/trader-contracts.ts`, the api holds the
+  explorer key): 30 s after start and every 5 minutes, over the top 100 of
+  each window in either order at the default gate, it reads the due wallets'
+  code with `eth_getCode` through the explorer's JSON-RPC gateway, five
+  addresses a 20-credit call, at most 25 addresses a run and 250 a UTC day,
+  never while the key's stated balance (`x-credits-remaining`) is under
+  30,000 or past four fifths of the api's own daily cap, and never retrying
+  a failed call inside a run. `wallet_code_observations` keeps each answer;
+  a wallet with no code, or a delegated one, is read again after a week
+  while the board could still show it. The tip loop's next refresh ranks
+  without the contracts and the board's other orders leave them out at read
+  time; their rows stay. On the 27 Sep backup the census read four wallets
+  (80 credits) and found three contracts: All #31 `0x91f9…8faf` (15,739
+  bytes; a market maker many wallets call, 44,992 relayed swaps), a
+  13,587-byte contract on the 6h and 24h boards, and a 6,718-byte one on the
+  6h net board.
 - **The board is the top 100 per window and nothing beyond** (captain, 17 Sep
   2026). `total` is the eligible wallets up to 100, `nextOffset` is null once
   100 rows are reachable, and `offset` plus `limit` past 100 answers 400
   `invalid_offset` rather than a page of unranked rows. The broad source keeps
   its deeper pages.
 - **Eligible** is the writer's rule: at least 10 supported trades in the
-  window on a supported position, the predicate migration 020's partial index
-  carries. `minTrades=10` and `metric=realized` (the website's default; it
+  window on a supported position of the trader row, a contract never, the
+  predicate migration 025's partial indexes carry. `minTrades=10` and `metric=realized` (the website's default; it
   never sends a gate) read the writer's own `rank` off the rank index, one
   probe per address, and `total` is the refresh's ranked count. Any other gate or metric orders the
   same eligible rows the same way (realized or net descending, the address
@@ -213,9 +255,9 @@ accounting board's, field for field; what its values mean changes:
   (design decision D2, taken 18 Sep 2026): its swaps are trades and volume
   on the row, never supported trades, wins, spent, realized or disposed
   cost, so a wallet with nothing but such positions stands on no board under
-  any gate or metric, a transfer to another wallet costs that position's
-  coverage rather than booking a loss, and the wallet page's header, read
-  from the same window row, agrees with the board to the wei.
+  any gate or metric, and a transfer to another wallet costs that position's
+  coverage rather than booking a loss. The wallet page's header agrees with
+  the board to the wei for every wallet with no launch of its own.
 
 Failure behaviour: a ledger with no cursor or no pool hour answers as with
 `broad` (the accounting tables); a window without a refresh row, which a
@@ -228,8 +270,8 @@ Cold cost, measured on a production-shape copy (Postgres 18, 370k All rows,
 index and one `agg_wallets` probe per row) plus the coverage's catalog count
 (3,950 pages of `indexed_pools`, the same statement explore's coverage runs)
 and the `agg_pool_state` count (1,559 pages); warm, 20 to 30 ms end to end.
-`metric=net` reads the same eligible rows in net order off migration 023's
-partial index (the realized index's predicate on `net_wei DESC`) and stops at
+`metric=net` reads the same eligible rows in net order off the net partial
+index (migration 023's, on the trader rows since 025) (the realized index's predicate on `net_wei DESC`) and stops at
 the page's last row, as the default board does off its rank. Before it, the
 net board read the window's whole eligible set through the realized index and
 sorted it: on the 27 Sep 2026 production backup (Postgres 18.6, 392k All
@@ -241,14 +283,25 @@ index is 4 MB, built in 123 ms. Production had answered 7d and 30d net in
 0.7-1.7 s under a 1.5 GB memory cap, against 148-187 ms uncapped, because the
 tip loop's writes pushed those pages out between reads. A gate under 10 reads
 the window's rows without an index. `docs/DATABASE-WARMING.md` owns the current
-warm set.
+warm set. Since migration 025 the default board also probes each row's
+trader row (about 1,030 pages warm on the 27 Sep backup against about 500
+before) and both orders probe `wallet_code_observations` once per row they
+pass; warm, every window and order answered in 11 to 23 ms through the
+reader. The refresh keeps both row sets: a typical one-batch refresh took
+40-47 ms on that backup against 128 ms and more before, and a refresh
+whose hour moved 0.6-0.7 s against 2.9-3.2 s (the old per-row probe of the
+hour index that decided which summed wallets had left a window, 2.9 s on
+7d, is one hashed read now), and a full rebuild 27-30 s. Migration 025 fills
+the trader rows and ranks in 14 s there.
 
 ## The wallet page
 
 `GET /v1/wallets/:address?window=` is served from the ledger by
 `apps/api/src/ledger-wallet.ts`: the summary from the wallet's row in
-`agg_wallet_windows` for the window, the very row the board above ranks, so
-the page's headline equals the board's figure to the wei at the same cursor;
+`agg_wallet_windows` for the window, with its rank on the board above, so
+the page's headline equals the board's figure to the wei at the same cursor
+for every wallet with no position in its own launches (the board leaves
+those positions out, the profile keeps them);
 the positions from `agg_positions` (the fold's whole state per pool, one row
 per pool the wallet ever traded or received tokens in) joined to
 `indexed_pools` for the identity and to `agg_pool_state` for the mark. The

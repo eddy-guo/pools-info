@@ -23,9 +23,14 @@ import {
   type LedgerBatch,
 } from "../../../packages/db/src/index";
 import { walletSummary } from "./accounting-read";
+import { createCreditBudget } from "./blockscout-client";
 import { ledgerLeaderboardPolicy } from "./ledger-leaderboard";
 import { createReader } from "./reader";
 import { createApi } from "./server";
+import {
+  createContractCensus,
+  createWalletCodeStore,
+} from "./trader-contracts";
 
 // The board is served from the windows the ledger's own writer folds and
 // refreshes, so the fixture is trades applied through `applyLedgerBatch` and
@@ -646,5 +651,205 @@ test(
       [item(week, W[10]).rank, item(week, W[10]).realizedWei],
       [5, (6n * tenth).toString()],
     );
+  },
+);
+
+test(
+  "Postgres HTTP: the trader board ranks and shows trader rows, without a wallet's own launches, and never a contract the census observed, while the profile keeps every position",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const url = process.env.TEST_DATABASE_URL!;
+    const db = createClient(url);
+    await db.connect();
+    const schema = "api_test_ledgertraders_" + randomUUID().replaceAll("-", "");
+    await db.query(`CREATE SCHEMA "${schema}"`);
+    await db.query(`SET search_path TO "${schema}"`);
+    await migrate(db);
+    // P and Q were launched by Z (their launch sender), S by W2.
+    const Z = pools.P.launchSender;
+    const S = {
+      ...pools.Q,
+      id: hash(0x102),
+      token: addr(0x203),
+      name: "Pool S",
+      symbol: "S",
+      launchBlock: 12,
+      launchTx: hash(103),
+      launchSender: W[2],
+    };
+    await commitBatch(db, await ensureDiscovery(db, 10), {
+      from: 10,
+      to: 19,
+      hash: hash(19),
+      evidence: {},
+      pools: [pools.P, pools.Q, S],
+    });
+    await ensureLedgerStream(db, "tip");
+    const reader = createReader(url, schema, { marketSource: "ledger" });
+    const api = createApi(reader, { cacheMs: 0, maxPerMinute: 100000 });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+    const store = createWalletCodeStore(url, schema);
+    let locked = false;
+    t.after(async () => {
+      await new Promise<void>((resolve) => api.close(() => resolve()));
+      await reader.close();
+      await store.close().catch(() => undefined);
+      if (locked) await releaseLedgerWriter(db);
+      await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await db.end();
+    });
+    for (let i = 0; i < 600 && !locked; i++) {
+      locked = await acquireLedgerWriter(db);
+      if (!locked) await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(locked, "ledger writer lock unavailable");
+    const get = async (path: string) => {
+      const response = await fetch(origin + path);
+      const data = await response.json();
+      assert.equal(response.status, 200, `${path} ${JSON.stringify(data)}`);
+      return data;
+    };
+    const board = async (query: string) =>
+      (await get(
+        `/v1/leaderboard?window=All&limit=100&${query}`,
+      )) as AnalyticsLeaderboardResponse;
+    const order = (b: AnalyticsLeaderboardResponse) =>
+      b.items.map((i) => [i.address, i.rank]);
+    const profile = async (w: string) =>
+      (await get(`/v1/wallets/${w}?window=All`))
+        .wallet as AnalyticsWalletSummary;
+
+    // A relayed round trip: another address sends each swap and `who` only
+    // receives or pays the tokens, so the ledger attributes both legs to it
+    // as the counterparty, as it does a contract's or a sponsored wallet's.
+    const relayer = addr(0x999);
+    const relayed = (
+      rows: Rows,
+      block: number,
+      who: string,
+      n: number,
+      gain: bigint,
+    ) => {
+      const at = rows.swaps.length;
+      rows.roundTrips(block, who, n, gain);
+      for (const swap of rows.swaps.slice(at)) swap.initiator = relayer;
+      return rows;
+    };
+    const rows = new Rows()
+      // Z trades only the launches it sent: six round trips, 6 ETH.
+      .roundTrips(blockOf(1070, 0), Z, 6, E)
+      // W2 made 2.5 ETH in its own S and 0.5 ETH in P, ten trades each.
+      .roundTrips(blockOf(1070, 1), W[1], 5, 2n * tenth);
+    for (let i = 0; i < 5; i++)
+      rows
+        .trade(blockOf(1070, 2), W[2], "buy", E, 10n, S)
+        .trade(blockOf(1070, 2), W[2], "sell", E + 5n * tenth, 10n, S);
+    rows.roundTrips(blockOf(1070, 3), W[2], 5, tenth);
+    relayed(rows, blockOf(1070, 4), W[4], 5, 3n * tenth);
+    relayed(rows, blockOf(1070, 5), W[5], 5, (25n * tenth) / 10n);
+    const cursor1 = blockOf(1078, 4);
+    const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
+    assert.equal(applied.unattributed, 0);
+    assert.ok(await refreshLedgerWindows(db));
+
+    // Z is on no board; W2 is, on its P trades alone; W4 and W5 lead.
+    const first = await board("");
+    assert.deepEqual(order(first), [
+      [W[4], 1],
+      [W[5], 2],
+      [W[1], 3],
+      [W[2], 4],
+    ]);
+    const w2 = first.items.find((i) => i.address === W[2])!;
+    assert.deepEqual(
+      [
+        w2.realizedWei,
+        w2.tradeCount,
+        w2.supportedTradeCount,
+        w2.supportedPositionCount,
+      ],
+      [(5n * tenth).toString(), 10, 10, 1],
+    );
+    // The profiles keep every position, with the board's rank.
+    const z = await profile(Z);
+    assert.deepEqual(
+      [z.rank, z.realizedWei, z.supportedTradeCount],
+      [null, (6n * E).toString(), 12],
+    );
+    const w2Profile = await profile(W[2]);
+    assert.deepEqual(
+      [
+        w2Profile.rank,
+        w2Profile.realizedWei,
+        w2Profile.tradeCount,
+        w2Profile.supportedPositionCount,
+      ],
+      [4, (3n * E).toString(), 20, 2],
+    );
+    // A wallet with no launch of its own shows the same row on both.
+    const w1Profile = await profile(W[1]);
+    assert.deepEqual(
+      first.items.find((i) => i.address === W[1]),
+      {
+        ...w1Profile,
+        unrealizedWei: null,
+      },
+    );
+
+    // The census reads exactly the two wallets the ledger never saw send a
+    // swap, and records what their code is.
+    assert.deepEqual(await store.candidates(25), [W[4], W[5]]);
+    const asked: string[][] = [];
+    const census = createContractCensus({
+      store,
+      log: () => undefined,
+      client: {
+        budget: createCreditBudget({ dailyCap: 100000 }),
+        async readCode(addresses: readonly string[]) {
+          asked.push([...addresses]);
+          return new Map(
+            addresses.map((a) => [
+              a,
+              a === W[4] ? "0x6080604052" : `0xef0100${"ab".repeat(20)}`,
+            ]),
+          );
+        },
+      } as never,
+    });
+    const run = await census.run();
+    assert.deepEqual(asked, [[W[4], W[5]]]);
+    assert.deepEqual(run, {
+      stopped: "done",
+      observed: [
+        { address: W[4], kind: "contract", codeBytes: 5 },
+        { address: W[5], kind: "delegated", codeBytes: 23 },
+      ],
+    });
+    assert.deepEqual(await store.candidates(25), []);
+    // The next refresh ranks without the contract; both orders leave it out.
+    const cursor2 = cursor1 + 9;
+    await applyLedgerBatch(db, batch(cursor1 + 1, cursor2, new Rows()));
+    assert.ok(await refreshLedgerWindows(db, { minIntervalMs: 0 }));
+    const second = await board("");
+    assert.deepEqual(order(second), [
+      [W[5], 1],
+      [W[1], 2],
+      [W[2], 3],
+    ]);
+    assert.equal(second.total, 3);
+    const net = await board("metric=net");
+    assert.deepEqual(
+      net.items.map((i) => i.address),
+      [W[5], W[1], W[2]],
+    );
+    assert.equal(net.total, 3);
+    const loose = await board("minTrades=0");
+    assert.deepEqual(
+      loose.items.map((i) => i.address),
+      [W[5], W[1], W[2]],
+    );
+    assert.equal((await profile(W[4])).rank, null);
+    await census.close();
   },
 );

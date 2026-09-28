@@ -354,6 +354,7 @@ test("Postgres migrations, checkpoint atomicity, restart and canonical rewind", 
       "022_unattributed_transfers_exclude.sql",
       "023_wallet_windows_net.sql",
       "024_crowd_launches.sql",
+      "025_trader_windows.sql",
     ],
   );
   const readIndexes = await db.query(

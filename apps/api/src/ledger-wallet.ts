@@ -17,9 +17,11 @@ import { ledgerCut } from "./ledger-market";
 
 /** The wallet page from the aggregate ledger (`MARKET_SOURCE=ledger`,
  * docs/LEDGER-MARKET-SERVING.md "The wallet page"): the header and the
- * window's figures from the same `agg_wallet_windows` row the trader board
- * ranks, so the profile's headline equals the board's row to the wei at the
- * same cursor, and the positions from `agg_positions`, the fold's whole state
+ * window's figures from the wallet's `agg_wallet_windows` row, which carries
+ * its rank on the trader board, so the profile's headline equals the board's
+ * row to the wei at the same cursor for every wallet with no position in its
+ * own launches (the board leaves those out, the profile keeps them), and the
+ * positions from `agg_positions`, the fold's whole state
  * per pool, marked at each pool's latest price state, and the realized curve
  * from `agg_wallet_hours`, the wallet's realized per pool per UTC hour. The
  * response is the accounting reader's, field for field; what the ledger does
@@ -187,7 +189,7 @@ export async function readLedgerWallet(
   const positions = (await query(positionsSql, [ref, refresh.windowStart]))
     .rows;
   const attributed = await counterpartyFlags(query, address);
-  // The summary is the window's row, the board's own figures; a wallet with
+  // The summary is the wallet's own window row and board rank; a wallet with
   // no hour in the window has none and reads as zero activity in it, with
   // its lifetime position counts and last activity.
   const row =

@@ -37,7 +37,8 @@ export const swapTopic =
   "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f";
 /** The PRO host's JSON-RPC gateway answers at most 5 requests per batch (a
  * larger one is refused as 413 and still billed) and bills a batch like one
- * `default` call: 20 credits, measured 2026-09-27. */
+ * `default` call: 20 credits, measured 2026-09-27 (`eth_getLogs`) and
+ * 2026-09-28 (`eth_getCode`). */
 export const swapLogBatchSize = 5;
 export const swapLogBatchCost = 20;
 const swapLogConcurrency = 2;
@@ -140,7 +141,8 @@ export function createCreditBudget({
     throw Error("Invalid daily credit cap");
   let day = "",
     spent = 0,
-    upstreamBlockedUntil = 0;
+    upstreamBlockedUntil = 0,
+    remaining: number | null = null;
   function roll() {
     const today = utcDay(now());
     if (today !== day) {
@@ -166,13 +168,16 @@ export function createCreditBudget({
       spent += cost;
     },
     /** The header counts every process using the key, not only this one. */
-    observeRemaining(remaining: number | null, nextCost: number) {
-      if (remaining !== null && remaining < nextCost)
+    observeRemaining(observed: number | null, nextCost: number) {
+      if (observed !== null) remaining = observed;
+      if (observed !== null && observed < nextCost)
         upstreamBlockedUntil = now() + 3600000;
     },
+    /** `remaining` is the key's balance as the explorer last stated it,
+     * across every process using the key; null before any answer. */
     snapshot() {
       roll();
-      return { day, spent, dailyCap };
+      return { day, spent, dailyCap, remaining };
     },
   };
 }
@@ -372,6 +377,12 @@ export interface BlockscoutClient {
     page: PageParams | null,
     reserveShare?: number,
   ): Promise<BlockscoutPage<K>>;
+  /** The code at each address at the latest block, `0x` for none, read
+   * through the explorer's JSON-RPC gateway five addresses a call. */
+  readCode(
+    addresses: readonly string[],
+    reserveShare: number,
+  ): Promise<Map<string, string>>;
   budget: ReturnType<typeof createCreditBudget>;
 }
 
@@ -628,6 +639,49 @@ export function createBlockscoutClient({
   }
   return {
     budget,
+    async readCode(addresses, reserveShare) {
+      const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
+      const code = new Map<string, string>();
+      for (let i = 0; i < addresses.length; i += swapLogBatchSize) {
+        const batch = addresses
+          .slice(i, i + swapLogBatchSize)
+          .map((a) => address(a));
+        const answer = await request(
+          "code",
+          new URL(rpcUrl),
+          swapLogBatchCost,
+          reserve,
+          JSON.stringify(
+            batch.map((a, id) => ({
+              jsonrpc: "2.0",
+              id,
+              method: "eth_getCode",
+              params: [a, "latest"],
+            })),
+          ),
+        );
+        try {
+          if (!Array.isArray(answer) || answer.length !== batch.length)
+            invalid();
+          for (const reply of answer.map(item)) {
+            const asked =
+              typeof reply.id === "number" ? batch[reply.id] : undefined;
+            if (
+              !asked ||
+              code.has(asked) ||
+              reply.error !== undefined ||
+              typeof reply.result !== "string" ||
+              !/^0x(?:[0-9a-f]{2})*$/i.test(reply.result)
+            )
+              invalid();
+            code.set(asked, reply.result.toLowerCase());
+          }
+        } catch (error) {
+          throw invalidResponse("code", error);
+        }
+      }
+      return code;
+    },
     async readPage<K extends WalletHistoryKind>(
       kind: K,
       wallet: string,
