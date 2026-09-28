@@ -827,7 +827,20 @@ test(
       ],
     });
     assert.deepEqual(await store.candidates(25), []);
-    // The next refresh ranks without the contract; both orders leave it out.
+    const immediate = await board("");
+    assert.deepEqual(order(immediate), [
+      [W[5], 1],
+      [W[1], 2],
+      [W[2], 3],
+    ]);
+    assert.equal(immediate.total, 3);
+    assert.deepEqual(order(await board("metric=net")), [
+      [W[5], 1],
+      [W[1], 2],
+      [W[2], 3],
+    ]);
+    assert.equal((await profile(W[4])).rank, null);
+    assert.equal((await profile(W[5])).rank, 1);
     const cursor2 = cursor1 + 9;
     await applyLedgerBatch(db, batch(cursor1 + 1, cursor2, new Rows()));
     assert.ok(await refreshLedgerWindows(db, { minIntervalMs: 0 }));
@@ -850,6 +863,30 @@ test(
       [W[5], W[1], W[2]],
     );
     assert.equal((await profile(W[4])).rank, null);
+    await db.query(`INSERT INTO agg_wallets(address,first_block)
+      SELECT decode(lpad(to_hex(131072+i),40,'0'),'hex'),0 FROM generate_series(1,101) i`);
+    await db.query(`INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,
+      trades,supported_trades,wins,losses,closures,hold_seconds,supported_positions,excluded_positions,window_start,refreshed_at)
+      SELECT 4663,'All',w.wallet_ref,-i,-i,100,100,10,10,0,0,0,0,1,0,0,now()
+      FROM generate_series(1,101) i JOIN agg_wallets w ON w.address=decode(lpad(to_hex(131072+i),40,'0'),'hex')`);
+    const deepAddress = addr(131072 + 94);
+    const deepBefore = (await get(
+      "/v1/leaderboard?window=All&limit=25&offset=75",
+    )) as AnalyticsLeaderboardResponse;
+    assert(deepBefore.items.some((i) => i.address === deepAddress));
+    assert((await store.candidates(200)).includes(deepAddress));
+    await store.record([
+      { address: deepAddress, kind: "contract", codeBytes: 5 },
+    ]);
+    const deepAfter = (await get(
+      "/v1/leaderboard?window=All&limit=25&offset=75",
+    )) as AnalyticsLeaderboardResponse;
+    assert(!deepAfter.items.some((i) => i.address === deepAddress));
+    assert.equal(deepAfter.total, 100);
+    assert.deepEqual(
+      deepAfter.items.map((i) => i.rank),
+      Array.from({ length: 25 }, (_, i) => i + 76),
+    );
     await census.close();
   },
 );

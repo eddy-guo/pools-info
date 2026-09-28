@@ -148,6 +148,8 @@ export function createCreditBudget({
     if (today !== day) {
       day = today;
       spent = 0;
+      remaining = null;
+      upstreamBlockedUntil = 0;
     }
   }
   function assertAvailable(cost: number, reserve = 0) {

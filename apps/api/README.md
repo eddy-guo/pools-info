@@ -68,12 +68,16 @@ accounting tables; `ledger` serves every pool the aggregate ledger covers from
 `pool_launch_sources`, and SELECT, INSERT and UPDATE on
 `wallet_code_observations`. With `ledger` and `BLOCKSCOUT_API_KEY` set, the
 api also runs the trader board's contract census (`src/trader-contracts.ts`):
-every 5 minutes it reads the code of the few board candidates the ledger
+every 5 minutes it recomputes the servable union across every window, order,
+trade gate 0-999 and offset page, then reads the code of candidates the ledger
 never saw send a swap, through the explorer's JSON-RPC gateway, on the same
 client and daily credit budget as the wallet page's reads, at most 250
 addresses (1,000 credits) a UTC day and never while the key's stated balance
-is under 30,000; a `contract_census` log line names each run that read or
-stopped early. What changes in the
+is under 30,000. Confirmed contracts leave every board and the wallet's board
+rank on the next read. The 27 Sep copy's union was 2,312 wallets, with 46
+requiring code reads (10 calls, about 200 credits); reading all 287,798
+traders would require 12,442 calls for 62,208 non-initiators. A
+`contract_census` log line names each run that read or stopped early. What changes in the
 responses (`aggregate_ledger` coverage and unit-basis sources, hourly candles,
 `market.fdvWei`, one price per pool, the top-100 board, the wallet page's
 empty `trades` and `curve`) is in `docs/LEDGER-MARKET-SERVING.md`.

@@ -162,8 +162,7 @@ broad source is unaffected by any ledger row.
 `GET /v1/leaderboard` is served from `agg_trader_windows`
 (`packages/db/src/ledger-windows.ts`): one row per wallet per window, summed
 by the tip loop from whole UTC hours ending with the ledger cursor's hour,
-with the top of the board by realized already ranked (the rank lives on the
-wallet's own `agg_wallet_windows` row, where the wallet page reads it). The
+with the top of the board by realized already ranked by the writer. The
 response is the accounting board's, field for field; what its values mean
 changes:
 
@@ -191,18 +190,23 @@ changes:
   `0x33b6…c577`, is a wallet delegated to Uniswap's Calibur whose every swap
   is relayed, and stays. The census
   runs in the api (`apps/api/src/trader-contracts.ts`, the api holds the
-  explorer key): 30 s after start and every 5 minutes, over the top 100 of
-  each window in either order at the default gate, it reads the due wallets'
+  explorer key): 30 s after start and every 5 minutes, over the exact union
+  of wallets servable in any window, realized or net order, trade gate 0-999,
+  and offset page within the top 100. It reads only bounded gate-index pages,
+  then reads the due wallets'
   code with `eth_getCode` through the explorer's JSON-RPC gateway, five
   addresses a 20-credit call, at most 25 addresses a run and 250 a UTC day,
   never while the key's stated balance (`x-credits-remaining`) is under
   30,000 or past four fifths of the api's own daily cap, and never retrying
   a failed call inside a run. `wallet_code_observations` keeps each answer;
   a wallet with no code, or a delegated one, is read again after a week
-  while the board could still show it. The tip loop's next refresh ranks
-  without the contracts and the board's other orders leave them out at read
-  time; their rows stay. On the 27 Sep backup the census read four wallets
-  (80 credits) and found three contracts: All #31 `0x91f9…8faf` (15,739
+  while the board could still show it. Every board and wallet-rank read
+  excludes observed contracts immediately, without a ledger refresh; their
+  rows stay. On the 27 Sep backup the servable union held 2,312 wallets,
+  46 of which had never initiated a swap (10 calls, about 200 credits).
+  A whole-trader census would have read 62,208 such wallets (12,442 calls,
+  about 248,840 credits) and is outside the shared key's daily budget.
+  The first servable census found three contracts: All #31 `0x91f9…8faf` (15,739
   bytes; a market maker many wallets call, 44,992 relayed swaps), a
   13,587-byte contract on the 6h and 24h boards, and a 6,718-byte one on the
   6h net board.
@@ -211,14 +215,11 @@ changes:
   100 rows are reachable, and `offset` plus `limit` past 100 answers 400
   `invalid_offset` rather than a page of unranked rows. The broad source keeps
   its deeper pages.
-- **Eligible** is the writer's rule: at least 10 supported trades in the
-  window on a supported position of the trader row, a contract never, the
-  predicate migration 025's partial indexes carry. `minTrades=10` and `metric=realized` (the website's default; it
-  never sends a gate) read the writer's own `rank` off the rank index, one
-  probe per address, and `total` is the refresh's ranked count. Any other gate or metric orders the
-  same eligible rows the same way (realized or net descending, the address
-  breaking ties, so the realized order equals the materialised ranks whenever
-  the gate is 10) and counts them up to 100; the page's last figure bounds
+- **Eligible** means at least the requested `minTrades` supported trades in
+  the window on a supported position of the trader row, and no observed
+  contract. Every order and gate, including the default realized board,
+  applies that rule at read time. The wallet page computes the same realized
+  rank from the current top 100. The page's last figure bounds
   the candidates first, as the writer's `rankWindow` does, so the tie-break
   sort touches a page of rows rather than the window's whole eligible set.
 - **Figures**: `realizedWei` is proceeds minus disposed cost of the window's

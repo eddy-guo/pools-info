@@ -1,6 +1,5 @@
 import pg from "pg";
 import { BlockscoutError, type BlockscoutClient } from "./blockscout-client";
-import { ledgerLeaderboardPolicy } from "./ledger-leaderboard";
 
 /** The trader board never ranks a contract (decided 28 Sep 2026; All-time
  * #29 of 27 Sep was a market-making contract many wallets call). The ledger
@@ -53,31 +52,20 @@ export interface WalletCodeStore {
   close(): Promise<void>;
 }
 
-/** The board's candidates: every wallet in the top of each window by either
- * order at the default gate, a known contract never, that the ledger never
+/** The board's candidates: every wallet servable at any gate or page, that the ledger never
  * saw initiate a swap (every attributed swap of every position it holds
  * went to it as the transaction's counterparty), and whose code has not
  * been read, or was read as no contract more than `recheckDays` ago. */
-const candidatesSql = (n: number, minTrades: number) => {
-  const top = (
-    column: string,
-  ) => `SELECT x.wallet_ref FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
-      WHERE x.chain_id=4663 AND x."window"=v.name AND x.supported_trades>=${minTrades} AND x.supported_positions>0
-        AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address AND c.kind='contract')
-      ORDER BY x.${column} DESC,w.address LIMIT ${n}`;
-  return `WITH top AS (
+const candidatesSql = `WITH top AS (
     SELECT DISTINCT t.wallet_ref FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
-    CROSS JOIN LATERAL (${top("realized_wei")}) t
-    UNION
-    SELECT DISTINCT t.wallet_ref FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
-    CROSS JOIN LATERAL (${top("net_wei")}) t
+    CROSS JOIN unnest(ARRAY['realized','net']) AS m(metric)
+    CROSS JOIN LATERAL trader_servable_refs(v.name,m.metric) AS t(wallet_ref)
   )
   SELECT '0x'||encode(w.address,'hex') AS address FROM top JOIN agg_wallets w USING (wallet_ref)
   WHERE NOT EXISTS (SELECT 1 FROM agg_positions p WHERE p.chain_id=4663 AND p.wallet_ref=top.wallet_ref AND p.counterparty_swaps<p.buys+p.sells)
     AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address
       AND (c.kind='contract' OR c.observed_at>now()-interval '${contractCensusPolicy.recheckDays} days'))
   ORDER BY w.address LIMIT $1`;
-};
 
 /** The census's own small pool, as the token image store has one: the
  * reader's connections stay READ ONLY, and these two statements are the
@@ -104,13 +92,7 @@ export function createWalletCodeStore(
   );
   return {
     async candidates(limit) {
-      const { rows } = await pool.query(
-        candidatesSql(
-          ledgerLeaderboardPolicy.rankedWallets,
-          ledgerLeaderboardPolicy.minTrades,
-        ),
-        [limit],
-      );
+      const { rows } = await pool.query(candidatesSql, [limit]);
       return rows.map((r) => r.address as string);
     },
     async record(observations) {

@@ -581,6 +581,10 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
   );
   now += 3600_000;
   budget.spend(1);
+  budget.observeRemaining(12, 30);
+  now = Date.parse("2026-09-17T00:00:00Z");
+  assert.equal(budget.snapshot().remaining, null);
+  budget.spend(1);
   assert.throws(() => createCreditBudget({ dailyCap: 0 }), /cap/);
 });
 

@@ -5,6 +5,7 @@ import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
 import { readCreators } from "./creators-read";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
+import { createWalletCodeStore } from "./trader-contracts";
 import { createReader } from "./reader";
 import { createApi } from "./server";
 import { validatePoolResponse } from "../../web/src/lib/pool-response";
@@ -194,7 +195,7 @@ test(
         await db.query(
           `INSERT INTO ${table}(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,trades,supported_trades,
             wins,losses,closures,hold_seconds,best_wei,last_timestamp,supported_positions,excluded_positions,window_start,refreshed_at)
-          SELECT 4663,$1,m+1,(5000-m)::numeric,(5000-m)::numeric,100000,1000,12,12,1,0,1,600,(5000-m)::numeric,$2::bigint,1,0,
+          SELECT 4663,$1,m+1,(5000-m)::numeric,(5000-m)::numeric,100000,1000,12+mod(m,100),12+mod(m,100),1,0,1,600,(5000-m)::numeric,$2::bigint,1,0,
             $3::integer,now()
           FROM generate_series(0,4999) m`,
           [window, H * 3600, window === "All" ? 0 : H - 168],
@@ -338,6 +339,22 @@ test(
     reads.push(["traders7d", board.ms]);
     assert.equal(board.data.total, 100);
     assert.equal(board.data.items.length, 25);
+    const censusPlan = (
+      await db.query(
+        `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT * FROM trader_servable_refs('7d','realized')`,
+      )
+    ).rows[0]["QUERY PLAN"][0].Plan;
+    assert.equal(censusPlan["Node Type"], "Function Scan");
+    assert(
+      censusPlan["Shared Hit Blocks"] + censusPlan["Shared Read Blocks"] < 5000,
+      `census read ${censusPlan["Shared Hit Blocks"] + censusPlan["Shared Read Blocks"]} pages`,
+    );
+    const codeStore = createWalletCodeStore(process.env.TEST_DATABASE_URL, schema);
+    try {
+      assert.equal((await codeStore.candidates(25)).length, 25);
+    } finally {
+      await codeStore.close();
+    }
     // The net order, which has no writer rank: it reads the window's
     // eligible wallets in net order off migration 025's index and stops at
     // the page's last row. Before it, the board read every eligible row of

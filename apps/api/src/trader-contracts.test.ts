@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
+import { createClient, migrate } from "../../../packages/db/src/index";
 import {
   BlockscoutError,
   createBlockscoutClient,
@@ -9,6 +11,7 @@ import {
 import {
   contractCensusPolicy,
   createContractCensus,
+  createWalletCodeStore,
   walletCodeKind,
   type WalletCodeObservation,
   type WalletCodeStore,
@@ -251,3 +254,68 @@ test("a census run never reads under the credit floor and never retries a failed
     "not_configured",
   );
 });
+
+test(
+  "the census reaches every servable gate and page without admitting an unservable wallet",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const db = createClient(process.env.TEST_DATABASE_URL!);
+    await db.connect();
+    const schema = "api_test_tradercensus_" + randomUUID().replaceAll("-", "");
+    await db.query(`CREATE SCHEMA "${schema}"`);
+    await db.query(`SET search_path TO "${schema}"`);
+    await migrate(db);
+    const store = createWalletCodeStore(process.env.TEST_DATABASE_URL, schema);
+    t.after(async () => {
+      await store.close();
+      await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await db.end();
+    });
+    await db.query(`INSERT INTO agg_wallets(address,first_block)
+    SELECT decode(lpad(to_hex(i),40,'0'),'hex'),0 FROM generate_series(1,105) i`);
+    await db.query(`INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,
+    trades,supported_trades,wins,losses,closures,hold_seconds,supported_positions,excluded_positions,window_start,refreshed_at)
+    SELECT 4663,'All',wallet_ref,
+      CASE WHEN wallet_ref<=99 THEN 1000-wallet_ref WHEN wallet_ref=100 THEN 900 WHEN wallet_ref=101 THEN 950
+        WHEN wallet_ref=102 THEN -200 WHEN wallet_ref=103 THEN -100 WHEN wallet_ref=104 THEN -300 ELSE -400 END,
+      CASE WHEN wallet_ref=104 THEN 2000 WHEN wallet_ref<=99 THEN 1000-wallet_ref ELSE -400 END,
+      100,100,CASE WHEN wallet_ref=101 THEN 0 WHEN wallet_ref=102 THEN 900 ELSE 10 END,
+      CASE WHEN wallet_ref=101 THEN 0 WHEN wallet_ref=102 THEN 900 ELSE 10 END,
+      0,0,0,0,1,0,0,now() FROM agg_wallets`);
+    await db.query(`INSERT INTO agg_trader_windows(chain_id,"window",wallet_ref,realized_wei,net_wei,volume_wei,disposed_cost_wei,
+    trades,supported_trades,wins,losses,closures,hold_seconds,supported_positions,excluded_positions,window_start,refreshed_at)
+    VALUES(4663,'1h',105,3000,3000,100,100,10,10,0,0,0,0,1,0,0,now())`);
+    const due = await store.candidates(200);
+    for (const ref of [100, 101, 102, 104, 105])
+      assert(due.includes(addr(ref)), `missing servable wallet ${ref}`);
+    assert(!due.includes(addr(103)));
+    assert.equal(due.length, 104);
+    const census = createContractCensus({
+      store,
+      log: () => undefined,
+      policy: {
+        ...contractCensusPolicy,
+        addressesPerRun: 200,
+        addressesPerDay: 200,
+      },
+      client: {
+        budget: createCreditBudget({ dailyCap: 100000 }),
+        async readCode(addresses: readonly string[]) {
+          return new Map(
+            addresses.map((address) => [
+              address,
+              address === addr(101) ? marketMaker : "0x",
+            ]),
+          );
+        },
+      } as never,
+    });
+    const run = await census.run();
+    assert(
+      run.observed.some(
+        (o) => o.address === addr(101) && o.kind === "contract",
+      ),
+    );
+    assert(!(await store.candidates(200)).includes(addr(101)));
+  },
+);

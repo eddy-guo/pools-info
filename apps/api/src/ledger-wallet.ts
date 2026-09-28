@@ -17,8 +17,8 @@ import { ledgerCut } from "./ledger-market";
 
 /** The wallet page from the aggregate ledger (`MARKET_SOURCE=ledger`,
  * docs/LEDGER-MARKET-SERVING.md "The wallet page"): the header and the
- * window's figures from the wallet's `agg_wallet_windows` row, which carries
- * its rank on the trader board, so the profile's headline equals the board's
+ * window's figures from the wallet's `agg_wallet_windows` row, with its rank
+ * read from the current trader board, so the profile's headline equals the board's
  * row to the wei at the same cursor for every wallet with no position in its
  * own launches (the board leaves those out, the profile keeps them), and the
  * positions from `agg_positions`, the fold's whole state
@@ -189,13 +189,20 @@ export async function readLedgerWallet(
   const positions = (await query(positionsSql, [ref, refresh.windowStart]))
     .rows;
   const attributed = await counterpartyFlags(query, address);
-  // The summary is the wallet's own window row and board rank; a wallet with
+  // The summary is the wallet's own window row and current board rank; a wallet with
   // no hour in the window has none and reads as zero activity in it, with
   // its lifetime position counts and last activity.
   const row =
     (
       await query(
-        `SELECT x.rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
+        `SELECT (SELECT b.rank FROM (
+           SELECT wallet_ref,row_number() OVER (ORDER BY realized_wei DESC,address)::int AS rank FROM (
+             SELECT t.wallet_ref,t.realized_wei,v.address FROM agg_trader_windows t JOIN agg_wallets v USING (wallet_ref)
+             WHERE t.chain_id=4663 AND t."window"=$1 AND t.supported_trades>=10 AND t.supported_positions>0
+               AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=v.address AND c.kind='contract')
+             ORDER BY t.realized_wei DESC,v.address LIMIT 100
+           ) top
+         ) b WHERE b.wallet_ref=x.wallet_ref) AS rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
          WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=$2`,
         [window, ref],
       )

@@ -7,9 +7,8 @@
 -- the ledger folded changes: a wallet's own row (agg_wallet_windows) keeps
 -- every position and stays its profile, and the new trader row
 -- (agg_trader_windows) is the same sums without the positions in pools the
--- wallet launched, which the board ranks and serves. The rank stays on the
--- wallet's own row, where the wallet page reads it, and now means its place
--- on the trader board. A wallet with no own launch has the same trader row
+-- wallet launched, which the board ranks and serves. The writer's rank stays
+-- on the wallet's own row as a snapshot. A wallet with no own launch has the same trader row
 -- as its own row, so every such wallet keeps its figures and its order.
 
 CREATE TABLE agg_trader_windows (
@@ -41,6 +40,12 @@ CREATE INDEX agg_trader_windows_realized ON agg_trader_windows (chain_id, "windo
   WHERE supported_trades>=10 AND supported_positions>0;
 CREATE INDEX agg_trader_windows_net ON agg_trader_windows (chain_id, "window", net_wei DESC)
   WHERE supported_trades>=10 AND supported_positions>0;
+CREATE INDEX agg_trader_windows_gate_realized ON agg_trader_windows
+  (chain_id, "window", (least(supported_trades,999)) DESC, realized_wei DESC)
+  WHERE supported_positions>0;
+CREATE INDEX agg_trader_windows_gate_net ON agg_trader_windows
+  (chain_id, "window", (least(supported_trades,999)) DESC, net_wei DESC)
+  WHERE supported_positions>0;
 DROP INDEX agg_wallet_windows_realized;
 DROP INDEX agg_wallet_windows_net;
 
@@ -62,6 +67,39 @@ CREATE TABLE wallet_code_observations (
   CHECK ((kind='none') = (code_bytes=0)),
   CHECK (kind<>'delegated' OR code_bytes=23)
 );
+
+CREATE TYPE trader_servable_row AS (wallet_ref integer, address bytea, metric numeric, gate integer);
+CREATE FUNCTION trader_servable_refs(selected_window text, selected_metric text)
+RETURNS SETOF integer LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  current_gate integer;
+  floor_metric numeric := '-Infinity';
+  top_rows trader_servable_row[] := ARRAY[]::trader_servable_row[];
+  ordered_column text;
+BEGIN
+  IF selected_metric NOT IN ('realized','net') THEN RAISE EXCEPTION 'invalid metric'; END IF;
+  ordered_column := selected_metric || '_wei';
+  SELECT max(least(supported_trades,999)) INTO current_gate FROM agg_trader_windows
+    WHERE chain_id=4663 AND "window"=selected_window AND supported_positions>0;
+  WHILE current_gate IS NOT NULL LOOP
+    EXECUTE format('SELECT coalesce(array_agg(ROW(wallet_ref,address,metric,gate)::trader_servable_row ORDER BY metric DESC,address),ARRAY[]::trader_servable_row[])
+      FROM (SELECT wallet_ref,address,metric,gate FROM (
+        SELECT t.wallet_ref,t.address,t.metric,t.gate FROM unnest($1) t
+        UNION ALL
+        SELECT x.wallet_ref,w.address,x.%I,$2 FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
+        WHERE x.chain_id=4663 AND x."window"=$3 AND x.supported_positions>0
+          AND least(x.supported_trades,999)=$2 AND x.%I >= $4
+          AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address AND c.kind=''contract'')
+        ORDER BY 3 DESC,2 LIMIT 100
+      ) merged ORDER BY metric DESC,address LIMIT 100) ranked',ordered_column,ordered_column)
+      INTO top_rows USING top_rows,current_gate,selected_window,floor_metric;
+    RETURN QUERY SELECT t.wallet_ref FROM unnest(top_rows) t WHERE t.gate=current_gate;
+    IF cardinality(top_rows)=100 THEN floor_metric := (top_rows[100]).metric; END IF;
+    SELECT max(least(supported_trades,999)) INTO current_gate FROM agg_trader_windows
+      WHERE chain_id=4663 AND "window"=selected_window AND supported_positions>0
+        AND least(supported_trades,999)<current_gate;
+  END LOOP;
+END $$;
 
 -- The trader rows at each window's refreshed start and the ranks from them,
 -- in this same transaction, so no read ever sees ranks without the rows they
