@@ -5156,6 +5156,10 @@ button.icon-button:disabled {
 .explore-page .table-region {
   container: pool-list / inline-size;
 }
+.explore-page[data-watchlist="true"] .table-region:not([data-failed="true"]) {
+  height: calc(34px + var(--watchlist-reserved-rows, 25) * 62px);
+  overflow: hidden;
+}
 @container pool-list (width < 742px) {
   .explore-page .pool-table {
     min-width: 620px;
@@ -6722,6 +6726,9 @@ a.wallet-top-pool:hover {
   .explore-page .mobile-pool {
     height: 104px;
     overflow: auto;
+  }
+  .explore-page[data-watchlist="true"] .table-region:not([data-failed="true"]) {
+    height: calc(var(--watchlist-reserved-rows, 25) * 104px);
   }
   /* The stacked heading, as the export stacks it: a two-row title (name and
      symbol, then the launch mode chip), the short address and the launch line

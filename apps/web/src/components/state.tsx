@@ -13,8 +13,12 @@ const subscribe = (callback: () => void) => {
 };
 const getSearch = () => window.location.search;
 const empty = () => "";
-export function useQuery() {
-  const raw = useSyncExternalStore(subscribe, getSearch, empty);
+export function useQuery(initialSearch = "") {
+  const raw = useSyncExternalStore(
+    subscribe,
+    getSearch,
+    () => initialSearch,
+  );
   const params = new URLSearchParams(raw);
   const set = useCallback((updates: Record<string, string | null>) => {
     const url = new URL(window.location.href);
