@@ -451,6 +451,11 @@ test(
        VALUES(4663,${walletRef},${kRef},$1,0,0,0,1000,1000,1,0,1,0,0,0,0)`,
       [H],
     );
+    await db.query(
+      `UPDATE agg_active_trader_counts SET through_block=$1,through_timestamp=$2,active_traders=1
+       WHERE chain_id=4663`,
+      [cursorBlock, cursorTime],
+    );
     for (const [block, log, side] of [
       [cursorBlock - 20, 1, "buy"],
       [cursorBlock, 4, "sell"],
@@ -526,14 +531,12 @@ test(
       assert.equal(stats.coverage.measuredPools, ledgerRows.length);
       assert.equal(
         stats.coverage.activeTraderScope,
-        window === "All"
-          ? "all_window_not_measured"
-          : "attributed_wallets_in_measured_pools",
+        "attributed_wallets_in_measured_pools",
       );
       assert.equal(stats.liquidityWei, null);
       assert.equal(
         stats.activeTraders,
-        stats.completeWindow && window !== "All" ? 1 : null,
+        stats.completeWindow ? 1 : null,
       );
       if (stats.completeWindow) {
         assert.equal(
@@ -558,6 +561,18 @@ test(
         ).length,
       );
     }
+    await db.query(
+      "UPDATE agg_active_trader_counts SET through_block=$1 WHERE chain_id=4663",
+      [cursorBlock - 1],
+    );
+    assert.deepEqual(await get("ledger", "/v1/stats?window=All"), {
+      status: 503,
+      data: { error: "stats_coverage_unavailable" },
+    });
+    await db.query(
+      "UPDATE agg_active_trader_counts SET through_block=$1 WHERE chain_id=4663",
+      [cursorBlock],
+    );
     for (const path of poolPaths.filter((p) => !p.includes(pools.N.id))) {
       const [broad, ledger] = [
         await fetchText("broad", path),

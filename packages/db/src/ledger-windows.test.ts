@@ -187,6 +187,58 @@ const ranks = async (db: Client, window: string) =>
     )
   ).rows;
 
+test("lifetime active-trader total follows each folded cursor and a walk-back", async (t) => {
+  const db = await setup(t);
+  const total = async () => {
+    const { rows } = await db.query(
+      `SELECT through_block::int AS through,through_timestamp::int AS timestamp,
+         active_traders::int AS active,
+         (SELECT count(DISTINCT wallet_ref)::int FROM agg_wallet_hours WHERE chain_id=4663) AS direct
+       FROM agg_active_trader_counts WHERE chain_id=4663`,
+    );
+    return rows[0];
+  };
+  assert.deepEqual(await total(), {
+    through: null,
+    timestamp: null,
+    active: 0,
+    direct: 0,
+  });
+  await applyLedgerBatch(
+    db,
+    batch(base, base + 9, new Rows().trade(base + 3, wallet(1), "buy", E, 10n)),
+  );
+  assert.deepEqual(await total(), {
+    through: base + 9,
+    timestamp: ts(base + 9),
+    active: 1,
+    direct: 1,
+  });
+  await applyLedgerBatch(
+    db,
+    batch(
+      base + 10,
+      base + 19,
+      new Rows()
+        .trade(base + 12, wallet(1), "buy", E, 10n)
+        .trade(base + 13, wallet(2), "buy", E, 10n),
+    ),
+  );
+  assert.deepEqual(await total(), {
+    through: base + 19,
+    timestamp: ts(base + 19),
+    active: 2,
+    direct: 2,
+  });
+  await walkBackLedger(db, base + 9);
+  assert.deepEqual(await total(), {
+    through: base + 9,
+    timestamp: ts(base + 9),
+    active: 1,
+    direct: 1,
+  });
+});
+
 test("a first refresh builds every window from the hour rows and ranks the eligible top by realized, the address breaking ties", async (t) => {
   const db = await setup(t);
   // 102 eligible wallets (ten trades each), realized 5 x i wei, wallets 1 and

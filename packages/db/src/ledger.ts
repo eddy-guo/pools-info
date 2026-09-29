@@ -500,6 +500,20 @@ const big = (v: unknown) => BigInt(String(v));
 const nullable = <T>(v: unknown, f: (v: unknown) => T) =>
   v === null ? null : f(v);
 
+/** One indexed existence probe per wallet in the batch. The count's delta is
+ * taken before and after the fold, so transfers and unattributed swaps never
+ * make a wallet active, while a wallet's first attributed trade does. */
+async function activeWallets(db: Client, refs: number[]) {
+  if (!refs.length) return 0;
+  const result = await db.query(
+    `SELECT count(*)::int AS wallets FROM unnest($1::int[]) AS candidate(wallet_ref)
+     WHERE EXISTS (SELECT 1 FROM agg_wallet_hours h
+       WHERE h.chain_id=4663 AND h.wallet_ref=candidate.wallet_ref)`,
+    [refs],
+  );
+  return result.rows[0].wallets as number;
+}
+
 /** Apply one batch. Under the writer lock, in one transaction: the same
  * range with the same content hash is a no-op, a differing hash is refused
  * (`ledger_batch_conflict`), a range that does not extend the cursor is
@@ -702,6 +716,10 @@ export async function applyLedgerBatch(
       }
       for (const [address, ref] of walletRef) walletOf.set(ref, address);
     }
+    const activeRefs = [
+      ...new Set(keys.walletHours.map((h) => walletRef.get(h.wallet)!)),
+    ];
+    const activeBefore = await activeWallets(db, activeRefs);
     // Journal the pre-image of every row the plan can touch, and load the rows.
     const state = createLedgerState();
     const journal = [key, batch.to];
@@ -1085,6 +1103,16 @@ export async function applyLedgerBatch(
        WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2`,
       [key, batch.to],
     );
+    const activeAfter = await activeWallets(db, activeRefs);
+    const activeTotal = await db.query(
+      `UPDATE agg_active_trader_counts SET active_traders=active_traders+$1,
+         through_block=CASE WHEN $2='ledger:agg:v1' THEN $3 ELSE through_block END,
+         through_timestamp=CASE WHEN $2='ledger:agg:v1' THEN $4 ELSE through_timestamp END
+       WHERE chain_id=4663`,
+      [activeAfter - activeBefore, key, batch.to, batch.timestamp],
+    );
+    if (activeTotal.rowCount !== 1)
+      throw Error("ledger_active_traders_missing");
     if (options.touched) {
       const touched = await db.query(
         `SELECT DISTINCT (key->>'wallet_ref')::int AS wallet_ref FROM agg_journal
@@ -1231,6 +1259,30 @@ export async function walkBackLedger(
     // and the next refresh rebuilds either way.
     if (key !== ledgerStream.key && undo.length)
       await db.query("DELETE FROM agg_window_refreshes WHERE chain_id=4663");
+    if (undo.length) {
+      // A rewind is rare; rebuild the one-row total from its source of truth
+      // after restoring every pre-image, in the same writer transaction.
+      const stamp =
+        key === ledgerStream.key
+          ? {
+              cursor_block: target?.to ?? null,
+              cursor_timestamp: target?.timestamp ?? null,
+            }
+          : (
+              await db.query(
+                "SELECT cursor_block,cursor_timestamp FROM agg_streams WHERE chain_id=4663 AND stream_key=$1",
+                [ledgerStream.key],
+              )
+            ).rows[0];
+      const activeTotal = await db.query(
+        `UPDATE agg_active_trader_counts SET
+           active_traders=(SELECT count(DISTINCT wallet_ref) FROM agg_wallet_hours WHERE chain_id=4663),
+           through_block=$1,through_timestamp=$2 WHERE chain_id=4663`,
+        [stamp?.cursor_block ?? null, stamp?.cursor_timestamp ?? null],
+      );
+      if (activeTotal.rowCount !== 1)
+        throw Error("ledger_active_traders_missing");
+    }
     await db.query(
       "UPDATE agg_streams SET cursor_block=$2,cursor_hash=decode($3,'hex'),cursor_timestamp=$4,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
       [

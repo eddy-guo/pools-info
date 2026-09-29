@@ -19,6 +19,22 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
   await query("SET LOCAL jit = off");
   const cut = await ledgerCut(query);
   if (!cut) throw new RequestError(503, "stats_coverage_unavailable");
+  let allActiveTraders: number | null = null;
+  if (window === "All") {
+    const { rows } = await query(
+      "SELECT through_block,through_timestamp,active_traders FROM agg_active_trader_counts WHERE chain_id=4663",
+    );
+    const saved = rows[0];
+    const count = Number(saved?.active_traders);
+    if (
+      Number(saved?.through_block) !== cut.block ||
+      Number(saved?.through_timestamp) !== cut.asOf ||
+      !Number.isSafeInteger(count) ||
+      count < 0
+    )
+      throw new RequestError(503, "stats_coverage_unavailable");
+    allActiveTraders = count;
+  }
   const hour = window === "1h" ? await ledgerHour(query, cut) : null;
   const flow = ledgerFlow(window, hour);
   const start = ledgerWindowStart(cut, window);
@@ -80,15 +96,16 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
     liquidityWei: null,
     poolsLaunched: Number(r.pools_launched),
     activeTraders:
-      flow === "none" || window === "All" ? null : Number(r.active_traders),
+      flow === "none"
+        ? null
+        : window === "All"
+          ? allActiveTraders
+          : Number(r.active_traders),
     completeWindow,
     coverage: {
       ...coverage,
       measuredPools: Number(r.measured_pools),
-      activeTraderScope:
-        window === "All"
-          ? "all_window_not_measured"
-          : "attributed_wallets_in_measured_pools",
+      activeTraderScope: "attributed_wallets_in_measured_pools",
     },
   };
 }
