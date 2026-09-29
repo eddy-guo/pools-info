@@ -95,7 +95,22 @@ for (const [name, url] of [
       "Top traders fills the remaining rail",
     ).toBeLessThanOrEqual(1);
     await expect(page.locator(".explore-page .launch-rail")).toBeVisible();
-    await expect(page.locator(".explore-page .stats-grid")).toHaveCount(0);
+    /* The fixture deployment has no aggregate stats route. Server rendering
+       omits the whole row, so the launch rail follows the heading directly;
+       screener-stats.spec.ts exercises a present ledger-backed answer. */
+    await expect(page.locator(".explore-page .screener-stats")).toHaveCount(0);
+    const noStatsGap = await page.evaluate(() => {
+      const heading = document.querySelector(".explore-page .page-heading")!;
+      const launches = document.querySelector(".explore-page .launch-section")!;
+      return (
+        launches.getBoundingClientRect().top -
+        heading.getBoundingClientRect().bottom
+      );
+    });
+    expect(
+      noStatsGap,
+      "an absent stats route leaves no reserved row",
+    ).toBeLessThanOrEqual(25);
     const resolved = page.locator(".explore-page [data-row='resolved']");
     await expect(resolved.first()).toBeAttached();
     if (testInfo.project.name !== "desktop" && name === "measured") {

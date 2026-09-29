@@ -20,6 +20,10 @@ import {
   type LiveWindow,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import {
+  validateStatsResponse,
+  type ScreenerStatsResponse,
+} from "@/lib/stats-response";
 import { useExploreRows } from "@/lib/use-explore-rows";
 import { rememberPoolRow } from "@/lib/pool-row-memory";
 import { tokenLabel, tokenSubSymbol } from "@/lib/token-identity";
@@ -269,7 +273,111 @@ const SCREENER_VIEWS = [
 ] as const satisfies readonly (readonly [ScreenerView, string])[];
 const isScreenerView = (value: string): value is ScreenerView =>
   SCREENER_VIEWS.some(([key]) => key === value);
-export function ProductExplore() {
+function ScreenerStats({
+  initial,
+  window,
+}: {
+  initial: ScreenerStatsResponse | null;
+  window: LiveWindow;
+}) {
+  const [answer, setAnswer] = useState({
+    window: initial?.window ?? window,
+    data: initial,
+  });
+  useEffect(() => {
+    const selected = new URLSearchParams(location.search).get("window");
+    const browserWindow =
+      selected && Object.hasOwn(windows, selected) ? selected : "24h";
+    // The query store's server snapshot is empty during hydration. A saved
+    // window URL must settle before deciding whether this is a new window.
+    if (browserWindow !== window) return;
+    // A route absent at first paint has no row or reserved gap. A subsequent
+    // deployment becomes visible on reload, when the server can size it first.
+    if (!initial || answer.window === window) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(async () => {
+      try {
+        const response = await fetch(`/api/product/stats/?window=${window}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!response.ok) throw Error("Stats unavailable");
+        const data: unknown = await response.json();
+        validateStatsResponse(data, window);
+        if (controller.signal.aborted) return;
+        if (
+          (answer.data?.activeTraders === null) !==
+          (data.activeTraders === null)
+        ) {
+          // A phone loses or gains a card row. Let the server size the new
+          // window before painting it, instead of moving the screener below.
+          location.reload();
+        } else {
+          setAnswer({ window, data });
+        }
+      } catch {
+        // Removing a served row after a late 404/503 would move the table.
+        // Reload at the selected URL so the server omits it before first paint.
+        if (!controller.signal.aborted) location.reload();
+      }
+    });
+    return () => controller.abort();
+  }, [answer.data?.activeTraders, answer.window, initial, window]);
+  if (!initial) return null;
+  const pending = answer.window !== window;
+  const data = pending ? null : answer.data;
+  if (!pending && !data) return null;
+  const active = pending ? answer.data?.activeTraders : data?.activeTraders;
+  return (
+    <section
+      className="stats-grid screener-stats"
+      aria-label="Screener stats"
+      aria-busy={pending}
+      data-has-active={active !== null && active !== undefined}
+    >
+      <div className="stat">
+        <span>Volume</span>
+        <strong data-pending={pending}>
+          {data?.volumeWei === null || !data ? (
+            <span className="stats-empty" />
+          ) : (
+            <Eth wei={data.volumeWei} digits={5} />
+          )}
+        </strong>
+        <small>
+          {data?.volumeWei === null ? "Window incomplete" : null}
+        </small>
+      </div>
+      <div className="stat">
+        <span>Pools launched</span>
+        <strong data-pending={pending}>
+          {data ? (
+            data.poolsLaunched.toLocaleString("en-US")
+          ) : (
+            <span className="stats-empty" />
+          )}
+        </strong>
+      </div>
+      {active !== null && active !== undefined && (
+        <div className="stat">
+          <span title="Wallets that traded the launches shown">Traders</span>
+          <strong data-pending={pending}>
+            {data?.activeTraders === null || !data ? (
+              <span className="stats-empty" />
+            ) : (
+              data.activeTraders.toLocaleString("en-US")
+            )}
+          </strong>
+        </div>
+      )}
+    </section>
+  );
+}
+export function ProductExplore({
+  initialStats,
+}: {
+  initialStats: ScreenerStatsResponse | null;
+}) {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
     currentSeconds,
@@ -381,6 +489,7 @@ export function ProductExplore() {
     >
       <button
         className={activeSort === key ? "sort-active" : ""}
+        data-window-sort={key === "change"}
         onClick={() => sortBy(key)}
       >
         {activeSort === key && (
@@ -388,7 +497,7 @@ export function ProductExplore() {
             {ascending ? "↑" : "↓"}
           </span>
         )}
-        {label}
+        <span key={label}>{label}</span>
       </button>
     </th>
   );
@@ -520,6 +629,7 @@ export function ProductExplore() {
           <ArrowRight aria-hidden="true" />
         </Link>
       </div>
+      <ScreenerStats initial={initialStats} window={window} />
       <section className="launch-section" aria-label="Just launched">
         <div className="section-caption">
           <span>

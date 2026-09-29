@@ -6,6 +6,10 @@ import {
 } from "./explore-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
+import {
+  validateStatsResponse,
+  type ScreenerStatsResponse,
+} from "./stats-response";
 import { validateTradeShareResponse } from "./trade-share-response";
 import {
   validateWalletTradeHistoryResponse,
@@ -326,6 +330,39 @@ export function productUnavailableResponse(error: ProductUnavailableError) {
       },
     },
   );
+}
+
+/** The aggregate exists only on a ledger-backed API. A missing route, absent
+ * API, coverage refusal, or invalid body means the screener has no stat cards. */
+export async function readScreenerStats(
+  window: LiveWindow,
+): Promise<
+  { status: 200; data: ScreenerStatsResponse } | { status: 404 | 503 }
+> {
+  const checked = productRequest(["stats"], new URLSearchParams({ window }));
+  let origin: URL | null = null;
+  try {
+    origin = indexerOrigin();
+  } catch {
+    // The unconfigured API has no stats route to show.
+  }
+  if (!origin) return { status: 503 };
+  try {
+    const url = new URL(`/v1/${checked.endpoint}`, origin);
+    url.search = checked.params.toString();
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+      redirect: "error",
+    });
+    if (response.status === 404) return { status: 404 };
+    if (!response.ok) return { status: 503 };
+    const data: unknown = await response.json();
+    validateStatsResponse(data, window);
+    return { status: 200, data };
+  } catch {
+    return { status: 503 };
+  }
 }
 /** The read API's own 503 contract for the Coinbase-backed price, carried to
  * the browser unchanged: no cached or fabricated rate stands in for it. */
