@@ -168,10 +168,14 @@ test.describe("contract-backed screener stats", () => {
     const stats = page.locator(".explore-page .screener-stats");
     await expect(stats).toBeVisible();
     await expect(stats.locator(".stat")).toHaveCount(3);
-    await expect(stats).toContainText("Volume");
-    await expect(stats).toContainText("Pools launched");
-    await expect(stats).toContainText("Traders");
-    await expect(stats.getByTitle("Wallets that traded the launches shown")).toBeVisible();
+    await expect(stats.locator(".stat > span")).toHaveText([
+      "Volume · 24h",
+      "Launches · 24h",
+      "Traders · 24h",
+    ]);
+    await expect(
+      stats.getByTitle("Wallets with an attributed trade in the window"),
+    ).toBeVisible();
     await expect(stats).not.toContainText("Covered launches");
     await expect(stats).not.toContainText("Liquidity");
     await expect(stats).toContainText("123");
@@ -206,6 +210,11 @@ test.describe("contract-backed screener stats", () => {
     body = sample("7d");
     await page.getByRole("button", { name: "7d", exact: true }).click();
     await expect(stats).toHaveAttribute("aria-busy", "false");
+    await expect(stats.locator(".stat > span")).toHaveText([
+      "Volume · 7d",
+      "Launches · 7d",
+      "Traders · 7d",
+    ]);
     expect(
       await page
         .locator(".launch-section")
@@ -237,6 +246,10 @@ test.describe("contract-backed screener stats", () => {
     };
     await page.getByRole("button", { name: "1h", exact: true }).click();
     await expect(stats.locator(".stat")).toHaveCount(2);
+    await expect(stats.locator(".stat > span")).toHaveText([
+      "Volume · 1h",
+      "Launches · 1h",
+    ]);
     await expect(stats.locator(".stat").first().locator("strong")).toHaveText(
       "",
     );
@@ -350,10 +363,12 @@ test.describe("contract-backed screener stats", () => {
     await page.goto(`${origin}/?window=All`, { waitUntil: "commit" });
     const stats = page.locator(".explore-page .screener-stats");
     await expect(stats.locator(".stat")).toHaveCount(3);
-    await expect(stats).toContainText("Volume");
-    await expect(stats).toContainText("Pools launched");
+    await expect(stats.locator(".stat > span")).toHaveText([
+      "Volume · All",
+      "Launches · All",
+      "Traders · All",
+    ]);
     await expect(stats).toContainText("64,820");
-    await expect(stats).toContainText("Traders");
     await expect(stats).toContainText("402,620");
     await expect(
       page.locator(".explore-page [data-row='resolved']").first(),
@@ -374,5 +389,24 @@ test.describe("contract-backed screener stats", () => {
           ).screenerStatsMeasurement.cls,
       ),
     ).toBe(0);
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      const labels = await stats.locator(".stat > span").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const element = node as HTMLElement;
+          return {
+            height: element.getBoundingClientRect().height,
+            fontSize: parseFloat(getComputedStyle(element).fontSize),
+            overflow: element.scrollWidth - element.clientWidth,
+          };
+        }),
+      );
+      expect(
+        labels.every(
+          ({ height, fontSize, overflow }) =>
+            height <= fontSize * 1.6 && overflow <= 1,
+        ),
+      ).toBe(true);
+    }
   });
 });
