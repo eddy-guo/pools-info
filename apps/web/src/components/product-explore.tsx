@@ -423,8 +423,10 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
 
 export function ProductExplore({
   initialStats,
+  initialSearch,
 }: {
   initialStats: ScreenerStatsResponse | null;
+  initialSearch: string;
 }) {
   const now = useSyncExternalStore<number | null>(
     subscribeClock,
@@ -434,7 +436,7 @@ export function ProductExplore({
   const launches = useProduct<AnalyticsExploreResponse>(
     "explore?sort=launch&direction=desc&limit=6&window=24h",
   );
-  const { params, set: setQuery } = useQuery(),
+  const { params, set: setQuery } = useQuery(initialSearch),
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
   /* The board has no 1h or 6h ranks. Keep its data, label and links on 24h. */
@@ -585,10 +587,28 @@ export function ProductExplore({
       "ids",
       queryWatched.slice(0, MAX_WATCHLIST_QUERY_POOLS).join(","),
     );
+  /* A metric order excludes pools without that metric in the explore reader.
+     Read the complete saved set in launch order, with the selected window's
+     figures, then order only this bounded Watchlist set below. */
+  const readQuery = new URLSearchParams(query);
+  if (view === "watchlist") {
+    readQuery.set("sort", "launch");
+    readQuery.set("direction", "desc");
+  }
   const { list, stale, loading, settled, error, refresh } = useExploreRows(
-    query.toString(),
-    shown,
+    readQuery.toString(),
+    view === "watchlist"
+      ? Math.max(1, Math.min(queryWatched.length, MAX_WATCHLIST_QUERY_POOLS))
+      : shown,
   );
+  /* Wait for every saved row before sorting. Showing a partially fetched
+     order would move already painted rows when the next chunk arrives. */
+  const readyList =
+    view === "watchlist" &&
+    list &&
+    list.rows.length < Math.min(queryWatched.length, list.total)
+      ? undefined
+      : list;
   /* Pools the fetch above still carries but this browser has since
      unstarred: hidden from every derived view below without asking the
      server again, since `queryWatchedIds` (and so `query`) did not move.
@@ -606,24 +626,44 @@ export function ProductExplore({
      place instead of collapsing to a full-table skeleton; `isStale` is what
      dims them and marks the region busy without presenting them as this
      query's own answer. */
-  const isStale = !list && !!stale;
-  const displayList = list ?? stale;
-  const rows = list
+  const isStale = !readyList && !!stale;
+  const displayList = readyList ?? stale;
+  const orderedRows =
+    view === "watchlist" && readyList
+      ? [...readyList.rows].sort((a, b) => {
+          const metric = (row: AnalyticsPoolRow): bigint | number | null => {
+            if (sort === "launch") return row.launchBlock;
+            if (sort === "change") return row.stats.change;
+            if (sort === "trades") return row.stats.trades;
+            const value = row.stats.volumeWei;
+            return value === null ? null : BigInt(value);
+          };
+          const left = metric(a);
+          const right = metric(b);
+          if (left === null) return right === null ? a.id.localeCompare(b.id) : 1;
+          if (right === null) return -1;
+          return (
+            (left > right ? 1 : left < right ? -1 : 0) *
+              (direction === "asc" ? 1 : -1) || a.id.localeCompare(b.id)
+          );
+        })
+      : readyList?.rows;
+  const rows = readyList
     ? removedFromWatch.length
-      ? list.rows.filter((row) => !removedFromWatch.includes(row.id))
-      : list.rows
+      ? orderedRows?.filter((row) => !removedFromWatch.includes(row.id))
+      : orderedRows
     : displayList?.rows;
-  const total = list
+  const total = readyList
     ? removedFromWatch.length
-      ? Math.max(0, list.total - removedFromWatch.length)
-      : list.total
+      ? Math.max(0, readyList.total - removedFromWatch.length)
+      : readyList.total
     : displayList?.total;
   const launchPage = !!rows?.length && rows.every(launchOnly);
   const empty = settled && total === 0;
   /* Nothing was served for this query, stale or otherwise. The reserved rows
      stay reserved and stay blank: a shimmer would read as "still loading"
      and another query's rows would read as this query's answer. */
-  const failed = !!error && !list;
+  const failed = !!error && !readyList;
   /* The rows on show, reserved from the URL before any data so a read that
      lands never resizes the table. A view, sort, window or filter change
      keeps showing the previous query's rows, dimmed, instead of swapping to
@@ -665,7 +705,7 @@ export function ProductExplore({
     [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
   }, [rows]);
   return (
-    <div className="page explore-page">
+    <div className="page explore-page" data-watchlist={view === "watchlist"}>
       <div className="page-heading">
         <h1>
           Pools<span className="title-dot">.</span>
@@ -881,7 +921,7 @@ export function ProductExplore({
                 region collapses on its own and the failed state below
                 renders right under the toolbar with nothing reserved past
                 it. */}
-            <div className="table-region" data-empty={empty}>
+            <div className="table-region" data-empty={empty} data-failed={failed}>
               <div
                 className="table-scroll desktop-pools"
                 aria-busy={loading}

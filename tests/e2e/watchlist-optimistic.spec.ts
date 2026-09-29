@@ -31,9 +31,65 @@ function layout(testInfo: TestInfo) {
 }
 const rowFor = (page: Page, rows: string, name: string) =>
   page.locator(rows).filter({ hasText: name });
+const rowForId = (page: Page, rows: string, id: string) =>
+  page.locator(rows).filter({
+    has: page.locator(`a.token-cell[href^="/pool/${id}/"]`),
+  });
 const watchButton = (row: ReturnType<Page["locator"]>) =>
   row.locator("button.watch");
 const count = (page: Page) => page.locator(".pagination-count");
+
+test("saved launches stay in the 24h volume Watchlist after measured pools", async ({
+  page,
+}, testInfo) => {
+  const { rows } = layout(testInfo);
+  await installClsObserver(page);
+  await page.goto("/?view=new&window=All&sort=launch");
+  await page.locator('.launch-card[href^="/pool/"]').first().waitFor();
+  const railIds = await page.locator('.launch-card[href^="/pool/"]').evaluateAll(
+    (cards) => cards.slice(0, 2).map((card) =>
+      (card as HTMLAnchorElement).pathname.split("/")[2],
+    ),
+  );
+  for (const id of railIds)
+    await watchButton(rowForId(page, rows, id)).click();
+  await page.goto(`/?q=${chain.markets[1].token}`);
+  await watchButton(rowForId(page, rows, chain.markets[1].id)).click();
+  expect(await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("poolsinfo.watchlist.v1") || "[]").length,
+  )).toBe(3);
+
+  await page.goto("/?view=watchlist");
+  const measured = rowForId(page, rows, chain.markets[1].id);
+  const meep = rowForId(page, rows, railIds[0]);
+  const spaceCat = rowForId(page, rows, railIds[1]);
+  await expect(count(page)).toHaveText("Showing 3 of 3");
+  await expect(measured).toHaveAttribute("data-row-index", "0");
+  for (const [index, id] of [...railIds].sort().entries())
+    await expect(rowForId(page, rows, id)).toHaveAttribute(
+      "data-row-index",
+      String(index + 1),
+    );
+  expect(
+    await page.locator(".explore-page .table-region").evaluate(
+      (node) => node.getBoundingClientRect().height,
+    ),
+    "the three saved rows reserve only their own region from first paint",
+  ).toBeLessThan(400);
+  if (testInfo.project.name === "desktop") {
+    await expect(meep.locator(".launch-cell")).toBeVisible();
+    await expect(spaceCat.locator(".launch-cell")).toBeVisible();
+  } else {
+    await expect(meep.locator('[data-launch-row="true"]')).toBeVisible();
+    await expect(spaceCat.locator('[data-launch-row="true"]')).toBeVisible();
+  }
+  expect(await cls(page), "saved rows keep the Watchlist at CLS 0").toBe(0);
+
+  await page.goto("/?view=watchlist&window=All&sort=launch");
+  await expect(count(page)).toHaveText("Showing 3 of 3");
+  for (const id of [chain.markets[1].id, ...railIds])
+    await expect(rowForId(page, rows, id)).toBeVisible();
+});
 
 /** Every request this test session makes to the explore endpoint, whatever
     view or rail asked for it. */

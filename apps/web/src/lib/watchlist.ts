@@ -5,6 +5,31 @@ export const MAX_WATCHLIST_QUERY_POOLS = 200;
 export const MAX_WATCHLIST_URL_LENGTH = 4096;
 const poolId = /^0x[0-9a-f]{64}$/i;
 
+/** Reserve the saved rows before hydration can read localStorage. The
+ * personal store and the shared link are both bounded by the same reader
+ * limits used below. A removal keeps the current slot height until the next
+ * navigation, so unstarring a row does not move the page under the reader. */
+export const watchlistRowsScript = `(function(){
+  function update(keep){try{
+    var params=new URLSearchParams(location.search);
+    var shared=params.getAll("watchlist");
+    var raw=shared.length?shared.length===1?shared[0].split(","):[]:JSON.parse(localStorage.getItem("poolsinfo.watchlist.v1")||localStorage.getItem("pools:watchlist")||"[]");
+    if(shared.length&&raw.length>${MAX_SHARED_POOLS})raw=[];
+    var ids=Array.isArray(raw)?[...new Set(raw.filter(function(id){return typeof id==="string"&&/^0x[0-9a-f]{64}$/i.test(id.trim())}).map(function(id){return id.trim().toLowerCase()}))]:[];
+    var count=Math.min(ids.length,shared.length?${MAX_SHARED_POOLS}:${MAX_WATCHLIST_QUERY_POOLS});
+    var limit=Number(params.get("limit"));
+    var shown=Number.isInteger(limit)&&limit>0?Math.min(limit,1000):25;
+    var rows=Math.max(3,Math.min(shown,count));
+    var root=document.documentElement;
+    var old=Number(root.style.getPropertyValue("--watchlist-reserved-rows"))||0;
+    root.style.setProperty("--watchlist-reserved-rows",String(keep?Math.max(old,rows):rows));
+  }catch(e){document.documentElement.style.setProperty("--watchlist-reserved-rows","3")}}
+  update(false);
+  addEventListener("popstate",function(){update(false)});
+  addEventListener("storage",function(){update(true)});
+  addEventListener("pools-preferences",function(){update(true)});
+})();`;
+
 export function normalizePoolIds(values: readonly unknown[]): string[] {
   return [
     ...new Set(

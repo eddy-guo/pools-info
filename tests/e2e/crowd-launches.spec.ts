@@ -155,7 +155,9 @@ test("switching away from Crowd restores volume as the other tabs' default", asy
         new URL(request.url()).searchParams.get("view") === name.toLowerCase(),
     );
     await tab(page, name).click();
-    expect(new URL((await sent).url()).searchParams.get("sort")).toBe("volume");
+    expect(new URL((await sent).url()).searchParams.get("sort")).toBe(
+      name === "Watchlist" ? "launch" : "volume",
+    );
     expect(search(page).get("sort")).toBeNull();
     await tab(page, "Crowd").click();
   }
