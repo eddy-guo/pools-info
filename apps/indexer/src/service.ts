@@ -30,4 +30,4 @@ const supervisor = superviseWorkers(workers, {
   log: (event) => console.log(JSON.stringify(event)),
 });
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-  process.once(signal, supervisor.stop);
+  process.once(signal, () => supervisor.stop(signal));

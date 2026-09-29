@@ -543,6 +543,7 @@ export async function runLedgerTip(
     summary.throttled = throttled();
     return summary;
   };
+  options.signal?.addEventListener("abort", stopping, { once: true });
   if (
     !Number.isSafeInteger(options.rangeBlocks) ||
     options.rangeBlocks < 1 ||
@@ -602,7 +603,6 @@ export async function runLedgerTip(
     crowdSkip = 0;
   const catchUp = { at: performance.now(), blocks: 0 };
   startCursor = stream.cursor;
-  options.signal?.addEventListener("abort", stopping, { once: true });
   /** The idle wait at the tip and a throttle's pause: reader warming gets
    * the time, and the next cycle cancels it. */
   const rest = async (ms: number) => {
@@ -677,12 +677,12 @@ export async function runLedgerTip(
         const source =
           error instanceof HyperSyncRateLimitExhausted ? "hypersync" : "rpc";
         const retryAfterMs = error.retryAfterMs;
-        const waitMs = Math.min(
-          ledgerTipDefaults.maxThrottlePauseMs,
-          Math.max(
+        const waitMs = Math.max(
+          Math.min(
+            ledgerTipDefaults.maxThrottlePauseMs,
             ledgerTipDefaults.throttlePauseMs * 2 ** pauses,
-            retryAfterMs ?? 0,
           ),
+          retryAfterMs ?? 0,
         );
         const budgetMs = ledgerTipDefaults.throttleBudgetMs;
         const safe = ledgerTipSafeError(error);

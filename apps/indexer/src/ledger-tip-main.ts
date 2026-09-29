@@ -38,12 +38,21 @@ import {
 // both streams exactly as a fresh start does. SIGTERM and SIGINT are logged
 // with the range in flight and end the loop on a committed batch.
 const stop = new AbortController();
-for (const signal of ["SIGINT", "SIGTERM"] as const)
-  process.once(signal, () =>
-    stop.abort(new DOMException(signal, "AbortError")),
-  );
 const emit = (event: Record<string, unknown>) =>
   console.log(JSON.stringify(event));
+let loopOwnsStop = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    if (!loopOwnsStop)
+      emit({
+        event: "ledger_tip_stopping",
+        reason: signal,
+        cursor: null,
+        inFlight: null,
+        cycle: null,
+      });
+    stop.abort(new DOMException(signal, "AbortError"));
+  });
 type Mode = "run" | "once" | "status";
 
 /** Whether the database already holds the ledger the loop extends. Asked
@@ -194,6 +203,8 @@ async function session(
         { log: emit },
       );
       try {
+        if (stop.signal.aborted) return "done";
+        loopOwnsStop = true;
         const summary = await runLedgerTip(db, {
           warmth,
           client,
@@ -214,6 +225,7 @@ async function session(
         process.exitCode = ledgerTipExitCodes[summary.stopped];
         return "done";
       } finally {
+        loopOwnsStop = false;
         await warmth.close();
       }
     } finally {
