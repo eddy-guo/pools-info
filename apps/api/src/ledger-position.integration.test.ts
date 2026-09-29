@@ -215,7 +215,6 @@ test(
     // flat position), its one closed cycle and its two trading hours.
     const p1 = await read(W[1], pools.P.id, "All");
     assert.deepEqual(Object.keys(p1).sort(), [
-      "activity",
       "avgEntryPriceWei",
       "coverage",
       "cycles",
@@ -305,11 +304,6 @@ test(
       closures: 1,
       holdSeconds: 90 * 400,
     });
-    assert.deepEqual(p1.activity, {
-      firstHour: 1050 * 3600,
-      lastHour: 1060 * 3600,
-      last: ts(saleP),
-    });
     // The window scopes the row's own figures only: in the 24h window the
     // sale's 1.5 ETH is the net and the volume, the buy being outside it;
     // the ROI, the cycles and the times are the position's whole history.
@@ -326,9 +320,8 @@ test(
         p1day.totalRoi,
         p1day.avgEntryPriceWei,
         p1day.cycles,
-        p1day.activity,
       ],
-      ["24h", 50, 50, null, p1.cycles, p1.activity],
+      ["24h", 50, 50, null, p1.cycles],
     );
     assert.deepEqual(p1day.mark, p1.mark);
 
@@ -391,11 +384,6 @@ test(
       closures: 0,
       holdSeconds: 0,
     });
-    assert.deepEqual(q1.activity, {
-      firstHour: 1075 * 3600,
-      lastHour: 1075 * 3600,
-      last: ts(buyQ),
-    });
 
     // W2 in R, held but unmarked: the pool has a price state but no known
     // decimals, so no price per token, no value, no unrealized and no total
@@ -451,17 +439,11 @@ test(
       closures: 0,
       holdSeconds: 0,
     });
-    assert.deepEqual(r2.activity, {
-      firstHour: 1000 * 3600,
-      lastHour: 1000 * 3600,
-      last: ts(buyR),
-    });
 
     // W6 in Q, excluded: the flag and the volume, null for every finance and
     // for the fold's state, as the page serves it; the pool's price state is
     // the pool's and stays, but the excluded position's value, returns and
-    // cycles are not served; its trading hour and last activity are.
-    const sellQ = blockOf(1074, 1);
+    // cycles are not served.
     const q6 = await read(W[6], pools.Q.id, "All");
     assert.deepEqual(q6.position, {
       poolId: pools.Q.id,
@@ -484,11 +466,6 @@ test(
       [q6.roi, q6.totalRoi, q6.avgEntryPriceWei, q6.cycles],
       [null, null, null, null],
     );
-    assert.deepEqual(q6.activity, {
-      firstHour: 1074 * 3600,
-      lastHour: 1074 * 3600,
-      last: ts(sellQ),
-    });
 
     // Field parity: `position` is the wallet page's row for the pool, byte
     // for byte, on every window, so a consumer of the page reuses its type.
@@ -531,7 +508,7 @@ test(
     });
     assert.equal(conflicted.position.unrealizedWei, null);
     assert.equal(conflicted.totalRoi, null);
-    assert.equal(conflicted.avgEntryPriceWei, q1.avgEntryPriceWei);
+    assert.equal(conflicted.avgEntryPriceWei, null);
     await db.query(
       "DELETE FROM analytics_pool_snapshots WHERE chain_id=4663 AND pool_id=$1",
       [pools.Q.id],

@@ -456,7 +456,7 @@ null where it cannot:
   fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
   null for an excluded, unmarked or units-conflicted one). Null when the pool
   has no swap folded. On a units conflict, `position.unrealizedWei` and
-  `totalRoi` are also null; the cost-derived entry average remains available.
+  `totalRoi` are also null.
 - **`roi`** is the ledger's ROI as the board and the wallet header define it:
   lifetime realized over lifetime disposed cost (`investedWei - costWei` on a
   supported position, since an outflow excludes), in percent to four decimals
@@ -467,7 +467,8 @@ null where it cannot:
 - **`avgEntryPriceWei`** is the average entry price of the held units, wei
   per whole token: their average-cost basis (`costWei` times ten to the
   `decimals` over `quantity`, truncated), the price a card sets against
-  `mark.priceWei`. Null while flat, excluded or the decimals unknown. The fold keeps no count of raw
+  `mark.priceWei`. Null while flat, excluded or the decimals are unknown or
+  conflict with a verified snapshot. The fold keeps no count of raw
   tokens bought or sold (only the held quantity, and no row per swap), so a
   lifetime average entry price and an average exit price cannot be derived
   and are not served; serving them would need a writer change, not a read.
@@ -479,12 +480,10 @@ null where it cannot:
   `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds`
   over `closures`, the header's `avgHold` per position). Null for an excluded
   position, whose inventory is not served.
-- **`activity`** is when the wallet traded the pool: `firstHour` and
-  `lastHour`, the UTC hours of its first and last attributed swap as unix
-  seconds at the hour's start (the ledger keeps swaps per hour, not per swap,
-  so no exact first-buy time exists; null for a position with no swap), and
-  `last`, the exact time of the last swap or transfer on the position (the
-  header's `last`, per position).
+The nested `position.position` retains the wallet page's `openedAt`,
+`firstHour` and `lastHour`. The latter two bound a closed position's span at
+UTC-hour precision; there is no separate activity object or exact first-buy
+timestamp.
 
 An excluded position answers `supported: false` with its flags, null finances
 and no `position`, as the page does, and `mark.valueWei`, `roi`, `totalRoi`

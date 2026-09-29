@@ -19,7 +19,7 @@ import { RequestError } from "./request";
  * (`walletPosition` over the same columns, the same cut and the same window
  * start), so a consumer of the page reuses its type; beside it sits what a
  * card needs and the ledger can vouch for: the price state behind the mark,
- * the ledger's ROI, the position's inventory cycles and its trading times.
+ * the ledger's ROI and the position's inventory cycles.
  * Each is null where the ledger has nothing to stand on (an excluded
  * position's finances, an unmarked position's value, a percent of a zero
  * basis), never a stand-in. The pool is the catalog row the card names it by. */
@@ -27,12 +27,12 @@ import { RequestError } from "./request";
 /** $1 wallet_ref, $2 the window's first hour, $3 pool_ref: the wallet page's
  * columns for this one position (a primary-key probe of `agg_positions`), the
  * price state's identity and its price per whole token (`ledgerPriceSql`, the
- * pool page's figure), the fold's disposed cost and last activity, and from
+ * pool page's figure), the fold's disposed cost, and from
  * one primary-key range of `agg_wallet_hours` the window's flow, the hours
  * traded in and the position's lifetime closures. */
 export const positionSql = `WITH marked AS (
     SELECT ${positionColumns},
-      p.disposed_cost_wei::text AS disposed_cost,p.last_timestamp::text AS last_timestamp,
+      p.disposed_cost_wei::text AS disposed_cost,
       s.sqrt_price_x96::text AS sqrt_price_x96,s.price_block::text AS price_block,s.price_timestamp::text AS price_timestamp,
       '0x'||encode(s.price_tx,'hex') AS price_tx,${ledgerPriceSql("s.sqrt_price_x96", "i.decimals")}::text AS price_wei,
       f.closures,f.hold_seconds
@@ -138,7 +138,7 @@ export async function readLedgerPosition(
   // bought or sold, which the ledger does not keep, so none is served.
   const held = position.position;
   const avgEntryPriceWei =
-    held && held.quantity !== "0" && position.decimals !== null
+    held && held.quantity !== "0" && position.decimals !== null && !priceUnavailable
       ? (
           (BigInt(held.costWei) * 10n ** BigInt(position.decimals)) /
           BigInt(held.quantity)
@@ -186,10 +186,5 @@ export async function readLedgerPosition(
           holdSeconds: Number(row.hold_seconds),
         }
       : null,
-    activity: {
-      firstHour: row.first_hour === null ? null : Number(row.first_hour) * 3600,
-      lastHour: row.last_hour === null ? null : Number(row.last_hour) * 3600,
-      last: Number(row.last_timestamp),
-    },
   };
 }
