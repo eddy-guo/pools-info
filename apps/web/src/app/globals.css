@@ -982,6 +982,7 @@ main {
 }
 .footer-credit a {
   display: inline;
+  text-decoration: underline;
 }
 .empty-state {
   text-align: center;
@@ -5391,6 +5392,7 @@ button.icon-button:disabled {
 }
 .pool-launch-meta a {
   color: var(--ac);
+  text-decoration: underline;
 }
 .pool-launch-meta a:hover {
   text-decoration: underline;
