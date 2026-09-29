@@ -22,13 +22,32 @@ finally reported unavailable rather than retried forever.
 
 `apps/api/src/database-warmth.ts` owns the policy and readiness state.
 `apps/api/src/warm-set.ts` invokes the current serving readers in order:
-screener volume ranking and launch strip, the creators page's first load (All
-window, launches order, 25 rows), home leaderboard (24h, five rows, minimum
+screener volume ranking and launch strip, every creators directory window
+(24h, 7d, 30d, All) and sort (launches, volume, median) at 25 rows plus
+All-window pages of 50 and 100 rows for each sort, home leaderboard (24h, five rows, minimum
 ten trades), traders (7d), the busiest ledger pool's 24h market, ledger cut
 and a wallet profile. Smaller reads follow creators so their pages remain in a
 tight shared cache. With the broad source it uses the same broad
 serving readers. Empty databases have no pool or wallet to warm; they do not
 invent an identity. All warm connections are read-only and use autocommit.
+The warm set calls `readData` directly, so it fills database pages rather than
+the API's HTTP response cache; a visitor's first request is still a cache
+miss. Nonempty first pages get their total from the ranking statement itself,
+so they do not issue the separate empty-page count query.
+
+The 29 Sep private PostgreSQL 18.6 replay copied `pools_test_creatorwalk`
+(62,896 pools and 2,175,993 positions), applied current migrations, and used
+128 MB shared buffers with `debug_io_direct=data`. The API and this private
+Postgres were restarted before each measurement. With the earlier single
+creators warm read, all 12 first-page window/sort requests answered HTTP 200
+in 214-353 ms after warm-up; the All-window 50/100 launch pages took 343/353
+ms. The ranked statement was the largest part of one profiled All/median/100
+read at 219 ms, followed by the page's own-buy probe at 68 ms. This lab did
+not reproduce the reported minute of `unavailable`, so it does not establish
+that the missing warm variants alone caused it. With the expanded warm set,
+startup warming finished in 5,614 ms and all 12 first-page requests answered
+HTTP 200 on cache misses in 219-548 ms; the six All-window 50/100 pages took
+272-410 ms. The gate and `/ready` behavior are unchanged.
 
 The following 27 Sep local PG 18.6 production-copy replay predates the
 first-hit creators probe described in `docs/LEDGER-MARKET-SERVING.md` ("The

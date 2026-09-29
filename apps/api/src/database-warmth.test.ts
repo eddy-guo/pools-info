@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DatabaseWarmth, type WarmAttempt } from "./database-warmth";
 import { RequestError } from "./request";
+import { warmCreators } from "./warm-set";
 
 function deferred() {
   let resolve!: () => void;
@@ -46,6 +47,38 @@ test("startup refuses; only a complete fast set permits serving; restart invalid
   warming(state, version);
   await state.close();
   warming(state);
+});
+
+test("creators warming visits every directory selection before the gate opens", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const seen: string[] = [];
+  const state = new DatabaseWarmth(async (context) => {
+    context.identity("db");
+    await warmCreators(
+      async (path) => {
+        seen.push(path);
+        if (path.endsWith("window=All&sort=launches&offset=0&limit=25"))
+          await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      },
+      async (_name, read) => read(),
+    );
+  });
+  t.after(() => state.close());
+  const run = state.refresh();
+  for (let i = 0; i < 100; i++) await Promise.resolve();
+  const expected = ["24h", "7d", "30d", "All"].flatMap((window) =>
+    ["launches", "volume", "median"].flatMap((sort) =>
+      (window === "All" ? [25, 50, 100] : [25]).map(
+        (limit) =>
+          `/v1/creators?window=${window}&sort=${sort}&offset=0&limit=${limit}`,
+      ),
+    ),
+  );
+  assert.deepEqual([...seen].sort(), expected.sort());
+  warming(state);
+  t.mock.timers.tick(1);
+  await run;
+  state.assertReady();
 });
 
 test("cadence detects ordinary eviction, fails closed after bounded retries, and recovers", async () => {

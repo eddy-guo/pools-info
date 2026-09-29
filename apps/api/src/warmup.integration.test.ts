@@ -138,7 +138,7 @@ test(
 );
 
 test(
-  "the warm set runs every warmed purpose, the creators page's first load included",
+  "the warm set runs each creators directory statement before opening the gate",
   dbTest,
   async (t) => {
     const url = process.env.TEST_DATABASE_URL!;
@@ -163,13 +163,37 @@ test(
       });
       assert.deepEqual(names, [
         "screener",
-        "creators",
+        ...["24h", "7d", "30d", "All"].flatMap((window) =>
+          ["median", "volume", "launches"].flatMap((sort) =>
+            (window === "All" ? [100, 50, 25] : [25]).map(
+              (limit) => `creators_${window}_${sort}_${limit}`,
+            ),
+          ),
+        ),
         "home_leaderboard",
         "traders",
         "busy_pool",
         ...(source === "ledger" ? ["ledger_cut"] : []),
         "wallet",
       ]);
+      const reader = createReader(url, schema, { marketSource: source });
+      try {
+        for (const window of ["24h", "7d", "30d", "All"])
+          for (const sort of ["launches", "volume", "median"])
+            for (const limit of window === "All" ? [25, 50, 100] : [25]) {
+              const result = await reader.read(
+                parseRequest(
+                  `/v1/creators?window=${window}&sort=${sort}&offset=0&limit=${limit}`,
+                ),
+              );
+              assert.ok(
+                result,
+                `${window}/${sort}/${limit} serves after warming`,
+              );
+            }
+      } finally {
+        await reader.close();
+      }
     }
   },
 );
