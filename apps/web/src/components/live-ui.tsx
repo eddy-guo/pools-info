@@ -37,18 +37,25 @@ export function Eth({
   digits?: number;
 }) {
   const known = wei !== null && wei !== undefined;
-  const unavailable = useUnavailable("Not collected yet", pending);
+  const { children: unavailableText, ...unavailable } = useUnavailable(
+    "Not collected yet",
+    pending,
+  );
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (!known || pending)
-    return <span className="number unavailable" {...unavailable} />;
+    return (
+      <span className="number unavailable" {...unavailable}>
+        <span key="unavailable">{unavailableText}</span>
+      </span>
+    );
   if (unit === "USD" && usdPerEth !== null)
     return (
       <span
         className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
         title={`${wei} wei`}
       >
-        {formatMoney(wei, "USD", usdPerEth, signed)}
+        <span key="value">{formatMoney(wei, "USD", usdPerEth, signed)}</span>
       </span>
     );
   const n = Number(wei) / 1e18;
@@ -67,8 +74,10 @@ export function Eth({
       className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
       title={`${wei} wei`}
     >
-      {signed && n > 0 ? "+" : ""}
-      {format.format(n)} ETH
+      <span key="value">
+        {signed && n > 0 ? "+" : ""}
+        {format.format(n)} ETH
+      </span>
     </span>
   );
 }
