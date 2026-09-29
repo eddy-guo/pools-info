@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
@@ -7,23 +8,27 @@ import type { WalletHistoryResponse } from "@pools/core";
 import {
   BlockscoutError,
   createBlockscoutClient,
-  createCreditBudget,
   createRateLimiter,
   defaultBlockscoutTimeoutMs,
   normalizeTokenTransfer,
   normalizeTrade,
   normalizeTransaction,
-  pageParams,
   poolManager,
   swapTopic,
   type TradeLeg,
 } from "./blockscout-client";
-import { decodeHistoryCursor, encodeHistoryCursor } from "./history-cursor";
+import {
+  createCreditBudget,
+  createMemoryCreditBudgetStore,
+  secondsToUtcMidnight,
+} from "./explorer-budget";
+import { createHistoryCursorCodec } from "./history-cursor";
 import { createFollowing } from "./following-read";
 import { parseRequest, RequestError } from "./request";
 import { createApi } from "./server";
 import { createTokenRegistry } from "./token-registry";
 import {
+  blockscoutClientFromEnv,
   createWalletHistory,
   createWalletHistoryFromEnv,
 } from "./wallet-history";
@@ -31,6 +36,12 @@ import {
 const wallet = "0x42a68318a6d78644870d3a37ec9e708e3ea904f5";
 const key = "proapi_test_key_never_logged";
 const fixtures = new URL("../fixtures/blockscout/", import.meta.url);
+/** This process's cursor signer: every history reader under test shares it. */
+const cursors = createHistoryCursorCodec({
+  secret: randomBytes(32).toString("hex"),
+});
+/** The public route's own allocation, for direct client reads. */
+const admit = { consumer: "history" } as const;
 async function fixture(name: string) {
   return readFile(new URL(name + ".json", fixtures), "utf8");
 }
@@ -370,7 +381,7 @@ test("client reads trades from the ERC-20 transfer page with a filter no cursor 
     ),
     poolsOf: () => [],
   };
-  const first = await c.readPage("trades", launcher, null, 0, registry);
+  const first = await c.readPage("trades", launcher, null, admit, registry);
   assert.equal(
     seen[0].url,
     `/addresses/${launcher}/token-transfers?type=ERC-20`,
@@ -386,11 +397,24 @@ test("client reads trades from the ERC-20 transfer page with a filter no cursor 
     block_number: "67884997",
     index: "14",
   });
+  // A position is only ever the explorer's own paging keys: one carrying
+  // the kind's filter, or any other key, is refused before any call.
+  await assert.rejects(
+    c.readPage(
+      "trades",
+      launcher,
+      { ...first.nextPageParams!, type: "ERC-721" },
+      admit,
+      registry,
+    ),
+    /page key type/,
+  );
+  assert.equal(seen.length, 1);
   const second = await c.readPage(
     "trades",
     launcher,
-    { ...first.nextPageParams!, type: "ERC-721" },
-    0,
+    first.nextPageParams,
+    admit,
     registry,
   );
   assert.equal(
@@ -543,128 +567,6 @@ test("rate limiter never starts more than five calls in any second and bounds th
   assert.deepEqual(sleeps, []);
 });
 
-test("credit budget spends per call, refuses past the cap, resets at UTC midnight and heeds the upstream header", () => {
-  let now = Date.parse("2026-09-15T23:59:30Z");
-  const budget = createCreditBudget({ dailyCap: 50, now: () => now });
-  budget.spend(20);
-  budget.spend(30);
-  assert.deepEqual(budget.snapshot(), {
-    day: "2026-09-15",
-    spent: 50,
-    dailyCap: 50,
-    remaining: null,
-  });
-  assert.throws(
-    () => budget.spend(20),
-    (e: BlockscoutError) =>
-      e.kind === "budget_exhausted" && e.retryAfter === 30,
-  );
-  assert.throws(() => budget.assertAvailable(1), BlockscoutError);
-  now = Date.parse("2026-09-16T00:00:00Z");
-  budget.spend(20);
-  assert.deepEqual(budget.snapshot(), {
-    day: "2026-09-16",
-    spent: 20,
-    dailyCap: 50,
-    remaining: null,
-  });
-  budget.observeRemaining(1000, 30);
-  assert.equal(budget.snapshot().remaining, 1000);
-  budget.observeRemaining(null, 30);
-  assert.equal(budget.snapshot().remaining, 1000);
-  budget.spend(20);
-  budget.observeRemaining(29, 30);
-  assert.throws(
-    () => budget.spend(1),
-    (e: BlockscoutError) =>
-      e.kind === "budget_exhausted" && e.retryAfter === 3600,
-  );
-  now += 3600_000;
-  budget.spend(1);
-  budget.observeRemaining(12, 30);
-  now = Date.parse("2026-09-17T00:00:00Z");
-  assert.equal(budget.snapshot().remaining, null);
-  budget.spend(1);
-  assert.throws(() => createCreditBudget({ dailyCap: 0 }), /cap/);
-});
-
-test("page parameters accept only bounded query-safe scalars", () => {
-  assert.equal(pageParams(null), null);
-  assert.deepEqual(pageParams({ index: 6, hash: "0xab", flag: true }), {
-    flag: "true",
-    hash: "0xab",
-    index: "6",
-  });
-  for (const bad of [
-    [],
-    "x",
-    { "bad key": 1 },
-    { a: {} },
-    { a: "with space" },
-    { a: "x".repeat(101) },
-    Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`k${i}`, "1"])),
-  ])
-    assert.throws(() => pageParams(bad));
-});
-
-test("history cursors bind to scope and kind and round-trip through the parser", () => {
-  const request = parseRequest(
-    `/v1/wallets/${wallet.toUpperCase().replace("0X", "0x")}/history`,
-  );
-  assert.equal(request.route, "history");
-  assert.equal(request.wallet, wallet);
-  assert.equal(request.kind, "transactions");
-  assert.equal(request.page, null);
-  const cursor = encodeHistoryCursor(request.scope, "transactions", {
-    block_number: "1",
-    index: "2",
-  });
-  const paged = parseRequest(`/v1/wallets/${wallet}/history?cursor=${cursor}`);
-  assert.deepEqual(paged.page, { block_number: "1", index: "2" });
-  assert.notEqual(paged.cacheKey, request.cacheKey);
-  const transfers = parseRequest(
-    `/v1/wallets/${wallet}/history?kind=token-transfers`,
-  );
-  assert.equal(transfers.kind, "token-transfers");
-  const trades = parseRequest(`/v1/wallets/${wallet}/history?kind=trades`);
-  assert.equal(trades.kind, "trades");
-  assert.notEqual(trades.cacheKey, transfers.cacheKey);
-  const tradesCursor = encodeHistoryCursor(trades.scope, "trades", {
-    block_number: "1",
-    index: "2",
-  });
-  assert.deepEqual(
-    parseRequest(
-      `/v1/wallets/${wallet}/history?kind=trades&cursor=${tradesCursor}`,
-    ).page,
-    { block_number: "1", index: "2" },
-  );
-  assert.throws(
-    () =>
-      parseRequest(
-        `/v1/wallets/${wallet}/history?kind=token-transfers&cursor=${tradesCursor}`,
-      ),
-    RequestError,
-  );
-  for (const url of [
-    `/v1/wallets/${wallet}/history?kind=logs`,
-    `/v1/wallets/${wallet}/history?limit=5`,
-    `/v1/wallets/${wallet}/history?kind=token-transfers&cursor=${cursor}`,
-    `/v1/wallets/${"0x" + "1".repeat(40)}/history?cursor=${cursor}`,
-    `/v1/wallets/${wallet}/history?cursor=${encodeHistoryCursor(request.scope, "transactions", {})}`,
-    `/v1/wallets/${wallet}/history?cursor=%00`,
-    `/v1/wallets/${wallet}/history/`,
-  ])
-    assert.throws(() => parseRequest(url), RequestError);
-  assert.throws(
-    () => decodeHistoryCursor(cursor, "other", "transactions"),
-    /cursor/,
-  );
-  // The existing activity and profile routes keep their meaning.
-  assert.equal(parseRequest(`/v1/wallets/${wallet}/activity`).route, "wallet");
-  assert.equal(parseRequest(`/v1/wallets/${wallet}`).route, "profile");
-});
-
 test("history serves fresh, cached, stale and unavailable pages by cache state", async () => {
   let now = Date.parse("2026-09-15T12:00:00Z");
   let fail: BlockscoutError | null = null;
@@ -679,17 +581,19 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   };
   const history = createWalletHistory({
     client: { readPage, budget: createCreditBudget({ dailyCap: 1 }) } as never,
+    cursors: createHistoryCursorCodec({
+      secret: randomBytes(32).toString("hex"),
+      now: () => now,
+    }),
     now: () => now,
     firstPageTtlMs: 30000,
     pageTtlMs: 600000,
     staleMaxAgeMs: 3600000,
   });
-  const scope = "scope";
   const first = await history.read({
     wallet,
     kind: "transactions",
-    page: null,
-    scope,
+    cursor: null,
   });
   assert.equal(first.source, "blockscout");
   assert.equal(first.chainId, 4663);
@@ -702,7 +606,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   );
   now += 29000;
   assert.deepEqual(
-    await history.read({ wallet, kind: "transactions", page: null, scope }),
+    await history.read({ wallet, kind: "transactions", cursor: null }),
     first,
   );
   assert.equal(calls, 1);
@@ -710,27 +614,29 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   const refreshed = await history.read({
     wallet,
     kind: "transactions",
-    page: null,
-    scope,
+    cursor: null,
   });
   assert.equal(calls, 2);
   assert.notDeepEqual(refreshed, first);
-  const page = decodeHistoryCursor(first.nextCursor!, scope, "transactions");
   const deep = await history.read({
     wallet,
     kind: "transactions",
-    page,
-    scope,
+    cursor: first.nextCursor,
   });
   assert.equal(deep.nextCursor, null);
   now += 599000;
+  // The refreshed page's cursor names the same position: one cache entry.
   assert.deepEqual(
-    await history.read({ wallet, kind: "transactions", page, scope }),
+    await history.read({
+      wallet,
+      kind: "transactions",
+      cursor: refreshed.nextCursor,
+    }),
     deep,
   );
   assert.equal(calls, 3);
   // Kinds and wallets never share entries.
-  await history.read({ wallet, kind: "token-transfers", page: null, scope });
+  await history.read({ wallet, kind: "token-transfers", cursor: null });
   assert.equal(calls, 4);
   // Failures serve what is cached, marked stale, otherwise a reasoned 503.
   fail = new BlockscoutError("budget_exhausted", 120);
@@ -738,8 +644,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
   const stale = await history.read({
     wallet,
     kind: "transactions",
-    page: null,
-    scope,
+    cursor: null,
   });
   assert.equal(stale.stale, true);
   assert.equal(stale.fetchedAt, refreshed.fetchedAt);
@@ -749,8 +654,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
     history.read({
       wallet: "0x" + "2".repeat(40),
       kind: "transactions",
-      page: null,
-      scope,
+      cursor: null,
     }),
     (e: RequestError) =>
       e.status === 503 &&
@@ -763,8 +667,7 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
     history.read({
       wallet: "0x" + "3".repeat(40),
       kind: "transactions",
-      page: null,
-      scope,
+      cursor: null,
     }),
     (e: RequestError) => e.reason === "key_rejected" && e.retryAfter === 3600,
   );
@@ -773,23 +676,21 @@ test("history serves fresh, cached, stale and unavailable pages by cache state",
     history.read({
       wallet: "0x" + "3".repeat(40),
       kind: "transactions",
-      page: null,
-      scope,
+      cursor: null,
     }),
     (e: RequestError) => e.reason === "upstream_unavailable",
   );
   // Stale entries expire after the maximum age.
   now += 3600000;
   await assert.rejects(
-    history.read({ wallet, kind: "transactions", page: null, scope }),
+    history.read({ wallet, kind: "transactions", cursor: null }),
     (e: RequestError) => e.reason === "upstream_unavailable",
   );
   await assert.rejects(
     createWalletHistory({ client: null }).read({
       wallet,
       kind: "transactions",
-      page: null,
-      scope,
+      cursor: null,
     }),
     (e: RequestError) =>
       e.status === 503 &&
@@ -816,28 +717,44 @@ test("a trades response reads exactly one explorer page and carries its cursor, 
       },
       budget: createCreditBudget({ dailyCap: 1 }),
     } as never,
+    cursors,
     registry: createTokenRegistry(async () => [
       { ref: 1, poolId: "0xpa", token: "0xa" },
     ]),
   });
-  const read = (w: string, page: Record<string, string> | null = null) =>
-    history.read({ wallet: w, kind: "trades", page, scope: "s" });
+  const read = (w: string, cursor: string | null = null) =>
+    history.read({ wallet: w, kind: "trades", cursor });
+  const a = "0x" + "a".repeat(40),
+    b = "0x" + "b".repeat(40);
   items = 4;
-  let body = await read("0x" + "a".repeat(40));
+  let body = await read(a);
   assert.equal(body.items.length, 4);
   assert.deepEqual(pages, [null]);
-  assert.deepEqual(decodeHistoryCursor(body.nextCursor!, "s", "trades"), {
-    block_number: "1",
-    index: "0",
-  });
+  assert.deepEqual(
+    cursors.decode(body.nextCursor!, { wallet: a, kind: "trades" }),
+    {
+      block_number: "1",
+      index: "0",
+    },
+  );
   items = 0;
-  body = await read("0x" + "b".repeat(40), { block_number: "9", index: "1" });
+  body = await read(
+    b,
+    cursors.encode({
+      wallet: b,
+      kind: "trades",
+      page: { block_number: "9", index: "1" },
+    }),
+  );
   assert.deepEqual(body.items, []);
   assert.deepEqual(pages, [null, { block_number: "9", index: "1" }]);
-  assert.deepEqual(decodeHistoryCursor(body.nextCursor!, "s", "trades"), {
-    block_number: "2",
-    index: "0",
-  });
+  assert.deepEqual(
+    cursors.decode(body.nextCursor!, { wallet: b, kind: "trades" }),
+    {
+      block_number: "2",
+      index: "0",
+    },
+  );
 });
 
 test("a spoofed token whose transfer log names the PoolManager was listed as a trade and is now dropped, since only registry tokens are trades", async (t) => {
@@ -880,13 +797,13 @@ test("a spoofed token whose transfer log names the PoolManager was listed as a t
   }));
   const history = createWalletHistory({
     client: client(baseUrl),
+    cursors,
     registry: createTokenRegistry(async () => registered),
   });
   const after = await history.read({
     wallet: launcher,
     kind: "trades",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.equal(after.kind, "trades");
   assert.deepEqual(
@@ -988,7 +905,7 @@ test("a router-relayed leg is a trade once its transaction holds a PoolManager s
   const tokens = await registry.current();
   const reg = { tokens, poolsOf: (x: string) => registry.poolsOf(x) };
   const read = async (w: string) =>
-    (await c.readPage("trades", w, null, 0, reg)).items.map((i) => [
+    (await c.readPage("trades", w, null, admit, reg)).items.map((i) => [
       i.transactionHash.slice(0, 10),
       i.logIndex,
       i.side,
@@ -1113,7 +1030,7 @@ test("relayed legs are confirmed five blocks per gateway batch, each batch bille
     "trades",
     "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
     null,
-    0,
+    admit,
     reg,
   );
   assert.deepEqual(read.items, []);
@@ -1145,7 +1062,7 @@ test("relayed legs are confirmed five blocks per gateway batch, each batch bille
       "trades",
       "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
       null,
-      0,
+      admit,
       reg,
     ),
     (error: unknown) =>
@@ -1210,7 +1127,7 @@ test("a gateway that cannot answer fails the page instead of dropping its relaye
         "trades",
         "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
         null,
-        0,
+        admit,
         reg,
       ),
       (error: unknown) =>
@@ -1245,12 +1162,12 @@ test("duplicate gateway reply ids fail the page without caching absent swaps", a
   };
   const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
   await assert.rejects(
-    c.readPage("trades", wallet, null, 0, reg),
+    c.readPage("trades", wallet, null, admit, reg),
     (error: unknown) =>
       error instanceof BlockscoutError && error.kind === "upstream_unavailable",
   );
   duplicate = false;
-  const recovered = await c.readPage("trades", wallet, null, 0, reg);
+  const recovered = await c.readPage("trades", wallet, null, admit, reg);
   assert.deepEqual(
     recovered.items.map((item) => item.logIndex),
     [52, 2, 47],
@@ -1289,19 +1206,19 @@ test("recent swap verdicts are rechecked after explorer indexing or a reorg", as
   };
   const wallet = "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e";
   assert.deepEqual(
-    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    (await c.readPage("trades", wallet, null, admit, reg)).items,
     [],
   );
   visible = true;
   assert.deepEqual(
-    (await c.readPage("trades", wallet, null, 0, reg)).items.map(
+    (await c.readPage("trades", wallet, null, admit, reg)).items.map(
       (item) => item.logIndex,
     ),
     [52, 2],
   );
   visible = false;
   assert.deepEqual(
-    (await c.readPage("trades", wallet, null, 0, reg)).items,
+    (await c.readPage("trades", wallet, null, admit, reg)).items,
     [],
   );
   assert.equal(batches.length, 3);
@@ -1350,6 +1267,7 @@ test("Following bounds gateway work without caching a partial Trades page", asyn
   const nowMs = Date.parse("2026-09-27T12:00:00Z");
   const history = createWalletHistory({
     client: client(baseUrl, { now: () => nowMs }),
+    cursors,
     registry,
     now: () => nowMs,
   });
@@ -1369,8 +1287,7 @@ test("Following bounds gateway work without caching a partial Trades page", asyn
   const tab = await history.read({
     wallet,
     kind: "trades",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.equal(tab.items.length, 11);
   assert.deepEqual(
@@ -1440,6 +1357,7 @@ test("Following shares two gateway batches across eight wallet reads", async (t)
       now: () => nowMs,
       limiter: { acquire: async () => {} },
     }),
+    cursors,
     registry,
     now: () => nowMs,
   });
@@ -1465,12 +1383,15 @@ test("Following shares two gateway batches across eight wallet reads", async (t)
 test("the wallet's trade list serves router-relayed trades beside direct ones", async (t) => {
   const { logs, pages, registry } = await relayedFixtures();
   const { baseUrl } = await relayedUpstream(t, logs, () => pages.launchpad);
-  const history = createWalletHistory({ client: client(baseUrl), registry });
+  const history = createWalletHistory({
+    client: client(baseUrl),
+    cursors,
+    registry,
+  });
   const body = await history.read({
     wallet: "0xb96de56c79f5d179b6ec5a8de257d0115c34a83e",
     kind: "trades",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.deepEqual(
     body.items.map((i) => ("side" in i ? [i.logIndex, i.side] : null)),
@@ -1502,9 +1423,10 @@ test("the trades kind needs the registry, and reads it before spending a credit"
   const budget = createCreditBudget({ dailyCap: 1 });
   const unregistered = createWalletHistory({
     client: { readPage, budget } as never,
+    cursors,
   });
   await assert.rejects(
-    unregistered.read({ wallet, kind: "trades", page: null, scope: "s" }),
+    unregistered.read({ wallet, kind: "trades", cursor: null }),
     (e: RequestError) =>
       e.status === 503 &&
       e.reason === "not_configured" &&
@@ -1514,18 +1436,18 @@ test("the trades kind needs the registry, and reads it before spending a credit"
   await unregistered.read({
     wallet,
     kind: "token-transfers",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.equal(reads, 1);
   const unreachable = createWalletHistory({
     client: { readPage, budget } as never,
+    cursors,
     registry: createTokenRegistry(async () => {
       throw Error("database_unavailable");
     }),
   });
   await assert.rejects(
-    unreachable.read({ wallet, kind: "trades", page: null, scope: "s" }),
+    unreachable.read({ wallet, kind: "trades", cursor: null }),
     /database_unavailable/,
   );
   assert.equal(reads, 1);
@@ -1580,11 +1502,13 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
     stale: false,
     note: "Explorer history for display only; not accounting or PnL evidence.",
   };
-  const cursor = encodeHistoryCursor(
-    parseRequest(`/v1/wallets/${wallet}/history?kind=token-transfers`).scope,
-    "token-transfers",
-    { block_number: "5", index: "1" },
-  );
+  // The route hands the reader the cursor as received: verifying it is the
+  // reader's, before any paid read.
+  const cursor = cursors.encode({
+    wallet,
+    kind: "token-transfers",
+    page: { block_number: "5", index: "1" },
+  });
   res = await fetch(urlOf(server) + `?kind=token-transfers&cursor=${cursor}`);
   assert.equal(res.status, 200);
   assert.equal(res.headers.get("x-data-cache"), "MISS");
@@ -1592,9 +1516,7 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
   assert.deepEqual(seen.at(-1), {
     wallet,
     kind: "token-transfers",
-    page: { block_number: "5", index: "1" },
-    scope: parseRequest(`/v1/wallets/${wallet}/history?kind=token-transfers`)
-      .scope,
+    cursor,
   });
   // The server's generic response cache stays out of the way of stale/fresh.
   res = await fetch(urlOf(server) + `?kind=token-transfers&cursor=${cursor}`);
@@ -1633,37 +1555,171 @@ test("HTTP route answers explorer pages, reasoned 503s with Retry-After, and 503
   });
 });
 
-test("startup reads the key and limits by name and never requires them", async () => {
+test("startup reads the key, the secret and the limits by name, never prints them, and requires the secret and the budget's store only with a key", async () => {
   const missing = createWalletHistoryFromEnv({});
   await assert.rejects(
-    missing.read({ wallet, kind: "transactions", page: null, scope: "s" }),
+    missing.read({ wallet, kind: "transactions", cursor: null }),
     (e: RequestError) => e.reason === "not_configured",
   );
+  const secret = randomBytes(32).toString("hex");
+  const store = createMemoryCreditBudgetStore();
+  // The budget lives in the database: a key without its store never starts.
   assert.throws(
-    () =>
-      createWalletHistoryFromEnv({
-        BLOCKSCOUT_API_KEY: key,
-        BLOCKSCOUT_DAILY_CREDIT_CAP: "100000",
-      }),
-    /BLOCKSCOUT_DAILY_CREDIT_CAP/,
+    () => blockscoutClientFromEnv({ BLOCKSCOUT_API_KEY: key }),
+    /DATABASE_URL/,
   );
+  for (const [name, value] of [
+    ["BLOCKSCOUT_DAILY_CREDIT_CAP", "100000"],
+    ["BLOCKSCOUT_DAILY_CREDIT_CAP", "0"],
+    ["BLOCKSCOUT_CREDIT_FLOOR", "100000"],
+    ["BLOCKSCOUT_CREDIT_FLOOR", "-1"],
+  ])
+    assert.throws(
+      () =>
+        blockscoutClientFromEnv(
+          { BLOCKSCOUT_API_KEY: key, [name]: value },
+          store,
+        ),
+      new RegExp(name),
+    );
+  const explorer = blockscoutClientFromEnv(
+    {
+      BLOCKSCOUT_API_KEY: key,
+      BLOCKSCOUT_API_URL: "http://127.0.0.1:9",
+      BLOCKSCOUT_DAILY_CREDIT_CAP: "50",
+      BLOCKSCOUT_CREDIT_FLOOR: "0",
+    },
+    store,
+  )!;
+  assert.equal(explorer.budget.snapshot().dailyCap, 50);
   assert.throws(
     () =>
-      createWalletHistoryFromEnv({
-        BLOCKSCOUT_API_KEY: key,
-        BLOCKSCOUT_PAGE_TTL_SECONDS: "0",
-      }),
+      createWalletHistoryFromEnv(
+        { BLOCKSCOUT_PAGE_TTL_SECONDS: "0", HISTORY_CURSOR_SECRET: secret },
+        null,
+        explorer,
+      ),
     /BLOCKSCOUT_PAGE_TTL_SECONDS/,
   );
+  // Cursors are signed with HISTORY_CURSOR_SECRET, so a key without it (or
+  // with a short one) refuses to start history reads at all.
+  for (const env of [
+    {},
+    { HISTORY_CURSOR_SECRET: "" },
+    { HISTORY_CURSOR_SECRET: "x".repeat(31) },
+    { HISTORY_CURSOR_SECRET: "with a space" + "x".repeat(30) },
+  ])
+    assert.throws(
+      () => createWalletHistoryFromEnv(env, null, explorer),
+      (error: Error) =>
+        /HISTORY_CURSOR_SECRET/.test(error.message) &&
+        !error.message.includes("x".repeat(31)),
+    );
   // A configured client with an unreachable override host fails as upstream.
-  const configured = createWalletHistoryFromEnv({
-    BLOCKSCOUT_API_KEY: key,
-    BLOCKSCOUT_API_URL: "http://127.0.0.1:9",
-    BLOCKSCOUT_DAILY_CREDIT_CAP: "50",
-  });
+  const configured = createWalletHistoryFromEnv(
+    { HISTORY_CURSOR_SECRET: secret },
+    null,
+    explorer,
+  );
   await assert.rejects(
-    configured.read({ wallet, kind: "transactions", page: null, scope: "s" }),
+    configured.read({ wallet, kind: "transactions", cursor: null }),
     (e: RequestError) =>
       e.reason === "upstream_unavailable" && e.retryAfter === 30,
+  );
+});
+
+test("a stated balance under the account floor stops every reader after one call, and a cursor this api did not issue is refused before any call", async () => {
+  const now = Date.parse("2026-09-29T12:00:00Z");
+  const calls: string[] = [];
+  const c = createBlockscoutClient({
+    key,
+    dailyCreditCap: 30000,
+    now: () => now,
+    limiter: createRateLimiter({ sleep: async () => {} }),
+    fetchImpl: (async (url: URL) => {
+      calls.push(String(url));
+      return new Response(
+        JSON.stringify({ items: [], next_page_params: null }),
+        { headers: { "x-credits-remaining": "29999" } },
+      );
+    }) as typeof fetch,
+  });
+  const history = createWalletHistory({ client: c, cursors, now: () => now });
+  // The first read cannot know the balance; its answer states it.
+  const first = await history.read({
+    wallet,
+    kind: "transactions",
+    cursor: null,
+  });
+  assert.equal(first.stale, false);
+  for (const w of ["0x" + "1".repeat(40), "0x" + "2".repeat(40)])
+    await assert.rejects(
+      history.read({ wallet: w, kind: "transactions", cursor: null }),
+      (e: RequestError) =>
+        e.status === 503 &&
+        e.reason === "budget_exhausted" &&
+        e.retryAfter === secondsToUtcMidnight(now),
+    );
+  assert.equal(calls.length, 1);
+  assert.equal(c.budget.snapshot().remaining, 29999);
+  // The page already read is still served, fresh, from the cache.
+  assert.deepEqual(
+    await history.read({ wallet, kind: "transactions", cursor: null }),
+    first,
+  );
+  // Cursors: the v1 unsigned format, two of them differing in a key the
+  // api never issued, one signed for another wallet or kind, and an altered
+  // one, all 400 before any explorer call; only an issued one is read.
+  const page = { block_number: "1", index: "2" };
+  const issued = cursors.encode({ wallet, kind: "transactions", page });
+  for (const forged of [
+    Buffer.from(
+      JSON.stringify({ v: 1, scope: "abc", kind: "transactions", page }),
+    ).toString("base64url"),
+    ...["one", "two"].map((unused) =>
+      Buffer.from(
+        JSON.stringify({
+          v: 1,
+          scope: "abc",
+          kind: "transactions",
+          page: { unused },
+        }),
+      ).toString("base64url"),
+    ),
+    cursors.encode({
+      wallet: "0x" + "3".repeat(40),
+      kind: "transactions",
+      page,
+    }),
+    cursors.encode({ wallet, kind: "token-transfers", page }),
+    issued.slice(0, -1) + (issued.endsWith("A") ? "B" : "A"),
+  ])
+    await assert.rejects(
+      history.read({ wallet, kind: "transactions", cursor: forged }),
+      (e: RequestError) => e.status === 400 && e.code === "invalid_cursor",
+    );
+  assert.equal(calls.length, 1);
+  const lifted = createBlockscoutClient({
+    key,
+    dailyCreditCap: 30000,
+    now: () => now,
+    limiter: createRateLimiter({ sleep: async () => {} }),
+    fetchImpl: (async (url: URL) => {
+      calls.push(String(url));
+      return new Response(
+        JSON.stringify({ items: [], next_page_params: null }),
+        { headers: { "x-credits-remaining": "90000" } },
+      );
+    }) as typeof fetch,
+  });
+  await createWalletHistory({ client: lifted, cursors, now: () => now }).read({
+    wallet,
+    kind: "transactions",
+    cursor: issued,
+  });
+  assert.equal(calls.length, 2);
+  assert.equal(
+    calls[1],
+    `https://api.blockscout.com/4663/api/v2/addresses/${wallet}/transactions?block_number=1&index=2`,
   );
 });

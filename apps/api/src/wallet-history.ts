@@ -11,7 +11,15 @@ import {
   type PageParams,
   type SwapBatchBudget,
 } from "./blockscout-client";
-import { encodeHistoryCursor } from "./history-cursor";
+import {
+  createCreditBudget,
+  type CreditAdmission,
+  type CreditBudgetStore,
+} from "./explorer-budget";
+import {
+  createHistoryCursorCodec,
+  type HistoryCursorCodec,
+} from "./history-cursor";
 import { RequestError } from "./request";
 import type { TokenRegistry } from "./token-registry";
 
@@ -31,18 +39,22 @@ export interface TradesSnapshot {
   reason: WalletHistoryUnavailable["reason"] | null;
 }
 export interface WalletHistory {
+  /** One page for the public route, charged to the `history` allocation.
+   * `cursor` is the caller's cursor as received: verified here, before any
+   * paid read, and a 400 `invalid_cursor` for anything this api did not
+   * issue for this wallet and kind. */
   read(input: {
     wallet: string;
     kind: WalletHistoryKind;
-    page: PageParams | null;
-    scope: string;
+    cursor: string | null;
   }): Promise<WalletHistoryResponse>;
   /** The cached first trades page, however old, until it ages out. */
   peekTrades(wallet: string): TradesSnapshot | null;
-  /** Reads the first trades page from the explorer, whatever the cache holds;
-   * a failed read answers the cached page marked stale, or throws the 503.
-   * `reserveShare` of the day's credits is left for other readers: past it
-   * the read fails as `budget_exhausted` without an explorer call. */
+  /** Reads the first trades page from the explorer, whatever the cache holds,
+   * charged to the `following` allocation; a failed read answers the cached
+   * page marked stale, or throws the 503. `reserveShare` of the day's shared
+   * credits is left for other readers: past it the read fails as
+   * `budget_exhausted` without an explorer call. */
   refreshTrades(
     wallet: string,
     options?: { reserveShare?: number; swapBatchBudget?: SwapBatchBudget },
@@ -55,10 +67,15 @@ interface Entry {
   bytes: number;
 }
 
+/** The route's public reasons. A budget store that did not answer is the
+ * explorer being unavailable to this reader: nothing is spent without a
+ * reservation, and the caller retries as for any upstream failure. */
 function failure(error: BlockscoutError): WalletHistoryUnavailable["reason"] {
   return error.kind === "misconfigured_key" || error.kind === "key_rejected"
     ? "key_rejected"
-    : error.kind;
+    : error.kind === "budget_unavailable"
+      ? "upstream_unavailable"
+      : error.kind;
 }
 function unavailable(error: BlockscoutError): RequestError {
   return new RequestError(503, "wallet_history_unavailable", {
@@ -73,10 +90,12 @@ function unavailable(error: BlockscoutError): RequestError {
  * stale, whenever the explorer or the credit budget cannot answer. Trades
  * keep only legs whose token is in the verified registry, read before any
  * credit is spent; without a registry the trades kind is not configured.
- * Concurrent full reads of one page share one explorer call. */
+ * Concurrent full reads of one page share one explorer call. Cursors are
+ * issued and verified by `cursors`, which a configured client requires. */
 export function createWalletHistory({
   client,
   registry = null,
+  cursors = null,
   now = Date.now,
   firstPageTtlMs = 30000,
   pageTtlMs = 600000,
@@ -86,6 +105,7 @@ export function createWalletHistory({
 }: {
   client: BlockscoutClient | null;
   registry?: TokenRegistry | null;
+  cursors?: HistoryCursorCodec | null;
   now?: () => number;
   firstPageTtlMs?: number;
   pageTtlMs?: number;
@@ -93,6 +113,8 @@ export function createWalletHistory({
   maxEntries?: number;
   maxBytes?: number;
 }): WalletHistory {
+  if (client && !cursors)
+    throw Error("A history cursor codec is required with an explorer client");
   const cache = new Map<string, Entry>();
   const pending = new Map<string, Promise<Entry>>();
   let cacheBytes = 0;
@@ -101,7 +123,7 @@ export function createWalletHistory({
     cache.delete(key);
   }
   function assertConfigured(kind: WalletHistoryKind) {
-    if (!client || (kind === "trades" && !registry))
+    if (!client || !cursors || (kind === "trades" && !registry))
       throw new RequestError(503, "wallet_history_unavailable", {
         reason: "not_configured",
         retryAfter: 3600,
@@ -117,7 +139,7 @@ export function createWalletHistory({
     wallet: string,
     kind: WalletHistoryKind,
     page: PageParams | null,
-    reserveShare = 0,
+    admission: CreditAdmission,
     swapBatchBudget?: SwapBatchBudget,
   ): Promise<Entry> {
     const key = JSON.stringify([wallet, kind, page]);
@@ -131,14 +153,14 @@ export function createWalletHistory({
                 "trades",
                 wallet,
                 page,
-                reserveShare,
+                admission,
                 {
                   tokens: registered!,
                   poolsOf: (t) => registry!.poolsOf(t),
                 },
                 swapBatchBudget,
               )
-            : await client!.readPage(kind, wallet, page, reserveShare);
+            : await client!.readPage(kind, wallet, page, admission);
         const items = registered
           ? (read.items as { token: { address: string } }[]).filter((i) =>
               registered.has(i.token.address),
@@ -188,8 +210,16 @@ export function createWalletHistory({
     };
   }
   return {
-    async read({ wallet, kind, page, scope }) {
+    async read({ wallet, kind, cursor }) {
       assertConfigured(kind);
+      let page: PageParams | null = null;
+      if (cursor !== null) {
+        try {
+          page = cursors!.decode(cursor, { wallet, kind });
+        } catch {
+          throw new RequestError(400, "invalid_cursor");
+        }
+      }
       const key = JSON.stringify([wallet, kind, page]);
       const hit = cached(key);
       let entry: Entry;
@@ -200,7 +230,7 @@ export function createWalletHistory({
         entry = hit;
       } else {
         try {
-          entry = await fetchEntry(wallet, kind, page);
+          entry = await fetchEntry(wallet, kind, page, { consumer: "history" });
         } catch (error) {
           if (!(error instanceof BlockscoutError)) throw error;
           const last = cache.get(key);
@@ -216,7 +246,7 @@ export function createWalletHistory({
         kind,
         items: entry.items,
         nextCursor: entry.next
-          ? encodeHistoryCursor(scope, kind, entry.next)
+          ? cursors!.encode({ wallet, kind, page: entry.next })
           : null,
         fetchedAt: new Date(entry.fetchedAt).toISOString(),
         stale,
@@ -237,7 +267,7 @@ export function createWalletHistory({
             wallet,
             "trades",
             null,
-            reserveShare,
+            { consumer: "following", reserveShare },
             swapBatchBudget,
           ),
           false,
@@ -258,36 +288,44 @@ function envInteger(
   name: string,
   fallback: number,
   max: number,
+  min = 1,
 ) {
   const raw = env[name];
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
-  if (!Number.isSafeInteger(n) || n < 1 || n > max)
+  if (!Number.isSafeInteger(n) || n < min || n > max)
     throw Error(`Invalid ${name}`);
   return n;
 }
 /** Reads BLOCKSCOUT_API_KEY by name at startup: the one explorer client, and
  * so the one daily credit budget, of every reader of the explorer in this
- * process. Null without a key. */
+ * process. Null without a key. With a key, the budget's day rows live in
+ * `budgetStore` (the database, shared with every other process holding the
+ * key), the cap is `BLOCKSCOUT_DAILY_CREDIT_CAP` and the account floor
+ * `BLOCKSCOUT_CREDIT_FLOOR`. */
 export function blockscoutClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  budgetStore: CreditBudgetStore | null = null,
 ): BlockscoutClient | null {
   const key = env.BLOCKSCOUT_API_KEY;
-  return key
-    ? createBlockscoutClient({
-        key,
-        baseUrl: env.BLOCKSCOUT_API_URL || undefined,
-        dailyCreditCap: envInteger(
-          env,
-          "BLOCKSCOUT_DAILY_CREDIT_CAP",
-          30000,
-          99999,
-        ),
-      })
-    : null;
+  if (!key) return null;
+  if (!budgetStore)
+    throw Error(
+      "DATABASE_URL is required with BLOCKSCOUT_API_KEY: the explorer credit budget is kept in the database",
+    );
+  return createBlockscoutClient({
+    key,
+    baseUrl: env.BLOCKSCOUT_API_URL || undefined,
+    budget: createCreditBudget({
+      dailyCap: envInteger(env, "BLOCKSCOUT_DAILY_CREDIT_CAP", 30000, 99999),
+      creditFloor: envInteger(env, "BLOCKSCOUT_CREDIT_FLOOR", 30000, 99999, 0),
+      store: budgetStore,
+    }),
+  });
 }
 /** Without a key the route answers 503 `not_configured`, so unconfigured
- * deployments and CI stay green. */
+ * deployments and CI stay green. With one, `HISTORY_CURSOR_SECRET` must be
+ * set (its value is never printed), or startup refuses. */
 export function createWalletHistoryFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   registry: TokenRegistry | null = null,
@@ -296,6 +334,9 @@ export function createWalletHistoryFromEnv(
   return createWalletHistory({
     registry,
     client,
+    cursors: client
+      ? createHistoryCursorCodec({ secret: env.HISTORY_CURSOR_SECRET })
+      : null,
     firstPageTtlMs:
       envInteger(env, "BLOCKSCOUT_FIRST_PAGE_TTL_SECONDS", 30, 86400) * 1000,
     pageTtlMs:

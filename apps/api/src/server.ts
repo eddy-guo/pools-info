@@ -146,8 +146,7 @@ export function createApi(
                 ? await history.read({
                     wallet: request.wallet!,
                     kind: request.kind,
-                    page: request.page,
-                    scope: request.scope,
+                    cursor: request.historyCursor,
                   })
                 : request.route === "following"
                   ? await readFollowing(request.wallets, request.limit)

@@ -1,5 +1,6 @@
 import pg from "pg";
 import { BlockscoutError, type BlockscoutClient } from "./blockscout-client";
+import { creditBudgetPolicy } from "./explorer-budget";
 
 /** The trader board excludes observed contracts (decided 28 Sep 2026; All-time
  * #29 of 27 Sep was a market-making contract many wallets call). The ledger
@@ -16,9 +17,12 @@ export const contractCensusPolicy = Object.freeze({
   intervalMs: 300000,
   /** Addresses read per run: five to an explorer call of 20 credits. */
   addressesPerRun: 25,
-  /** Never read while the key's stated balance is under this. */
-  creditFloor: 30000,
-  /** Reserve the last fifth of local credits for the live Trades tab and Following. */
+  /** Never read while the key's stated balance is under this: the floor
+   * the shared budget holds every reader to, checked here too so a run stops
+   * before asking the budget. */
+  creditFloor: creditBudgetPolicy.creditFloor,
+  /** Leave the last fifth of the day's shared credits to the live Trades tab
+   * and Following. */
   reserveShare: 0.2,
   /** A wallet with no code, or a delegated one, is read again after this
    * long while the board could still show it: an address can gain code. */
@@ -150,7 +154,10 @@ export function createContractCensus({
       const batch = due.slice(i, i + 5);
       let code: Map<string, string>;
       try {
-        code = await client.readCode(batch, policy.reserveShare);
+        code = await client.readCode(batch, {
+          consumer: "census",
+          reserveShare: policy.reserveShare,
+        });
       } catch (error) {
         if (!(error instanceof BlockscoutError)) throw error;
         return {

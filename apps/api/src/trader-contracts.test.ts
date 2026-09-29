@@ -5,9 +5,9 @@ import { createClient, migrate } from "../../../packages/db/src/index";
 import {
   BlockscoutError,
   createBlockscoutClient,
-  createCreditBudget,
   type BlockscoutClient,
 } from "./blockscout-client";
+import { createCreditBudget, creditBudgetPolicy } from "./explorer-budget";
 import {
   contractCensusPolicy,
   createContractCensus,
@@ -65,7 +65,10 @@ test("the explorer client reads code five addresses a call through the JSON-RPC 
     }) as typeof fetch,
   });
   const wallets = [1, 2, 3, 4, 5, 6, 7].map(addr);
-  const code = await client.readCode(wallets, 0.2);
+  const code = await client.readCode(wallets, {
+    consumer: "census",
+    reserveShare: 0.2,
+  });
   assert.deepEqual(
     calls.map((c) => [c.url, c.body.length]),
     [
@@ -102,7 +105,7 @@ test("the explorer client reads code five addresses a call through the JSON-RPC 
   ]) {
     reply = broken as unknown as typeof reply;
     await assert.rejects(
-      client.readCode([addr(1)], 0.2),
+      client.readCode([addr(1)], { consumer: "census", reserveShare: 0.2 }),
       (e: BlockscoutError) => e.kind === "upstream_unavailable",
     );
   }
@@ -124,22 +127,31 @@ function memoryStore(due: string[]) {
   return { store, recorded };
 }
 /** An explorer that answers every address with `code(address)`, stating
- * `remaining` credits after each call. */
+ * `remaining` credits after each call; its budget only reports, so the
+ * census's own floor check is what these tests exercise. */
 function explorer(
   code: (address: string) => string,
   remaining: () => number,
   fail?: (call: number) => BlockscoutError | null,
 ) {
-  const budget = createCreditBudget({ dailyCap: 100000 });
+  let stated: number | null = null;
   const asked: string[][] = [];
   const client = {
-    budget,
+    budget: {
+      snapshot: () => ({
+        day: "2026-09-29",
+        spent: asked.length * 20,
+        reserved: 0,
+        dailyCap: 100000,
+        remaining: stated,
+        consumers: {},
+      }),
+    },
     async readCode(addresses: readonly string[]) {
       asked.push([...addresses]);
       const error = fail?.(asked.length);
       if (error) throw error;
-      budget.spend(20);
-      budget.observeRemaining(remaining(), 30);
+      stated = remaining();
       return new Map(addresses.map((a) => [a, code(a)]));
     },
   } as unknown as BlockscoutClient;
@@ -219,6 +231,10 @@ test("a census run reads due candidates five to a call and continues across runs
 test("a census run never reads under the credit floor and never retries a failed call", async () => {
   const due = Array.from({ length: 20 }, (_, i) => addr(i + 1));
   // The key's balance falls under the floor after the second call.
+  assert.equal(
+    contractCensusPolicy.creditFloor,
+    creditBudgetPolicy.creditFloor,
+  );
   let balance = contractCensusPolicy.creditFloor + 30;
   const { store, recorded } = memoryStore(due);
   const low = explorer(

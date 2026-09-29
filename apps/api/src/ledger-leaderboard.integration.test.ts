@@ -24,7 +24,7 @@ import {
   type LedgerBatch,
 } from "../../../packages/db/src/index";
 import { walletSummary } from "./accounting-read";
-import { createCreditBudget } from "./blockscout-client";
+import { createCreditBudget } from "./explorer-budget";
 import { ledgerLeaderboardPolicy } from "./ledger-leaderboard";
 import { createReader } from "./reader";
 import { createApi } from "./server";

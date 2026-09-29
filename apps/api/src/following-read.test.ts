@@ -1,13 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { parseFollowingWallets } from "@pools/core";
 import type { WalletHistoryTrade } from "@pools/core";
-import {
-  createBlockscoutClient,
-  createCreditBudget,
-  type PageParams,
-} from "./blockscout-client";
+import { createBlockscoutClient, type PageParams } from "./blockscout-client";
+import { createCreditBudget, type CreditAdmission } from "./explorer-budget";
+import { createHistoryCursorCodec } from "./history-cursor";
 import {
   createFollowing,
   followingPolicy,
@@ -23,6 +22,9 @@ import {
 } from "./wallet-history";
 
 const address = (n: number) => `0x${n.toString(16).padStart(40, "0")}`;
+const cursors = createHistoryCursorCodec({
+  secret: randomBytes(32).toString("hex"),
+});
 test("following requests bound, normalize and scope the explicit local list", () => {
   assert.deepEqual(parseFollowingWallets(null), []);
   assert.deepEqual(parseFollowingWallets(""), []);
@@ -441,7 +443,7 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
         kind: string,
         _wallet: string,
         _page: unknown,
-        reserveShare = 0,
+        admission: CreditAdmission,
         registry?: {
           tokens: ReadonlySet<string>;
           poolsOf(token: string): readonly string[];
@@ -451,7 +453,8 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
         assert(registry);
         assert(registry.tokens.has(token(1)));
         assert.deepEqual(registry.poolsOf(token(1)), [hash(1)]);
-        budget.spend(30, Math.ceil(budget.snapshot().dailyCap * reserveShare));
+        const reservation = await budget.reserve(30, admission);
+        await reservation.settle({ remaining: null, at: Date.now() });
         calls++;
         await new Promise((resolve) => setImmediate(resolve));
         return {
@@ -460,6 +463,7 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
         };
       },
     } as never,
+    cursors,
     registry: createTokenRegistry(async () => [
       { ref: 1, poolId: hash(1), token: token(1) },
     ]),
@@ -467,7 +471,7 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
   // Concurrent reads of one page share one call.
   const [a, b] = await Promise.all([
     history.refreshTrades(wallet, { reserveShare: 0.2 }),
-    history.read({ wallet, kind: "trades", page: null, scope: "s" }),
+    history.read({ wallet, kind: "trades", cursor: null }),
   ]);
   assert.equal(calls, 1);
   assert.deepEqual(
@@ -488,14 +492,18 @@ test("following leaves the wallet page a fifth of the day's credits and shares t
     history.refreshTrades(address(9), { reserveShare: 0.2 }),
     (e: RequestError) => e.reason === "budget_exhausted",
   );
-  // The wallet page still reads its own.
+  // The wallet page still reads its own: Following's spend is charged to
+  // its allocation, and the reserve it leaves is the history route's.
   await history.read({
     wallet: address(9),
     kind: "trades",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.equal(calls, 9);
+  assert.deepEqual(budget.snapshot().consumers, {
+    following: { spent: 240, reserved: 0 },
+    history: { spent: 30, reserved: 0 },
+  });
 });
 
 test("concurrent following refreshes keep the wallet-page credit reserve", async () => {
@@ -520,6 +528,7 @@ test("concurrent following refreshes keep the wallet-page credit reserve", async
   });
   const history = createWalletHistory({
     client,
+    cursors,
     registry: createTokenRegistry(async () => [
       { ref: 1, poolId: hash(1), token: token(1) },
     ]),
@@ -536,8 +545,7 @@ test("concurrent following refreshes keep the wallet-page credit reserve", async
   await history.read({
     wallet: address(10),
     kind: "trades",
-    page: null,
-    scope: "s",
+    cursor: null,
   });
   assert.equal(client.budget.snapshot().spent, 270);
 });

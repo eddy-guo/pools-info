@@ -4,6 +4,15 @@ import type {
   WalletHistoryTrade,
   WalletHistoryTransaction,
 } from "@pools/core";
+import { BlockscoutError, type BlockscoutFailure } from "./blockscout-error";
+import {
+  createCreditBudget,
+  type CreditAdmission,
+  type CreditBudget,
+} from "./explorer-budget";
+import { canonicalPageParams, upstream, type PageParams } from "./history-page";
+
+export { BlockscoutError, type BlockscoutFailure, type PageParams };
 
 /** Robinhood Chain (4663) on the Blockscout PRO host. The public explorer host
  * challenges scripted clients, and the PRO host bills every call in credits. */
@@ -14,19 +23,6 @@ export const creditCost: Record<WalletHistoryKind, number> = {
   transactions: 20,
   "token-transfers": 30,
   trades: 30,
-};
-/** Each kind's explorer path under the address, and the filters it always
- * sends. Trades read the wallet's ERC-20 transfers: the explorer's own
- * advanced filter can select the PoolManager legs upstream, but it answered
- * in 13-18 s (2026-09-25), past the timeout below, while this page answers in
- * about 2 s and drops the NFT mints that crowd a launcher's page. */
-const upstream: Record<
-  WalletHistoryKind,
-  { path: string; query: Record<string, string> }
-> = {
-  transactions: { path: "transactions", query: {} },
-  "token-transfers": { path: "token-transfers", query: {} },
-  trades: { path: "token-transfers", query: { type: "ERC-20" } },
 };
 /** The Uniswap v4 PoolManager every catalog pool swaps through, the same
  * address as `contracts.manager` in `packages/chain/src/events.ts`. */
@@ -51,48 +47,6 @@ export const freeTierRequestsPerSecond = 5;
 export const defaultBlockscoutTimeoutMs = 12000;
 const userAgent = "pools-info-api/0.1.0";
 
-export type BlockscoutFailure =
-  | "misconfigured_key"
-  | "key_rejected"
-  | "upstream_unavailable"
-  | "budget_exhausted";
-export class BlockscoutError extends Error {
-  constructor(
-    public kind: BlockscoutFailure,
-    /** Seconds a caller should wait before trying the explorer again. */
-    public retryAfter: number,
-  ) {
-    super(kind);
-  }
-}
-
-/** Blockscout's `next_page_params`, carried verbatim as query parameters. */
-export type PageParams = Record<string, string>;
-const pageKey = /^[a-z][a-z0-9_]{0,39}$/;
-const pageValue = /^[\w.:-]{0,100}$/;
-/** Accept only a flat, bounded set of query-safe scalars: a cursor can add or
- * reorder upstream filters, never change the host, path, wallet, or kind. */
-export function pageParams(value: unknown): PageParams | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== "object" || Array.isArray(value)) throw Error("page");
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length > 16) throw Error("page");
-  const page: PageParams = {};
-  for (const [key, raw] of entries.sort(([a], [b]) => (a < b ? -1 : 1))) {
-    const text =
-      typeof raw === "string"
-        ? raw
-        : (typeof raw === "number" && Number.isFinite(raw)) ||
-            typeof raw === "boolean"
-          ? String(raw)
-          : null;
-    if (!pageKey.test(key) || text === null || !pageValue.test(text))
-      throw Error("page");
-    page[key] = text;
-  }
-  return page;
-}
-
 /** Sliding window: any one-second interval starts at most `perSecond` calls,
  * which is stricter than any fixed-window measurement upstream could use. */
 export function createRateLimiter({
@@ -115,71 +69,6 @@ export function createRateLimiter({
         throw new BlockscoutError("upstream_unavailable", 1);
       scheduled.push(at);
       if (at > t) await sleep(at - t);
-    },
-  };
-}
-
-function utcDay(t: number): string {
-  return new Date(t).toISOString().slice(0, 10);
-}
-function secondsToUtcMidnight(t: number): number {
-  return Math.max(1, Math.ceil((86400000 - (t % 86400000)) / 1000));
-}
-
-/** Per-process daily credit counter, reset at UTC midnight. Every attempt is
- * counted before the call, so failures never under-count. The explorer's own
- * `x-credits-remaining` header is a backstop for what this process cannot see,
- * such as a second instance during a rolling deploy. */
-export function createCreditBudget({
-  dailyCap,
-  now = Date.now,
-}: {
-  dailyCap: number;
-  now?: () => number;
-}) {
-  if (!Number.isSafeInteger(dailyCap) || dailyCap < 1)
-    throw Error("Invalid daily credit cap");
-  let day = "",
-    spent = 0,
-    upstreamBlockedUntil = 0,
-    remaining: number | null = null;
-  function roll() {
-    const today = utcDay(now());
-    if (today !== day) {
-      day = today;
-      spent = 0;
-      remaining = null;
-      upstreamBlockedUntil = 0;
-    }
-  }
-  function assertAvailable(cost: number, reserve = 0) {
-    roll();
-    const t = now();
-    if (upstreamBlockedUntil > t)
-      throw new BlockscoutError(
-        "budget_exhausted",
-        Math.ceil((upstreamBlockedUntil - t) / 1000),
-      );
-    if (spent + cost + reserve > dailyCap)
-      throw new BlockscoutError("budget_exhausted", secondsToUtcMidnight(t));
-  }
-  return {
-    assertAvailable,
-    spend(cost: number, reserve = 0) {
-      assertAvailable(cost, reserve);
-      spent += cost;
-    },
-    /** The header counts every process using the key, not only this one. */
-    observeRemaining(observed: number | null, nextCost: number) {
-      if (observed !== null) remaining = observed;
-      if (observed !== null && observed < nextCost)
-        upstreamBlockedUntil = now() + 3600000;
-    },
-    /** `remaining` is the key's balance as the explorer last stated it,
-     * across every process using the key; null before any answer. */
-    snapshot() {
-      roll();
-      return { day, spent, dailyCap, remaining };
     },
   };
 }
@@ -365,11 +254,14 @@ export interface BlockscoutPage<K extends WalletHistoryKind> {
   incomplete?: boolean;
 }
 export interface BlockscoutClient {
+  /** One explorer page. `page` is a position this api issued (a verified
+   * cursor) or null for the first page; `admission` names the reader the
+   * call is charged to and the share of the day's budget it leaves. */
   readPage(
     kind: "trades",
     wallet: string,
     page: PageParams | null,
-    reserveShare: number,
+    admission: CreditAdmission,
     registry: TradeRegistry,
     swapBatchBudget?: SwapBatchBudget,
   ): Promise<BlockscoutPage<"trades">>;
@@ -377,15 +269,15 @@ export interface BlockscoutClient {
     kind: K,
     wallet: string,
     page: PageParams | null,
-    reserveShare?: number,
+    admission?: CreditAdmission,
   ): Promise<BlockscoutPage<K>>;
   /** The code at each address at the latest block, `0x` for none, read
    * through the explorer's JSON-RPC gateway five addresses a call. */
   readCode(
     addresses: readonly string[],
-    reserveShare: number,
+    admission: CreditAdmission,
   ): Promise<Map<string, string>>;
-  budget: ReturnType<typeof createCreditBudget>;
+  budget: CreditBudget;
 }
 
 /** The key never leaves this closure: it is sent only as a Bearer header to
@@ -395,6 +287,8 @@ export function createBlockscoutClient({
   key,
   baseUrl = blockscoutBaseUrl,
   dailyCreditCap,
+  creditFloor,
+  budget: configuredBudget,
   timeoutMs = defaultBlockscoutTimeoutMs,
   maxBytes = 4 * 1024 * 1024,
   now = Date.now,
@@ -403,7 +297,11 @@ export function createBlockscoutClient({
 }: {
   key: string;
   baseUrl?: string;
-  dailyCreditCap: number;
+  /** The day's credit cap for a budget kept in this process alone (tests);
+   * a deployment passes `budget`, the shared one over the database. */
+  dailyCreditCap?: number;
+  creditFloor?: number;
+  budget?: CreditBudget;
   timeoutMs?: number;
   maxBytes?: number;
   now?: () => number;
@@ -418,7 +316,9 @@ export function createBlockscoutClient({
   const root = baseUrl.replace(/\/+$/, "");
   /** The gateway sits beside the REST API: `/4663/json-rpc` for `/4663/api/v2`. */
   const rpcUrl = `${root.replace(/\/api\/v2$/, "")}/json-rpc`;
-  const budget = createCreditBudget({ dailyCap: dailyCreditCap, now });
+  const budget =
+    configuredBudget ??
+    createCreditBudget({ dailyCap: dailyCreditCap ?? NaN, creditFloor, now });
   const swaps = new Map<string, boolean>();
   function fail(event: string, detail: Record<string, unknown> = {}) {
     process.stderr.write(JSON.stringify({ event, ...detail }) + "\n");
@@ -445,18 +345,23 @@ export function createBlockscoutClient({
     }
     return Buffer.concat(chunks).toString("utf8");
   }
-  /** One billed call: counted before it is made, paced by the limiter, and
-   * answered as parsed JSON or a `BlockscoutError`. */
+  /** One billed call: reserved on the shared budget before it is made,
+   * paced by the limiter, settled as spent once attempted, and answered as
+   * parsed JSON or a `BlockscoutError`. */
   async function request(
     kind: string,
     url: URL,
     cost: number,
-    reserve: number,
+    admission: CreditAdmission,
     body?: string,
   ): Promise<unknown> {
-    budget.assertAvailable(cost, reserve);
-    await limiter.acquire();
-    budget.spend(cost, reserve);
+    const reservation = await budget.reserve(cost, admission);
+    try {
+      await limiter.acquire();
+    } catch (error) {
+      await reservation.release();
+      throw error;
+    }
     let response: Response;
     const started = now();
     try {
@@ -478,13 +383,18 @@ export function createBlockscoutClient({
         cause: error instanceof Error ? error.name : "unknown",
         ms: now() - started,
       });
+      // Attempted, so spent; the shared account view only ever falls.
+      await reservation.settle({ remaining: null, at: now() });
       throw new BlockscoutError("upstream_unavailable", 30);
     }
     const remaining = response.headers.get("x-credits-remaining");
-    budget.observeRemaining(
-      remaining !== null && integerText.test(remaining) ? +remaining : null,
-      Math.max(...Object.values(creditCost)),
-    );
+    await reservation.settle({
+      remaining:
+        remaining !== null && /^(0|[1-9][0-9]{0,8})$/.test(remaining)
+          ? +remaining
+          : null,
+      at: now(),
+    });
     if (response.status !== 200) {
       fail("blockscout_request_rejected", { kind, status: response.status });
       await response.body?.cancel().catch(() => undefined);
@@ -513,7 +423,7 @@ export function createBlockscoutClient({
   async function confirmSwaps(
     legs: TradeLeg[],
     registry: TradeRegistry,
-    reserve: number,
+    admission: CreditAdmission,
     swapBatchBudget?: SwapBatchBudget,
   ): Promise<{ confirmed: Set<TradeLeg>; incomplete: boolean }> {
     const keysOf = ({ trade }: TradeLeg) =>
@@ -545,7 +455,7 @@ export function createBlockscoutClient({
         "swap-logs",
         new URL(rpcUrl),
         swapLogBatchCost,
-        reserve,
+        admission,
         JSON.stringify(
           batch.map(([block, pools], id) => ({
             jsonrpc: "2.0",
@@ -641,8 +551,7 @@ export function createBlockscoutClient({
   }
   return {
     budget,
-    async readCode(addresses, reserveShare) {
-      const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
+    async readCode(addresses, admission) {
       const code = new Map<string, string>();
       for (let i = 0; i < addresses.length; i += swapLogBatchSize) {
         const batch = addresses
@@ -652,7 +561,7 @@ export function createBlockscoutClient({
           "code",
           new URL(rpcUrl),
           swapLogBatchCost,
-          reserve,
+          admission,
           JSON.stringify(
             batch.map((a, id) => ({
               jsonrpc: "2.0",
@@ -688,34 +597,36 @@ export function createBlockscoutClient({
       kind: K,
       wallet: string,
       page: PageParams | null,
-      reserveShare = 0,
+      admission: CreditAdmission = { consumer: "history" },
       registry?: TradeRegistry,
       swapBatchBudget?: SwapBatchBudget,
     ): Promise<BlockscoutPage<K>> {
       if (!addressHash.test(wallet)) throw Error("Invalid wallet");
       if (kind === "trades" && !registry)
         throw Error("Trade registry required");
+      // A position is only ever the kind's own paging keys in canonical
+      // form, whoever issued it.
+      const position = page === null ? null : canonicalPageParams(kind, page);
       const cost = creditCost[kind];
-      const reserve = Math.ceil(budget.snapshot().dailyCap * reserveShare);
       const trades = kind === "trades";
       const address = wallet.toLowerCase();
       const url = new URL(
         `${root}/addresses/${address}/${upstream[kind].path}`,
       );
-      // The kind's own filters go last, so a cursor can never replace them.
+      // The kind's own filter goes last, so a position can never replace it.
       for (const [k, v] of Object.entries({
-        ...page,
-        ...upstream[kind].query,
+        ...position,
+        ...upstream[kind].filter,
       }))
         url.searchParams.set(k, v);
-      const answer = await request(kind, url, cost, reserve);
+      const answer = await request(kind, url, cost, admission);
       let items: unknown[];
       let legs: TradeLeg[] = [];
       let nextPageParams: PageParams | null;
       try {
         const body = item(answer);
         if (!Array.isArray(body.items)) invalid();
-        nextPageParams = pageParams(body.next_page_params);
+        nextPageParams = canonicalPageParams(kind, body.next_page_params);
         if (trades) {
           legs = body.items
             .map((value) => normalizeTrade(value, address, registry!.tokens))
@@ -735,7 +646,7 @@ export function createBlockscoutClient({
       if (trades) {
         const relayed = legs.filter((leg) => leg.relayed);
         const { confirmed, incomplete } = relayed.length
-          ? await confirmSwaps(relayed, registry!, reserve, swapBatchBudget)
+          ? await confirmSwaps(relayed, registry!, admission, swapBatchBudget)
           : { confirmed: new Set<TradeLeg>(), incomplete: false };
         items = legs
           .filter((leg) => !leg.relayed || confirmed.has(leg))

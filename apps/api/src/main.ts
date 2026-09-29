@@ -12,6 +12,7 @@ import {
   createWalletHistoryFromEnv,
 } from "./wallet-history";
 import { createFollowing } from "./following-read";
+import { createCreditBudgetStore } from "./explorer-budget";
 import {
   createContractCensus,
   createWalletCodeStore,
@@ -34,8 +35,13 @@ const images = createTokenImageService(createTokenImageStore(), {
 const registry = createTokenRegistry((afterRef) =>
   reader.registeredTokens!(afterRef),
 );
-// One explorer client, so one daily credit budget, for every explorer read.
-const explorer = blockscoutClientFromEnv(process.env);
+// One explorer client, so one daily credit budget, for every explorer read;
+// the budget's day rows live in the database, shared with any other process
+// holding the key (docs/WALLET-TRADE-HISTORY.md, "Credit budget").
+const budgetStore = process.env.BLOCKSCOUT_API_KEY
+  ? createCreditBudgetStore()
+  : null;
+const explorer = blockscoutClientFromEnv(process.env, budgetStore);
 const history = createWalletHistoryFromEnv(process.env, registry, explorer);
 // The trader board's contract census reads code only for the board the
 // ledger serves (docs/LEDGER-MARKET-SERVING.md, "The trader leaderboard").
@@ -66,7 +72,12 @@ for (const signal of ["SIGINT", "SIGTERM"] as const)
     const timeout = setTimeout(() => process.exit(1), 10000);
     timeout.unref();
     server.close(() => {
-      void Promise.all([reader.close(), images.close(), census?.close()]).then(
+      void Promise.all([
+        reader.close(),
+        images.close(),
+        census?.close(),
+        budgetStore?.close(),
+      ]).then(
         () => {
           clearTimeout(timeout);
           process.exit(0);

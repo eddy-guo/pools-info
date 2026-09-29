@@ -8,7 +8,7 @@ import type {
   SearchGroup,
   WalletHistoryKind,
 } from "@pools/core";
-import { decodeHistoryCursor, historyKinds } from "./history-cursor";
+import { historyCursorShape, historyKinds } from "./history-cursor";
 
 export class RequestError extends Error {
   public reason?: string;
@@ -59,9 +59,10 @@ export interface ReadRequest {
   wallets: string[];
   scope: string;
   cursor: string[] | null;
-  /** Explorer history only: the kind and the decoded upstream page cursor. */
+  /** Explorer history only: the kind, and the cursor as received, which the
+   * history reader verifies (cursors are signed) before any paid read. */
   kind: WalletHistoryKind;
-  page: Record<string, string> | null;
+  historyCursor: string | null;
   cacheKey: string;
   explore: AnalyticsExploreOptions;
   leaderboard: AnalyticsLeaderboardOptions;
@@ -321,14 +322,12 @@ export function parseRequest(input: string): ReadRequest {
     .digest("hex")
     .slice(0, 24);
   let cursor: string[] | null = null;
-  let page: Record<string, string> | null = null;
+  let historyCursor: string | null = null;
   const rawCursor = url.searchParams.get("cursor");
   if (rawCursor !== null && route === "history") {
-    try {
-      page = decodeHistoryCursor(rawCursor, scope, kind);
-    } catch {
+    if (!historyCursorShape.test(rawCursor))
       throw new RequestError(400, "invalid_cursor");
-    }
+    historyCursor = rawCursor;
   } else if (rawCursor !== null) {
     try {
       if (!/^[A-Za-z0-9_-]{1,1024}$/.test(rawCursor)) throw Error();
@@ -376,8 +375,8 @@ export function parseRequest(input: string): ReadRequest {
     scope,
     cursor,
     kind,
-    page,
-    cacheKey: JSON.stringify([scope, +rawLimit, cursor, page]),
+    historyCursor,
+    cacheKey: JSON.stringify([scope, +rawLimit, cursor, historyCursor]),
     explore,
     leaderboard,
     creators,
