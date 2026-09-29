@@ -800,6 +800,8 @@ test(
         ((BigInt(price(900n * e30)) * 10n ** 27n) / e18).toString(),
         window,
       );
+      // The supply the FDV multiplies is served beside it, in raw units.
+      assert.equal(market.supplyRaw, (10n ** 27n).toString(), window);
       assert.equal(market.history.intervalSeconds, 3600);
       assert.deepEqual(
         market.history.candles.map((c: any) => [c.time, c.open, c.close, c.volume]),
@@ -838,6 +840,7 @@ test(
     assertObservedMarket(JSON.parse(JSON.stringify(k)), pools.K.id, kPool.token, "24h");
     assert.equal(k.priceWei, kaijuLastPriceWei);
     assert.equal(k.fdvWei, (BigInt(kaijuLastPriceWei) * 10n ** 9n).toString());
+    assert.equal(k.supplyRaw, (10n ** 27n).toString());
     // A 24h label always spans the ledger's own last 24 hours, never the
     // minutes a stale capture held after launch.
     assert.deepEqual(k.coverage.cutoff, cutoff);

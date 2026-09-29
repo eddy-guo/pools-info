@@ -118,10 +118,15 @@ test("the aggregate ledger's market: hourly candles, its own unit basis and an F
     v.history.fromTimestamp = 198000;
     v.history.candles[0].time = 198000;
     v.fdvWei = "900719925474099300001000000000";
+    v.supplyRaw = "1000000000000000000000000000";
     return v;
   };
   assert.doesNotThrow(() => assertObservedMarket(ledger(), id, token, "24h"));
   const changes: ((v: ObservedMarket) => void)[] = [
+    // The supply the FDV multiplies is raw units or null, never negative.
+    (v) => {
+      v.supplyRaw = "-1";
+    },
     // An hourly series whose candle is not on an hour.
     (v) => {
       v.history.candles[0].time = 199980;
@@ -148,6 +153,7 @@ test("the aggregate ledger's market: hourly candles, its own unit basis and an F
   }
   const unpriced = ledger();
   unpriced.fdvWei = null;
+  unpriced.supplyRaw = null;
   assert.doesNotThrow(() => assertObservedMarket(unpriced, id, token, "24h"));
 });
 
@@ -161,7 +167,8 @@ test("the creator-fee flag is a boolean or absent, never null", () => {
   assertObservedMarket(market, market.poolId, market.token, market.window);
   (market as unknown as Record<string, unknown>).creatorFees = null;
   assert.throws(
-    () => assertObservedMarket(market, market.poolId, market.token, market.window),
+    () =>
+      assertObservedMarket(market, market.poolId, market.token, market.window),
     /Invalid observed market/,
   );
 });

@@ -278,6 +278,9 @@ test(
         sells: 1,
         flags: [],
         realizations: [],
+        openedAt: null,
+        firstHour: 1050 * 3600,
+        lastHour: 1060 * 3600,
       },
     } satisfies AnalyticsWalletPosition;
     assert.deepEqual(p1.position, positionP);
@@ -306,8 +309,8 @@ test(
       bestWei: (5n * tenth).toString(),
     });
     assert.deepEqual(p1.activity, {
-      firstTradeHour: 1050 * 3600,
-      lastTradeHour: 1060 * 3600,
+      firstHour: 1050 * 3600,
+      lastHour: 1060 * 3600,
       last: ts(saleP),
     });
     // The window scopes the row's own figures only: in the 24h window the
@@ -365,6 +368,9 @@ test(
         sells: 0,
         flags: [],
         realizations: [],
+        openedAt: ts(buyQ),
+        firstHour: 1075 * 3600,
+        lastHour: 1075 * 3600,
       },
     } satisfies AnalyticsWalletPosition);
     assert.deepEqual(q1.mark, {
@@ -392,8 +398,8 @@ test(
       bestWei: null,
     });
     assert.deepEqual(q1.activity, {
-      firstTradeHour: 1075 * 3600,
-      lastTradeHour: 1075 * 3600,
+      firstHour: 1075 * 3600,
+      lastHour: 1075 * 3600,
       last: ts(buyQ),
     });
 
@@ -428,6 +434,9 @@ test(
         sells: 0,
         flags: [],
         realizations: [],
+        openedAt: ts(buyR),
+        firstHour: 1000 * 3600,
+        lastHour: 1000 * 3600,
       },
     } satisfies AnalyticsWalletPosition);
     assert.deepEqual(r2.mark, {
@@ -452,8 +461,8 @@ test(
       bestWei: null,
     });
     assert.deepEqual(r2.activity, {
-      firstTradeHour: 1000 * 3600,
-      lastTradeHour: 1000 * 3600,
+      firstHour: 1000 * 3600,
+      lastHour: 1000 * 3600,
       last: ts(buyR),
     });
 
@@ -485,8 +494,8 @@ test(
       [null, null, null, null],
     );
     assert.deepEqual(q6.activity, {
-      firstTradeHour: 1074 * 3600,
-      lastTradeHour: 1074 * 3600,
+      firstHour: 1074 * 3600,
+      lastHour: 1074 * 3600,
       last: ts(sellQ),
     });
 

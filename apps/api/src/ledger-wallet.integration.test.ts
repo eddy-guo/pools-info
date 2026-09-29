@@ -432,6 +432,10 @@ test(
           sells: 6,
           flags: [],
           realizations: [],
+          // Flat, so no open cycle; traded in hours 1050 through 1070.
+          openedAt: null,
+          firstHour: 1050 * 3600,
+          lastHour: 1070 * 3600,
         },
       }) satisfies AnalyticsWalletPosition;
     const positionQ = {
@@ -460,6 +464,10 @@ test(
         sells: 0,
         flags: [],
         realizations: [],
+        // Held since its one buy, in hour 1075.
+        openedAt: ts(blockOf(1075, 0)),
+        firstHour: 1075 * 3600,
+        lastHour: 1075 * 3600,
       },
     } satisfies AnalyticsWalletPosition;
     assert.deepEqual(day.positions, [positionP(true), positionQ]);
@@ -540,6 +548,9 @@ test(
           sells: 0,
           flags: [],
           realizations: [],
+          openedAt: ts(blockOf(1000, 0)),
+          firstHour: 1000 * 3600,
+          lastHour: 1000 * 3600,
         },
       } satisfies AnalyticsWalletPosition,
     ]);

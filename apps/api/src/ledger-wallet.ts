@@ -41,33 +41,44 @@ export const markSql = `CASE WHEN NOT p.supported THEN NULL WHEN p.quantity_raw=
   THEN trunc(p.quantity_raw*6277101735386680763835789423207666416102355444464034512896::numeric/(s.sqrt_price_x96*s.sqrt_price_x96))-p.cost_wei END`;
 /** The row the wallet page serves per position and the single-position read
  * (`ledger-position.ts`) serves for one pool: the identity from
- * `indexed_pools i`, the fold's state and flags from `agg_positions p`, the
- * window's realized, net and volume from the hour sums `f` (a position with no
+ * `indexed_pools i`, the fold's state, flags and open cycle from
+ * `agg_positions p`, the window's realized, net and volume and the hours it
+ * traded in from the hour rows `f` (`windowFlowColumns`; a position with no
  * hour in the window has no flow in it and reads as zero) and the mark from
  * the price state `s`. Both reads select these columns from
  * `positionSources`, so the two answers agree field for field. */
 export const positionColumns = `p.pool_ref,i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
       p.quantity_raw::text AS quantity_raw,p.cost_wei::text AS cost_wei,p.realized_wei::text AS realized_wei,
       p.invested_wei::text AS invested_wei,p.proceeds_wei::text AS proceeds_wei,p.buys,p.sells,
+      p.cycle_opened_at::text AS cycle_opened_at,f.first_hour,f.last_hour,
       coalesce(f.realized,0)::text AS window_realized,coalesce(f.net,0)::text AS net,coalesce(f.volume,0)::text AS volume,
       ${markSql} AS mark`;
 export const positionSources = `agg_positions p JOIN indexed_pools i USING (pool_ref)
     LEFT JOIN agg_pool_state s ON s.chain_id=p.chain_id AND s.pool_ref=p.pool_ref`;
-/** A window's flow from the wallet's hour rows: realized, net (proceeds less
- * spent) and volume. */
-export const windowFlowColumns = `sum(realized_wei) AS realized,sum(proceeds_wei)-sum(spent_wei) AS net,sum(volume_wei) AS volume`;
+/** One pass over a wallet's hour rows: the window's flow, realized, net
+ * (proceeds less spent) and volume over the hours from the window's first
+ * hour ($2), beside the first and last hour the position traded in at all,
+ * the honest bounds of its span, since the ledger keeps swaps per hour and no
+ * first swap time. The window bound sits in the aggregates rather than the
+ * scan on purpose: a `hour>=$2` predicate under the scan steered the planner
+ * onto migration 026's pool-first index, 1,490 index searches and 9k buffers
+ * for a 358-position wallet, where one primary-key range reads 414. */
+export const windowFlowColumns = `sum(realized_wei) FILTER (WHERE hour>=$2) AS realized,
+      sum(proceeds_wei) FILTER (WHERE hour>=$2)-sum(spent_wei) FILTER (WHERE hour>=$2) AS net,
+      sum(volume_wei) FILTER (WHERE hour>=$2) AS volume,min(hour) AS first_hour,max(hour) AS last_hour`;
 /** The wallet's positions ($1 wallet_ref) with the window's own realized, net
  * and volume per pool summed from its hour rows from the window's first hour
  * ($2, the refresh's own start, so the per-position figures sum to the
- * summary's), each position's mark, and the wallet's unrealized over every
- * supported position beside each row: the sum of their marks, or null while
- * any is unmarked, over the whole set rather than the 500 served. */
+ * summary's) and the hours it traded in, each position's mark, and the
+ * wallet's unrealized over every supported position beside each row: the sum
+ * of their marks, or null while any is unmarked, over the whole set rather
+ * than the 500 served. */
 const positionsSql = `WITH marked AS (
     SELECT ${positionColumns}
     FROM ${positionSources}
     LEFT JOIN (
       SELECT pool_ref,${windowFlowColumns}
-      FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND hour>=$2 GROUP BY pool_ref
+      FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 GROUP BY pool_ref
     ) f ON f.pool_ref=p.pool_ref
     WHERE p.chain_id=4663 AND p.wallet_ref=$1
   )
@@ -79,7 +90,10 @@ const positionsSql = `WITH marked AS (
  * its pool appended to the fold's: `asOf` and `throughBlock` are the ledger
  * cut on every position, `decimals` is the catalog's, null when unread and
  * never defaulted, and an excluded position serves its counts and volume and
- * null for every finance and for `position`. */
+ * null for every finance and for `position`. A supported position's block
+ * carries its times beside the fold's state: `openedAt`, when its open cycle
+ * began (null while flat), and `firstHour` and `lastHour`, the hours of its
+ * first and last swap at the hour's start. */
 export function walletPosition(
   p: Record<string, any>,
   address: string,
@@ -113,6 +127,10 @@ export function walletPosition(
           sells: p.sells,
           flags: [],
           realizations: [],
+          openedAt:
+            p.cycle_opened_at === null ? null : Number(p.cycle_opened_at),
+          firstHour: p.first_hour === null ? null : Number(p.first_hour) * 3600,
+          lastHour: p.last_hour === null ? null : Number(p.last_hour) * 3600,
         }
       : null,
   };

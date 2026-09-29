@@ -27,26 +27,22 @@ import { RequestError } from "./request";
 /** $1 wallet_ref, $2 the window's first hour, $3 pool_ref: the wallet page's
  * columns for this one position (a primary-key probe of `agg_positions`), the
  * price state's identity and its price per whole token (`ledgerPriceSql`, the
- * pool page's figure), the fold's disposed cost and timing columns, the
- * window's flow and the position's lifetime closures from its hour rows (two
- * primary-key ranges of `agg_wallet_hours`). */
+ * pool page's figure), the fold's disposed cost and last activity, and from
+ * one primary-key range of `agg_wallet_hours` the window's flow, the hours
+ * traded in and the position's lifetime closures. */
 export const positionSql = `WITH marked AS (
     SELECT ${positionColumns},
-      p.disposed_cost_wei::text AS disposed_cost,p.cycle_opened_at::text AS cycle_opened_at,p.last_timestamp::text AS last_timestamp,
+      p.disposed_cost_wei::text AS disposed_cost,p.last_timestamp::text AS last_timestamp,
       s.sqrt_price_x96::text AS sqrt_price_x96,s.price_block::text AS price_block,s.price_timestamp::text AS price_timestamp,
       '0x'||encode(s.price_tx,'hex') AS price_tx,${ledgerPriceSql("s.sqrt_price_x96", "i.decimals")}::text AS price_wei,
-      l.first_hour,l.last_hour,l.closures,l.wins,l.losses,l.hold_seconds,l.best
+      f.closures,f.wins,f.losses,f.hold_seconds,f.best
     FROM ${positionSources}
     LEFT JOIN LATERAL (
-      SELECT ${windowFlowColumns} FROM agg_wallet_hours
-      WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3 AND hour>=$2
-    ) f ON true
-    LEFT JOIN LATERAL (
-      SELECT min(hour) AS first_hour,max(hour) AS last_hour,coalesce(sum(closures),0)::int AS closures,
+      SELECT ${windowFlowColumns},coalesce(sum(closures),0)::int AS closures,
         coalesce(sum(wins),0)::int AS wins,coalesce(sum(losses),0)::int AS losses,
         coalesce(sum(hold_seconds),0)::text AS hold_seconds,max(best_wei)::text AS best
       FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3
-    ) l ON true
+    ) f ON true
     WHERE p.chain_id=4663 AND p.wallet_ref=$1 AND p.pool_ref=$3
   ) SELECT m.*,mark::text AS unrealized FROM marked m`;
 
@@ -174,10 +170,8 @@ export async function readLedgerPosition(
         }
       : null,
     activity: {
-      firstTradeHour:
-        row.first_hour === null ? null : Number(row.first_hour) * 3600,
-      lastTradeHour:
-        row.last_hour === null ? null : Number(row.last_hour) * 3600,
+      firstHour: row.first_hour === null ? null : Number(row.first_hour) * 3600,
+      lastHour: row.last_hour === null ? null : Number(row.last_hour) * 3600,
       last: Number(row.last_timestamp),
     },
   };

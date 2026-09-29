@@ -244,12 +244,13 @@ export interface WalletPositionCycles {
   /** The best single sale's realized gain, wei; null without a sale. */
   bestWei: string | null;
 }
-/** When the wallet traded the pool. The ledger keeps swaps per UTC hour, so the
- * first and last trade are hours (unix seconds at the hour's start); the last
- * activity, a swap or a transfer, is exact. */
+/** When the wallet traded the pool, served for an excluded position too. The
+ * ledger keeps swaps per UTC hour, so the first and last trade are hours
+ * (unix seconds at the hour's start, the wallet page's `position.firstHour`
+ * and `lastHour`); the last activity, a swap or a transfer, is exact. */
 export interface WalletPositionActivity {
-  firstTradeHour: number | null;
-  lastTradeHour: number | null;
+  firstHour: number | null;
+  lastHour: number | null;
   last: number;
 }
 /** One wallet-position from the aggregate ledger, the position PnL card's

@@ -453,6 +453,8 @@ export async function readLedgerMarket(
             (BigInt(row.price) * BigInt(covered.supplyRaw)) /
             10n ** BigInt(decimals)
           ).toString(),
+    // The supply itself, so a holding's share of it is a division away.
+    supplyRaw: covered.supplyRaw,
     window,
     volumeWei: answers ? row.volume : null,
     trades: answers ? whole(row.trades) : null,
