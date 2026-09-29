@@ -79,7 +79,7 @@ export function AuditLeaderboard({
   return (
     <div className="leaderboard-results">
       <div className="live-controls ranking-controls">
-        <div className="segmented" aria-label="Ranking metric">
+        <div className="segmented" role="group" aria-label="Ranking metric">
           <button
             aria-pressed={metric === "realized"}
             onClick={() => setMetric("realized")}
@@ -93,7 +93,7 @@ export function AuditLeaderboard({
             Net ETH
           </button>
         </div>
-        <div className="segmented" aria-label="Leaderboard layout">
+        <div className="segmented" role="group" aria-label="Leaderboard layout">
           <button aria-pressed={!flat} onClick={() => setFlat(false)}>
             Podium
           </button>

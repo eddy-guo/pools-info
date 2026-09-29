@@ -840,7 +840,7 @@ export function ProductExplore({
         <div>
           <section className="panel" ref={panelRef}>
             <div className="table-toolbar explore-toolbar">
-              <div className="table-tabs" aria-label="Pool views">
+              <div className="table-tabs" role="group" aria-label="Pool views">
                 {SCREENER_VIEWS.map(([key, label]) => (
                   <button
                     key={key}

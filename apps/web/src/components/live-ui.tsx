@@ -116,7 +116,7 @@ export function WindowTabs({
   options?: LiveWindow[];
 }) {
   return (
-    <div className="segmented" aria-label="Time window">
+    <div className="segmented" role="group" aria-label="Time window">
       {options.map((w) => (
         <button
           key={w}
