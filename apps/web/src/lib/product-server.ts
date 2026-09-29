@@ -503,10 +503,11 @@ export async function readProduct<T>(
         throw Error("Invalid saved data");
       const expectedWindow =
         checked.params.get("window") ??
-        (checked.endpoint === "leaderboard" ||
-        checked.endpoint.startsWith("wallets/")
-          ? "All"
-          : "24h");
+        (checked.endpoint === "leaderboard"
+          ? "7d"
+          : checked.endpoint.startsWith("wallets/")
+            ? "All"
+            : "24h");
       if (checked.endpoint.startsWith("pools/")) {
         validatePoolResponse(data, checked.endpoint.slice(6), expectedWindow);
         normalizePoolLaunch(data);
