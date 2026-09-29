@@ -86,6 +86,12 @@ test("address search merges equivalent wallets but retains a distinct creator re
         context: "Saved indexed wallet",
         terms: [address],
         href: `/wallet/${address}/?window=All`,
+        traderRank: {
+          rank: 12,
+          window: "7d",
+          metric: "realized",
+          asOf: 1790000000,
+        },
       },
       {
         id: "saved-creator",
@@ -122,6 +128,9 @@ test("address search merges equivalent wallets but retains a distinct creator re
     dialog.getByRole("link", { name: /Saved wallet/ }),
   ).toBeVisible();
   await expect(dialog.locator(`a[href^="/wallet/${address}/"]`)).toHaveCount(1);
+  await expect(
+    dialog.locator(`a[href^="/wallet/${address}/"] .search-rank-chip`),
+  ).toHaveText("#12");
   await expect(dialog.locator(`a[href^="/creators/${address}/"]`)).toHaveCount(
     1,
   );

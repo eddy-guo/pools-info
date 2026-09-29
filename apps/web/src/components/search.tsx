@@ -3,12 +3,8 @@ import Link from "next/link";
 import styles from "./detail-design.module.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Command, Search as SearchIcon, ArrowUpRight } from "lucide-react";
-import {
-  searchGroups,
-  shortAddress,
-  type SearchResponse,
-} from "@pools/core";
-import { createSearchProvider } from "@/lib/search-provider";
+import { searchGroups, shortAddress, type SearchResponse } from "@pools/core";
+import { createSearchProvider, type SearchResult } from "@/lib/search-provider";
 import { Avatar } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
@@ -34,7 +30,7 @@ export function Search() {
   const [result, setResult] = useState<{
     query: string;
     provider: typeof provider;
-    data?: SearchResponse & { indexNotice?: string };
+    data?: SearchResult;
     error?: string;
     pending?: boolean;
   }>();
@@ -47,7 +43,8 @@ export function Search() {
     isOpen &&
     (!current ||
       (!current.error && (!data || (!data.entries.length && current.pending))));
-  const kindHint = query.trim() && data?.kind ? kindHints[data.kind] : undefined;
+  const kindHint =
+    query.trim() && data?.kind ? kindHints[data.kind] : undefined;
   function open() {
     if (!dialog.current?.open) dialog.current?.showModal();
     setOpen(true);
@@ -252,6 +249,14 @@ export function Search() {
                           <small className="mono">{address}</small>
                         )}
                       </span>
+                      {r.group === "Wallets" && r.traderRank && (
+                        <span
+                          className="badge mode-badge search-rank-chip"
+                          aria-label={`rank ${r.traderRank.rank}, ${r.traderRank.window} ${r.traderRank.metric}`}
+                        >
+                          #{r.traderRank.rank}
+                        </span>
+                      )}
                       {r.external && <ArrowUpRight size={15} />}
                     </Link>
                   );

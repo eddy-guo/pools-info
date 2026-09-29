@@ -6,10 +6,13 @@ import {
   type ChainCatalog,
   type PoolAudit,
   type SearchProvider,
-  type SearchResponse,
 } from "@pools/core";
+import {
+  sanitizeSearchRanks,
+  type RankedSearchResponse,
+} from "./search-response";
 import catalog from "../../../../data/catalog/chain.json";
-type SearchResult = SearchResponse & {
+export type SearchResult = RankedSearchResponse & {
   indexNotice?: string;
   resolvedEns?: { name: string; address: string };
 };
@@ -61,7 +64,7 @@ export function createSearchProvider(
           },
         );
         if (!response.ok) throw Error("Saved search unavailable");
-        const remote = (await response.json()) as SearchResponse;
+        const remote = (await response.json()) as RankedSearchResponse;
         if (
           !Array.isArray(remote.entries) ||
           remote.entries.length > 32 ||
@@ -81,13 +84,14 @@ export function createSearchProvider(
           )
         )
           throw Error("Invalid saved search");
+        const safeRemote = sanitizeSearchRanks(remote);
         const verified = new Set(
-          remote.entries
+          safeRemote.entries
             .filter((e) => e.group === "Tokens" && !e.external)
             .map((e) => e.address.toLowerCase()),
         );
-        const merged = new Map<string, (typeof remote.entries)[number]>();
-        for (const e of [...remote.entries, ...base.entries]) {
+        const merged = new Map<string, (typeof safeRemote.entries)[number]>();
+        for (const e of [...safeRemote.entries, ...base.entries]) {
           if (
             e.group === "Tokens" &&
             e.external &&
@@ -113,7 +117,7 @@ export function createSearchProvider(
               }))
             : entries,
           total: entries.length,
-          coverage: remote.coverage,
+          coverage: safeRemote.coverage,
         };
       } catch {
         return {
