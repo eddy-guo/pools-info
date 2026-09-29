@@ -634,12 +634,15 @@ test(
       assert(rankPlans > before, `missed creators ${sort} rank plan`);
     }
     let before = rankPlans;
-    await readCreators(
+    let beforeCount = countPlans;
+    const emptyCreators = await readCreators(
       rankQuery,
-      { window: "All", sort: "launches", limit: 100, offset: 100 },
+      { window: "All", sort: "launches", limit: 100, offset: senders + 100 },
       "ledger",
     );
+    assert.equal(emptyCreators.items.length, 0);
     assert(rankPlans > before, "missed creators empty-page rank plan");
+    assert(countPlans > beforeCount, "missed creators empty-page count plan");
     for (const options of [
       { window: "All", sort: "volume" },
       { window: "All", sort: "trades" },
@@ -656,13 +659,15 @@ test(
       assert(rankPlans > before, `missed explore ${options.sort} rank plan`);
     }
     before = rankPlans;
-    await readProjectedExplore(
+    beforeCount = countPlans;
+    const emptyExplore = await readProjectedExplore(
       rankQuery,
       { window: "All", sort: "volume", limit: 100, offset: scalePools + 100 },
       "ledger",
     );
+    assert.equal(emptyExplore.items.length, 0);
     assert(rankPlans > before, "missed explore empty-page rank plan");
-    assert(countPlans >= 2, `only inspected ${countPlans} empty-page counts`);
+    assert(countPlans > beforeCount, "missed explore empty-page count plan");
     assert.equal(
       (await db.query("SHOW max_parallel_workers_per_gather")).rows[0]
         .max_parallel_workers_per_gather,
