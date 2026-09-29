@@ -7,6 +7,7 @@ import {
   accountingCoverage,
 } from "./accounting-read";
 import { readProjectedExplore } from "./projected-explore";
+import { readLedgerStats } from "./ledger-stats";
 import { readCreators } from "./creators-read";
 import { readSearch } from "./search-read";
 import { assertCatalogIdentity, catalogCte } from "./catalog-read";
@@ -217,6 +218,11 @@ export async function readData(
   const base = { coverage: limitations, generatedAt: new Date().toISOString() };
   if (request.route === "explore")
     return readProjectedExplore(query, request.explore, marketSource);
+  if (request.route === "stats") {
+    if (marketSource !== "ledger")
+      throw new RequestError(503, "stats_coverage_unavailable");
+    return readLedgerStats(query, request.window);
+  }
   if (request.route === "leaderboard")
     return (
       (marketSource === "ledger" &&

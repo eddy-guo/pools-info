@@ -38,6 +38,7 @@ export type Route =
   | "trade-share"
   | "wallet"
   | "explore"
+  | "stats"
   | "leaderboard"
   | "creators"
   | "profile"
@@ -105,6 +106,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/feed") route = "feed";
   else if (url.pathname === "/v1/following") route = "following";
   else if (url.pathname === "/v1/explore") route = "explore";
+  else if (url.pathname === "/v1/stats") route = "stats";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
   else if (url.pathname === "/v1/creators") route = "creators";
   else if (url.pathname === "/v1/search") route = "search";
@@ -149,27 +151,29 @@ export function parseRequest(input: string): ReadRequest {
               "limit",
               "offset",
             ]
-          : route === "leaderboard"
-            ? ["window", "minTrades", "metric", "offset", "limit"]
-            : route === "creators"
-              ? ["window", "sort", "direction", "offset", "limit"]
-              : route === "profile" || route === "pool"
-                ? ["window"]
-                : route === "search"
-                  ? ["q", "group"]
-                  : route === "pools"
-                    ? ["q", "limit", "cursor"]
-                    : route === "live-trades"
-                      ? ["poolId"]
-                      : route === "trades"
-                        ? ["poolId", "limit", "cursor"]
-                        : route === "wallet"
-                          ? ["limit", "cursor"]
-                          : route === "history"
-                            ? ["kind", "cursor"]
-                            : route === "feed"
-                              ? ["pools"]
-                              : [];
+          : route === "stats"
+            ? ["window"]
+            : route === "leaderboard"
+              ? ["window", "minTrades", "metric", "offset", "limit"]
+              : route === "creators"
+                ? ["window", "sort", "direction", "offset", "limit"]
+                : route === "profile" || route === "pool"
+                  ? ["window"]
+                  : route === "search"
+                    ? ["q", "group"]
+                    : route === "pools"
+                      ? ["q", "limit", "cursor"]
+                      : route === "live-trades"
+                        ? ["poolId"]
+                        : route === "trades"
+                          ? ["poolId", "limit", "cursor"]
+                          : route === "wallet"
+                            ? ["limit", "cursor"]
+                            : route === "history"
+                              ? ["kind", "cursor"]
+                              : route === "feed"
+                                ? ["pools"]
+                                : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");

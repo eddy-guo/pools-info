@@ -186,6 +186,14 @@ test(
       const { status, body } = await fetchText(source, path);
       return { status, data: JSON.parse(body) };
     };
+    assert.deepEqual(await get("broad", "/v1/stats?window=24h"), {
+      status: 503,
+      data: { error: "stats_coverage_unavailable" },
+    });
+    assert.deepEqual(await get("ledger", "/v1/stats?window=bad"), {
+      status: 400,
+      data: { error: "invalid_window" },
+    });
 
     // Today's broad world: the canonical pool's rollups and dated units.
     await marketUnits(db);
@@ -374,6 +382,7 @@ test(
       }
     };
     await sameAsToday("ledger");
+    assert.equal((await get("ledger", "/v1/stats?window=24h")).status, 503);
     await db.query(
       `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES(4663,'ledger:agg:v1',23467030,'tip')`,
     );
@@ -431,13 +440,24 @@ test(
         );
     }
     const kRef = `(SELECT pool_ref FROM indexed_pools WHERE pool_id='${pools.K.id}')`;
+    await db.query(
+      `INSERT INTO agg_wallets(address,first_block) VALUES(decode($1,'hex'),$2)`,
+      [address(900).slice(2), cursorBlock - 20],
+    );
+    const walletRef = `(SELECT wallet_ref FROM agg_wallets WHERE address=decode('${address(900).slice(2)}','hex'))`;
+    await db.query(
+      `INSERT INTO agg_wallet_hours(chain_id,wallet_ref,pool_ref,hour,realized_wei,disposed_cost_wei,
+        proceeds_wei,spent_wei,volume_wei,buys,sells,supported_trades,wins,losses,closures,hold_seconds)
+       VALUES(4663,${walletRef},${kRef},$1,0,0,0,1000,1000,1,0,1,0,0,0,0)`,
+      [H],
+    );
     for (const [block, log, side] of [
       [cursorBlock - 20, 1, "buy"],
       [cursorBlock, 4, "sell"],
     ] as const)
       await db.query(
         `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
-        VALUES(4663,'ledger:agg:v1',${kRef},NULL,decode($1,'hex'),$2,$3,decode($4,'hex'),$5,$6,1000,2000,$7,'unattributed',$8)`,
+        VALUES(4663,'ledger:agg:v1',${kRef},${log === 1 ? walletRef : "NULL"},decode($1,'hex'),$2,$3,decode($4,'hex'),$5,$6,1000,2000,$7,$9,$8)`,
         [
           hex(block * 10 + log),
           log,
@@ -447,6 +467,7 @@ test(
           side,
           kaijuSqrt.toString(),
           cursorBlock,
+          log === 1 ? "initiator" : "unattributed",
         ],
       );
 
@@ -484,6 +505,58 @@ test(
       );
       // The response's asOf is the newest data it serves: the ledger's cursor.
       assert.equal(ledger.data.coverage.asOf, cursorTime);
+    }
+    for (const window of ["1h", "24h", "All"] as const) {
+      const response = await get("ledger", `/v1/stats?window=${window}`);
+      assert.equal(response.status, 200, JSON.stringify(response.data));
+      const stats = response.data;
+      const explore = served.get(
+        `/v1/explore?window=${window}&sort=launch&limit=100`,
+      );
+      const ledgerRows = (explore.items as AnalyticsPoolRow[]).filter(
+        (item) => item.marketCoverage?.source === "aggregate_ledger",
+      );
+      assert.deepEqual(stats.cutoff, {
+        block: cursorBlock,
+        hash: word(cursorBlock),
+        asOf: cursorTime,
+      });
+      assert.equal(stats.asOf, cursorTime);
+      assert.equal(stats.coverage.complete, false);
+      assert.equal(stats.coverage.measuredPools, ledgerRows.length);
+      assert.equal(
+        stats.coverage.activeTraderScope,
+        window === "All"
+          ? "all_window_not_measured"
+          : "attributed_wallets_in_measured_pools",
+      );
+      assert.equal(stats.liquidityWei, null);
+      assert.equal(
+        stats.activeTraders,
+        stats.completeWindow && window !== "All" ? 1 : null,
+      );
+      if (stats.completeWindow) {
+        assert.equal(
+          stats.volumeWei,
+          ledgerRows
+            .reduce((sum, item) => sum + BigInt(item.stats.volumeWei!), 0n)
+            .toString(),
+        );
+        assert.equal(
+          stats.trades,
+          ledgerRows.reduce((sum, item) => sum + item.stats.trades!, 0),
+        );
+      } else {
+        assert.equal(stats.volumeWei, null);
+        assert.equal(stats.trades, null);
+      }
+      assert.equal(
+        stats.poolsLaunched,
+        ledgerRows.filter(
+          (item) =>
+            stats.windowStart === null || item.launchedAt >= stats.windowStart,
+        ).length,
+      );
     }
     for (const path of poolPaths.filter((p) => !p.includes(pools.N.id))) {
       const [broad, ledger] = [
@@ -870,6 +943,20 @@ test(
     await failsClosed("UPDATE agg_streams SET cursor_timestamp=$1", [H * 3600 - 1]);
     await db.query("UPDATE agg_streams SET cursor_timestamp=$1", [cursorTime]);
     assert.equal((await get("ledger", launchOrder("24h"))).status, 200);
+
+    // Without a batch before the rolling hour, the ring cannot prove full
+    // 1h coverage. The stats header must withhold flow figures, not show zero.
+    await db.query(
+      `UPDATE agg_batches SET to_timestamp=$1
+       WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND to_block<$2`,
+      [cursorTime, cursorBlock],
+    );
+    const incompleteStats = await get("ledger", "/v1/stats?window=1h");
+    assert.equal(incompleteStats.status, 200);
+    assert.equal(incompleteStats.data.completeWindow, false);
+    assert.equal(incompleteStats.data.volumeWei, null);
+    assert.equal(incompleteStats.data.trades, null);
+    assert.equal(incompleteStats.data.activeTraders, null);
   },
 );
 
