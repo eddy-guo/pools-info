@@ -1,7 +1,7 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -982,7 +982,7 @@ test(
       start + 299,
     );
     // One burst on the next run: the second cycle's first request draws
-    // four 429s, the last with Retry-After: 120, which outranks the minute
+    // four 429s, the last with Retry-After: 7200, which outranks the hour
     // the first pause would wait; the cycle after the pause carries on to
     // the tip and the successful cycle resets the pause series.
     always = false;
@@ -994,7 +994,7 @@ test(
         burst--;
         return new Response("slow down", {
           status: 429,
-          headers: { "retry-after": burst === 0 ? "120" : "0" },
+          headers: { "retry-after": burst === 0 ? "7200" : "0" },
         });
       }
       return fake.fetch(input, init);
@@ -1021,9 +1021,9 @@ test(
         resumed.pausedMs,
         resumed.throttled,
       ],
-      ["aborted", start + 499, 1, 120000, 3],
+      ["aborted", start + 499, 1, 7200000, 3],
     );
-    assert.deepEqual(burstWaits, [120000, 60000]);
+    assert.deepEqual(burstWaits, [7200000, 60000]);
     assert.deepEqual(
       paused(burstLog).map((e) => [
         e.source,
@@ -1032,7 +1032,7 @@ test(
         e.retryAfterMs,
         e.through,
       ]),
-      [["hypersync", 1, 120000, 120000, start + 399]],
+      [["hypersync", 1, 7200000, 7200000, start + 399]],
     );
     assert.ok(!burstLog.some((e) => e.event === "ledger_tip_stopped_for_good"));
   },
@@ -1162,6 +1162,82 @@ test(
     );
   },
 );
+
+test("the worker logs one stop during initial database reconnect", async (t) => {
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)),
+      "run",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: "postgresql://postgres@127.0.0.1:1/pools",
+        LEDGER_TIP_ENABLED: "1",
+        ENVIO_API_TOKEN: apiToken,
+        HYPERSYNC_URL: "http://127.0.0.1:1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  t.after(() => {
+    if (child.exitCode === null) child.kill("SIGKILL");
+  });
+  const events: Record<string, unknown>[] = [];
+  let pending = "";
+  let ready: (() => void) | undefined;
+  child.stdout!.on("data", (chunk: Buffer) => {
+    pending += chunk.toString();
+    for (;;) {
+      const newline = pending.indexOf("\n");
+      if (newline < 0) break;
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      const event = JSON.parse(line) as Record<string, unknown>;
+      events.push(event);
+      if (event.event === "ledger_database_connect_failed") ready?.();
+    }
+  });
+  let timeout: ReturnType<typeof setTimeout>;
+  try {
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+      once(child, "exit").then(() => {
+        throw Error("worker exited before reconnecting");
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(Error("worker did not retry the database")),
+          15000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+  const exited = once(child, "close");
+  child.kill("SIGTERM");
+  const [code, signal] = await exited;
+  assert.equal(signal, null);
+  assert.equal(code, 0);
+  assert.deepEqual(
+    events.filter((e) => e.event === "ledger_tip_stopping"),
+    [
+      {
+        event: "ledger_tip_stopping",
+        reason: "SIGTERM",
+        cursor: null,
+        inFlight: null,
+        cycle: null,
+      },
+    ],
+  );
+});
 
 test("the service connects to the database with waits doubling to a minute, gives up at the horizon with the last error, and stops on a signal", async () => {
   const refused = () =>

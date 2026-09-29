@@ -31,4 +31,4 @@ const supervisor = superviseWorkers(
   },
 );
 for (const signal of ["SIGTERM", "SIGINT"] as const)
-  process.once(signal, supervisor.stop);
+  process.once(signal, () => supervisor.stop(signal));

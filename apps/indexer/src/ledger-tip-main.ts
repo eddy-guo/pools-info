@@ -42,13 +42,22 @@ import { LedgerTipHealth, serveLedgerTipHealth } from "./ledger-tip-health";
 // with the range in flight and end the loop on a committed batch. `run`
 // serves `GET /health` from the loop's progress on PORT.
 const stop = new AbortController();
-for (const signal of ["SIGINT", "SIGTERM"] as const)
-  process.once(signal, () =>
-    stop.abort(new DOMException(signal, "AbortError")),
-  );
 const emit = (event: Record<string, unknown>) =>
   console.log(JSON.stringify(event));
 let health: LedgerTipHealth | null = null;
+let loopOwnsStop = false;
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.once(signal, () => {
+    if (!loopOwnsStop)
+      emit({
+        event: "ledger_tip_stopping",
+        reason: signal,
+        cursor: null,
+        inFlight: null,
+        cycle: null,
+      });
+    stop.abort(new DOMException(signal, "AbortError"));
+  });
 type Mode = "run" | "once" | "status";
 
 /** Whether the database already holds the ledger the loop extends. Asked
@@ -218,6 +227,8 @@ async function session(
         { log: emit },
       );
       try {
+        if (stop.signal.aborted) return "done";
+        loopOwnsStop = true;
         const summary = await runLedgerTip(db, {
           warmth,
           observer: health ?? undefined,
@@ -239,6 +250,7 @@ async function session(
         process.exitCode = ledgerTipExitCodes[summary.stopped];
         return "done";
       } finally {
+        loopOwnsStop = false;
         await warmth.close();
       }
     } finally {
