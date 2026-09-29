@@ -19,6 +19,37 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
   await query("SET LOCAL jit = off");
   const cut = await ledgerCut(query);
   if (!cut) throw new RequestError(503, "stats_coverage_unavailable");
+  let allActiveTraders: number | null = null;
+  if (window === "All") {
+    const { rows } = await query(
+      `SELECT a.through_block,a.through_timestamp,a.crowd_block,
+         encode(a.crowd_hash,'hex') AS crowd_hash,a.instant_traders,a.all_traders,
+         c.cursor_block AS current_crowd_block,encode(c.cursor_hash,'hex') AS current_crowd_hash
+       FROM agg_active_trader_counts a LEFT JOIN agg_streams c
+         ON c.chain_id=a.chain_id AND c.stream_key='ledger:crowd:v1'
+       WHERE a.chain_id=4663`,
+    );
+    const saved = rows[0];
+    const crowdBlock =
+      saved?.crowd_block === null ? null : Number(saved?.crowd_block);
+    const currentCrowdBlock =
+      saved?.current_crowd_block === null
+        ? null
+        : Number(saved?.current_crowd_block);
+    const aligned =
+      crowdBlock === cut.block && saved?.crowd_hash === cut.hash.slice(2);
+    const count = Number(aligned ? saved?.all_traders : saved?.instant_traders);
+    if (
+      Number(saved?.through_block) !== cut.block ||
+      Number(saved?.through_timestamp) !== cut.asOf ||
+      crowdBlock !== currentCrowdBlock ||
+      saved?.crowd_hash !== saved?.current_crowd_hash ||
+      !Number.isSafeInteger(count) ||
+      count < 0
+    )
+      throw new RequestError(503, "stats_coverage_unavailable");
+    allActiveTraders = count;
+  }
   const hour = window === "1h" ? await ledgerHour(query, cut) : null;
   const flow = ledgerFlow(window, hour);
   const start = ledgerWindowStart(cut, window);
@@ -80,15 +111,16 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
     liquidityWei: null,
     poolsLaunched: Number(r.pools_launched),
     activeTraders:
-      flow === "none" || window === "All" ? null : Number(r.active_traders),
+      flow === "none"
+        ? null
+        : window === "All"
+          ? allActiveTraders
+          : Number(r.active_traders),
     completeWindow,
     coverage: {
       ...coverage,
       measuredPools: Number(r.measured_pools),
-      activeTraderScope:
-        window === "All"
-          ? "all_window_not_measured"
-          : "attributed_wallets_in_measured_pools",
+      activeTraderScope: "attributed_wallets_in_measured_pools",
     },
   };
 }

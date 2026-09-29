@@ -451,6 +451,12 @@ test(
        VALUES(4663,${walletRef},${kRef},$1,0,0,0,1000,1000,1,0,1,0,0,0,0)`,
       [H],
     );
+    await db.query(
+      `UPDATE agg_active_trader_counts SET through_block=$1,through_timestamp=$2,
+         instant_traders=1,all_traders=1
+       WHERE chain_id=4663`,
+      [cursorBlock, cursorTime],
+    );
     for (const [block, log, side] of [
       [cursorBlock - 20, 1, "buy"],
       [cursorBlock, 4, "sell"],
@@ -526,14 +532,12 @@ test(
       assert.equal(stats.coverage.measuredPools, ledgerRows.length);
       assert.equal(
         stats.coverage.activeTraderScope,
-        window === "All"
-          ? "all_window_not_measured"
-          : "attributed_wallets_in_measured_pools",
+        "attributed_wallets_in_measured_pools",
       );
       assert.equal(stats.liquidityWei, null);
       assert.equal(
         stats.activeTraders,
-        stats.completeWindow && window !== "All" ? 1 : null,
+        stats.completeWindow ? 1 : null,
       );
       if (stats.completeWindow) {
         assert.equal(
@@ -558,6 +562,18 @@ test(
         ).length,
       );
     }
+    await db.query(
+      "UPDATE agg_active_trader_counts SET through_block=$1 WHERE chain_id=4663",
+      [cursorBlock - 1],
+    );
+    assert.deepEqual(await get("ledger", "/v1/stats?window=All"), {
+      status: 503,
+      data: { error: "stats_coverage_unavailable" },
+    });
+    await db.query(
+      "UPDATE agg_active_trader_counts SET through_block=$1 WHERE chain_id=4663",
+      [cursorBlock],
+    );
     for (const path of poolPaths.filter((p) => !p.includes(pools.N.id))) {
       const [broad, ledger] = [
         await fetchText("broad", path),
@@ -957,6 +973,98 @@ test(
     assert.equal(incompleteStats.data.volumeWei, null);
     assert.equal(incompleteStats.data.trades, null);
     assert.equal(incompleteStats.data.activeTraders, null);
+    const beforeCrowd = await get("ledger", "/v1/stats?window=24h");
+    await db.query(
+      `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash)
+       VALUES(4663,'launches:crowd:v1','discovery',23467030,$1,$2)`,
+      [cursorBlock, word(cursorBlock)],
+    );
+    await db.query(
+      `INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence)
+       VALUES(4663,'launches:crowd:v1',23467030,$1,$2,$3,'{}')`,
+      [cursorBlock, word(cursorBlock), word(909)],
+    );
+    const crowdId = word(909);
+    await db.query(
+      `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,
+         launch_sender,launched_at,source_stream,source_batch,launch_type)
+       VALUES(4663,$1,$2,'Crowd only','CROWD',$3,$4,$5,$6,'launches:crowd:v1',$7,'crowd')`,
+      [
+        crowdId,
+        address(909),
+        cursorBlock - 100,
+        word(910),
+        address(911),
+        H * 3600,
+        cursorBlock,
+      ],
+    );
+    await db.query(
+      `INSERT INTO agg_wallets(address,first_block) VALUES(decode($1,'hex'),$2)`,
+      [address(912).slice(2), cursorBlock - 50],
+    );
+    await db.query(
+      `INSERT INTO agg_wallet_hours(chain_id,wallet_ref,pool_ref,hour,realized_wei,
+         disposed_cost_wei,proceeds_wei,spent_wei,volume_wei,buys,sells,
+         supported_trades,wins,losses,closures,hold_seconds)
+       SELECT 4663,w.wallet_ref,p.pool_ref,$1,0,0,0,1000,1000,1,0,1,0,0,0,0
+       FROM agg_wallets w CROSS JOIN indexed_pools p
+       WHERE w.address=decode($2,'hex') AND p.pool_id=$3`,
+      [H, address(912).slice(2), crowdId],
+    );
+    await db.query(
+      `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode,cursor_block,cursor_hash,cursor_timestamp)
+       VALUES(4663,'ledger:crowd:v1',23467030,'tip',$1,decode($2,'hex'),$3)`,
+      [cursorBlock - 1, hex(cursorBlock - 1), cursorTime - 1],
+    );
+    await db.query(
+      `UPDATE agg_active_trader_counts SET crowd_block=$1,crowd_hash=decode($2,'hex')
+       WHERE chain_id=4663`,
+      [cursorBlock - 1, hex(cursorBlock - 1)],
+    );
+    const lagging = await get("ledger", "/v1/stats?window=24h");
+    assert.equal(lagging.status, 200);
+    for (const field of [
+      "activeTraders",
+      "trades",
+      "volumeWei",
+      "poolsLaunched",
+      "completeWindow",
+    ])
+      assert.equal(lagging.data[field], beforeCrowd.data[field], field);
+    assert.equal(
+      lagging.data.coverage.measuredPools,
+      beforeCrowd.data.coverage.measuredPools,
+    );
+    assert.equal(
+      (await get("ledger", "/v1/stats?window=All")).data.activeTraders,
+      1,
+    );
+    await db.query(
+      `UPDATE agg_streams SET cursor_block=$1,cursor_hash=decode($2,'hex'),cursor_timestamp=$3
+       WHERE stream_key='ledger:crowd:v1'`,
+      [cursorBlock, hex(cursorBlock), cursorTime],
+    );
+    await db.query(
+      `UPDATE agg_active_trader_counts SET crowd_block=$1,crowd_hash=decode($2,'hex'),all_traders=2
+       WHERE chain_id=4663`,
+      [cursorBlock, hex(cursorBlock)],
+    );
+    const allCrowd = await get("ledger", "/v1/stats?window=All");
+    assert.equal(allCrowd.status, 200);
+    assert.equal(allCrowd.data.activeTraders, 2);
+    const directCrowd = await db.query(
+      `SELECT count(DISTINCT h.wallet_ref)::int AS active FROM agg_wallet_hours h
+       JOIN indexed_pools p USING(pool_ref)
+       LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
+       WHERE h.chain_id=4663 AND p.launch_block BETWEEN 23467030 AND $1
+         AND (a.through_block IS NULL OR $1>=a.through_block)
+         AND EXISTS (SELECT 1 FROM pool_launch_sources ps WHERE ps.chain_id=4663
+           AND ps.pool_id=p.pool_id AND (ps.stream_key='launches:agg:v1' AND ps.batch_end<=$1
+             OR ps.stream_key='launches:crowd:v1' AND ps.batch_end<=$2))`,
+      [cursorBlock, cursorBlock],
+    );
+    assert.equal(allCrowd.data.activeTraders, directCrowd.rows[0].active);
   },
 );
 
