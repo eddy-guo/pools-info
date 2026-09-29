@@ -248,6 +248,8 @@ async function session(
     throw error;
   } finally {
     await db.end().catch(() => {});
+    if (mode === "once" && lost.signal.aborted && !stop.signal.aborted)
+      process.exitCode = 1;
   }
 }
 async function main() {
