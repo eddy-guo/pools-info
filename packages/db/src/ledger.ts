@@ -500,18 +500,55 @@ const big = (v: unknown) => BigInt(String(v));
 const nullable = <T>(v: unknown, f: (v: unknown) => T) =>
   v === null ? null : f(v);
 
-/** One indexed existence probe per wallet in the batch. The count's delta is
- * taken before and after the fold, so transfers and unattributed swaps never
- * make a wallet active, while a wallet's first attributed trade does. */
-async function activeWallets(db: Client, refs: number[]) {
-  if (!refs.length) return 0;
+async function activeWallets(
+  db: Client,
+  refs: number[],
+  mainBlock: number | null,
+  crowdBlock: number | null,
+) {
+  if (!refs.length || mainBlock === null) return { instant: 0, all: 0 };
   const result = await db.query(
-    `SELECT count(*)::int AS wallets FROM unnest($1::int[]) AS candidate(wallet_ref)
-     WHERE EXISTS (SELECT 1 FROM agg_wallet_hours h
-       WHERE h.chain_id=4663 AND h.wallet_ref=candidate.wallet_ref)`,
-    [refs],
+    `WITH candidates AS (SELECT DISTINCT wallet_ref FROM unnest($1::int[]) AS x(wallet_ref)),
+      eligible AS (SELECT p.pool_ref,p.launch_type FROM indexed_pools p
+        LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
+        WHERE p.chain_id=4663 AND p.launch_block BETWEEN $2 AND $3
+          AND (a.through_block IS NULL OR $3>=a.through_block)
+          AND EXISTS (SELECT 1 FROM pool_launch_sources ps
+            WHERE ps.chain_id=4663 AND ps.pool_id=p.pool_id AND (
+              ps.stream_key='launches:agg:v1' AND ps.batch_end<=$3 OR
+              ps.stream_key='launches:crowd:v1' AND ps.batch_end<=$4)))
+     SELECT count(*) FILTER (WHERE instant)::int AS instant,count(*)::int AS all
+     FROM (SELECT c.wallet_ref,bool_or(e.launch_type='instant') AS instant
+       FROM candidates c JOIN agg_wallet_hours h ON h.chain_id=4663 AND h.wallet_ref=c.wallet_ref
+       JOIN eligible e USING(pool_ref) GROUP BY c.wallet_ref) w`,
+    [refs, ledgerStream.start, mainBlock, crowdBlock],
   );
-  return result.rows[0].wallets as number;
+  return result.rows[0] as { instant: number; all: number };
+}
+
+async function newlyEligibleWallets(
+  db: Client,
+  oldMain: number | null,
+  newMain: number,
+  oldCrowd: number | null,
+  newCrowd: number | null,
+) {
+  const { rows } = await db.query(
+    `WITH changed AS (
+       SELECT p.pool_ref FROM pool_launch_sources ps
+         JOIN indexed_pools p ON p.chain_id=ps.chain_id AND p.pool_id=ps.pool_id
+         WHERE ps.chain_id=4663 AND (
+           ps.stream_key='launches:agg:v1' AND ps.batch_end>$1 AND ps.batch_end<=$2 OR
+           ps.stream_key='launches:crowd:v1' AND ps.batch_end>$3 AND ps.batch_end<=$4)
+       UNION
+       SELECT p.pool_ref FROM analytics_accounting_pools a
+         JOIN indexed_pools p ON p.chain_id=a.chain_id AND p.pool_id=a.pool_id
+         WHERE a.chain_id=4663 AND a.through_block>$1 AND a.through_block<=$2
+     ) SELECT DISTINCT h.wallet_ref FROM changed c
+       JOIN agg_wallet_hours h ON h.chain_id=4663 AND h.pool_ref=c.pool_ref`,
+    [oldMain ?? 0, newMain, oldCrowd ?? 0, newCrowd ?? 0],
+  );
+  return rows.map((r) => Number(r.wallet_ref));
 }
 
 /** Apply one batch. Under the writer lock, in one transaction: the same
@@ -716,10 +753,37 @@ export async function applyLedgerBatch(
       }
       for (const [address, ref] of walletRef) walletOf.set(ref, address);
     }
+    const activeRow = await db.query(
+      `SELECT through_block,through_timestamp,crowd_block,crowd_hash,instant_traders,all_traders
+       FROM agg_active_trader_counts WHERE chain_id=4663 FOR UPDATE`,
+    );
+    if (activeRow.rowCount !== 1) throw Error("ledger_active_traders_missing");
+    const saved = activeRow.rows[0];
+    const oldMain =
+      saved.through_block === null ? null : Number(saved.through_block);
+    const oldCrowd =
+      saved.crowd_block === null ? null : Number(saved.crowd_block);
+    if (key === ledgerStream.key && oldMain !== stream.cursor)
+      throw Error("ledger_active_traders_stale");
+    if (key === crowdLedgerStream.key && oldCrowd !== stream.cursor)
+      throw Error("ledger_active_traders_stale");
+    const newMain = key === ledgerStream.key ? batch.to : oldMain;
+    const newCrowd = key === crowdLedgerStream.key ? batch.to : oldCrowd;
     const activeRefs = [
-      ...new Set(keys.walletHours.map((h) => walletRef.get(h.wallet)!)),
+      ...new Set([
+        ...keys.walletHours.map((h) => walletRef.get(h.wallet)!),
+        ...(newMain === null
+          ? []
+          : await newlyEligibleWallets(
+              db,
+              oldMain,
+              newMain,
+              oldCrowd,
+              newCrowd,
+            )),
+      ]),
     ];
-    const activeBefore = await activeWallets(db, activeRefs);
+    const activeBefore = await activeWallets(db, activeRefs, oldMain, oldCrowd);
     // Journal the pre-image of every row the plan can touch, and load the rows.
     const state = createLedgerState();
     const journal = [key, batch.to];
@@ -1103,13 +1167,22 @@ export async function applyLedgerBatch(
        WHERE chain_id=4663 AND stream_key=$1 AND to_block=$2`,
       [key, batch.to],
     );
-    const activeAfter = await activeWallets(db, activeRefs);
+    const activeAfter = await activeWallets(db, activeRefs, newMain, newCrowd);
     const activeTotal = await db.query(
-      `UPDATE agg_active_trader_counts SET active_traders=active_traders+$1,
-         through_block=CASE WHEN $2='ledger:agg:v1' THEN $3 ELSE through_block END,
-         through_timestamp=CASE WHEN $2='ledger:agg:v1' THEN $4 ELSE through_timestamp END
+      `UPDATE agg_active_trader_counts SET
+         instant_traders=instant_traders+$1,all_traders=all_traders+$2,
+         through_block=$3,through_timestamp=$4,crowd_block=$5,crowd_hash=$6
        WHERE chain_id=4663`,
-      [activeAfter - activeBefore, key, batch.to, batch.timestamp],
+      [
+        activeAfter.instant - activeBefore.instant,
+        activeAfter.all - activeBefore.all,
+        newMain,
+        key === ledgerStream.key ? batch.timestamp : saved.through_timestamp,
+        newCrowd,
+        key === crowdLedgerStream.key
+          ? Buffer.from(bytes(batch.hash), "hex")
+          : saved.crowd_hash,
+      ],
     );
     if (activeTotal.rowCount !== 1)
       throw Error("ledger_active_traders_missing");
@@ -1260,25 +1333,57 @@ export async function walkBackLedger(
     if (key !== ledgerStream.key && undo.length)
       await db.query("DELETE FROM agg_window_refreshes WHERE chain_id=4663");
     if (undo.length) {
-      // A rewind is rare; rebuild the one-row total from its source of truth
-      // after restoring every pre-image, in the same writer transaction.
-      const stamp =
+      const other = await db.query(
+        `SELECT start_block,cursor_block,cursor_hash,cursor_timestamp FROM agg_streams
+         WHERE chain_id=4663 AND stream_key=$1`,
+        [key === ledgerStream.key ? crowdLedgerStream.key : ledgerStream.key],
+      );
+      const mainBlock =
         key === ledgerStream.key
-          ? {
-              cursor_block: target?.to ?? null,
-              cursor_timestamp: target?.timestamp ?? null,
-            }
-          : (
-              await db.query(
-                "SELECT cursor_block,cursor_timestamp FROM agg_streams WHERE chain_id=4663 AND stream_key=$1",
-                [ledgerStream.key],
-              )
-            ).rows[0];
+          ? (target?.to ?? null)
+          : (other.rows[0]?.cursor_block ?? null);
+      const mainTimestamp =
+        key === ledgerStream.key
+          ? (target?.timestamp ?? null)
+          : (other.rows[0]?.cursor_timestamp ?? null);
+      const crowdBlock =
+        key === crowdLedgerStream.key
+          ? (target?.to ?? null)
+          : (other.rows[0]?.cursor_block ?? null);
+      const crowdHash =
+        key === crowdLedgerStream.key
+          ? target?.hash
+            ? Buffer.from(target.hash, "hex")
+            : null
+          : (other.rows[0]?.cursor_hash ?? null);
+      const { rows } = await db.query(
+        `WITH eligible AS (SELECT p.pool_ref,p.launch_type FROM indexed_pools p
+           LEFT JOIN analytics_accounting_pools a ON a.chain_id=4663 AND a.pool_id=p.pool_id
+           WHERE p.chain_id=4663 AND p.launch_block BETWEEN $1 AND $2
+             AND (a.through_block IS NULL OR $2>=a.through_block)
+             AND EXISTS (SELECT 1 FROM pool_launch_sources ps
+               WHERE ps.chain_id=4663 AND ps.pool_id=p.pool_id AND (
+                 ps.stream_key='launches:agg:v1' AND ps.batch_end<=$2 OR
+                 ps.stream_key='launches:crowd:v1' AND ps.batch_end<=$3))),
+         wallets AS (SELECT h.wallet_ref,bool_or(e.launch_type='instant') AS instant
+           FROM agg_wallet_hours h JOIN eligible e USING(pool_ref)
+           WHERE h.chain_id=4663 GROUP BY h.wallet_ref)
+         SELECT count(*) FILTER (WHERE instant)::bigint AS instant_traders,
+           count(*)::bigint AS all_traders FROM wallets`,
+        [ledgerStream.start, mainBlock, crowdBlock],
+      );
       const activeTotal = await db.query(
-        `UPDATE agg_active_trader_counts SET
-           active_traders=(SELECT count(DISTINCT wallet_ref) FROM agg_wallet_hours WHERE chain_id=4663),
-           through_block=$1,through_timestamp=$2 WHERE chain_id=4663`,
-        [stamp?.cursor_block ?? null, stamp?.cursor_timestamp ?? null],
+        `UPDATE agg_active_trader_counts SET instant_traders=$1,all_traders=$2,
+           through_block=$3,through_timestamp=$4,crowd_block=$5,crowd_hash=$6
+         WHERE chain_id=4663`,
+        [
+          rows[0].instant_traders,
+          rows[0].all_traders,
+          mainBlock,
+          mainTimestamp,
+          crowdBlock,
+          crowdHash,
+        ],
       );
       if (activeTotal.rowCount !== 1)
         throw Error("ledger_active_traders_missing");

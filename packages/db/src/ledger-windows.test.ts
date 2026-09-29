@@ -7,6 +7,7 @@ import {
   applyLedgerBatch,
   commitBatch,
   createClient,
+  crowdLedgerStream,
   ensureDiscovery,
   ensureLedgerStream,
   ledgerRules,
@@ -55,6 +56,7 @@ class Rows {
     side: "buy" | "sell",
     eth: bigint,
     tokens: bigint,
+    target = pool,
   ) {
     const i = this.logs.get(block) ?? 0;
     this.logs.set(block, i + 2);
@@ -68,8 +70,8 @@ class Rows {
     this.swaps.push({
       ...site,
       logIndex: i,
-      poolId: pool.id,
-      token: pool.token,
+      poolId: target.id,
+      token: target.token,
       initiator: who,
       txTo: ledgerRules.router,
       side,
@@ -82,7 +84,7 @@ class Rows {
     this.transfers.push({
       ...site,
       logIndex: i + 1,
-      token: pool.token,
+      token: target.token,
       from: side === "buy" ? ledgerRules.manager : who,
       to: side === "buy" ? who : ledgerRules.manager,
       value: tokens.toString(),
@@ -189,18 +191,43 @@ const ranks = async (db: Client, window: string) =>
 
 test("lifetime active-trader total follows each folded cursor and a walk-back", async (t) => {
   const db = await setup(t);
+  await db.query("UPDATE indexed_pools SET launch_block=$1 WHERE pool_id=$2", [
+    base,
+    pool.id,
+  ]);
+  await db.query(
+    `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block)
+     VALUES(4663,'launches:agg:v1','discovery',$1)`,
+    [base],
+  );
+  await db.query(
+    `INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence)
+     VALUES(4663,'launches:agg:v1',$1,$2,$3,$4,'{}')`,
+    [base, base + 9, hash(base + 9), hash(999)],
+  );
+  await db.query(
+    `INSERT INTO pool_launch_sources(chain_id,pool_id,stream_key,batch_end)
+     VALUES(4663,$1,'launches:agg:v1',$2)`,
+    [pool.id, base + 9],
+  );
   const total = async () => {
     const { rows } = await db.query(
       `SELECT through_block::int AS through,through_timestamp::int AS timestamp,
-         active_traders::int AS active,
-         (SELECT count(DISTINCT wallet_ref)::int FROM agg_wallet_hours WHERE chain_id=4663) AS direct
+         instant_traders::int AS instant,all_traders::int AS active,
+         (SELECT count(DISTINCT h.wallet_ref)::int FROM agg_wallet_hours h
+           JOIN indexed_pools p USING(pool_ref)
+           JOIN pool_launch_sources s ON s.chain_id=4663 AND s.pool_id=p.pool_id
+           WHERE h.chain_id=4663 AND p.launch_block BETWEEN $1 AND through_block
+             AND s.stream_key='launches:agg:v1' AND s.batch_end<=through_block) AS direct
        FROM agg_active_trader_counts WHERE chain_id=4663`,
+      [base],
     );
     return rows[0];
   };
   assert.deepEqual(await total(), {
     through: null,
     timestamp: null,
+    instant: 0,
     active: 0,
     direct: 0,
   });
@@ -211,6 +238,7 @@ test("lifetime active-trader total follows each folded cursor and a walk-back", 
   assert.deepEqual(await total(), {
     through: base + 9,
     timestamp: ts(base + 9),
+    instant: 1,
     active: 1,
     direct: 1,
   });
@@ -227,6 +255,7 @@ test("lifetime active-trader total follows each folded cursor and a walk-back", 
   assert.deepEqual(await total(), {
     through: base + 19,
     timestamp: ts(base + 19),
+    instant: 2,
     active: 2,
     direct: 2,
   });
@@ -234,9 +263,78 @@ test("lifetime active-trader total follows each folded cursor and a walk-back", 
   assert.deepEqual(await total(), {
     through: base + 9,
     timestamp: ts(base + 9),
+    instant: 1,
     active: 1,
     direct: 1,
   });
+  const crowd = {
+    ...pool,
+    id: hash(0x300),
+    token: addr(0x301),
+    launchBlock: base,
+    launchTx: hash(0x302),
+    launchSender: addr(0x303),
+    launchedAt: ts(base),
+  };
+  await db.query(
+    `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block)
+     VALUES(4663,'launches:crowd:v1','discovery',$1)`,
+    [base],
+  );
+  await db.query(
+    `INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence)
+     VALUES(4663,'launches:crowd:v1',$1,$2,$3,$4,'{}')`,
+    [base, base + 9, hash(base + 9), hash(998)],
+  );
+  await db.query(
+    `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,
+       launch_tx,launch_sender,launched_at,source_stream,source_batch,launch_type)
+     VALUES(4663,$1,$2,'Crowd','C',$3,$4,$5,$6,'launches:crowd:v1',$7,'crowd')`,
+    [
+      crowd.id,
+      crowd.token,
+      crowd.launchBlock,
+      crowd.launchTx,
+      crowd.launchSender,
+      crowd.launchedAt,
+      base + 9,
+    ],
+  );
+  await ensureLedgerStream(db, "tip", crowdLedgerStream.key);
+  await applyLedgerBatch(
+    db,
+    batch(
+      base,
+      base + 9,
+      new Rows().trade(base + 4, wallet(3), "buy", E, 10n, crowd),
+    ),
+    crowdLedgerStream.key,
+  );
+  assert.deepEqual(await total(), {
+    through: base + 9,
+    timestamp: ts(base + 9),
+    instant: 1,
+    active: 2,
+    direct: 1,
+  });
+  await applyLedgerBatch(db, batch(base + 10, base + 19, new Rows()));
+  assert.deepEqual(await total(), {
+    through: base + 19,
+    timestamp: ts(base + 19),
+    instant: 1,
+    active: 2,
+    direct: 1,
+  });
+  await applyLedgerBatch(
+    db,
+    batch(base + 10, base + 19, new Rows()),
+    crowdLedgerStream.key,
+  );
+  const count = await db.query(
+    `SELECT crowd_block::int AS crowd,instant_traders::int AS instant,
+       all_traders::int AS active FROM agg_active_trader_counts WHERE chain_id=4663`,
+  );
+  assert.deepEqual(count.rows[0], { crowd: base + 19, instant: 1, active: 2 });
 });
 
 test("a first refresh builds every window from the hour rows and ranks the eligible top by realized, the address breaking ties", async (t) => {

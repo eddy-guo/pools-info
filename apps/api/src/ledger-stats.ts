@@ -22,13 +22,28 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
   let allActiveTraders: number | null = null;
   if (window === "All") {
     const { rows } = await query(
-      "SELECT through_block,through_timestamp,active_traders FROM agg_active_trader_counts WHERE chain_id=4663",
+      `SELECT a.through_block,a.through_timestamp,a.crowd_block,
+         encode(a.crowd_hash,'hex') AS crowd_hash,a.instant_traders,a.all_traders,
+         c.cursor_block AS current_crowd_block,encode(c.cursor_hash,'hex') AS current_crowd_hash
+       FROM agg_active_trader_counts a LEFT JOIN agg_streams c
+         ON c.chain_id=a.chain_id AND c.stream_key='ledger:crowd:v1'
+       WHERE a.chain_id=4663`,
     );
     const saved = rows[0];
-    const count = Number(saved?.active_traders);
+    const crowdBlock =
+      saved?.crowd_block === null ? null : Number(saved?.crowd_block);
+    const currentCrowdBlock =
+      saved?.current_crowd_block === null
+        ? null
+        : Number(saved?.current_crowd_block);
+    const aligned =
+      crowdBlock === cut.block && saved?.crowd_hash === cut.hash.slice(2);
+    const count = Number(aligned ? saved?.all_traders : saved?.instant_traders);
     if (
       Number(saved?.through_block) !== cut.block ||
       Number(saved?.through_timestamp) !== cut.asOf ||
+      crowdBlock !== currentCrowdBlock ||
+      saved?.crowd_hash !== saved?.current_crowd_hash ||
       !Number.isSafeInteger(count) ||
       count < 0
     )
