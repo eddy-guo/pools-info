@@ -502,8 +502,9 @@ page of 100's own-buy statement fetches 11,663 blocks from outside the
 cache against 28,593; what remains is the ranked launches' sequential scans
 of the catalog tables the ranking statement reads too. The ranking
 statement (about 230 ms cold, 190 ms warm, 3,392 blocks from disk cold) is
-unchanged: it measures the whole catalog by design and plans no parallel
-worker here. The warm set's creators read goes from 654 ms to 344 ms cold
+unchanged by the own-buy probe fix: it measures the whole catalog by design
+and planned no parallel worker on that backup. The warm set's creators read
+goes from 654 ms to 344 ms cold
 and the whole warm set from 1,062 ms to 763 ms. Every window, sort,
 direction and page answered byte for byte what the per-launch probe
 answered, apart from `generatedAt`, on this backup and on the
@@ -511,7 +512,7 @@ production-shaped ledger copy of 17 Sep.
 
 The own-buy statement runs with `max_parallel_workers_per_gather = 0`, set
 `LOCAL` around it and restored to the server's value before the identity
-lookup, so it is the only statement of the read the setting reaches. Its
+lookup, independently of the earlier ranking guard. Its
 planned shape was a `Gather` of two workers over a `Parallel Hash Left Join`,
 and a page of 50 senders or more grew that hash past the shared memory the
 `LedgerPostgres` container gives parallel query: production answered 53100
