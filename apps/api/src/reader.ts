@@ -28,6 +28,7 @@ import {
   ledgerFreshnessDefaults,
   readLedgerFreshness,
 } from "./ledger-freshness";
+import { readLedgerPosition } from "./ledger-position";
 import type { RegistryToken } from "./token-registry";
 import {
   encodeCursor,
@@ -242,6 +243,17 @@ export async function readData(
     if (marketSource !== "ledger")
       throw new RequestError(503, "stats_coverage_unavailable");
     return readLedgerStats(query, request.window);
+  }
+  if (request.route === "position") {
+    // A ledger read only: no frozen accounting table stands in for it.
+    if (marketSource !== "ledger")
+      throw new RequestError(503, "position_coverage_unavailable");
+    return readLedgerPosition(
+      query,
+      request.wallet!,
+      request.poolId!,
+      request.window,
+    );
   }
   if (request.route === "leaderboard")
     return (

@@ -211,3 +211,64 @@ export interface AnalyticsWalletResponse {
   /** Per-position realization lists are omitted by the SQL aggregate reader. */
   positionRealizationsIncluded?: boolean;
 }
+/** The pool's latest price state, the basis of a position's `unrealizedWei`
+ * (`GET /v1/wallets/:address/positions/:poolId`). */
+export interface WalletPositionMark {
+  /** The pool's latest sqrtPriceX96, exact. */
+  sqrtPriceX96: string;
+  /** Wei per whole token at that state, the pool page's price; null while the
+   * token's decimals are unknown. */
+  priceWei: string | null;
+  /** The swap that set the state. */
+  block: number;
+  timestamp: number;
+  txHash: string;
+  /** What the held units fetch at that price, `unrealizedWei + costWei`
+   * ("0" for a flat position); null for an excluded or unmarked position. */
+  valueWei: string | null;
+}
+/** A supported position's inventory cycles over its whole history. */
+export interface WalletPositionCycles {
+  /** Unix seconds the open cycle began (the buy that took the position from
+   * flat); null while flat. Its age is `coverage.asOf - openedAt`. */
+  openedAt: number | null;
+  /** Cycles closed by a sale, those closed at a gain and at a loss. */
+  closures: number;
+  wins: number;
+  losses: number;
+  /** The closed cycles' summed hold, so the average is `holdSeconds / closures`. */
+  holdSeconds: number;
+  /** The best single sale's realized gain, wei; null without a sale. */
+  bestWei: string | null;
+}
+/** When the wallet traded the pool. The ledger keeps swaps per UTC hour, so the
+ * first and last trade are hours (unix seconds at the hour's start); the last
+ * activity, a swap or a transfer, is exact. */
+export interface WalletPositionActivity {
+  firstTradeHour: number | null;
+  lastTradeHour: number | null;
+  last: number;
+}
+/** One wallet-position from the aggregate ledger, the position PnL card's
+ * read (`docs/LEDGER-MARKET-SERVING.md`, "A single position"). */
+export interface WalletPositionResponse {
+  coverage: AnalyticsCoverage;
+  window: LiveWindow;
+  /** The wallet, lowercased. */
+  wallet: string;
+  /** The catalog row the card names the pool by. */
+  pool: CatalogPool;
+  /** The wallet page's row for this pool, field for field. */
+  position: AnalyticsWalletPosition;
+  /** Null when the pool has no swap folded. */
+  mark: WalletPositionMark | null;
+  /** Realized over disposed cost in percent, the board's ROI; null while
+   * nothing has been disposed or the position is excluded. */
+  roi: number | null;
+  /** Realized plus the mark over invested, in percent; null while the position
+   * is unmarked or excluded or nothing was invested. */
+  totalRoi: number | null;
+  /** Null for an excluded position, whose inventory is not served. */
+  cycles: WalletPositionCycles | null;
+  activity: WalletPositionActivity;
+}

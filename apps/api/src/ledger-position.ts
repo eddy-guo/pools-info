@@ -1,0 +1,169 @@
+import type { LiveWindow, WalletPositionResponse } from "@pools/core";
+import { catalogCte, type ReadQuery } from "./catalog-read";
+import { catalogPool } from "./explore-read";
+import { ledgerCoverage, ledgerWindowRefresh } from "./ledger-leaderboard";
+import { ledgerCut, ledgerPriceSql } from "./ledger-market";
+import {
+  counterpartyFlags,
+  positionColumns,
+  positionSources,
+  walletPosition,
+  windowFlowColumns,
+} from "./ledger-wallet";
+import { RequestError } from "./request";
+
+/** One wallet-position from the aggregate ledger (`MARKET_SOURCE=ledger`,
+ * docs/LEDGER-MARKET-SERVING.md "A single position"), the read behind the
+ * position PnL card: `GET /v1/wallets/:address/positions/:poolId?window=`.
+ * `position` is the wallet page's row for that pool, field for field
+ * (`walletPosition` over the same columns, the same cut and the same window
+ * start), so a consumer of the page reuses its type; beside it sits what a
+ * card needs and the ledger can vouch for: the price state behind the mark,
+ * the ledger's ROI, the position's inventory cycles and its trading times.
+ * Each is null where the ledger has nothing to stand on (an excluded
+ * position's finances, an unmarked position's value, a percent of a zero
+ * basis), never a stand-in. The pool is the catalog row the card names it by. */
+
+/** $1 wallet_ref, $2 the window's first hour, $3 pool_ref: the wallet page's
+ * columns for this one position (a primary-key probe of `agg_positions`), the
+ * price state's identity and its price per whole token (`ledgerPriceSql`, the
+ * pool page's figure), the fold's disposed cost and timing columns, the
+ * window's flow and the position's lifetime closures from its hour rows (two
+ * primary-key ranges of `agg_wallet_hours`). */
+export const positionSql = `WITH marked AS (
+    SELECT ${positionColumns},
+      p.disposed_cost_wei::text AS disposed_cost,p.cycle_opened_at::text AS cycle_opened_at,p.last_timestamp::text AS last_timestamp,
+      s.sqrt_price_x96::text AS sqrt_price_x96,s.price_block::text AS price_block,s.price_timestamp::text AS price_timestamp,
+      '0x'||encode(s.price_tx,'hex') AS price_tx,${ledgerPriceSql("s.sqrt_price_x96", "i.decimals")}::text AS price_wei,
+      l.first_hour,l.last_hour,l.closures,l.wins,l.losses,l.hold_seconds,l.best
+    FROM ${positionSources}
+    LEFT JOIN LATERAL (
+      SELECT ${windowFlowColumns} FROM agg_wallet_hours
+      WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3 AND hour>=$2
+    ) f ON true
+    LEFT JOIN LATERAL (
+      SELECT min(hour) AS first_hour,max(hour) AS last_hour,coalesce(sum(closures),0)::int AS closures,
+        coalesce(sum(wins),0)::int AS wins,coalesce(sum(losses),0)::int AS losses,
+        coalesce(sum(hold_seconds),0)::text AS hold_seconds,max(best_wei)::text AS best
+      FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3
+    ) l ON true
+    WHERE p.chain_id=4663 AND p.wallet_ref=$1 AND p.pool_ref=$3
+  ) SELECT m.*,mark::text AS unrealized FROM marked m`;
+
+/** A percent to four decimals, truncated toward zero in integer arithmetic as
+ * `walletSummary` computes the board's ROI; null over a zero denominator,
+ * never a percent of nothing. */
+const percent = (numerator: bigint, denominator: bigint) =>
+  denominator > 0n
+    ? Number((numerator * 1000000n) / denominator) / 10000
+    : null;
+
+/** The position, or a 404 in the api's usual shape: `pool_not_indexed` for a
+ * pool the catalog lacks (as the pool route answers), `wallet_not_found` for
+ * a wallet the ledger has never attributed a swap or transfer to, and
+ * `position_not_found` when the wallet never held or traded this pool's token.
+ * A deployment whose ledger has folded nothing answers 503
+ * `position_coverage_unavailable` rather than the frozen accounting tables,
+ * and a window the tip loop has not refreshed since the ledger's last
+ * walk-back 503 `position_refresh_pending` until the next refresh (about a
+ * minute), as the wallet page does. */
+export async function readLedgerPosition(
+  query: ReadQuery,
+  address: string,
+  poolId: string,
+  window: LiveWindow,
+): Promise<WalletPositionResponse> {
+  const cut = await ledgerCut(query);
+  if (!cut) throw new RequestError(503, "position_coverage_unavailable");
+  // The pool by the id the pool page uses, with the ledger's surrogate key.
+  const pool = (
+    await query(
+      `${catalogCte} SELECT c.*,i.pool_ref FROM catalog c
+      LEFT JOIN indexed_pools i ON i.chain_id=c.chain_id AND i.pool_id=c.pool_id
+      WHERE c.chain_id=4663 AND c.pool_id=$1`,
+      [poolId],
+    )
+  ).rows[0];
+  if (!pool) throw new RequestError(404, "pool_not_indexed");
+  const ref = (
+    await query(
+      `SELECT wallet_ref FROM agg_wallets WHERE address=decode($1,'hex')`,
+      [address.slice(2)],
+    )
+  ).rows[0]?.wallet_ref;
+  if (ref === undefined) throw new RequestError(404, "wallet_not_found");
+  // A catalog row the ledger has no key for (a recent discovery the indexer
+  // never saved) has no position under it.
+  if (pool.pool_ref === null) throw new RequestError(404, "position_not_found");
+  const refresh = await ledgerWindowRefresh(
+    query,
+    cut,
+    window,
+    "position_refresh_pending",
+  );
+  const row = (
+    await query(positionSql, [ref, refresh.windowStart, pool.pool_ref])
+  ).rows[0];
+  if (!row) throw new RequestError(404, "position_not_found");
+  const coverage = await ledgerCoverage(query, refresh.asOf);
+  const attributed = await counterpartyFlags(query, address);
+  const position = walletPosition(
+    row,
+    address,
+    cut,
+    attributed.get(Number(row.pool_ref)),
+  );
+  // The mark is served only for a supported, marked position, so the value
+  // and the total return below are null for an excluded or unmarked one.
+  const unrealized =
+    position.unrealizedWei === null ? null : BigInt(position.unrealizedWei);
+  return {
+    coverage,
+    window,
+    wallet: address,
+    pool: catalogPool(pool),
+    position,
+    mark:
+      row.sqrt_price_x96 === null
+        ? null
+        : {
+            sqrtPriceX96: row.sqrt_price_x96,
+            priceWei: row.price_wei,
+            block: Number(row.price_block),
+            timestamp: Number(row.price_timestamp),
+            txHash: row.price_tx,
+            valueWei:
+              unrealized === null
+                ? null
+                : (unrealized + BigInt(row.cost_wei)).toString(),
+          },
+    roi: position.supported
+      ? percent(BigInt(row.realized_wei), BigInt(row.disposed_cost))
+      : null,
+    totalRoi:
+      unrealized === null
+        ? null
+        : percent(
+            BigInt(row.realized_wei) + unrealized,
+            BigInt(row.invested_wei),
+          ),
+    cycles: position.supported
+      ? {
+          openedAt:
+            row.cycle_opened_at === null ? null : Number(row.cycle_opened_at),
+          closures: row.closures,
+          wins: row.wins,
+          losses: row.losses,
+          holdSeconds: Number(row.hold_seconds),
+          bestWei: row.best,
+        }
+      : null,
+    activity: {
+      firstTradeHour:
+        row.first_hour === null ? null : Number(row.first_hour) * 3600,
+      lastTradeHour:
+        row.last_hour === null ? null : Number(row.last_hour) * 3600,
+      last: Number(row.last_timestamp),
+    },
+  };
+}
