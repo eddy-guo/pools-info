@@ -345,6 +345,65 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
 // states hold the same height, so the panel below never moves.
 const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
+test("Following names profile figures for an unranked launcher", async ({ page, isMobile }) => {
+  const width = isMobile ? 390 : 1440;
+  await page.setViewportSize({ width, height: isMobile ? 844 : 1000 });
+  await page.addInitScript((address) => {
+    localStorage.setItem("poolsinfo.following.v1", JSON.stringify([address]));
+  }, topWallet);
+  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...json,
+        wallet: {
+          ...json.wallet,
+          rank: null,
+          realizedWei: "98046847999909238758",
+          netWei: "98046847999909238758",
+        },
+      },
+    });
+  });
+  await page.goto("/traders/?view=following");
+  const panel = page.locator(".leaderboard-panel");
+  await expect(
+    panel.locator(".following-traders [data-row=resolved]").filter({ visible: true }),
+  ).toContainText("98.0468 ETH");
+  await page.screenshot({
+    path: `docs/evidence/figures-audit-2026-09-29/h3/after-following-${width}.png`,
+  });
+  await expect(page.locator(".following-figures-caption")).toHaveText(
+    "Wallet profile figures, not board rankings.",
+  );
+  const caption = await page.locator(".following-figures-caption").evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const text = range.getBoundingClientRect();
+    const rank = document.querySelector(".my-rank")!.getBoundingClientRect();
+    const panel = document.querySelector(".leaderboard-panel")!.getBoundingClientRect();
+    return { top: text.top, bottom: text.bottom, left: text.left, right: text.right, rankBottom: rank.bottom, panelTop: panel.top };
+  });
+  expect(caption.top).toBeGreaterThanOrEqual(caption.rankBottom);
+  expect(caption.bottom).toBeLessThanOrEqual(caption.panelTop);
+  expect(caption.right).toBeLessThanOrEqual(width);
+});
+
+test("Net ETH podium names its displayed metric", async ({ page, isMobile }) => {
+  const width = isMobile ? 390 : 1440;
+  await page.setViewportSize({ width, height: isMobile ? 844 : 1000 });
+  await page.goto("/traders/?metric=net");
+  await expect(page.locator(".trader-podium-card").first()).toBeVisible();
+  await page.screenshot({
+    path: `docs/evidence/figures-audit-2026-09-29/h3/after-podium-${width}.png`,
+  });
+  await expect(
+    page.locator(".trader-podium-card").first().locator(".trader-podium-card-meta"),
+  ).toContainText("Net ETH · ROI");
+});
+
 async function settled(page: import("@playwright/test").Page) {
   await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0, {
     timeout: 20000,
