@@ -51,7 +51,7 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
            FROM agg_pool_hours h JOIN eligible e USING(pool_ref)
            WHERE h.chain_id=4663 AND h.hour>=$4 GROUP BY h.pool_ref`;
   const activeSql =
-    flow === "none"
+    flow === "none" || window === "All"
       ? `SELECT NULL::integer AS wallet_ref WHERE false`
       : flow === "ring"
         ? `SELECT t.wallet_ref FROM agg_live_trades t JOIN eligible e USING(pool_ref)
@@ -79,12 +79,16 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
     trades: flow === "none" ? null : Number(r.trades),
     liquidityWei: null,
     poolsLaunched: Number(r.pools_launched),
-    activeTraders: flow === "none" ? null : Number(r.active_traders),
+    activeTraders:
+      flow === "none" || window === "All" ? null : Number(r.active_traders),
     completeWindow,
     coverage: {
       ...coverage,
       measuredPools: Number(r.measured_pools),
-      activeTraderScope: "attributed_wallets_in_measured_pools",
+      activeTraderScope:
+        window === "All"
+          ? "all_window_not_measured"
+          : "attributed_wallets_in_measured_pools",
     },
   };
 }

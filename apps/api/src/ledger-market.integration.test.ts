@@ -526,10 +526,15 @@ test(
       assert.equal(stats.coverage.measuredPools, ledgerRows.length);
       assert.equal(
         stats.coverage.activeTraderScope,
-        "attributed_wallets_in_measured_pools",
+        window === "All"
+          ? "all_window_not_measured"
+          : "attributed_wallets_in_measured_pools",
       );
       assert.equal(stats.liquidityWei, null);
-      assert.equal(stats.activeTraders, stats.completeWindow ? 1 : null);
+      assert.equal(
+        stats.activeTraders,
+        stats.completeWindow && window !== "All" ? 1 : null,
+      );
       if (stats.completeWindow) {
         assert.equal(
           stats.volumeWei,
