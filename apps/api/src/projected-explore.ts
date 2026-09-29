@@ -168,6 +168,9 @@ export async function readProjectedExplore(
     SELECT p.pool_id,p.launch_block,m.volume,m.trades,m.liquidity_wei,m.change FROM page p LEFT JOIN metrics m USING(pool_id)
     UNION ALL SELECT pool_id,launch_block,volume,trades,liquidity_wei,change FROM ledger_ranked
   )`;
+    // Both the ranked page and its empty-page count scan the ledger corpus.
+    // Keep their parallel hashes out of the container's small shared memory.
+    await query("SET LOCAL max_parallel_workers_per_gather = 0");
     const ids = (
       await query(
         `${rankCtes} SELECT pool_id,count(*) OVER () AS total FROM ranked m ${where(metricConditions)} ORDER BY ${order} ${limitClause}`,
@@ -184,6 +187,7 @@ export async function readProjectedExplore(
             )
           ).rows[0].count,
         );
+    await query("SET LOCAL max_parallel_workers_per_gather = DEFAULT");
     rows = await pageRows(ids);
   } else if (deepRanked) {
     const deepPage = `${catalogCte}, page AS (SELECT * FROM catalog p ${where([...catalogConditions(metricValues.length), "EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=4663 AND a.pool_id=p.pool_id)"])})${metricCtes}`;
@@ -225,10 +229,14 @@ export async function readProjectedExplore(
             `${rankedCtes} SELECT count(*)::text AS count FROM ranked WHERE ${column} IS NOT NULL`,
             values,
           ];
+    if (ledger && sort !== "launch")
+      await query("SET LOCAL max_parallel_workers_per_gather = 0");
     const ids = (await query(ranked, rankValues)).rows;
     total = ids.length
       ? Number(ids[0].total)
       : Number((await query(countAlone, countValues)).rows[0].count);
+    if (ledger && sort !== "launch")
+      await query("SET LOCAL max_parallel_workers_per_gather = DEFAULT");
     rows = await pageRows(ids);
   }
   // A row the ledger serves shows one price, the ledger's: the deep

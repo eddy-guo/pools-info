@@ -502,8 +502,9 @@ page of 100's own-buy statement fetches 11,663 blocks from outside the
 cache against 28,593; what remains is the ranked launches' sequential scans
 of the catalog tables the ranking statement reads too. The ranking
 statement (about 230 ms cold, 190 ms warm, 3,392 blocks from disk cold) is
-unchanged: it measures the whole catalog by design and plans no parallel
-worker here. The warm set's creators read goes from 654 ms to 344 ms cold
+unchanged by the own-buy probe fix: it measures the whole catalog by design
+and planned no parallel worker on that backup. The warm set's creators read
+goes from 654 ms to 344 ms cold
 and the whole warm set from 1,062 ms to 763 ms. Every window, sort,
 direction and page answered byte for byte what the per-launch probe
 answered, apart from `generatedAt`, on this backup and on the
@@ -511,7 +512,7 @@ production-shaped ledger copy of 17 Sep.
 
 The own-buy statement runs with `max_parallel_workers_per_gather = 0`, set
 `LOCAL` around it and restored to the server's value before the identity
-lookup, so it is the only statement of the read the setting reaches. Its
+lookup, independently of the earlier ranking guard. Its
 planned shape was a `Gather` of two workers over a `Parallel Hash Left Join`,
 and a page of 50 senders or more grew that hash past the shared memory the
 `LedgerPostgres` container gives parallel query: production answered 53100
@@ -532,6 +533,43 @@ cold and 386 ms to 437 ms warm at `limit=100`; `limit=100` on 1h, 24h, 7d and
 explore page (59-61 ms) are unmoved, and every response is byte for byte what
 the parallel plan answered. The worst reading, 1.3 s, is 44% of the 3,000 ms
 statement budget.
+
+### Ranking statements and shared memory
+
+The creators rank and ledger explore's volume, trades, change, liquidity and
+gainers ranks also admit `Gather` plans. On a local copy of the 17 Sep
+production-shaped ledger (62,896 pools, 166,334 pool hours, 2,175,993
+positions), PostgreSQL 18.6 with parallel scan thresholds and costs set to
+zero planned two-worker `Gather` nodes for each rank at the routes' 100-row
+limit. Default local costs happened to plan serial scans; catalog growth or
+statistics can change that choice. The ranking statements and their
+empty-page count statements now set `max_parallel_workers_per_gather = 0`
+locally inside the read transaction, then restore `DEFAULT` before the
+page's other statements. The existing creators own-buy guard remains scoped
+to its own later probe.
+
+Paired warm reads on that copy, toggling only the new rank guard, gave these
+end-to-end reader times in milliseconds. Each response compared byte for byte
+after removing only `generatedAt`:
+
+| 100-row read                  | Previous | Guarded |
+| ----------------------------- | -------: | ------: |
+| Creators All, launches        |      289 |     291 |
+| Creators All, volume          |      273 |     266 |
+| Creators All, median          |      271 |     262 |
+| Explore All, volume           |      157 |     163 |
+| Explore All, trades           |      160 |     162 |
+| Explore 24h, change           |      139 |     144 |
+| Explore 24h, liquidity        |       25 |      20 |
+| Explore 7d, gainers by volume |       77 |      72 |
+
+The largest observed increase was 6 ms for explore volume in these warm
+paired runs. The first pass after copying the database is not a controlled
+OS-cold comparison: copying and earlier reads changed the host's page cache.
+The 62k-pool scale suite asserts the actual rank plans have no parallel node
+under the same planner pressure, including empty-page counts, and keeps the
+whole routes below its 2,000 ms read bound. The fix requires no response or
+schema change.
 
 The failure evidence is a three-part causal chain. At
 2026-09-24T12:58:21Z production logged
