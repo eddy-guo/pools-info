@@ -357,6 +357,7 @@ test.describe("Wallet profile entry", () => {
     await menu.getByRole("menuitem", { name: "Share PnL card" }).click();
     const share = page.getByRole("dialog", { name: "Share PnL card" });
     await expect(share).toBeVisible();
+    await expect(share.getByText("Preview · All realized")).toBeVisible();
     await page.getByRole("button", { name: "Close share card" }).click();
     await expect(share).toBeHidden();
 

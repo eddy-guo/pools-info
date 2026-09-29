@@ -50,6 +50,27 @@ async function settled(page: import("@playwright/test").Page, url: string) {
   });
   await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
 }
+
+test("positions and the share preview name the selected wallet window", async ({
+  page,
+}) => {
+  for (const window of ["24h", "7d", "All"]) {
+    await settled(page, `/wallet/${topWallet}/?window=${window}`);
+    await expect(page.locator(".wallet-positions-caption")).toHaveText(
+      `Realized: ${window} · Holding, cost, unrealized: lifetime`,
+    );
+    await page.getByRole("button", { name: "Share PnL card" }).click();
+    const dialog = page.getByRole("dialog", { name: "Share PnL card" });
+    await expect(
+      dialog.getByText(`Preview · ${window} realized`),
+    ).toBeVisible();
+    await expect(dialog.getByRole("img")).toHaveAttribute(
+      "src",
+      `/cards/${topWallet}.png?window=${window}`,
+    );
+  }
+});
+
 test("a ranked wallet shows profile content without coverage or preview copy", async ({
   page,
   context,

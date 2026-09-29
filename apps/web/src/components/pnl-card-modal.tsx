@@ -289,10 +289,7 @@ export function PnlCardModal({
                 />
                 <span className={styles.knob} aria-hidden="true" />
               </label>
-              <label
-                className={styles.toggle}
-                aria-disabled={!notionalOffered}
-              >
+              <label className={styles.toggle} aria-disabled={!notionalOffered}>
                 <span>
                   <strong>Show notional</strong>
                   <small>
@@ -338,7 +335,7 @@ export function PnlCardModal({
           </div>
         </div>
         <div className={styles.stage}>
-          <span className={styles.stageLabel}>Preview</span>
+          <span className={styles.stageLabel}>Preview · {period} realized</span>
           <div className={styles.preview} data-state={state}>
             <div className={styles.skeleton} aria-hidden="true">
               {bones.map(([left, top, width, height], i) => (
