@@ -1,4 +1,9 @@
 import { indexedFeed } from "@/lib/indexed-feed";
+import {
+  admission,
+  upstreamIdentity,
+  visitorAddress,
+} from "@/lib/product-admission";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
@@ -18,10 +23,29 @@ export async function GET(request: Request) {
     !process.env.INDEXER_API_URL
   )
     return Response.json({ error: "offline" }, { status: 503 });
+  // The same admission line and visitor identity as the product proxy: this
+  // route forwards to the read API's feed and spends its allowance the same way.
+  const visitor = visitorAddress(request.headers);
+  const admitted = admission.admit(visitor);
+  if (!admitted.ok)
+    return Response.json(
+      { error: "Recent swaps unavailable. Retain the last observed events." },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After": String(admitted.retryAfterSeconds),
+        },
+      },
+    );
   try {
     // Once configured, serve the stored index only. An outage must not silently
     // multiply RPC scans across visitors or mix unrelated coverage windows.
-    const data = await indexedFeed(process.env.INDEXER_API_URL!, ids);
+    const data = await indexedFeed(
+      process.env.INDEXER_API_URL!,
+      ids,
+      upstreamIdentity(visitor),
+    );
     return Response.json(data, {
       headers: { "Cache-Control": "no-store" },
     });

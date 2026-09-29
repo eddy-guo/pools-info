@@ -1,6 +1,7 @@
 import { createReader } from "./reader";
 import { marketSourceSetting } from "./ledger-market";
 import { createApi } from "./server";
+import { identitySources, ingressSettings } from "./ingress";
 import {
   createTokenImageService,
   createTokenImageStore,
@@ -22,6 +23,9 @@ if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
   throw Error("Invalid PORT");
 // Read once at startup: an unset MARKET_SOURCE serves the broad rollups.
 const marketSource = marketSourceSetting(process.env.MARKET_SOURCE);
+// Who a client is, and what it may spend, is the ingress contract
+// (apps/api/README.md, "Request limits and client identity").
+const ingress = ingressSettings(process.env);
 const reader = createReader(undefined, undefined, {
   marketSource,
   warmup: true,
@@ -47,6 +51,7 @@ census?.start();
 const server = createApi(reader, {
   images,
   history,
+  ingress,
   following: createFollowing({
     history,
     registry,
@@ -55,7 +60,12 @@ const server = createApi(reader, {
 });
 server.listen(port, "0.0.0.0", () =>
   process.stdout.write(
-    JSON.stringify({ event: "listening", port, marketSource }) + "\n",
+    JSON.stringify({
+      event: "listening",
+      port,
+      marketSource,
+      clientIdentity: identitySources(ingress.identity),
+    }) + "\n",
   ),
 );
 let stopping = false;

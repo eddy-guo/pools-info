@@ -4,6 +4,7 @@ import type { RecentSwaps } from "@pools/chain";
 export async function indexedFeed(
   base: string,
   ids: string[],
+  headers: Record<string, string> = {},
 ): Promise<RecentSwaps> {
   const url = new URL("/v1/feed", base);
   if (
@@ -17,6 +18,7 @@ export async function indexedFeed(
     signal: AbortSignal.timeout(8000),
     cache: "no-store",
     redirect: "error",
+    headers,
   });
   if (!response.ok) throw Error("Indexed feed unavailable");
   const data = await response.json();
