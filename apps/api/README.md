@@ -176,7 +176,8 @@ decreasing cutoff or changed cutoff hash must invalidate previous assumptions.
 ## Bounds and failure behavior
 
 Four Postgres connections, 2-second connection timeout, 3-second statement
-timeout, 16 concurrent database reads, 240 requests/minute per instance, and
+timeout, 16 concurrent database reads, separate 240 requests/minute budgets
+for database and explorer JSON reads per instance, and
 five-second cache/request coalescing keep a public read service bounded. Cache
 storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. This
 is an instance-wide pilot budget, not an account/IP tracking system. Search and
@@ -513,7 +514,7 @@ whenever the explorer or the budget cannot answer, otherwise the route returns
 `key_rejected` (401, 402, or 403 from the explorer). Ordinary request limits
 and coalescing apply, and the key never appears in any response or log line.
 Explorer-backed history and Following reads use a separate eight-request
-in-flight pool. When that pool is full, new explorer reads return
+in-flight pool and request budget. When that pool is full, new explorer reads return
 `503 {error:"busy"}` with `Retry-After: 5`; database
 routes retain their own 16 slots.
 The one chain RPC the route makes is the trades kind's `eth_getLogs` above,

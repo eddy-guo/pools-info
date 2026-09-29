@@ -154,7 +154,7 @@ test("readiness follows a pending warm set on the fake clock", async (t) => {
   assert.equal((await fetch(base + "/v1/status")).status, 200);
 });
 
-test("slow explorer reads cannot occupy database slots", async (t) => {
+test("slow explorer reads cannot occupy database slots or request budget", async (t) => {
   const releases: (() => void)[] = [];
   let started = 0;
   const history = {
@@ -168,7 +168,7 @@ test("slow explorer reads cannot occupy database slots", async (t) => {
   };
   const server = createApi(
     { read: async () => ({ items: [] }), close: async () => {} },
-    { history: history as unknown as WalletHistory, maxPerMinute: 1000 },
+    { history: history as unknown as WalletHistory, maxPerMinute: 12 },
   );
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -196,8 +196,19 @@ test("slow explorer reads cannot occupy database slots", async (t) => {
     assert.equal(following.status, 503);
     assert.equal(following.headers.get("retry-after"), "5");
     assert.deepEqual(await following.json(), { error: "busy" });
+    for (let i = 0; i < 2; i++) {
+      const busy = await fetch(
+        `${base}/v1/wallets/0x${"f".repeat(40)}/history`,
+      );
+      assert.equal(busy.status, 503);
+    }
+    const limited = await fetch(
+      `${base}/v1/wallets/0x${"f".repeat(40)}/history`,
+    );
+    assert.equal(limited.status, 429);
     for (const path of ["/v1/explore", `/v1/pools/0x${"a".repeat(64)}`])
       assert.equal((await fetch(base + path)).status, 200, path);
+    assert.equal((await fetch(base + "/ready")).status, 200);
   } finally {
     releases.forEach((release) => release());
     await Promise.allSettled(held);
