@@ -449,7 +449,7 @@ null where it cannot:
   flat position the two are equal, since invested is then disposed cost.
 - **`avgEntryPriceWei`** is the average entry price of the held units, wei
   per whole token: their average-cost basis, `costWei * 10^decimals /
-  quantity` truncated, the price a card sets against `mark.priceWei`. Null
+quantity` truncated, the price a card sets against `mark.priceWei`. Null
   while flat, excluded or the decimals unknown. The fold keeps no count of raw
   tokens bought or sold (only the held quantity, and no row per swap), so a
   lifetime average entry price and an average exit price cannot be derived
@@ -460,7 +460,7 @@ null where it cannot:
   been held at the cut (`asOf - openedAt`, the open position's hold time),
   and from its hour rows the `closures`, `wins`, `losses`, summed
   `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds /
-  closures`, the header's `avgHold` per position) and `bestWei`, the best
+closures`, the header's `avgHold` per position) and `bestWei`, the best
   single sale's gain. Null for an excluded position, whose inventory is not
   served.
 - **`activity`** is when the wallet traded the pool: `firstTradeHour` and
