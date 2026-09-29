@@ -11,6 +11,32 @@ import { warmPolicy, type WarmAttempt } from "./database-warmth";
 export const databaseIdentitySql =
   "SELECT pg_postmaster_start_time()::text AS identity, pg_backend_pid() AS backend_pid";
 
+// Match the creators directory's WindowTabs, sort buttons and first page.
+// Larger All pages cover a direct link opened with a grown limit.
+export const creatorWarmReads = [
+  ...(["24h", "7d", "30d", "All"] as const).flatMap((window) =>
+    (["median", "volume", "launches"] as const).flatMap((sort) =>
+      (window === "All" ? [100, 50, 25] : [25]).map((limit) => ({
+        window,
+        sort,
+        limit,
+        path: `/v1/creators?window=${window}&sort=${sort}&offset=0&limit=${limit}`,
+      })),
+    ),
+  ),
+];
+
+export async function warmCreators(
+  read: (path: string) => Promise<unknown>,
+  measured: (name: string, read: () => Promise<unknown>) => Promise<unknown>,
+) {
+  for (const creator of creatorWarmReads)
+    await measured(
+      `creators_${creator.window}_${creator.sort}_${creator.limit}`,
+      () => read(creator.path),
+    );
+}
+
 async function cancelBackend(url: string, pid: number) {
   const client = new pg.Client({
     connectionString: url,
@@ -121,11 +147,10 @@ export function createWarmSet(
         await read("/v1/explore?window=24h&sort=launch&limit=6");
         return ranked;
       });
-      // The creators read is large. Run the smaller reads afterward so they
-      // retain their pages when shared cache is tight.
-      await measured("creators", () =>
-        read("/v1/creators?window=All&sort=launches&offset=0&limit=25"),
-      );
+      // Run each distinct creators statement under its own serving budget.
+      // Leave the default first page last, then the smaller home reads, so
+      // their pages remain resident when shared cache is tight.
+      await warmCreators(read, measured);
       const home = (await measured("home_leaderboard", () =>
         read("/v1/leaderboard?window=24h&limit=5&minTrades=10"),
       )) as AnalyticsLeaderboardResponse;

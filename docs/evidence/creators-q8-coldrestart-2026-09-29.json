@@ -1,0 +1,191 @@
+{
+  "measuredAt": "2026-09-29T18:37:55.212Z",
+  "apiPort": 31983,
+  "source": "ledger",
+  "database": "pools_test_q8_coldrestart",
+  "databaseSource": "fresh createdb template copy of pools_prod_backup on local PostgreSQL 18",
+  "migrationsBefore": "022_unattributed_transfers_exclude.sql",
+  "migrationsAfter": "026_active_traders.sql",
+  "snapshotRows": {
+    "indexed_pools": 64625,
+    "agg_positions": 2405682,
+    "agg_trader_windows": 557204,
+    "agg_active_trader_counts": 1,
+    "wallet_code_observations": 1,
+    "crowd_auctions": 0
+  },
+  "warmup": {
+    "completed": true,
+    "creatorReads": 18,
+    "largestCreatorReadMs": 617,
+    "readyStatusAfterWarmup": 200
+  },
+  "coldRestart": "fresh API process; first HTTP request for each URL after warm set completed",
+  "thresholdMs": 3000,
+  "cases": [
+    {
+      "path": "/v1/creators?window=24h&sort=launches&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 330,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=24h&sort=volume&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 797,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=24h&sort=median&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 1199,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=7d&sort=launches&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 942,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=7d&sort=volume&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 1407,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=7d&sort=median&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 656,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=30d&sort=launches&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 428,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=30d&sort=volume&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 376,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=30d&sort=median&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 309,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=launches&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 387,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=launches&offset=0&limit=50",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 342,
+      "items": 50,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=launches&offset=0&limit=100",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 405,
+      "items": 100,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=volume&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 272,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=volume&offset=0&limit=50",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 283,
+      "items": 50,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=volume&offset=0&limit=100",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 281,
+      "items": 100,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=median&offset=0&limit=25",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 296,
+      "items": 25,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=median&offset=0&limit=50",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 299,
+      "items": 50,
+      "total": 100,
+      "error": null
+    },
+    {
+      "path": "/v1/creators?window=All&sort=median&offset=0&limit=100",
+      "status": 200,
+      "cache": "MISS",
+      "ms": 297,
+      "items": 100,
+      "total": 100,
+      "error": null
+    }
+  ],
+  "passed": true,
+  "failed": []
+}
