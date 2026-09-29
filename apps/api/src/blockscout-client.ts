@@ -145,7 +145,8 @@ export function createCreditBudget({
     spent = 0,
     upstreamBlockedUntil = 0,
     nextProbeAt = 0,
-    remaining: number | null = null;
+    remaining: number | null = null,
+    generation = 0;
   function roll() {
     const today = utcDay(now());
     if (today !== day) {
@@ -154,6 +155,7 @@ export function createCreditBudget({
       remaining = null;
       upstreamBlockedUntil = 0;
       nextProbeAt = 0;
+      generation++;
     }
   }
   function assertAvailable(cost: number, reserve = 0) {
@@ -176,14 +178,22 @@ export function createCreditBudget({
       if (upstreamBlockedUntil > now())
         nextProbeAt = now() + creditProbeIntervalMs;
       spent += cost;
+      return generation;
     },
     /** The header counts every process using the key, not only this one. */
-    observeRemaining(observed: number | null, nextCost: number) {
+    observeRemaining(
+      observed: number | null,
+      nextCost: number,
+      admittedGeneration: number,
+    ) {
+      roll();
+      if (admittedGeneration !== generation) return;
       if (observed !== null) remaining = observed;
       if (observed !== null) {
         if (observed < nextCost) {
           upstreamBlockedUntil = now() + 3600000;
           nextProbeAt = now() + creditProbeIntervalMs;
+          generation++;
         } else {
           upstreamBlockedUntil = 0;
           nextProbeAt = 0;
@@ -471,7 +481,7 @@ export function createBlockscoutClient({
   ): Promise<unknown> {
     budget.assertAvailable(cost, reserve);
     await limiter.acquire();
-    budget.spend(cost, reserve);
+    const admittedGeneration = budget.spend(cost, reserve);
     let response: Response;
     const started = now();
     try {
@@ -499,6 +509,7 @@ export function createBlockscoutClient({
     budget.observeRemaining(
       remaining !== null && integerText.test(remaining) ? +remaining : null,
       Math.max(...Object.values(creditCost)),
+      admittedGeneration,
     );
     if (response.status !== 200) {
       fail("blockscout_request_rejected", { kind, status: response.status });
