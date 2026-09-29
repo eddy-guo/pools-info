@@ -4,7 +4,7 @@ export type ScreenerStatsResponse = {
   window: LiveWindow;
   asOf: number;
   cutoff: { block: number; hash: string; asOf: number };
-  windowStart: number;
+  windowStart: number | null;
   volumeWei: string | null;
   trades: number | null;
   liquidityWei: string | null;
@@ -52,7 +52,9 @@ export function validateStatsResponse(
     typeof cutoff.hash !== "string" ||
     !/^0x[0-9a-f]{64}$/i.test(cutoff.hash) ||
     !count(cutoff.asOf) ||
-    !count(value.windowStart) ||
+    (window === "All"
+      ? value.windowStart !== null
+      : !count(value.windowStart)) ||
     !nullableDecimal(value.volumeWei) ||
     !nullableCount(value.trades) ||
     !nullableDecimal(value.liquidityWei) ||
