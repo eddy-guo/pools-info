@@ -327,6 +327,7 @@ function ScreenerStats({
   const pending = answer.window !== window;
   const data = pending ? null : answer.data;
   if (!pending && !data) return null;
+  const labelWindow = answer.data?.window ?? initial.window;
   const active = pending ? answer.data?.activeTraders : data?.activeTraders;
   return (
     <section
@@ -336,7 +337,7 @@ function ScreenerStats({
       data-has-active={active !== null && active !== undefined}
     >
       <div className="stat">
-        <span>Volume</span>
+        <span>Volume · {labelWindow}</span>
         <strong data-pending={pending}>
           {data?.volumeWei === null || !data ? (
             <span className="stats-empty" />
@@ -349,7 +350,7 @@ function ScreenerStats({
         </small>
       </div>
       <div className="stat">
-        <span>Pools launched</span>
+        <span>Launches · {labelWindow}</span>
         <strong data-pending={pending}>
           {data ? (
             data.poolsLaunched.toLocaleString("en-US")
@@ -360,7 +361,9 @@ function ScreenerStats({
       </div>
       {active !== null && active !== undefined && (
         <div className="stat">
-          <span title="Wallets that traded the launches shown">Traders</span>
+          <span title="Wallets with an attributed trade in the window">
+            Traders · {labelWindow}
+          </span>
           <strong data-pending={pending}>
             {data?.activeTraders === null || !data ? (
               <span className="stats-empty" />
