@@ -643,6 +643,10 @@ export function ProductTraders() {
               set({ limit: null });
             }}
           />
+          <p className="traders-ranking-rule">
+            Top 100 by realized, at least 10 supported trades, own launches
+            excluded
+          </p>
         </div>
       </div>
       <MyRank window={window} />

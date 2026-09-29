@@ -26,7 +26,12 @@ async function settled(page: Page) {
 
 async function expectStripped(page: Page) {
   const main = page.locator("main");
-  const text = await main.innerText();
+  // The board's ranking rule names own-launch exclusion; keep rejecting
+  // evidence and method labels anywhere else on the page.
+  const text = (await main.innerText()).replace(
+    "Top 100 by realized, at least 10 supported trades, own launches excluded",
+    "",
+  );
   for (const copy of removedCopy) expect(text, copy).not.toContain(copy);
   await expect(main.locator(".evidence-badge")).toHaveCount(0);
   await expect(main.getByRole("button", { name: /refresh/i })).toHaveCount(0);
