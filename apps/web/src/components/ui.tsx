@@ -320,12 +320,17 @@ export function Money({
   className?: string;
   pending?: boolean;
 }) {
-  const unavailable = useUnavailable("Not collected yet", pending);
+  const { children: unavailableText, ...unavailable } = useUnavailable(
+    "Not collected yet",
+    pending,
+  );
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (wei == null)
     return (
-      <span className={`number unavailable ${className}`} {...unavailable} />
+      <span className={`number unavailable ${className}`} {...unavailable}>
+        <span key="unavailable">{unavailableText}</span>
+      </span>
     );
   const colorClass = signed
     ? BigInt(wei) > 0n
@@ -340,16 +345,18 @@ export function Money({
         className={`number ${colorClass} ${className}`}
         title={`${wei} wei`}
       >
-        {formatMoney(wei, "USD", usdPerEth, signed)}
+        <span key="value">{formatMoney(wei, "USD", usdPerEth, signed)}</span>
       </span>
     );
   return (
     <span className={`number ${colorClass} ${className}`} title={`${wei} wei`}>
-      {signed && BigInt(wei) > 0n ? "+" : ""}
-      {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
-        displayEth(wei),
-      )}{" "}
-      ETH
+      <span key="value">
+        {signed && BigInt(wei) > 0n ? "+" : ""}
+        {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
+          displayEth(wei),
+        )}{" "}
+        ETH
+      </span>
     </span>
   );
 }
@@ -360,11 +367,18 @@ export function Price({
   wei?: string | null;
   pending?: boolean;
 }) {
-  const unavailable = useUnavailable("No observed swap price", pending);
+  const { children: unavailableText, ...unavailable } = useUnavailable(
+    "No observed swap price",
+    pending,
+  );
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (wei == null)
-    return <span className="number price unavailable" {...unavailable} />;
+    return (
+      <span className="number price unavailable" {...unavailable}>
+        <span key="unavailable">{unavailableText}</span>
+      </span>
+    );
   if (unit === "USD" && usdPerEth !== null) {
     const usd = displayEth(wei) * usdPerEth;
     // Most catalog prices are sub-cent; the same leading-zero notation the
@@ -374,14 +388,16 @@ export function Price({
       const zeros = frac.match(/^0+/)?.[0].length ?? 0;
       return (
         <span className="number price" title={`$${usd.toPrecision(4)}`}>
-          $0.0<sub>{zeros}</sub>
-          {frac.slice(zeros, zeros + 4)}
+          <span key="value">
+            $0.0<sub>{zeros}</sub>
+            {frac.slice(zeros, zeros + 4)}
+          </span>
         </span>
       );
     }
     return (
       <span className="number price" title={`${wei} wei`}>
-        {formatMoney(wei, "USD", usdPerEth)}
+        <span key="value">{formatMoney(wei, "USD", usdPerEth)}</span>
       </span>
     );
   }
@@ -396,17 +412,21 @@ export function Price({
         className="number price"
         title={`${value.toPrecision(8)} ${currency}`}
       >
-        {prefix}0.0<sub>{zeros}</sub>
-        {str.slice(zeros, zeros + 4)}
-        {currency === "ETH" && <small> ETH</small>}
+        <span key="value">
+          {prefix}0.0<sub>{zeros}</sub>
+          {str.slice(zeros, zeros + 4)}
+          {currency === "ETH" && <small> ETH</small>}
+        </span>
       </span>
     );
   }
   return (
     <span className="number price" title={`${value} ${currency}`}>
-      {prefix}
-      {value.toLocaleString("en-US", { maximumSignificantDigits: 4 })}
-      {currency === "ETH" && <small> ETH</small>}
+      <span key="value">
+        {prefix}
+        {value.toLocaleString("en-US", { maximumSignificantDigits: 4 })}
+        {currency === "ETH" && <small> ETH</small>}
+      </span>
     </span>
   );
 }
