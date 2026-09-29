@@ -438,22 +438,25 @@ current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
 card: one wallet-position, named by the wallet and the pool page's own
 32-byte pool id (a wallet holds at most one position per pool; the plural
 `wallets` form only, no singular alias), default window `All`. `position` is
-the wallet page's row for that pool byte for byte: the same `positionColumns`
+the wallet page's row for that pool, with a units-conflicted mark withheld:
+the same `positionColumns`
 over the same sources, the same cut and the same window start, mapped by the
 same `walletPosition` in `ledger-wallet.ts`, so a consumer of the page reuses
 its type, and `ledger-position.integration.test.ts` pins the two equal on
-every window. Beside it, what a card needs and the ledger can vouch for, each
+every window without a units conflict. Beside it, what a card needs and the ledger can vouch for, each
 null where it cannot:
 
 - **`pool`** is the catalog row (`CatalogPool`), the identity a card names the
   token by.
 - **`mark`** is the price state behind `unrealizedWei`: the pool's latest
   `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, the pool
-  page's price, null while the token's decimals are unknown), the swap that
+  page's price, null while the token's decimals are unknown or a verified
+  snapshot inside the ledger cut disagrees with indexed decimals), the swap that
   set it (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
   fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
-  null for an excluded or unmarked one). Null when the pool has no swap
-  folded.
+  null for an excluded, unmarked or units-conflicted one). Null when the pool
+  has no swap folded. On a units conflict, `position.unrealizedWei` and
+  `totalRoi` are also null; the cost-derived entry average remains available.
 - **`roi`** is the ledger's ROI as the board and the wallet header define it:
   lifetime realized over lifetime disposed cost (`investedWei - costWei` on a
   supported position, since an outflow excludes), in percent to four decimals
@@ -471,12 +474,11 @@ null where it cannot:
 - **`cycles`** is the position's inventory cycles over its whole history,
   never windowed: `openedAt`, when the open cycle began (`cycle_opened_at`,
   exact seconds; null while flat) and `openHoldSeconds`, how long it has
-  been held at the cut (`asOf - openedAt`, the open position's hold time),
-  and from its hour rows the `closures`, `wins`, `losses`, summed
+  been held at the cut (bounded at zero when block timestamps run backward),
+  and from its hour rows the `closures`, summed
   `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds`
-  over `closures`, the header's `avgHold` per position) and `bestWei`, the
-  best single sale's gain. Null for an excluded position, whose inventory is not
-  served.
+  over `closures`, the header's `avgHold` per position). Null for an excluded
+  position, whose inventory is not served.
 - **`activity`** is when the wallet traded the pool: `firstHour` and
   `lastHour`, the UTC hours of its first and last attributed swap as unix
   seconds at the hour's start (the ledger keeps swaps per hour, not per swap,

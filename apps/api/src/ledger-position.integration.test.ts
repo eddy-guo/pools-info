@@ -303,10 +303,7 @@ test(
       openedAt: null,
       openHoldSeconds: null,
       closures: 1,
-      wins: 1,
-      losses: 0,
       holdSeconds: 90 * 400,
-      bestWei: (5n * tenth).toString(),
     });
     assert.deepEqual(p1.activity, {
       firstHour: 1050 * 3600,
@@ -392,10 +389,7 @@ test(
       openedAt: ts(buyQ),
       openHoldSeconds: 31 * 400,
       closures: 0,
-      wins: 0,
-      losses: 0,
       holdSeconds: 0,
-      bestWei: null,
     });
     assert.deepEqual(q1.activity, {
       firstHour: 1075 * 3600,
@@ -455,10 +449,7 @@ test(
       openedAt: ts(buyR),
       openHoldSeconds: ts(cursor1) - ts(buyR),
       closures: 0,
-      wins: 0,
-      losses: 0,
       holdSeconds: 0,
-      bestWei: null,
     });
     assert.deepEqual(r2.activity, {
       firstHour: 1000 * 3600,
@@ -514,6 +505,38 @@ test(
           `${address} ${poolId} ${window}`,
         );
 
+    await db.query(
+      `INSERT INTO analytics_pool_snapshots(chain_id,pool_id,through_block,through_hash,asof_timestamp,snapshot,source_kind)
+       VALUES(4663,$1,$2,$3,$4,$5,'rpc_capture')`,
+      [
+        pools.Q.id,
+        cursor1,
+        hash(cursor1),
+        ts(cursor1),
+        {
+          schemaVersion: 1,
+          chainId: 4663,
+          toBlock: cursor1,
+          blockHash: hash(cursor1),
+          toTimestamp: ts(cursor1),
+          markets: [{ id: pools.Q.id, decimals: 6 }],
+        },
+      ],
+    );
+    const conflicted = await read(W[1], pools.Q.id, "All");
+    assert.deepEqual(conflicted.mark, {
+      ...q1.mark,
+      priceWei: null,
+      valueWei: null,
+    });
+    assert.equal(conflicted.position.unrealizedWei, null);
+    assert.equal(conflicted.totalRoi, null);
+    assert.equal(conflicted.avgEntryPriceWei, q1.avgEntryPriceWei);
+    await db.query(
+      "DELETE FROM analytics_pool_snapshots WHERE chain_id=4663 AND pool_id=$1",
+      [pools.Q.id],
+    );
+
     // Caching is the wallet page's: never stored by a shared cache, served
     // through the in-process cache.
     const response = await fetch(
@@ -549,5 +572,13 @@ test(
       ],
       [ts(buyQ), 40 * 400, q1.avgEntryPriceWei],
     );
+    await db.query(
+      `UPDATE agg_positions SET cycle_opened_at=$1
+       WHERE chain_id=4663 AND pool_ref=(SELECT pool_ref FROM indexed_pools WHERE pool_id=$2)
+       AND wallet_ref=(SELECT wallet_ref FROM agg_wallets WHERE address=decode($3,'hex'))`,
+      [ts(cursor2) + 10, pools.Q.id, W[1].slice(2)],
+    );
+    const backwards = await read(W[1], pools.Q.id, "All");
+    assert.equal(backwards.cycles?.openHoldSeconds, 0);
   },
 );

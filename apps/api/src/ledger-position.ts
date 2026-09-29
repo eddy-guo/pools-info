@@ -2,7 +2,7 @@ import type { LiveWindow, WalletPositionResponse } from "@pools/core";
 import { catalogCte, type ReadQuery } from "./catalog-read";
 import { catalogPool } from "./explore-read";
 import { ledgerCoverage, ledgerWindowRefresh } from "./ledger-leaderboard";
-import { ledgerCut, ledgerPriceSql } from "./ledger-market";
+import { ledgerCut, ledgerPriceSql, ledgerUnitsConflict } from "./ledger-market";
 import {
   counterpartyFlags,
   positionColumns,
@@ -35,16 +35,15 @@ export const positionSql = `WITH marked AS (
       p.disposed_cost_wei::text AS disposed_cost,p.last_timestamp::text AS last_timestamp,
       s.sqrt_price_x96::text AS sqrt_price_x96,s.price_block::text AS price_block,s.price_timestamp::text AS price_timestamp,
       '0x'||encode(s.price_tx,'hex') AS price_tx,${ledgerPriceSql("s.sqrt_price_x96", "i.decimals")}::text AS price_wei,
-      f.closures,f.wins,f.losses,f.hold_seconds,f.best
+      f.closures,f.hold_seconds
     FROM ${positionSources}
     LEFT JOIN LATERAL (
       SELECT ${windowFlowColumns},coalesce(sum(closures),0)::int AS closures,
-        coalesce(sum(wins),0)::int AS wins,coalesce(sum(losses),0)::int AS losses,
-        coalesce(sum(hold_seconds),0)::text AS hold_seconds,max(best_wei)::text AS best
+        coalesce(sum(hold_seconds),0)::text AS hold_seconds
       FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3
     ) f ON true
     WHERE p.chain_id=4663 AND p.wallet_ref=$1 AND p.pool_ref=$3
-  ) SELECT m.*,mark::text AS unrealized FROM marked m`;
+  ) SELECT m.*,CASE WHEN $4::boolean THEN NULL ELSE mark::text END AS unrealized FROM marked m`;
 
 /** A percent to four decimals, truncated toward zero in integer arithmetic as
  * `walletSummary` computes the board's ROI; null over a zero denominator,
@@ -74,8 +73,11 @@ export async function readLedgerPosition(
   // The pool by the id the pool page uses, with the ledger's surrogate key.
   const pool = (
     await query(
-      `${catalogCte} SELECT c.*,i.pool_ref FROM catalog c
+      `${catalogCte} SELECT c.*,i.pool_ref,i.decimals,
+        a.through_block AS verified_block,a.snapshot->'markets'->0->>'decimals' AS verified_decimals
+      FROM catalog c
       LEFT JOIN indexed_pools i ON i.chain_id=c.chain_id AND i.pool_id=c.pool_id
+      LEFT JOIN analytics_pool_snapshots a ON a.chain_id=c.chain_id AND a.pool_id=c.pool_id
       WHERE c.chain_id=4663 AND c.pool_id=$1`,
       [poolId],
     )
@@ -91,6 +93,23 @@ export async function readLedgerPosition(
   // A catalog row the ledger has no key for (a recent discovery the indexer
   // never saved) has no position under it.
   if (pool.pool_ref === null) throw new RequestError(404, "position_not_found");
+  const verifiedDecimals =
+    pool.verified_decimals === null ? null : Number(pool.verified_decimals);
+  if (
+    verifiedDecimals !== null &&
+    (!Number.isSafeInteger(verifiedDecimals) || verifiedDecimals < 0)
+  )
+    throw new RequestError(503, "market_evidence_invalid");
+  const decimals = pool.decimals === null ? null : Number(pool.decimals);
+  const unitsConflict = ledgerUnitsConflict(
+    decimals,
+    verifiedDecimals === null
+      ? null
+      : { decimals: verifiedDecimals, block: Number(pool.verified_block) },
+    Math.max(cut.startBlock, Number(pool.launch_block)),
+    cut.block,
+  );
+  const priceUnavailable = unitsConflict || decimals === null || decimals > 36;
   const refresh = await ledgerWindowRefresh(
     query,
     cut,
@@ -98,7 +117,7 @@ export async function readLedgerPosition(
     "position_refresh_pending",
   );
   const row = (
-    await query(positionSql, [ref, refresh.windowStart, pool.pool_ref])
+    await query(positionSql, [ref, refresh.windowStart, pool.pool_ref, priceUnavailable])
   ).rows[0];
   if (!row) throw new RequestError(404, "position_not_found");
   const coverage = await ledgerCoverage(query, refresh.asOf);
@@ -138,7 +157,7 @@ export async function readLedgerPosition(
         ? null
         : {
             sqrtPriceX96: row.sqrt_price_x96,
-            priceWei: row.price_wei,
+            priceWei: priceUnavailable ? null : row.price_wei,
             block: Number(row.price_block),
             timestamp: Number(row.price_timestamp),
             txHash: row.price_tx,
@@ -161,12 +180,10 @@ export async function readLedgerPosition(
     cycles: position.supported
       ? {
           openedAt,
-          openHoldSeconds: openedAt === null ? null : cut.asOf - openedAt,
+          openHoldSeconds:
+            openedAt === null ? null : Math.max(0, cut.asOf - openedAt),
           closures: row.closures,
-          wins: row.wins,
-          losses: row.losses,
           holdSeconds: Number(row.hold_seconds),
-          bestWei: row.best,
         }
       : null,
     activity: {

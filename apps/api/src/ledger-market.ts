@@ -240,6 +240,17 @@ export const ledgerLaunchSql = (alias: string, start: string, cursor: string) =>
  * observed-market-read.ts). A zero sqrt or unknown decimals prices nothing. */
 export const ledgerPriceSql = (sqrt: string, decimals: string) =>
   `CASE WHEN ${decimals} IS NOT NULL AND ${sqrt}>0 THEN trunc(6277101735386680763835789423207666416102355444464034512896::numeric*power(10::numeric,${decimals})/(${sqrt}*${sqrt})) END`;
+export const ledgerUnitsConflict = (
+  decimals: number | null,
+  verified: { decimals: number; block: number } | null,
+  startBlock: number,
+  cutBlock: number,
+) =>
+  verified !== null &&
+  decimals !== null &&
+  verified.block >= startBlock &&
+  verified.block <= cutBlock &&
+  verified.decimals !== decimals;
 /** The percent change from a baseline price state to the latest, to the
  * hundredth and truncated toward zero, taken from the sqrt prices themselves:
  * the price is proportional to 1/sqrt^2, so latest/baseline - 1 is
@@ -412,12 +423,14 @@ export async function readLedgerMarket(
     windowStart = ledgerWindowStart(cut, window) ?? launchedAt,
     rolling = window === "1h" ? await ledgerHour(query, cut) : null,
     flow = ledgerFlow(window, rolling);
-  const unitsConflict =
-    !!verifiedUnits &&
-    covered.decimals !== null &&
-    verifiedUnits.cutoff.block >= startBlock &&
-    verifiedUnits.cutoff.block <= cut.block &&
-    verifiedUnits.decimals !== covered.decimals;
+  const unitsConflict = ledgerUnitsConflict(
+    covered.decimals,
+    verifiedUnits
+      ? { decimals: verifiedUnits.decimals, block: verifiedUnits.cutoff.block }
+      : null,
+    startBlock,
+    cut.block,
+  );
   const decimals =
     unitsConflict || covered.decimals === null || covered.decimals > 36
       ? null

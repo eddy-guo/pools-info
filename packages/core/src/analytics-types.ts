@@ -217,7 +217,7 @@ export interface WalletPositionMark {
   /** The pool's latest sqrtPriceX96, exact. */
   sqrtPriceX96: string;
   /** Wei per whole token at that state, the pool page's price; null while the
-   * token's decimals are unknown. */
+   * token's decimals are unknown or conflict with verified units. */
   priceWei: string | null;
   /** The swap that set the state. */
   block: number;
@@ -232,17 +232,13 @@ export interface WalletPositionCycles {
   /** Unix seconds the open cycle began (the buy that took the position from
    * flat); null while flat. */
   openedAt: number | null;
-  /** How long the open cycle has been held at the position's cut,
-   * `asOf - openedAt`; null while flat. */
+  /** How long the open cycle has been held at the position's cut, bounded at
+   * zero when block timestamps run backward; null while flat. */
   openHoldSeconds: number | null;
-  /** Cycles closed by a sale, those closed at a gain and at a loss. */
+  /** Cycles closed by a sale. */
   closures: number;
-  wins: number;
-  losses: number;
   /** The closed cycles' summed hold, so the average is `holdSeconds / closures`. */
   holdSeconds: number;
-  /** The best single sale's realized gain, wei; null without a sale. */
-  bestWei: string | null;
 }
 /** When the wallet traded the pool, served for an excluded position too. The
  * ledger keeps swaps per UTC hour, so the first and last trade are hours
