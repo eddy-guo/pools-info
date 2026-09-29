@@ -63,6 +63,10 @@ test.describe("screener column sorting", () => {
         const descending = exploreRequest(page);
         await button.click();
         await descending;
+        await expect(page.locator(".desktop-pools")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        );
         await expect(cell).toHaveAttribute("aria-sort", "descending");
         await expect(button).toContainText("↓");
         expect(search(page).get("sort"), `${key} sort`).toBe(key);
@@ -76,6 +80,10 @@ test.describe("screener column sorting", () => {
       const ascending = exploreRequest(page);
       await button.click();
       await ascending;
+      await expect(page.locator(".desktop-pools")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
       await expect(cell).toHaveAttribute("aria-sort", "ascending");
       await expect(button).toContainText("↑");
       expect(search(page).get("sort")).toBe(key);

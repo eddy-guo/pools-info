@@ -373,6 +373,51 @@ function ScreenerStats({
     </section>
   );
 }
+function TopTradersRail({ window }: { window: LiveWindow }) {
+  const leaders = useProduct<AnalyticsLeaderboardResponse>(
+    `leaderboard?limit=5&window=${window}&minTrades=10`,
+  );
+  const failed = !!leaders.error && !leaders.data;
+  return (
+    <section className="panel explore-leaders">
+      <div className="panel-heading">
+        <h2>Top traders · {window}</h2>
+      </div>
+      <div className="explore-leader-rows">
+        {failed && <p className="rail-note">Top traders unavailable</p>}
+        {!leaders.data &&
+          !failed &&
+          Array.from({ length: 5 }, (_, index) => (
+            <div className="leader-link" key={index} aria-hidden="true">
+              <span data-pending="true">Wallet pending</span>
+              <span className="number" data-pending="true">
+                PnL pending
+              </span>
+            </div>
+          ))}
+        {leaders.data?.items.map((trader) => (
+          <Link
+            className="leader-link"
+            key={trader.address}
+            href={`/wallet/${trader.address}/?window=${window}`}
+          >
+            <span>
+              #{trader.rank} {shortAddress(trader.address)}
+            </span>
+            <Eth wei={trader.realizedWei} signed />
+          </Link>
+        ))}
+        {!leaders.loading && !failed && !leaders.data?.items.length && (
+          <p className="panel-footnote">No ranked traders in {window} yet.</p>
+        )}
+      </div>
+      <Link className="leader-link" href={`/traders/?window=${window}`}>
+        Full leaderboard ↗
+      </Link>
+    </section>
+  );
+}
+
 export function ProductExplore({
   initialStats,
 }: {
@@ -386,12 +431,11 @@ export function ProductExplore({
   const launches = useProduct<AnalyticsExploreResponse>(
     "explore?sort=launch&direction=desc&limit=6&window=24h",
   );
-  const leaders = useProduct<AnalyticsLeaderboardResponse>(
-    "leaderboard?limit=5&window=24h&minTrades=10",
-  );
   const { params, set: setQuery } = useQuery(),
     { ids, add } = useWatchlist(),
     { window, setWindow } = useWindow("24h");
+  /* The board has no 1h or 6h ranks. Keep its data, label and links on 24h. */
+  const railWindow = window === "1h" || window === "6h" ? "24h" : window;
   /* A bookmarked view no tab offers, or an order no header offers (direction
      included), reads as the default and leaves the URL at the next write. */
   const requestedView = params.get("view"),
@@ -461,7 +505,6 @@ export function ProductExplore({
   const filter = useDebouncedInput(q, (next) => set({ q: next }));
   /* Each rail reads on its own, so each says for itself whether it was served. */
   const launchesFailed = !!launches.error && !launches.data;
-  const leadersFailed = !!leaders.error && !leaders.data;
   /* Both read paths pin the launches view to launch order, so no header
      claims it there. */
   const activeSort = view === LAUNCH_VIEW ? "launch" : sort,
@@ -901,7 +944,13 @@ export function ProductExplore({
                             {p ? (
                               <PoolCell
                                 pool={p}
-                                subtitle={<RowSubtitle pool={p} now={now} />}
+                                subtitle={
+                                  <RowSubtitle
+                                    key={`${window}:${p.stats.trades}`}
+                                    pool={p}
+                                    now={now}
+                                  />
+                                }
                               />
                             ) : skeleton ? (
                               "Pending"
@@ -929,6 +978,7 @@ export function ProductExplore({
                                 {p || skeleton ? (
                                   p ? (
                                     <PoolChange
+                                      key={`${window}:${p.stats.change}`}
                                       pool={p}
                                       window={window}
                                       now={now}
@@ -993,6 +1043,7 @@ export function ProductExplore({
                               pool={p}
                               subtitle={
                                 <RowSubtitle
+                                  key={window}
                                   pool={p}
                                   now={now}
                                   trades={false}
@@ -1003,6 +1054,7 @@ export function ProductExplore({
                               <div className="mobile-pool-price">
                                 <Price wei={p.stats.priceWei} />
                                 <PoolChange
+                                  key={`${window}:${p.stats.change}`}
                                   pool={p}
                                   window={window}
                                   now={now}
@@ -1042,7 +1094,9 @@ export function ProductExplore({
                             </div>
                           ) : (
                             <div className="mobile-pool-stats">
-                              <span>
+                              <span
+                                key={`${window}:${p.stats.volumeWei}:${p.stats.trades}`}
+                              >
                                 Vol <Eth wei={p.stats.volumeWei} />
                                 {p.stats.trades !== null && (
                                   <>
@@ -1127,48 +1181,7 @@ export function ProductExplore({
           </section>
         </div>
         <aside className="market-sidebar explore-sidebar">
-          <section className="panel explore-leaders">
-            <div className="panel-heading">
-              <h2>Top traders · 24h</h2>
-            </div>
-            <div className="explore-leader-rows">
-              {leadersFailed && (
-                <p className="rail-note">Top traders unavailable</p>
-              )}
-              {!leaders.data &&
-                !leadersFailed &&
-                Array.from({ length: 5 }, (_, index) => (
-                  <div className="leader-link" key={index} aria-hidden="true">
-                    <span data-pending="true">Wallet pending</span>
-                    <span className="number" data-pending="true">
-                      PnL pending
-                    </span>
-                  </div>
-                ))}
-              {leaders.data?.items.map((w) => (
-                <Link
-                  className="leader-link"
-                  key={w.address}
-                  href={`/wallet/${w.address}/?window=24h`}
-                >
-                  <span>
-                    #{w.rank} {shortAddress(w.address)}
-                  </span>
-                  <Eth wei={w.realizedWei} signed />
-                </Link>
-              ))}
-              {!leaders.loading &&
-                !leadersFailed &&
-                !leaders.data?.items.length && (
-                  <p className="panel-footnote">
-                    No qualifying saved traders in this window yet.
-                  </p>
-                )}
-            </div>
-            <Link className="leader-link" href="/traders/">
-              Full leaderboard ↗
-            </Link>
-          </section>
+          <TopTradersRail key={railWindow} window={railWindow} />
         </aside>
       </div>
     </div>
