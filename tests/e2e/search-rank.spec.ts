@@ -80,6 +80,11 @@ test("search shows only a ranked wallet's chip without moving rows", async ({
   await dialog.getByRole("textbox").fill("wallet:rank-fixture");
   await expect.poll(() => requested).toBe(true);
   await expect(dialog.locator('[data-skeleton="search"]')).toBeVisible();
+  const footer = dialog.locator(".search-dialog-footer");
+  const pendingFooterY = (await footer.boundingBox())!.y;
+  // Let Chrome's recent-input window expire before releasing the answer.
+  // Otherwise it suppresses a real footer shift from the CLS score.
+  await page.waitForTimeout(650);
   await page.evaluate(() => {
     (window as Window & { rankShift: { score: number } }).rankShift.score = 0;
   });
@@ -95,6 +100,7 @@ test("search shows only a ranked wallet's chip without moving rows", async ({
   const rankedBox = await ranked.boundingBox();
   const unrankedBox = await unranked.boundingBox();
   expect(rankedBox?.height).toBe(unrankedBox?.height);
+  expect((await footer.boundingBox())!.y).toBe(pendingFooterY);
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
@@ -107,7 +113,4 @@ test("search shows only a ranked wallet's chip without moving rows", async ({
         (window as Window & { rankShift: { score: number } }).rankShift.score,
     ),
   ).toBe(0);
-  await page.screenshot({
-    path: `docs/evidence/search-rank-2026-09-29/palette-${width}.png`,
-  });
 });
