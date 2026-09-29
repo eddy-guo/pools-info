@@ -1557,6 +1557,46 @@ test("stats validator accepts covered figures and an incomplete rolling hour", (
   validateStatsResponse(incomplete, "1h");
 });
 
+test("stats validator accepts the production All response with no window start", () => {
+  // GET /v1/stats?window=All on 2026-09-29, with its original values.
+  const all = {
+    window: "All",
+    asOf: 1790657545,
+    cutoff: {
+      block: 75384907,
+      hash: "0x2658173a7fd1debf7af7714cc5f3ec195c169bb640687025538b63433ce34bad",
+      asOf: 1790657545,
+    },
+    windowStart: null,
+    volumeWei: "459760618088033142127280",
+    trades: 11512186,
+    liquidityWei: null,
+    poolsLaunched: 64820,
+    activeTraders: 402620,
+    completeWindow: true,
+    coverage: {
+      catalogPools: 64820,
+      processedPools: 63483,
+      asOf: 1790657545,
+      oldestAsOf: 1790657545,
+      generatedAt: "2026-09-29T04:54:11.522Z",
+      complete: false,
+      registryExhaustive: false,
+      pnlScope: "attributed_positions_all_pools",
+      measuredPools: 64820,
+      activeTraderScope: "attributed_wallets_in_measured_pools",
+    },
+  };
+  validateStatsResponse(all, "All");
+  assert.throws(() => validateStatsResponse(all, "24h"));
+  assert.throws(() =>
+    validateStatsResponse({ ...all, windowStart: 0 }, "All"),
+  );
+  assert.throws(() =>
+    validateStatsResponse({ ...sample(), windowStart: null }, "24h"),
+  );
+});
+
 test("stats validator refuses missing, stale, or fabricated figures", () => {
   assert.throws(() => validateStatsResponse(sample(), "7d"));
   const invalid: unknown[] = [

@@ -10,7 +10,7 @@ const sample = (window = "24h") => ({
   window,
   asOf: 1790000000,
   cutoff: { block: 12345678, hash: `0x${"a".repeat(64)}`, asOf: 1790000000 },
-  windowStart: 1789910400,
+  windowStart: window === "All" ? null : 1789910400,
   volumeWei: "123456789012345678901",
   trades: 1234,
   liquidityWei: null,
@@ -311,5 +311,68 @@ test.describe("contract-backed screener stats", () => {
     status = 404;
     await page.reload();
     await expect(stats).toHaveCount(0);
+  });
+
+  test("All shows the three cards without moving the screener", async ({
+    page,
+  }, testInfo) => {
+    if (testInfo.project.name === "mobile")
+      await page.setViewportSize({ width: 390, height: 844 });
+    const fixtureOrigin = String(testInfo.project.use.baseURL);
+    await page.route("**/api/product/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/product/stats/") return route.continue();
+      const fixture = await route.fetch({
+        url: `${fixtureOrigin}${url.pathname}${url.search}`,
+      });
+      return route.fulfill({ response: fixture });
+    });
+    await page.addInitScript(() => {
+      const measurement = { cls: 0 };
+      Object.assign(window, { screenerStatsMeasurement: measurement });
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const shift = entry as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!shift.hadRecentInput) measurement.cls += shift.value;
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    status = 200;
+    body = {
+      ...sample("All"),
+      volumeWei: "459760618088033142127280",
+      poolsLaunched: 64820,
+      activeTraders: 402620,
+    };
+    await page.goto(`${origin}/?window=All`, { waitUntil: "commit" });
+    const stats = page.locator(".explore-page .screener-stats");
+    await expect(stats.locator(".stat")).toHaveCount(3);
+    await expect(stats).toContainText("Volume");
+    await expect(stats).toContainText("Pools launched");
+    await expect(stats).toContainText("64,820");
+    await expect(stats).toContainText("Traders");
+    await expect(stats).toContainText("402,620");
+    await expect(
+      page.locator(".explore-page [data-row='resolved']").first(),
+    ).toBeAttached();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              screenerStatsMeasurement: { cls: number };
+            }
+          ).screenerStatsMeasurement.cls,
+      ),
+    ).toBe(0);
   });
 });
