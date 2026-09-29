@@ -138,8 +138,8 @@ function explorer(
       asked.push([...addresses]);
       const error = fail?.(asked.length);
       if (error) throw error;
-      budget.spend(20);
-      budget.observeRemaining(remaining(), 30);
+      const generation = budget.spend(20);
+      budget.observeRemaining(remaining(), 30, generation);
       return new Map(addresses.map((a) => [a, code(a)]));
     },
   } as unknown as BlockscoutClient;

@@ -59,10 +59,12 @@ export function createApi(
     };
   }
   const readBudget = limiter(maxPerMinute);
+  const explorerBudget = limiter(maxPerMinute);
   // Icons have their own budget so a cold viewport of icons never starves
   // JSON reads, and their own in-flight bound beside the fetch slots.
   const imageBudget = limiter(maxImagesPerMinute);
   let active = 0,
+    activeExplorer = 0,
     activeImages = 0;
   const server = createServer(async (req, res) => {
     const startedAt = now();
@@ -90,9 +92,16 @@ export function createApi(
       const databaseRead = !["ready", "history", "eth-price"].includes(
         request.route,
       );
+      const explorerRead =
+        request.route === "history" || request.route === "following";
+      if (request.route === "ready") reader.assertReady?.();
       const version = databaseRead ? reader.assertReady?.() : undefined;
       const retryAfter = (
-        request.route === "pool-image" ? imageBudget : readBudget
+        request.route === "pool-image"
+          ? imageBudget
+          : explorerRead
+            ? explorerBudget
+            : readBudget
       )();
       if (retryAfter !== null) {
         res.setHeader("Retry-After", String(retryAfter));
@@ -136,9 +145,10 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (active >= 16)
+        if (explorerRead ? activeExplorer >= 8 : active >= 16)
           throw new RequestError(503, "busy", { retryAfter: 5 });
-        active++;
+        if (explorerRead) activeExplorer++;
+        else active++;
         result = (async () => {
           try {
             const body = JSON.stringify(
@@ -170,7 +180,8 @@ export function createApi(
             }
             return body;
           } finally {
-            active--;
+            if (explorerRead) activeExplorer--;
+            else active--;
           }
         })();
         pending.set(request.cacheKey, result);
