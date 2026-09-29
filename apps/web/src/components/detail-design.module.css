@@ -79,6 +79,13 @@
   letter-spacing: 0.05em;
   padding: 3px 7px;
 }
+.page .rankCaption {
+  height: 16px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-3);
+}
 .crowd {
   color: var(--purple);
   border-color: #45184f;

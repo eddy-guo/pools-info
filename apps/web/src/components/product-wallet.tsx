@@ -225,6 +225,11 @@ export function ProductWallet({ address }: { address: string }) {
                 )}
               </Fragment>
             </div>
+            <p className={styles.rankCaption}>
+              {!unindexed(data) && w?.rank === null && data?.launches.length
+                ? "Own launches are not ranked"
+                : ""}
+            </p>
             <div className="wallet-meta">
               <AddressLabel address={address} full />
               {/* The read carries only a last-trade timestamp today; a date
