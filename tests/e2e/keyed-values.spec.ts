@@ -57,7 +57,14 @@ for (const value of [
             state.shifts.push({
               value: shift.value,
               sources: shift.sources?.map(
-                (source) => source.node?.parentElement?.className ?? null,
+                (source) => ({
+                  tag: source.node?.nodeName,
+                  className:
+                    (source.node as Element | null)?.className ??
+                    source.node?.parentElement?.className,
+                  cell: source.node?.parentElement?.closest("td")?.cellIndex,
+                  text: source.node?.textContent?.slice(0, 80),
+                }),
               ),
             });
           }
@@ -98,9 +105,14 @@ for (const value of [
         ),
       );
       await slot.evaluate((node) => {
+        const ethSlot = document.querySelector(
+          ".explore-page .desktop-pools [data-row-index='0'] td:nth-child(5) .number",
+        );
         Object.assign(window, {
           pendingSlot: node,
           pendingContent: node.firstChild,
+          pendingEthSlot: ethSlot,
+          pendingEthContent: ethSlot?.firstChild,
         });
         const shifts = (
           window as unknown as {
@@ -125,6 +137,21 @@ for (const value of [
         newContent:
           node.firstChild !==
           (window as unknown as { pendingContent: Node }).pendingContent,
+        ethSlot: (() => {
+          const before = (window as unknown as {
+            pendingEthSlot?: Element;
+            pendingEthContent?: Node;
+          });
+          const after = document.querySelector(
+            ".explore-page .desktop-pools [data-row-index='0'] td:nth-child(5) .number",
+          );
+          return before.pendingEthSlot
+            ? {
+                sameSlot: after === before.pendingEthSlot,
+                newContent: after?.firstChild !== before.pendingEthContent,
+              }
+            : null;
+        })(),
         shifts: (
           window as unknown as {
             valueShifts: { cls: number; valueCls: number; shifts: unknown[] };
@@ -150,6 +177,13 @@ for (const value of [
         true,
       );
       expect(result.shifts.valueCls, "the value resolves with CLS 0").toBe(0);
+      if (value.name === "Price") {
+        expect(result.shifts.cls, JSON.stringify(result.shifts.shifts)).toBe(0);
+        if (testInfo.project.name === "desktop") {
+          expect(result.ethSlot?.sameSlot).toBe(true);
+          expect(result.ethSlot?.newContent).toBe(true);
+        }
+      }
     } finally {
       release();
     }
