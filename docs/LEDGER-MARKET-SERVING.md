@@ -533,6 +533,43 @@ explore page (59-61 ms) are unmoved, and every response is byte for byte what
 the parallel plan answered. The worst reading, 1.3 s, is 44% of the 3,000 ms
 statement budget.
 
+### Ranking statements and shared memory
+
+The creators rank and ledger explore's volume, trades, change, liquidity and
+gainers ranks also admit `Gather` plans. On a local copy of the 17 Sep
+production-shaped ledger (62,896 pools, 166,334 pool hours, 2,175,993
+positions), PostgreSQL 18.6 with parallel scan thresholds and costs set to
+zero planned two-worker `Gather` nodes for each rank at the routes' 100-row
+limit. Default local costs happened to plan serial scans; catalog growth or
+statistics can change that choice. The ranking statements and their
+empty-page count statements now set `max_parallel_workers_per_gather = 0`
+locally inside the read transaction, then restore `DEFAULT` before the
+page's other statements. The existing creators own-buy guard remains scoped
+to its own later probe.
+
+Paired warm reads on that copy, toggling only the new rank guard, gave these
+end-to-end reader times in milliseconds. Each response compared byte for byte
+after removing only `generatedAt`:
+
+| 100-row read                  | Previous | Guarded |
+| ----------------------------- | -------: | ------: |
+| Creators All, launches        |      289 |     291 |
+| Creators All, volume          |      273 |     266 |
+| Creators All, median          |      271 |     262 |
+| Explore All, volume           |      157 |     163 |
+| Explore All, trades           |      160 |     162 |
+| Explore 24h, change           |      139 |     144 |
+| Explore 24h, liquidity        |       25 |      20 |
+| Explore 7d, gainers by volume |       77 |      72 |
+
+The largest observed increase was 6 ms for explore volume in these warm
+paired runs. The first pass after copying the database is not a controlled
+OS-cold comparison: copying and earlier reads changed the host's page cache.
+The 62k-pool scale suite asserts the actual rank plans have no parallel node
+under the same planner pressure, including empty-page counts, and keeps the
+whole routes below its 2,000 ms read bound. The fix requires no response or
+schema change.
+
 The failure evidence is a three-part causal chain. At
 2026-09-24T12:58:21Z production logged
 `event=database_warming reason=product_statement_cancelled`, immediately

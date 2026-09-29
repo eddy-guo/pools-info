@@ -94,6 +94,11 @@ export async function readCreators(
   // even count; both index expressions name the same element when the count
   // is odd. The best launch is the highest volume, lowest pool id on ties.
   const ranked = rankedFlowCtes("", { ledger: flow });
+  // Rank and count the whole catalog without a parallel Gather. As with the
+  // own-buy probe below, a parallel hash can exhaust the serving container's
+  // shared memory as the catalog grows. The read transaction restores this
+  // setting before the page-scoped evidence and catalog lookups.
+  if (ledger) await query("SET LOCAL max_parallel_workers_per_gather = 0");
   const rows = (
     await query(
       `${ranked}, creators AS (
@@ -129,6 +134,8 @@ export async function readCreators(
           ).rows[0].count,
         ),
   );
+  if (ledger)
+    await query("SET LOCAL max_parallel_workers_per_gather = DEFAULT");
   // Own-buy evidence for the page's creators and no others. The orders above
   // never read the flag. bought_own is null without a measured launch, since
   // only measured launches carry swap evidence. A ledger-served launch's

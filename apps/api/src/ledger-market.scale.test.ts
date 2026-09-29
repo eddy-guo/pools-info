@@ -4,6 +4,7 @@ import { availableParallelism } from "node:os";
 import type { AnalyticsPoolRow } from "@pools/core";
 import { rebuildBroadMarket } from "../../../packages/db/src/index";
 import { readCreators } from "./creators-read";
+import { readProjectedExplore } from "./projected-explore";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
 import { candidatesSql, createWalletCodeStore } from "./trader-contracts";
 import { createReader } from "./reader";
@@ -335,6 +336,9 @@ test(
     let probes = -1,
       sequential = false,
       parallel = "";
+    const parallelDefault = (
+      await db.query("SHOW max_parallel_workers_per_gather")
+    ).rows[0].max_parallel_workers_per_gather;
     await db.query("BEGIN");
     await readCreators(
       async (sql: string, values?: unknown[]) => {
@@ -577,6 +581,94 @@ test(
       reads.push([name, read.ms]);
       assert(read.data.items[0].measured > 0);
     }
+    // A normal local plan can happen to be serial even though the same
+    // statement can acquire a Gather after planner statistics or catalog
+    // size change. Make parallel paths cheap, then inspect the actual rank
+    // statements at the route's 100-row limit, including the count-only
+    // statement used when a page is empty. The guard must cover both and
+    // leave unrelated statements at the transaction's default setting.
+    await db.query("BEGIN");
+    await db.query("SET LOCAL min_parallel_table_scan_size = 0");
+    await db.query("SET LOCAL min_parallel_index_scan_size = 0");
+    await db.query("SET LOCAL parallel_setup_cost = 0");
+    await db.query("SET LOCAL parallel_tuple_cost = 0");
+    let rankPlans = 0;
+    let countPlans = 0;
+    const rankQuery = async (sql: string, values?: unknown[]) => {
+      if (
+        (sql.includes("ranked AS MATERIALIZED") ||
+          sql.includes("ledger_ranked AS")) &&
+        (sql.includes("count(*) OVER () AS total") ||
+          sql.includes("SELECT count(*)::text AS count FROM ranked") ||
+          sql.includes(
+            "SELECT count(*)::text AS count FROM (SELECT launch_sender FROM ranked",
+          ))
+      ) {
+        const plan = (
+          await db.query("EXPLAIN (FORMAT JSON) " + sql, values as unknown[])
+        ).rows[0]["QUERY PLAN"][0].Plan;
+        const parallelNodes: string[] = [];
+        const walk = (node: Record<string, any>) => {
+          if (
+            node["Parallel Aware"] ||
+            node["Workers Planned"] !== undefined ||
+            String(node["Node Type"]).includes("Gather")
+          )
+            parallelNodes.push(String(node["Node Type"]));
+          for (const child of node.Plans ?? []) walk(child);
+        };
+        walk(plan);
+        assert.deepEqual(parallelNodes, [], `rank planned ${parallelNodes}`);
+        rankPlans++;
+        if (sql.includes("count(*)::text AS count")) countPlans++;
+      }
+      return db.query(sql, values as unknown[]) as any;
+    };
+    for (const sort of ["launches", "volume", "median"] as const) {
+      const before = rankPlans;
+      await readCreators(
+        rankQuery,
+        { window: "All", sort, limit: 100, offset: 0 },
+        "ledger",
+      );
+      assert(rankPlans > before, `missed creators ${sort} rank plan`);
+    }
+    let before = rankPlans;
+    await readCreators(
+      rankQuery,
+      { window: "All", sort: "launches", limit: 100, offset: 100 },
+      "ledger",
+    );
+    assert(rankPlans > before, "missed creators empty-page rank plan");
+    for (const options of [
+      { window: "All", sort: "volume" },
+      { window: "All", sort: "trades" },
+      { window: "24h", sort: "change" },
+      { window: "24h", sort: "liquidity" },
+      { window: "7d", view: "gainers", sort: "volume" },
+    ] as const) {
+      before = rankPlans;
+      await readProjectedExplore(
+        rankQuery,
+        { ...options, limit: 100, offset: 0 },
+        "ledger",
+      );
+      assert(rankPlans > before, `missed explore ${options.sort} rank plan`);
+    }
+    before = rankPlans;
+    await readProjectedExplore(
+      rankQuery,
+      { window: "All", sort: "volume", limit: 100, offset: scalePools + 100 },
+      "ledger",
+    );
+    assert(rankPlans > before, "missed explore empty-page rank plan");
+    assert(countPlans >= 2, `only inspected ${countPlans} empty-page counts`);
+    assert.equal(
+      (await db.query("SHOW max_parallel_workers_per_gather")).rows[0]
+        .max_parallel_workers_per_gather,
+      parallelDefault,
+    );
+    await db.query("ROLLBACK");
     const settings = (
       await db.query(
         "SELECT version() AS version,current_setting('jit') AS jit,current_setting('jit_above_cost') AS above",
