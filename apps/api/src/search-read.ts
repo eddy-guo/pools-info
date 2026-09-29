@@ -10,12 +10,15 @@ import {
 } from "./catalog-read";
 import { catalogSummary } from "./explore-read";
 import { accountingCoverage } from "./accounting-read";
-import { searchPattern } from "./request";
+import { RequestError, searchPattern } from "./request";
+import { ledgerCut, type MarketSource } from "./ledger-market";
+import { ledgerRealizedRanksSql } from "./ledger-leaderboard";
 const explorer = "https://robinhoodchain.blockscout.com";
 export async function readSearch(
   query: ReadQuery,
   input: string,
   group?: SearchGroup,
+  source: MarketSource = "broad",
 ): Promise<SearchResponse> {
   await assertCatalogIdentity(query);
   const prefix = /^(token|wallet|creator|tx):\s*/i.exec(input.trim());
@@ -67,6 +70,14 @@ export async function readSearch(
     ($1 NOT LIKE '0x%' AND (lower(p.name) LIKE $2 ESCAPE '\\' OR lower(p.symbol) LIKE $2 ESCAPE '\\'
       ${fuzzy ? "OR lower(p.name) OPERATOR(public.%) $1 OR lower(p.symbol) OPERATOR(public.%) $1" : ""})) OR
     ($1 LIKE '0x%' AND (p.token LIKE $3 ESCAPE '\\' OR p.pool_id LIKE $3 ESCAPE '\\' OR p.launch_sender LIKE $3 ESCAPE '\\' OR p.launch_tx LIKE $3 ESCAPE '\\'))`;
+  // The accounting publication predates the ledger. An exact known ledger
+  // address must still be a wallet result even without an accounting row.
+  const ledgerWallet =
+    source === "ledger" && kind === "address"
+      ? `UNION ALL SELECT 'wallet:'||'0x'||encode(w.address,'hex'),'Wallets',left('0x'||encode(w.address,'hex'),6)||'…'||right(encode(w.address,'hex'),4),
+        '0x'||encode(w.address,'hex'),'Ledger activity · coverage on profile','/wallet/'||'0x'||encode(w.address,'hex')||'/?window=All',false,1000
+       FROM agg_wallets w WHERE w.address=decode(substr($1,3),'hex')`
+      : "";
   const sql = `${catalogCte}, token_matches AS (
     SELECT p.*,greatest(${textScore},${addressScore("p.token")},${addressScore("p.pool_id")}) AS token_score,
       greatest(${textScore},${addressScore("p.launch_sender")}) AS creator_score,${addressScore("p.launch_tx")} AS tx_score FROM catalog p WHERE ${candidateWhere}
@@ -84,6 +95,7 @@ export async function readSearch(
     UNION ALL SELECT DISTINCT ON(p.wallet) 'wallet:'||p.wallet,'Wallets',left(p.wallet,6)||'…'||right(p.wallet,4),p.wallet,
       'Published activity · coverage on profile','/wallet/'||p.wallet||'/?window=All',false,${addressScore("p.wallet")}
     FROM analytics_accounting_positions p WHERE p.chain_id=4663 AND ($1='' OR ($1 LIKE '0x%' AND p.wallet LIKE $3 ESCAPE '\\'))
+    ${ledgerWallet}
     UNION ALL SELECT DISTINCT ON(t.transaction_hash) 'tx:'||t.transaction_hash,'Transactions',t.side||' · '||(p.market->>'symbol'),t.transaction_hash,
       'Published transaction · explorer ↗','${explorer}/tx/'||t.transaction_hash,true,${addressScore("t.transaction_hash")}
     FROM analytics_accounting_trades t JOIN analytics_accounting_pools p USING(chain_id,pool_id)
@@ -171,6 +183,51 @@ export async function readSearch(
       href: `${explorer}/tx/${q}`,
       external: true,
     });
+  if (source === "ledger" && entries.some((e) => e.group === "Wallets")) {
+    let cut: Awaited<ReturnType<typeof ledgerCut>> = null;
+    try {
+      cut = await ledgerCut(query);
+    } catch (error) {
+      if (
+        !(error instanceof RequestError) ||
+        error.status !== 503 ||
+        (error.code !== "market_evidence_invalid" &&
+          error.code !== "market_identity_conflict")
+      )
+        throw error;
+    }
+    if (cut) {
+      // The board refuses an unrefreshed cut. In that interval search remains
+      // available but carries no rank until the board can serve one too.
+      const refresh = (
+        await query(
+          `SELECT through_block,through_timestamp FROM agg_window_refreshes WHERE chain_id=4663 AND "window"='7d'`,
+        )
+      ).rows[0];
+      if (refresh && Number(refresh.through_block) <= cut.block) {
+        const ranks = (
+          await query(
+            `SELECT '0x'||encode(w.address,'hex') AS address,b.rank FROM (${ledgerRealizedRanksSql}) b JOIN agg_wallets w USING (wallet_ref)`,
+            ["7d"],
+          )
+        ).rows;
+        const byAddress = new Map<string, number>(
+          ranks.map((r) => [r.address, r.rank]),
+        );
+        for (const entry of entries) {
+          if (entry.group !== "Wallets") continue;
+          const rank = byAddress.get(entry.address);
+          if (rank !== undefined)
+            entry.traderRank = {
+              rank,
+              window: "7d",
+              metric: "realized",
+              asOf: Number(refresh.through_timestamp),
+            };
+        }
+      }
+    }
+  }
   return {
     entries,
     total,
