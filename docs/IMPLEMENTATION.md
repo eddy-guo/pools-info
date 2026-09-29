@@ -65,12 +65,14 @@ server; `PLAYWRIGHT_WEB_PORT` pins it.
 `pnpm check` runs lint, strict typechecks, accounting/ingestion/read tests and the
 production build. `TEST_DATABASE_URL=... pnpm test:db` runs isolated Postgres
 integration tests, while `pnpm test:e2e` checks desktop and mobile product flows.
-Serialize these heavy suites across worktree homes with `scripts/validate-lock.sh`,
-for example `scripts/validate-lock.sh pnpm test:e2e`; the wrapper releases the
-shared lock as soon as the command exits. To check the protocol manually, run two
-wrappers with a short `sleep` and confirm they run in sequence; create the lock
-with a nonexistent pid and confirm it is reclaimed; then hold it with a live pid,
-interrupt a waiting wrapper, and confirm the holder lock remains.
+Run heavy suites across worktree homes through `scripts/validate-lock.sh`, for
+example `scripts/validate-lock.sh pnpm test:e2e`. Its machine-wide semaphore
+admits three concurrent commands by default (`POOLS_VALIDATE_SLOTS` overrides
+that count), but admits only one while the one-minute load average exceeds the
+core count. Admission is rechecked while waiting; a running command keeps its
+slot until it exits. The helper reclaims only dead-pid slots, honours old
+single-holder locks, and times out after one hour with exit code 124. Run
+`scripts/validate-lock.test.sh` for the lightweight protocol tests.
 Main pushes deploy through existing Vercel/Railway connections after CI. Verify
 actual live service checkpoints and product responses before declaring a rollout
 successful; test fixtures alone do not establish production data coverage.
