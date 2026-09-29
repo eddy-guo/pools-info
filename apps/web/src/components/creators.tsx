@@ -320,7 +320,7 @@ function CreatorDirectory() {
                 <th>#</th>
                 <th>Creator</th>
                 <th>Launches</th>
-                <th>Still trading</th>
+                <th>{window === "All" ? "Traded" : "Traded in window"}</th>
                 <th>Volume</th>
                 <th>Median</th>
                 <th>Best</th>

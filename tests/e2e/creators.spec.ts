@@ -218,10 +218,28 @@ test("creators sort and window map onto the read API's keys and reset the reveal
   const median = page.getByRole("button", { name: "Median", exact: true });
   const launches = page.getByRole("button", { name: "Launches", exact: true });
   const window24h = page.getByRole("button", { name: "24h", exact: true });
+  const window7d = page.getByRole("button", { name: "7d", exact: true });
   const windowAll = page.getByRole("button", { name: "All", exact: true });
+  const tradedHeader = panel.locator(".data-table th").nth(3);
 
   await expect(launches).toHaveAttribute("aria-pressed", "true");
   await expect(windowAll).toHaveAttribute("aria-pressed", "true");
+  await expect(tradedHeader).toHaveText("Traded");
+  const allHeaderWidth = await tradedHeader.evaluate((node) =>
+    node.getBoundingClientRect().width,
+  );
+
+  await window7d.click();
+  await expect(page).toHaveURL(/[?&]window=7d(?:&|$)/);
+  await expect(tradedHeader).toHaveText("Traded in window");
+  expect(
+    await tradedHeader.evaluate((node) => ({
+      width: node.getBoundingClientRect().width,
+      fits: node.scrollWidth <= node.clientWidth,
+    })),
+  ).toEqual({ width: allHeaderWidth, fits: true });
+  await windowAll.click();
+  await expect(tradedHeader).toHaveText("Traded");
 
   await showMore.click();
   await expect(page).toHaveURL(/[?&]limit=50(?:&|$)/);
