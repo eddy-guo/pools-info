@@ -20,9 +20,9 @@ import { tokenLabel, tokenSubSymbol, tokenText } from "@/lib/token-identity";
 import {
   Candles,
   ChartRangeControl,
-  useHydrated,
   type ChartRange,
 } from "./candles";
+import { useHydrated } from "@/lib/use-hydrated";
 import { countLabel } from "@/lib/plural";
 
 export interface ObservedPoolIdentity {

@@ -1,11 +1,5 @@
 "use client";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -29,6 +23,7 @@ import {
 import { Price } from "./ui";
 import { Eth, utc } from "./live-ui";
 import { candlePriceDivisor } from "../lib/candle-scale";
+import { useHydrated } from "@/lib/use-hydrated";
 export const chartRanges = {
   "5m": 300,
   "1h": 3600,
@@ -38,15 +33,6 @@ export const chartRanges = {
   All: Infinity,
 };
 export type ChartRange = keyof typeof chartRanges;
-const noHydrationUpdates = () => () => {};
-/** The server preview must not accept selections before React can retain them. */
-export function useHydrated() {
-  return useSyncExternalStore(
-    noHydrationUpdates,
-    () => true,
-    () => false,
-  );
-}
 /** The range control of the chart panel's head: one segmented control. */
 export function ChartRangeControl({
   value,
