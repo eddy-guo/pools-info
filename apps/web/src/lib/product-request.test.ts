@@ -16,6 +16,7 @@ import {
   cardHero,
   cardStats,
   cardTopPosition,
+  cardTradeCount,
   readCardWallet,
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
@@ -380,6 +381,33 @@ test("share card figures are signed, amount-free without notional and never plac
       (s) => s.label,
     ),
     ["Record", "Trades", "Positions"],
+  );
+  // Trades is the supported count the wallet page's tile and the board print,
+  // never every attributed swap: the figures audit of 29 Sep 2026 (item D2)
+  // caught the card at 26 against their 23 on one wallet read.
+  const audited = { ...wallet, tradeCount: 26, supportedTradeCount: 23 };
+  assert.equal(cardTradeCount(audited), 23);
+  assert.deepEqual(
+    cardStats(audited, false).map((s) => [s.label, s.value]),
+    [
+      ["Win rate", "37.5%"],
+      ["Record", "3W · 5L"],
+      ["Trades", "23"],
+    ],
+  );
+  assert.deepEqual(
+    cardStats(audited, true).map((s) => [s.label, s.value]),
+    [
+      ["Volume", "0.5144 ETH"],
+      ["Win rate", "37.5%"],
+      ["Trades", "23"],
+    ],
+  );
+  // The route's 404 gate reads the same count, so a wallet whose every
+  // trade is on an excluded position (its page shows Trades 0) has no card.
+  assert.equal(
+    cardTradeCount({ ...wallet, tradeCount: 26, supportedTradeCount: 0 }),
+    0,
   );
   // The export design's trio is fixed: Record always renders (even 0W · 0L
   // is real data), Best trade names the caller's own top position, and a
