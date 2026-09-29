@@ -49,6 +49,13 @@ startup warming finished in 5,614 ms and all 12 first-page requests answered
 HTTP 200 on cache misses in 219-548 ms; the six All-window 50/100 pages took
 272-410 ms. The gate and `/ready` behavior are unchanged.
 
+After this change merges and the Railway `api` service reports the deployed
+commit, check all 12 creators first-page window/sort URLs and the six
+All-window 50/100-row URLs against the production API. Record the deployment
+SHA, timestamp, HTTP status, `X-Data-Cache` and end-to-end time for each URL;
+each first cache miss must return 200 within 3,000 ms. This is a post-deploy
+check, not a pipeline test against an undeployed commit.
+
 The following 27 Sep local PG 18.6 production-copy replay predates the
 first-hit creators probe described in `docs/LEDGER-MARKET-SERVING.md` ("The
 creators aggregate"). It used `debug_io_direct=data`,
