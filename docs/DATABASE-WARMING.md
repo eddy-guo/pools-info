@@ -49,6 +49,18 @@ startup warming finished in 5,614 ms and all 12 first-page requests answered
 HTTP 200 on cache misses in 219-548 ms; the six All-window 50/100 pages took
 272-410 ms. The gate and `/ready` behavior are unchanged.
 
+The 29 Sep gate replay on a fresh `pools_prod_backup` copy
+(`pools_test_q8_coldrestart`) applied migrations 023-026 with `migrate()` and
+restarted the API in ledger mode. The copy held 64,625 indexed pools and
+2,405,682 positions. After the warm set completed, all 18 first HTTP creators
+reads returned 200 with `X-Data-Cache: MISS` in 272-1,407 ms, below the
+3,000 ms budget. The [per-URL timings](evidence/creators-q8-coldrestart-2026-09-29.json)
+include every default window and sort and the 50/100-row All pages. Migration
+024 created `crowd_auctions`, which remained empty in this copy; migration
+alone does not replay the crowd lane's later chain data. This run restarted
+the API, not the PostgreSQL postmaster, so its timings do not measure a cold
+operating-system page cache.
+
 After this change merges and the Railway `api` service reports the deployed
 commit, check all 12 creators first-page window/sort URLs and the six
 All-window 50/100-row URLs against the production API. Record the deployment
