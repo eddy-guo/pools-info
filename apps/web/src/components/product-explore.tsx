@@ -344,9 +344,7 @@ function ScreenerStats({
             <Eth wei={data.volumeWei} digits={5} />
           )}
         </strong>
-        <small>
-          {data?.volumeWei === null ? "Window incomplete" : null}
-        </small>
+        <small>{data?.volumeWei === null ? "Window incomplete" : null}</small>
       </div>
       <div className="stat">
         <span>Pools launched</span>
@@ -678,6 +676,7 @@ export function ProductExplore({
           <span>
             <i />
             Just launched
+            <small className="launch-window-caption">Change · 24h</small>
           </span>
           <a
             className="section-link"

@@ -380,6 +380,9 @@ export function ProductWallet({ address }: { address: string }) {
                 </div>
                 {tab === "positions" && (
                   <>
+                    <p className="wallet-positions-caption">
+                      Realized: {period} · Holding, cost, unrealized: lifetime
+                    </p>
                     <div className="wallet-positions-context">
                       <span>Still held</span>
                       <strong data-pending={!data}>

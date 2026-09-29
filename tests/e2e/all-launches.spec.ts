@@ -78,6 +78,17 @@ const resolvedRows = (page: Page) =>
     ".explore-page :is(.desktop-pools tbody tr, .mobile-pools .mobile-pool)[data-row='resolved']",
   );
 
+test("the launch rail labels its change as 24h when the screener uses 7d", async ({
+  page,
+}) => {
+  await page.goto("/?window=7d");
+  await expect(
+    page
+      .getByRole("region", { name: "Just launched" })
+      .locator(".launch-window-caption"),
+  ).toHaveText("Change · 24h");
+});
+
 test("All launches brings the list into view with New pressed, undone by All, at CLS 0", async ({
   page,
 }) => {
