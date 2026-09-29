@@ -211,6 +211,11 @@ test("the backfill is off by default and refuses without both the enable flag an
     hypersyncSafeError(Error("HyperSync returned an invalid log row")),
     "hypersync_response_rejected: the provider answer failed validation",
   );
+  // No answer at all is a network failure, never a rejected answer.
+  assert.equal(
+    hypersyncSafeError(Error("HyperSync request failed after retries")),
+    "hypersync_unreachable: no answer from HyperSync after 4 attempts; check connectivity and the provider status",
+  );
   assert.doesNotMatch(
     hypersyncSafeError(Error(`token ${"x".repeat(16)}`)),
     /x{16}/,

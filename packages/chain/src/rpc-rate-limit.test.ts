@@ -12,6 +12,7 @@ async function endpoint(kind: "http" | "json_rpc", rejected: number) {
       rows = Array.isArray(input) ? input : [input];
     const limited = requests++ < rejected;
     res.statusCode = limited && kind === "http" ? 429 : 200;
+    if (limited && kind === "http") res.setHeader("retry-after", "7");
     const output = rows.map((r) =>
       limited
         ? {
@@ -78,7 +79,12 @@ for (const kind of ["http", "json_rpc"] as const) {
                 ["sensitive_param"],
                 ["sensitive_param2"],
               ]);
-        await assert.rejects(call(), RpcRateLimitExhausted);
+        await assert.rejects(
+          call(),
+          (e: RpcRateLimitExhausted) =>
+            e instanceof RpcRateLimitExhausted &&
+            e.retryAfterMs === (kind === "http" ? 7000 : null),
+        );
         assert.equal(provider.requests(), 4);
         assert.deepEqual(
           events.map((e) => e.attempt),

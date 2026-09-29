@@ -6,8 +6,10 @@ import { superviseWorkers } from "./supervisor";
 // worker, HyperSync and the public RPC only. It never starts the old indexer's
 // discovery, analytics or recent workers, which read Alchemy. An ordinary
 // failure exits 1 for a restart from the saved cursor; a reserved stop
-// (throttled, capacity, unauthorized, inspection) exits 0 so ON_FAILURE does
-// not restart it.
+// (capacity, unauthorized, inspection) exits 0 so ON_FAILURE does not restart
+// it. A throttle pauses the worker and a database outage is waited out
+// in-process (ledger-tip-main.ts), never spent on the restart budget, and a
+// deploy's SIGTERM is logged here and by the worker before the clean exit.
 const supervisor = superviseWorkers(
   [{ name: "ledger-tip", file: "./ledger-tip-main.ts", args: ["run"] }],
   {

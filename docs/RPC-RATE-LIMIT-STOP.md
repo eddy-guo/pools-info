@@ -27,6 +27,20 @@ capacity, then explicitly restart the service after the cause is addressed.
 No credentials, billing settings, database schema or runtime configuration
 are changed by this guard.
 
+## The ledger tip loop is the exception
+
+`chain-sync`, the Railway service that runs the aggregate ledger's tip loop
+(`apps/indexer/src/ledger-tip-service.ts`), reads Envio's free tier and the
+public RPC, where the loop's own pacing bounds the cost of continuing, and it
+is the site's only source of fresh figures. A throttle there is a pause, never
+the reserved stop: four throttled attempts on one request pause the loop for
+a minute, doubling to an hour while the throttle continues (a longer
+`Retry-After` wins), and after about six hours of consecutive pausing the
+worker exits 1, so `ON_FAILURE` restarts it. It never exits 75 or 0 on a
+throttle; the 29 Sep 2026 resilience review found that the clean exit left
+the site frozen with no restart and no notification. `docs/AGGREGATE-LEDGER.md`
+("Stops") has the waits, the budget and the log events.
+
 During discovery v2 catch-up, the main worker prioritizes discovery and leaves
 deep pool cursors untouched. Deep work resumes after catch-up or when v2 is
 disabled. Discovery failures back off instead of starting deep work; the
