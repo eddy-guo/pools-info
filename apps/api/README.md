@@ -514,7 +514,7 @@ whenever the explorer or the budget cannot answer, otherwise the route returns
 and coalescing apply, and the key never appears in any response or log line.
 Explorer-backed history and Following reads use a separate eight-request
 in-flight pool. When that pool is full, new explorer reads return
-`503 {error:"busy",reason:"explorer_slots"}` with `Retry-After: 5`; database
+`503 {error:"busy"}` with `Retry-After: 5`; database
 routes retain their own 16 slots.
 The one chain RPC the route makes is the trades kind's `eth_getLogs` above,
 through the explorer's own gateway under the same key, limiter and budget.

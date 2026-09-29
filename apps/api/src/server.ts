@@ -141,10 +141,7 @@ export function createApi(
         const explorerRead =
           request.route === "history" || request.route === "following";
         if (explorerRead ? activeExplorer >= 8 : active >= 16)
-          throw new RequestError(503, "busy", {
-            retryAfter: 5,
-            ...(explorerRead ? { reason: "explorer_slots" } : {}),
-          });
+          throw new RequestError(503, "busy", { retryAfter: 5 });
         if (explorerRead) activeExplorer++;
         else active++;
         result = (async () => {

@@ -188,18 +188,14 @@ test("slow explorer reads cannot occupy database slots", async (t) => {
       { signal: AbortSignal.timeout(1000) },
     );
     assert.equal(excess.status, 503);
-    assert.deepEqual(await excess.json(), {
-      error: "busy",
-      reason: "explorer_slots",
-    });
+    assert.equal(excess.headers.get("retry-after"), "5");
+    assert.deepEqual(await excess.json(), { error: "busy" });
     const following = await fetch(
       `${base}/v1/following?wallets=0x${"b".repeat(40)}`,
     );
     assert.equal(following.status, 503);
-    assert.deepEqual(await following.json(), {
-      error: "busy",
-      reason: "explorer_slots",
-    });
+    assert.equal(following.headers.get("retry-after"), "5");
+    assert.deepEqual(await following.json(), { error: "busy" });
     for (const path of ["/v1/explore", `/v1/pools/0x${"a".repeat(64)}`])
       assert.equal((await fetch(base + path)).status, 200, path);
   } finally {
