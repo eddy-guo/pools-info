@@ -169,6 +169,28 @@ test("external shutdown drains all three workers successfully and cancels the es
   assert.deepEqual(f.logs, []);
 });
 
+test("a stop signal is logged once with the workers it drains, and the drain is the ordinary clean stop", (t) => {
+  const f = fixture(t);
+  f.supervisor.stop("SIGTERM");
+  f.supervisor.stop("SIGINT");
+  assert.deepEqual(f.logs, [
+    {
+      event: "service_stopping",
+      signal: "SIGTERM",
+      workers: ["recent", "indexer", "analytics"],
+    },
+  ]);
+  assert.equal(f.exitCode(), 0);
+  assert.deepEqual(
+    f.children.map((c) => c.signals),
+    [["SIGTERM"], ["SIGTERM"], ["SIGTERM"]],
+  );
+  for (const child of f.children) child.emit("exit", 0, null);
+  t.mock.timers.tick(20000);
+  assert.equal(f.logs.length, 1);
+  assert.equal(f.exitCode(), 0);
+});
+
 test("a confirmed rate-limit pause overrides a concurrent generic failure without duplicate pause logs", (t) => {
   const f = fixture(t);
   f.children[0].emit("exit", 1, null);

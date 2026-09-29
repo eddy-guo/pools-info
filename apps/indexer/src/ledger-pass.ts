@@ -316,6 +316,8 @@ export interface LedgerRangeOptions {
   transferSelection?: LedgerTransferSelection;
   multicall?: MulticallConfig;
   signal?: AbortSignal;
+  /** Called once the range is planned, before its first request. */
+  onRange?: (range: { from: number; to: number }) => void;
 }
 const lanePages = (lane: HyperSyncPageRecord[][]) =>
   lane.reduce((n, p) => n + p.length, 0);
@@ -406,6 +408,7 @@ export async function runLedgerRange(
       from: ledger.cursor === null ? ledger.start : ledger.cursor + 1,
     };
   options.signal?.throwIfAborted();
+  options.onRange?.({ from: range.fromBlock, to: range.toBlock });
   const registry = await ledgerRegistry(db, range.fromBlock - 1);
   const collection = await collectLedgerRange(client, options.rpc(), {
     ...range,

@@ -30,7 +30,9 @@ export class RpcCallError extends Error {
 }
 /** Terminal for this collection and its worker. Do not retry with a fresh Rpc. */
 export class RpcRateLimitExhausted extends Error {
-  constructor() {
+  /** The last HTTP answer's Retry-After in milliseconds, when it carried
+   * one, for the caller's own pause. */
+  constructor(readonly retryAfterMs: number | null = null) {
     super("RPC rate limit exhausted after 4 throttled attempts");
     this.name = "RpcRateLimitExhausted";
   }
@@ -249,7 +251,13 @@ export class Rpc {
             rpcCalls: this.calls,
           });
           if (throttledAttempt >= 4) {
-            this.rateLimitFailure = new RpcRateLimitExhausted();
+            const header =
+              response.status === 429
+                ? Number(response.headers.get("retry-after"))
+                : NaN;
+            this.rateLimitFailure = new RpcRateLimitExhausted(
+              Number.isFinite(header) && header > 0 ? header * 1000 : null,
+            );
             throw this.rateLimitFailure;
           }
           this.throttled();

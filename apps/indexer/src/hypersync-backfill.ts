@@ -562,6 +562,10 @@ export function hypersyncSafeError(e: unknown): string {
     )
   )
     return `hypersync_configuration_invalid: ${message}`;
+  // No answer at all (refused, reset, timed out on every attempt) is a
+  // network failure; the event's networkCode names the socket's code.
+  if (message === "HyperSync request failed after retries")
+    return "hypersync_unreachable: no answer from HyperSync after 4 attempts; check connectivity and the provider status";
   if (/^HyperSync (returned|page|archive|range|query|request)/.test(message))
     return "hypersync_response_rejected: the provider answer failed validation";
   if (
