@@ -21,6 +21,7 @@ import {
 } from "@pools/core";
 import { useEthPrice } from "./eth-price-provider";
 import { useUnit, useWatchlist } from "./state";
+import { usdPrice } from "@/lib/usd-price";
 
 export function TokenIcon({
   pool,
@@ -380,24 +381,23 @@ export function Price({
       </span>
     );
   if (unit === "USD" && usdPerEth !== null) {
-    const usd = displayEth(wei) * usdPerEth;
-    // Most catalog prices are sub-cent; the same leading-zero notation the
-    // ETH form uses below keeps them legible instead of an all-zero column.
-    if (usd > 0 && usd < 0.0001) {
-      const frac = usd.toFixed(18).slice(2);
-      const zeros = frac.match(/^0+/)?.[0].length ?? 0;
+    // Most catalog prices are sub-cent: the figure keeps four significant
+    // digits below a dollar, as the ETH form below does, rather than a
+    // two-decimal "$0.01", and below $0.0001 the same leading-zero notation
+    // keeps it legible instead of an all-zero column (`usdPrice`).
+    const price = usdPrice(wei, usdPerEth);
+    if (price.form === "subscript")
       return (
-        <span className="number price" title={`$${usd.toPrecision(4)}`}>
+        <span className="number price" title={price.title}>
           <span key="value">
-            $0.0<sub>{zeros}</sub>
-            {frac.slice(zeros, zeros + 4)}
+            $0.0<sub>{price.zeros}</sub>
+            {price.digits}
           </span>
         </span>
       );
-    }
     return (
       <span className="number price" title={`${wei} wei`}>
-        <span key="value">{formatMoney(wei, "USD", usdPerEth)}</span>
+        <span key="value">{price.text}</span>
       </span>
     );
   }

@@ -1,0 +1,71 @@
+{
+  "label": "before",
+  "rate": 2700.705,
+  "prices": [
+    "5073335767828",
+    "2977000000000"
+  ],
+  "url": "/?sort=volume&window=All",
+  "viewports": {
+    "390": {
+      "rows": [
+        {
+          "row": "Pepe in Hood PEPE · 15d $0.01 -53.83% Vol $38,169.79 · 1,477 trades",
+          "price": "$0.01",
+          "html": "<span>$0.01</span>",
+          "title": "5073335767828 wei",
+          "rect": [
+            214,
+            612.375,
+            90,
+            15.625
+          ]
+        },
+        {
+          "row": "Seymour Cash SEYMOUR · 15d $0.01 -10.73% Vol $855.01 · 12 trades",
+          "price": "$0.01",
+          "html": "<span>$0.01</span>",
+          "title": "2977000000000 wei",
+          "rect": [
+            214,
+            716.375,
+            90,
+            15.625
+          ]
+        }
+      ],
+      "cls": 0,
+      "shifts": []
+    },
+    "1440": {
+      "rows": [
+        {
+          "row": " Pepe in Hood PEPE · 15d · 1,477 trades $0.01 -53.83% $38,169.79 0x8bbb…9e7d",
+          "price": "$0.01",
+          "html": "<span>$0.01</span>",
+          "title": "5073335767828 wei",
+          "rect": [
+            498,
+            456.1875,
+            114,
+            16.25
+          ]
+        },
+        {
+          "row": " Seymour Cash SEYMOUR · 15d · 12 trades $0.01 -10.73% $855.01 0xf4f7…d553",
+          "price": "$0.01",
+          "html": "<span>$0.01</span>",
+          "title": "2977000000000 wei",
+          "rect": [
+            498,
+            518.1875,
+            114,
+            16.25
+          ]
+        }
+      ],
+      "cls": 0,
+      "shifts": []
+    }
+  }
+}

@@ -507,6 +507,39 @@ test.describe("ETH/USD unit toggle", () => {
     await expect(page.locator(".subnav-eth-price")).toHaveText("");
     await expect(page.locator(".network-subnav")).not.toContainText("$");
   });
+
+  test("keeps four significant digits on a sub-cent USD price instead of rounding it to a cent", async ({
+    page,
+    isMobile,
+  }) => {
+    // The data side's figures audit of 29 Sep 2026, item D1: at that read's
+    // ETH/USD rate of 2700.705, Hookr.fun's 5073335767828 wei is $0.0137 and
+    // Prologue's price is $0.00804, and both read "$0.01" at two decimals.
+    const prices = ["5073335767828", "2977000000000"];
+    await page.addInitScript(() =>
+      localStorage.setItem("poolsinfo.unit.v1", "USD"),
+    );
+    await page.route("**/api/product/prices/eth-usd/", (route) =>
+      route.fulfill({ json: { ...ethPriceFixture, usdPerEth: 2700.705 } }),
+    );
+    await page.route("**/api/product/explore/**", async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as {
+        items: { stats: { priceWei: string | null } }[];
+      };
+      let priced = 0;
+      for (const item of body.items)
+        if (priced < prices.length && item.stats.priceWei !== null)
+          item.stats.priceWei = prices[priced++];
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto("/?sort=volume&window=All");
+    const rows = page.locator(
+      `.explore-page ${isMobile ? ".mobile-pools" : ".desktop-pools"} [data-row='resolved']`,
+    );
+    await expect(rows.nth(0).locator(".price")).toHaveText("$0.0137");
+    await expect(rows.nth(1).locator(".price")).toHaveText("$0.00804");
+  });
 });
 
 test("the retired methodology route lands on the screener", async ({
