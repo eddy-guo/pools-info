@@ -387,6 +387,10 @@
   color: var(--faint);
   white-space: nowrap;
 }
+.search :global(.search-rank-chip) {
+  color: var(--ac);
+  border: 1px solid var(--color-line-bright);
+}
 .search :global(.search-result > svg:last-child) {
   flex-shrink: 0;
   color: var(--faint);
