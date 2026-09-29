@@ -178,6 +178,10 @@ test("audited leaderboard links to real wallet metrics and scoped share cards, r
     );
   });
   await page.goto(`/traders/?pool=${market.id}&launch=${market.launchTx}`);
+  await expect(
+    page.getByRole("combobox", { name: "Audit pool" }),
+  ).toBeVisible();
+  await expect(page.getByRole("option", { name: /^MONKI ·/ })).toHaveCount(1);
   await page
     .getByRole("button", { name: /^(Audit traders|Refresh audit)$/ })
     .click();

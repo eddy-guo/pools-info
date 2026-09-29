@@ -62,7 +62,8 @@ export default defineConfig({
        point (see apps/web/src/lib/product-server.ts). */
     env: {
       CHAIN_REFRESH_DISABLED: "1",
-      PRODUCT_FIXTURES: "1",
+      PRODUCT_FIXTURES:
+        process.env.PLAYWRIGHT_PRODUCT_FIXTURES === "0" ? "0" : "1",
       PORT: String(port),
     },
   },

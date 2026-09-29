@@ -393,7 +393,7 @@ function PoolTraders() {
       <PersonalRankPreview />
       <section className="panel leaderboard-panel">
         <div className="live-controls">
-          <PoolPicker />
+          <PoolPicker market={market} />
           <WindowTabs value={window} onChange={setWindow} />
         </div>
         {market ? (

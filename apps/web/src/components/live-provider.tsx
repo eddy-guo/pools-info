@@ -12,29 +12,33 @@ type LiveState = ReturnType<typeof useLiveChain> & {
 const Context = createContext<LiveState | null>(null);
 export function LiveProvider({
   initial,
+  fixtureMode,
   children,
 }: {
   initial: ChainSnapshot;
+  fixtureMode: boolean;
   children: React.ReactNode;
 }) {
   const live = useLiveChain(initial);
   const [audits, setAudits] = useState<Record<string, PoolAudit>>(() =>
-    Object.fromEntries(
-      initial.markets
-        .filter((m) => m.accounting?.executions)
-        .map((m) => [
-          m.id,
-          {
-            poolId: m.id,
-            market: m,
-            toBlock: initial.toBlock,
-            toTimestamp: initial.toTimestamp,
-            generatedAt: initial.generatedAt,
-            ...m.accounting!,
-            executions: m.accounting!.executions!,
-          },
-        ]),
-    ),
+    fixtureMode
+      ? Object.fromEntries(
+          initial.markets
+            .filter((m) => m.accounting?.executions)
+            .map((m) => [
+              m.id,
+              {
+                poolId: m.id,
+                market: m,
+                toBlock: initial.toBlock,
+                toTimestamp: initial.toTimestamp,
+                generatedAt: initial.generatedAt,
+                ...m.accounting!,
+                executions: m.accounting!.executions!,
+              },
+            ]),
+        )
+      : {},
   );
   const [auditErrors, setErrors] = useState<Record<string, string>>({});
   const [auditing, setAuditing] = useState<Record<string, boolean>>({});
@@ -104,6 +108,7 @@ export function useLive() {
 }
 export function Freshness() {
   const { snapshot: s, status, enabled, setEnabled, refresh } = useLive();
+  if (!s.markets.length) return null;
   const labels: Record<string, string> = {
     checking: "Checking for updates",
     current: "Automatic updates active",

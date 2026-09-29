@@ -19,6 +19,24 @@ import { LiveProvider } from "@/components/live-provider";
 import initial from "../../../../data/snapshots/chain.json";
 import type { ChainSnapshot } from "@pools/core";
 
+const fixtureMode = process.env.PRODUCT_FIXTURES === "1";
+const emptySnapshot: ChainSnapshot = {
+  schemaVersion: 1,
+  chainId: 4663,
+  generatedAt: "1970-01-01T00:00:00.000Z",
+  fromBlock: 0,
+  toBlock: 0,
+  fromTimestamp: 0,
+  toTimestamp: 0,
+  blockHash: "",
+  discoveredLaunches: 0,
+  markets: [],
+  trades: [],
+  requests: 0,
+  durationMs: 0,
+  reconciliation: null,
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.SITE_URL ?? "https://www.poolsinfo.com"),
   title: {
@@ -44,7 +62,10 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
     >
       <body>
-        <LiveProvider initial={initial as ChainSnapshot}>
+        <LiveProvider
+          initial={fixtureMode ? (initial as ChainSnapshot) : emptySnapshot}
+          fixtureMode={fixtureMode}
+        >
           <EthPriceProvider>
             <Shell>{children}</Shell>
           </EthPriceProvider>

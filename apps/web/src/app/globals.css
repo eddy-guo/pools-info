@@ -4006,6 +4006,15 @@ button.icon-button:disabled {
   border-radius: 9px;
   font-size: 12px;
 }
+.live-pool-placeholder {
+  display: inline-flex;
+  align-items: center;
+  min-width: 198px;
+  min-height: var(--ctl-min);
+  padding: 7px 10px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 9px;
+}
 .audit-action {
   padding: 0 16px 14px;
 }
@@ -4758,7 +4767,8 @@ button.icon-button:disabled {
   .live-pool-picker {
     width: 100%;
   }
-  .live-pool-picker select {
+  .live-pool-picker select,
+  .live-pool-placeholder {
     flex: 1;
     min-width: 0;
     min-height: 44px;

@@ -207,36 +207,39 @@ export function useMarket(id?: string, launch?: string | null) {
   };
 }
 
-export function PoolPicker() {
+export function PoolPicker({ market }: { market?: ChainMarket }) {
   const { snapshot, audits } = useLive();
-  const [initialMarket] = useState(snapshot.markets[0]);
   const { params, set } = useQuery();
-  const pool = params.get("pool") ?? initialMarket?.id;
   const options = [
     ...snapshot.markets,
-    initialMarket,
     ...Object.values(audits).map((a) => a.market),
+    ...(market ? [market] : []),
   ].filter((m, i, all) => all.findIndex((p) => p.id === m.id) === i);
+  const pool = params.get("pool") ?? options[0]?.id;
   return (
     <label className="live-pool-picker">
       Audit scope
-      <select
-        aria-label="Audit pool"
-        value={pool}
-        onChange={(e) => {
-          const m = options.find((m) => m.id === e.target.value)!;
-          set({ pool: m.id, launch: m.launchTx });
-        }}
-      >
-        {!options.some((m) => m.id === pool) && (
-          <option value={pool}>Linked pool</option>
-        )}
-        {options.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.symbol} · {shortAddress(m.token)}
-          </option>
-        ))}
-      </select>
+      {options.length ? (
+        <select
+          aria-label="Audit pool"
+          value={pool}
+          onChange={(e) => {
+            const m = options.find((m) => m.id === e.target.value)!;
+            set({ pool: m.id, launch: m.launchTx });
+          }}
+        >
+          {!options.some((m) => m.id === pool) && (
+            <option value={pool}>Linked pool</option>
+          )}
+          {options.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.symbol} · {shortAddress(m.token)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className="live-pool-placeholder">No pool loaded</span>
+      )}
     </label>
   );
 }
