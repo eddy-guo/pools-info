@@ -230,8 +230,11 @@ export interface WalletPositionMark {
 /** A supported position's inventory cycles over its whole history. */
 export interface WalletPositionCycles {
   /** Unix seconds the open cycle began (the buy that took the position from
-   * flat); null while flat. Its age is `coverage.asOf - openedAt`. */
+   * flat); null while flat. */
   openedAt: number | null;
+  /** How long the open cycle has been held at the position's cut,
+   * `asOf - openedAt`; null while flat. */
+  openHoldSeconds: number | null;
   /** Cycles closed by a sale, those closed at a gain and at a loss. */
   closures: number;
   wins: number;
@@ -268,6 +271,11 @@ export interface WalletPositionResponse {
   /** Realized plus the mark over invested, in percent; null while the position
    * is unmarked or excluded or nothing was invested. */
   totalRoi: number | null;
+  /** The average entry price of the held units, wei per whole token: their
+   * average-cost basis `costWei` over `quantity`. Null while flat, excluded or
+   * the decimals unknown. The ledger keeps no count of tokens bought or sold,
+   * so no lifetime entry or exit average exists. */
+  avgEntryPriceWei: string | null;
   /** Null for an excluded position, whose inventory is not served. */
   cycles: WalletPositionCycles | null;
   activity: WalletPositionActivity;

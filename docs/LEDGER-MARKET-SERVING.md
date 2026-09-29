@@ -447,13 +447,22 @@ null where it cannot:
   while nothing has been disposed. **`totalRoi`** is realized plus the mark
   over invested, the open position's whole return, null while unmarked; on a
   flat position the two are equal, since invested is then disposed cost.
+- **`avgEntryPriceWei`** is the average entry price of the held units, wei
+  per whole token: their average-cost basis, `costWei * 10^decimals /
+  quantity` truncated, the price a card sets against `mark.priceWei`. Null
+  while flat, excluded or the decimals unknown. The fold keeps no count of raw
+  tokens bought or sold (only the held quantity, and no row per swap), so a
+  lifetime average entry price and an average exit price cannot be derived
+  and are not served; serving them would need a writer change, not a read.
 - **`cycles`** is the position's inventory cycles over its whole history,
   never windowed: `openedAt`, when the open cycle began (`cycle_opened_at`,
-  exact seconds; null while flat, so the open position's age is
-  `coverage.asOf - openedAt`), and from its hour rows the `closures`, `wins`,
-  `losses`, summed `holdSeconds` (the average is `holdSeconds / closures`, the
-  header's `avgHold` per position) and `bestWei`, the best single sale's
-  gain. Null for an excluded position, whose inventory is not served.
+  exact seconds; null while flat) and `openHoldSeconds`, how long it has
+  been held at the cut (`asOf - openedAt`, the open position's hold time),
+  and from its hour rows the `closures`, `wins`, `losses`, summed
+  `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds /
+  closures`, the header's `avgHold` per position) and `bestWei`, the best
+  single sale's gain. Null for an excluded position, whose inventory is not
+  served.
 - **`activity`** is when the wallet traded the pool: `firstTradeHour` and
   `lastTradeHour`, the UTC hours of its first and last attributed swap as unix
   seconds at the hour's start (the ledger keeps swaps per hour, not per swap,

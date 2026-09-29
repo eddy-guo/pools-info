@@ -117,6 +117,20 @@ export async function readLedgerPosition(
   // and the total return below are null for an excluded or unmarked one.
   const unrealized =
     position.unrealizedWei === null ? null : BigInt(position.unrealizedWei);
+  // The held units' average cost per whole token, exact and truncated: the
+  // entry price of what the position still holds under average-cost
+  // accounting. A lifetime entry or exit average would need the raw tokens
+  // bought or sold, which the ledger does not keep, so none is served.
+  const held = position.position;
+  const avgEntryPriceWei =
+    held && held.quantity !== "0" && position.decimals !== null
+      ? (
+          (BigInt(held.costWei) * 10n ** BigInt(position.decimals)) /
+          BigInt(held.quantity)
+        ).toString()
+      : null;
+  const openedAt =
+    row.cycle_opened_at === null ? null : Number(row.cycle_opened_at);
   return {
     coverage,
     window,
@@ -147,10 +161,11 @@ export async function readLedgerPosition(
             BigInt(row.realized_wei) + unrealized,
             BigInt(row.invested_wei),
           ),
+    avgEntryPriceWei,
     cycles: position.supported
       ? {
-          openedAt:
-            row.cycle_opened_at === null ? null : Number(row.cycle_opened_at),
+          openedAt,
+          openHoldSeconds: openedAt === null ? null : cut.asOf - openedAt,
           closures: row.closures,
           wins: row.wins,
           losses: row.losses,

@@ -216,6 +216,7 @@ test(
     const p1 = await read(W[1], pools.P.id, "All");
     assert.deepEqual(Object.keys(p1).sort(), [
       "activity",
+      "avgEntryPriceWei",
       "coverage",
       "cycles",
       "mark",
@@ -291,9 +292,13 @@ test(
       txHash: hash(BigInt(saleP) * 100000n),
       valueWei: "0",
     });
-    assert.deepEqual([p1.roi, p1.totalRoi], [50, 50]);
+    assert.deepEqual(
+      [p1.roi, p1.totalRoi, p1.avgEntryPriceWei],
+      [50, 50, null],
+    );
     assert.deepEqual(p1.cycles, {
       openedAt: null,
+      openHoldSeconds: null,
       closures: 1,
       wins: 1,
       losses: 0,
@@ -315,8 +320,15 @@ test(
       volumeWei: (15n * tenth).toString(),
     });
     assert.deepEqual(
-      [p1day.window, p1day.roi, p1day.totalRoi, p1day.cycles, p1day.activity],
-      ["24h", 50, 50, p1.cycles, p1.activity],
+      [
+        p1day.window,
+        p1day.roi,
+        p1day.totalRoi,
+        p1day.avgEntryPriceWei,
+        p1day.cycles,
+        p1day.activity,
+      ],
+      ["24h", 50, 50, null, p1.cycles, p1.activity],
     );
     assert.deepEqual(p1day.mark, p1.mark);
 
@@ -365,8 +377,14 @@ test(
     });
     assert.equal(unrealizedQ, 882303761517117440n);
     assert.deepEqual([q1.roi, q1.totalRoi], [null, 44.1151]);
+    // The entry price of the held units: 2 ETH over 40 raw units, per whole
+    // token of 18 decimals, 5 x 10^34 wei; the open cycle has been held the
+    // 31 blocks from the buy to the cursor.
+    assert.equal(q1.avgEntryPriceWei, (5n * 10n ** 34n).toString());
+    assert.equal(cursor1 - buyQ, 31);
     assert.deepEqual(q1.cycles, {
       openedAt: ts(buyQ),
+      openHoldSeconds: 31 * 400,
       closures: 0,
       wins: 0,
       losses: 0,
@@ -420,9 +438,13 @@ test(
       txHash: hash(BigInt(buyR) * 100000n),
       valueWei: null,
     });
-    assert.deepEqual([r2.roi, r2.totalRoi], [null, null]);
+    assert.deepEqual(
+      [r2.roi, r2.totalRoi, r2.avgEntryPriceWei],
+      [null, null, null],
+    );
     assert.deepEqual(r2.cycles, {
       openedAt: ts(buyR),
+      openHoldSeconds: ts(cursor1) - ts(buyR),
       closures: 0,
       wins: 0,
       losses: 0,
@@ -458,7 +480,10 @@ test(
       position: null,
     } satisfies AnalyticsWalletPosition);
     assert.deepEqual(q6.mark, { ...q1.mark, valueWei: null });
-    assert.deepEqual([q6.roi, q6.totalRoi, q6.cycles], [null, null, null]);
+    assert.deepEqual(
+      [q6.roi, q6.totalRoi, q6.avgEntryPriceWei, q6.cycles],
+      [null, null, null, null],
+    );
     assert.deepEqual(q6.activity, {
       firstTradeHour: 1074 * 3600,
       lastTradeHour: 1074 * 3600,
@@ -506,5 +531,14 @@ test(
       [ts(cursor2), ts(cursor2), cursor2, 50, p1.cycles],
     );
     assert.deepEqual(later.position, await pageRow(W[1], pools.P.id, "24h"));
+    const laterQ = await read(W[1], pools.Q.id, "All");
+    assert.deepEqual(
+      [
+        laterQ.cycles!.openedAt,
+        laterQ.cycles!.openHoldSeconds,
+        laterQ.avgEntryPriceWei,
+      ],
+      [ts(buyQ), 40 * 400, q1.avgEntryPriceWei],
+    );
   },
 );
