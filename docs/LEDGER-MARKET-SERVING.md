@@ -14,12 +14,10 @@ the trader leaderboard, from one of two stores, chosen once at startup by
   Any other pool answers exactly as with `broad`.
 
 Any other value refuses to start. The `listening` log line names the source in
-effect. With `ledger`, `/ready` also checks read access to `agg_streams`,
-`agg_batches`, `agg_pool_hours`, `agg_pool_state`, `agg_live_trades`,
-`agg_wallets`, `agg_wallet_windows`, `agg_window_refreshes`,
-`agg_trader_windows`, `wallet_code_observations` and the supply columns of
-migration 019. The code is `apps/api/src/ledger-market.ts`, the
-ledger branches of `broad-explore.ts` and `projected-explore.ts`, the ledger
+effect. With `ledger`, `/ready` checks the required tables and columns; the
+deployment access requirements are in [the API README](../apps/api/README.md).
+The code is `apps/api/src/ledger-market.ts`, the ledger branches of
+`broad-explore.ts` and `projected-explore.ts`, the ledger
 cut in `observed-market-read.ts` and `ledger-leaderboard.ts`. No endpoint is
 added.
 
