@@ -911,6 +911,8 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     pollMs: 60000,
     windowRefreshMs: 60000,
     crowdEnabled: true,
+    staleMs: 600000,
+    healthPort: 3103,
   });
   assert.equal(
     ledgerTipConfig({ LEDGER_CROWD_ENABLED: "0" }).crowdEnabled,
@@ -922,6 +924,8 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     LEDGER_TIP_POLL_MS: "90000",
     LEDGER_TIP_RANGE_BLOCKS: "5000",
     LEDGER_TIP_MIN_INTERVAL_MS: "3000",
+    LEDGER_STALE_MS: "120000",
+    PORT: "8080",
   });
   assert.deepEqual(
     [
@@ -931,8 +935,10 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
       on.rangeBlocks,
       on.maxRangeBlocks,
       on.minIntervalMs,
+      on.staleMs,
+      on.healthPort,
     ],
-    [true, apiToken, 90000, 5000, 100000, 3000],
+    [true, apiToken, 90000, 5000, 100000, 3000, 120000, 8080],
   );
   for (const [env, pattern] of [
     [
@@ -942,6 +948,8 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     [{ LEDGER_TIP_ENABLED: "yes" }, /Invalid LEDGER_TIP_ENABLED/],
     [{ LEDGER_CROWD_ENABLED: "yes" }, /Invalid LEDGER_CROWD_ENABLED/],
     [{ LEDGER_TIP_MAX_PAGES: "17" }, /Invalid LEDGER_TIP_MAX_PAGES/],
+    [{ LEDGER_STALE_MS: "59999" }, /Invalid LEDGER_STALE_MS/],
+    [{ PORT: "0" }, /Invalid PORT/],
     [
       { LEDGER_TIP_RANGE_BLOCKS: "5000", LEDGER_TIP_MAX_RANGE_BLOCKS: "4000" },
       /Invalid LEDGER_TIP_MAX_RANGE_BLOCKS/,
@@ -972,6 +980,10 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
       "ledger_tip_configuration_invalid: ROBINHOOD_RPC_URL must be the public RPC; the ledger tip loop never reads Alchemy",
     );
   }
+  assert.equal(
+    ledgerTipSafeError(Error("Invalid LEDGER_STALE_MS")),
+    "ledger_tip_configuration_invalid: Invalid LEDGER_STALE_MS",
+  );
   assert.equal(
     ledgerTipSafeError(Error("ledger_walkback_unavailable")),
     "ledger_walkback_unavailable",

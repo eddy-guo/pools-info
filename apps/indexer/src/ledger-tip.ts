@@ -70,6 +70,11 @@ export interface LedgerTipConfig {
   windowRefreshMs: number;
   /** Disable the crowd lane to preserve the shared free-tier token for the main ledger. */
   crowdEnabled: boolean;
+  /** How long the loop may go without a committed cycle before its
+   * `/health` answers 503 (`LEDGER_STALE_MS`, shared with the api). */
+  staleMs: number;
+  /** The health listener's port: Railway's `PORT`. */
+  healthPort: number;
 }
 export const ledgerTipDefaults = Object.freeze({
   /** Blocks per range; a range that completes whole doubles the next one up
@@ -93,6 +98,11 @@ export const ledgerTipDefaults = Object.freeze({
   crowdBudgetMs: 60000,
   /** Consecutive failed cycles before the loop exits for a restart. */
   maxFailures: 5,
+  /** Ten minutes without a committed cycle is six missed production cycles
+   * (one every 80 to 90 s); the api's `/health` degrades on the same age. */
+  staleMs: 600000,
+  /** Beside the api's 3102 when PORT is unset (locally). */
+  healthPort: 3103,
 });
 export function ledgerTipConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -169,6 +179,14 @@ export function ledgerTipConfig(
       3600000,
     ),
     crowdEnabled: crowd !== "0",
+    staleMs: integer(
+      env,
+      "LEDGER_STALE_MS",
+      ledgerTipDefaults.staleMs,
+      60000,
+      86400000,
+    ),
+    healthPort: integer(env, "PORT", ledgerTipDefaults.healthPort, 1, 65535),
   };
 }
 /** Both gates are required before any authenticated request is built. */
@@ -345,9 +363,17 @@ export const ledgerTipExitCodes: Record<LedgerTipStop, number> = {
  * operator looks. */
 const inspection =
   /^ledger_(walkback_unavailable|batch_conflict|pass_streams_diverged|tip_requires_pass|tip_ledger_incomplete|stream_missing|unknown_ancestor|launch_stream_identity)$/;
+/** The loop's progress as `/health` reports it (ledger-tip-health.ts):
+ * each committed cycle, each failed one with its back-off, and the stop. */
+export interface LedgerTipObserver {
+  cycle(cycle: LedgerTipCycle): void;
+  failed(event: { failures: number; waitMs: number; error: string }): void;
+  stopped(stopped: LedgerTipStop, error: string | null): void;
+}
 export interface LedgerTipOptions {
   /** Read-only reader warming, allowed only in the idle time between cycles. */
   warmth?: DatabaseWarmth;
+  observer?: LedgerTipObserver;
   /** A fresh client per cycle, sharing the loop's pacer. */
   client: () => HyperSyncClient;
   rpc: () => Rpc;
@@ -427,6 +453,7 @@ export async function runLedgerTip(
     summary.error = error === null ? null : ledgerTipSafeError(error);
     summary.elapsedMs = Math.round(performance.now() - started);
     summary.throttled = throttled();
+    options.observer?.stopped(stopped, summary.error);
     return summary;
   };
   if (
@@ -549,12 +576,18 @@ export async function runLedgerTip(
         error: ledgerTipSafeError(error),
         budget: error instanceof HyperSyncBudgetExceeded,
       });
+      options.observer?.failed({
+        failures,
+        waitMs,
+        error: ledgerTipSafeError(error),
+      });
       if (failures >= maxFailures) return finish("failed", error);
       await wait(waitMs, options.signal);
       continue;
     }
     failures = 0;
     summary.cycles++;
+    options.observer?.cycle(cycle);
     const c = cycle.crowd;
     if (c) {
       crowdRangeBlocks = c.rangeBlocks;
@@ -766,7 +799,7 @@ export function ledgerTipSafeError(e: unknown): string {
   )
     return `ledger_tip_disabled: ${message}`;
   if (
-    /^(Invalid (LEDGER_TIP_[A-Z_]+|ROBINHOOD_RPC_URL|HYPERSYNC_URL)|ROBINHOOD_RPC_URL must be the public RPC|HYPERSYNC_URL must be)/.test(
+    /^(Invalid (LEDGER_TIP_[A-Z_]+|LEDGER_STALE_MS|PORT|ROBINHOOD_RPC_URL|HYPERSYNC_URL)|ROBINHOOD_RPC_URL must be the public RPC|HYPERSYNC_URL must be)/.test(
       message,
     )
   )

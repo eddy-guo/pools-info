@@ -19,6 +19,7 @@ import {
   ledgerStream,
   ledgerWindowPolicy,
   migrate,
+  observeLedgerHead,
   refreshLedgerWindows,
   releaseLedgerWriter,
   type LedgerBatch,
@@ -255,8 +256,23 @@ test(
       }
     };
     await sameAsBroad();
+    // Freshness (ledger-freshness.ts): the broad source has no ledger to
+    // measure; the ledger source is unhealthy without one, and still so with
+    // a stream the pass has not started.
+    assert.deepEqual(await get("broad", "/health"), {
+      status: 200,
+      data: { ok: true, ledger: null },
+    });
+    assert.equal((await get("broad", "/v1/status")).data.ledger, null);
+    const missing = { ok: false, reason: "ledger_missing", ledger: null };
+    assert.deepEqual(await get("ledger", "/health"), {
+      status: 503,
+      data: missing,
+    });
+    assert.equal((await get("ledger", "/v1/status")).data.ledger, null);
     await ensureLedgerStream(db, "tip");
     await sameAsBroad();
+    assert.deepEqual((await get("ledger", "/health")).data, missing);
     // The ledger writer lock is one per database; a sibling test file may
     // hold it.
     for (let i = 0; i < 600 && !locked; i++) {
@@ -304,6 +320,50 @@ test(
       rows.trade(blockOf(1073, 2), W[11], "sell", E, 9n);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
     assert.equal(applied.unattributed, 0);
+    // A committed batch is fresh: its cursor and time, an unknown lag until
+    // the collector observes a head, then the lag against that head; the
+    // status route carries the same object.
+    const health = await get("ledger", "/health");
+    assert.equal(health.status, 200, JSON.stringify(health.data));
+    assert.equal(health.data.ok, true);
+    assert.ok(
+      health.data.ledger.ageSeconds < 60,
+      health.data.ledger.ageSeconds,
+    );
+    assert.match(health.data.ledger.indexedAt, /^\d{4}-\d\d-\d\dT.*Z$/);
+    assert.deepEqual(
+      { ...health.data.ledger, ageSeconds: 0, indexedAt: "-" },
+      {
+        cursorBlock: cursor1,
+        cursorTimestamp: ts(cursor1),
+        headBlock: null,
+        headTimestamp: null,
+        lagBlocks: null,
+        lagSeconds: null,
+        indexedAt: "-",
+        checkedAt: null,
+        ageSeconds: 0,
+        staleAfterSeconds: 600,
+        stale: false,
+      },
+    );
+    await observeLedgerHead(db, cursor1 + 128, ts(cursor1 + 128));
+    const observed = await get("ledger", "/health");
+    assert.deepEqual(
+      [
+        observed.data.ledger.headBlock,
+        observed.data.ledger.headTimestamp,
+        observed.data.ledger.lagBlocks,
+        observed.data.ledger.lagSeconds,
+        typeof observed.data.ledger.checkedAt,
+      ],
+      [cursor1 + 128, ts(cursor1 + 128), 128, 128 * 400, "string"],
+    );
+    const status = await get("ledger", "/v1/status");
+    assert.deepEqual(
+      { ...status.data.ledger, ageSeconds: 0 },
+      { ...observed.data.ledger, ageSeconds: 0 },
+    );
     // Folded but not yet refreshed into windows: the board has nothing to
     // stand on and says so, retryably, rather than serving the old tables.
     const pending = await get("ledger", "/v1/leaderboard?window=7d");

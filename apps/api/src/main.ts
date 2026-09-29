@@ -1,4 +1,5 @@
 import { createReader } from "./reader";
+import { ledgerStaleSetting } from "./ledger-freshness";
 import { marketSourceSetting } from "./ledger-market";
 import { createApi } from "./server";
 import {
@@ -25,6 +26,8 @@ const marketSource = marketSourceSetting(process.env.MARKET_SOURCE);
 const reader = createReader(undefined, undefined, {
   marketSource,
   warmup: true,
+  // Read once at startup, with the collector's own default.
+  staleMs: ledgerStaleSetting(process.env),
 });
 const images = createTokenImageService(createTokenImageStore(), {
   settings: tokenImageSettings(),

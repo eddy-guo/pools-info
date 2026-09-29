@@ -103,6 +103,7 @@ test("HTTP rejects mutations, coalesces/caches reads, limits traffic and hides D
   const server = createApi(
     {
       async read(r) {
+        if (r.route === "health") return { ok: true, ledger: null };
         calls++;
         if (r.route === "ready")
           throw Object.assign(Error("postgres://user:secret@host"), {

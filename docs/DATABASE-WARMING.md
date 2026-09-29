@@ -6,9 +6,10 @@ The read API refuses database-backed product routes while warming with HTTP
 responses from an earlier readiness generation cannot be published after
 invalidation. `/ready` checks database/schema access and returns 200 only after
 the warm set passes. Railway waits on `/ready` before switching traffic on a
-deployment. `/health`,
-Blockscout wallet history and ETH price retain their own behavior. Icons refuse
-with the database routes.
+deployment. `/health` reads the ledger stream's freshness outside the gate
+(`apps/api/README.md`, "Ledger freshness"), so it answers while the reader
+warms; Blockscout wallet history and ETH price retain their own behavior.
+Icons refuse with the database routes.
 
 The website's existing unavailable behavior is a prerequisite: live failures
 must never substitute the committed preloaded dataset. `PRODUCT_FIXTURES=1`
