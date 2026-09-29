@@ -796,6 +796,26 @@ test(
     const unknown = await walletResult(addr(0xdead));
     assert.equal(unknown.id, `lookup:${addr(0xdead)}`);
     assert.equal(unknown.traderRank, undefined);
+    const rankedSearch = await search(W[2]);
+    await db.query("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [
+      hash(cursor1 + 1).slice(2),
+    ]);
+    try {
+      const unrankedSearch = await search(W[2]);
+      assert.deepEqual(
+        unrankedSearch,
+        {
+          ...rankedSearch,
+          entries: rankedSearch.entries.map(({ traderRank: _rank, ...entry }) =>
+            entry,
+          ),
+        },
+      );
+    } finally {
+      await db.query("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [
+        hash(cursor1).slice(2),
+      ]);
+    }
     const w2 = first.items.find((i) => i.address === W[2])!;
     assert.deepEqual(
       [

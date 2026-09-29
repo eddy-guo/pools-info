@@ -10,7 +10,7 @@ import {
 } from "./catalog-read";
 import { catalogSummary } from "./explore-read";
 import { accountingCoverage } from "./accounting-read";
-import { searchPattern } from "./request";
+import { RequestError, searchPattern } from "./request";
 import { ledgerCut, type MarketSource } from "./ledger-market";
 import { ledgerRealizedRanksSql } from "./ledger-leaderboard";
 const explorer = "https://robinhoodchain.blockscout.com";
@@ -184,7 +184,18 @@ export async function readSearch(
       external: true,
     });
   if (source === "ledger" && entries.some((e) => e.group === "Wallets")) {
-    const cut = await ledgerCut(query);
+    let cut: Awaited<ReturnType<typeof ledgerCut>> = null;
+    try {
+      cut = await ledgerCut(query);
+    } catch (error) {
+      if (
+        !(error instanceof RequestError) ||
+        error.status !== 503 ||
+        (error.code !== "market_evidence_invalid" &&
+          error.code !== "market_identity_conflict")
+      )
+        throw error;
+    }
     if (cut) {
       // The board refuses an unrefreshed cut. In that interval search remains
       // available but carries no rank until the board can serve one too.
