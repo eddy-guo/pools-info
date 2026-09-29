@@ -168,8 +168,12 @@ test("followed activity keeps its trades on outage, pauses and replaces them wit
         "Transaction",
       ]);
     await expect(feed).not.toContainText(/ETH|price|cutoff|coverage/i);
-    await expect(feed.locator(".wallet-positions-context time")).toHaveText(
-      "2026-09-25 21:44:36 UTC",
+    // The panel's own stamp: relative, over the feed's generation time.
+    await expect(
+      feed.locator(".wallet-positions-context time"),
+    ).toHaveAttribute("datetime", "2026-09-25T21:44:36.000Z");
+    await expect(feed.locator(".wallet-positions-context strong")).toHaveText(
+      /^(<1m|\d+[mhd]) ago$/,
     );
     await feed.screenshot({
       path: testInfo.outputPath("following-activity.png"),
@@ -388,7 +392,10 @@ for (const viewport of [
     await page.goto("/wallet/");
     const feed = page.getByRole("region", { name: "Following activity" });
     const stamp = feed.locator(".wallet-positions-context time");
-    await expect(stamp).toHaveText("2026-09-25 21:44:07 UTC");
+    await expect(stamp).toHaveAttribute("datetime", "2026-09-25T21:44:07.000Z");
+    await expect(feed.locator(".wallet-positions-context strong")).toHaveText(
+      /^(<1m|\d+[mhd]) ago$/,
+    );
     // What a reader watches: the panel in view while the feed refreshes.
     await feed.locator(".wallet-positions-context").scrollIntoViewIfNeeded();
     await page.evaluate(() => {
@@ -403,8 +410,9 @@ for (const viewport of [
       if (tick === 4)
         await expect(feed.getByRole("alert")).toHaveText("Update failed");
       else
-        await expect(stamp).toHaveText(
-          `2026-09-25 21:44:${String(tick * 7).padStart(2, "0")} UTC`,
+        await expect(stamp).toHaveAttribute(
+          "datetime",
+          `2026-09-25T21:44:${String(tick * 7).padStart(2, "0")}.000Z`,
         );
     }
     await expect(feed.getByText(/Newest 25 shown/)).toBeVisible();

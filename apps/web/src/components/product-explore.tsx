@@ -26,6 +26,7 @@ import {
   type ScreenerStatsResponse,
 } from "@/lib/stats-response";
 import { useExploreRows } from "@/lib/use-explore-rows";
+import { useReportCut } from "@/lib/freshness";
 import { rememberPoolRow } from "@/lib/pool-row-memory";
 import { tokenLabel, tokenSubSymbol } from "@/lib/token-identity";
 import {
@@ -289,6 +290,11 @@ function ScreenerStats({
   });
   const [failedWindow, setFailedWindow] = useState<LiveWindow | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /* The header's freshness stamp: the stats read names the ledger cut it
+     summed through, block and all, so it is the screener's cut wherever the
+     stats route is served; the last answer stays reported while the next
+     window's is on its way, as its figures stay on screen. */
+  useReportCut("stats", answer.data?.cutoff.block, answer.data?.asOf);
   useEffect(() => {
     const selected = new URLSearchParams(location.search).get("window");
     const browserWindow =
@@ -604,12 +610,15 @@ export function ProductExplore({
     readQuery.set("sort", "launch");
     readQuery.set("direction", "desc");
   }
-  const { list, stale, loading, settled, error, refresh } = useExploreRows(
+  const { list, stale, loading, settled, error, refresh, asOf } = useExploreRows(
     readQuery.toString(),
     view === "watchlist"
       ? Math.max(1, Math.min(queryWatched.length, MAX_WATCHLIST_QUERY_POOLS))
       : shown,
   );
+  /* The rows' own cut names no block; it feeds the stamp only where the
+     stats read is not served (a fixture deployment). */
+  useReportCut("explore", null, asOf);
   /* Wait for every saved row before sorting. Showing a partially fetched
      order would move already painted rows when the next chunk arrives. */
   const readyList =

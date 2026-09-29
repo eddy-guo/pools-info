@@ -10,6 +10,7 @@ import {
   type LiveWindow,
 } from "@pools/core";
 import { DATA_UNAVAILABLE, fetchProduct, useProduct } from "@/lib/use-product";
+import { useReportCut } from "@/lib/freshness";
 import { useFollowedLeaderboard } from "@/lib/use-followed-leaderboard";
 import { useQuery } from "./state";
 import { useFollowing, FollowRowButton } from "./following";
@@ -61,6 +62,9 @@ type LeaderboardState = {
   loadedShown: number;
   loading: boolean;
   settled: boolean;
+  /** The chain timestamp the rows on hand were ranked through
+      (`coverage.asOf`), the page's freshness cut; the read names no block. */
+  asOf: number | null;
   error?: string;
 };
 
@@ -87,6 +91,7 @@ function useLeaderboard(
     loadedShown: 0,
     loading: true,
     settled: false,
+    asOf: null,
   });
   useEffect(() => {
     const isReset = state.key !== key || state.attempt !== attempt;
@@ -117,6 +122,13 @@ function useLeaderboard(
           loadedShown: baseLoaded + data.items.length,
           loading: false,
           settled: true,
+          /* A Show more's page can be read through a later cut than the
+             rows above it; the stamp keeps the oldest, never claiming the
+             top of the board is fresher than it is. */
+          asOf:
+            isReset || state.asOf === null
+              ? data.coverage.asOf
+              : Math.min(state.asOf, data.coverage.asOf),
         });
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -564,6 +576,9 @@ export function ProductTraders() {
   /* No ranking was served, so none is drawn: the podium and the rows would
      otherwise shimmer indefinitely, reading as a board still on its way. */
   const failed = forKey && !!state.error && items.length === 0;
+  /* The header's freshness stamp follows the ranked board's read on both
+     views (it runs regardless of the tab); a failed board reports nothing. */
+  useReportCut("leaderboard", null, failed ? null : state.asOf);
   // Optimistic until settled, so the podium band never pops in after first
   // paint; a settled total under 3 wallets is the one case it disappears.
   const showPodium = !failed && (total === null || total >= PODIUM_SIZE);

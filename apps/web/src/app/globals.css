@@ -2356,41 +2356,6 @@ main {
 }
 
 /* Shared real-data views. Preserve the original product palette and spacing. */
-.live-freshness {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 40px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
-  font-size: 12px;
-}
-.live-freshness > div:first-child {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  min-width: 0;
-}
-.live-freshness strong {
-  color: var(--green);
-}
-.live-freshness.stale strong {
-  color: #eac38e;
-}
-.live-freshness span {
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.live-freshness > div:last-child {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.live-freshness .button {
-  padding: 7px 10px;
-  font-size: 12px;
-}
 .live-controls {
   display: flex;
   flex-wrap: wrap;
@@ -2587,9 +2552,6 @@ main {
   font-variant-numeric: normal;
 }
 @media (max-width: 1000px) {
-  .live-freshness {
-    padding: 12px 24px;
-  }
   .live-podium {
     gap: 8px;
   }
@@ -2598,15 +2560,6 @@ main {
   }
 }
 @media (max-width: 700px) {
-  .live-freshness {
-    align-items: flex-start;
-    padding: 12px 16px;
-    flex-direction: column;
-  }
-  .live-freshness > div:first-child {
-    flex-direction: column;
-    gap: 4px;
-  }
   .live-controls {
     padding: 16px;
     gap: 12px;
@@ -3076,11 +3029,29 @@ main {
   height: 12px;
   background: var(--color-line-strong);
 }
+/* The freshness stamp's slot, reserved from first paint and blank until the
+   page's read lands: the width of its widest form (`block 999,999,999 ·
+   indexed 999d ago`, the block in mono, measures 229px at 12px; the slot's
+   255px leaves over half a pixel a glyph for CI's whole-pixel glyph
+   advances) and one line tall, so the empty slot holds its line on the
+   phone's own row. */
+.subnav-freshness {
+  display: inline-block;
+  min-width: 32ch;
+  min-height: 1lh;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* The block number in mono, as the export sets it. */
+.subnav-block {
+  font-family: var(--font-mono);
+}
 /* Reserves the ETH/USD rate's width from first paint (hidden until the read
    resolves) so the strip never reflows once it fills in. */
 .subnav-eth-price {
   display: inline-block;
   min-width: 13ch;
+  min-height: 1lh;
   font-variant-numeric: tabular-nums;
 }
 .page {
@@ -4208,6 +4179,23 @@ button.icon-button:disabled {
     padding: 5px 14px;
     min-height: 44px;
     font-size: 11px;
+  }
+  /* Two lines at the phone's width, both inside the 44px strip (two
+     13.75px lines, the 5px row gap and the padding come to 42.5px): the
+     chain and the price on the first, the stamp on its own second line
+     (its divider goes; the price keeps its bar beside the chain). The
+     header keeps its height whether the stamp is blank or filled. */
+  .subnav-freshness-divider {
+    display: none;
+  }
+  .subnav-price-divider,
+  .subnav-eth-price {
+    order: 1;
+  }
+  .subnav-freshness {
+    order: 2;
+    flex-basis: 100%;
+    min-width: 0;
   }
   .page {
     padding: 22px 14px 40px;

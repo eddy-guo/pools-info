@@ -77,6 +77,15 @@ test("a populated page renders exact quantities, neutral sides and no ETH figure
     ? page.locator('.mobile-wallet-row[data-row="resolved"]')
     : page.locator('.wallet-trades-table tbody tr[data-row="resolved"]');
   await expect(rows).toHaveCount(2);
+  // The tab's own stamp, relative to the explorer page's fetch time: the
+  // same `Updated Nm ago` form the Following activity panel carries.
+  await expect(page.locator(".wallet-positions-context strong")).toHaveText(
+    /^(<1m|\d+[mhd]) ago$/,
+  );
+  await expect(page.locator(".wallet-positions-context time")).toHaveAttribute(
+    "datetime",
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/,
+  );
   const first = rows.first();
   const region = mobile
     ? page.locator(".mobile-wallet-rows")

@@ -19,6 +19,11 @@ type Loaded = {
   rows: readonly AnalyticsPoolRow[];
   total: number;
   nextOffset: number | null;
+  /** The chain timestamp the rows on hand were read through
+      (`coverage.asOf`, the oldest of their pages' when a Show more read a
+      later one), the cut the page's freshness stamp shows; the explore read
+      names no block. */
+  asOf: number;
   /** Where the first rows came from. A fixture deployment and a read API
       hold different catalogs, so a later chunk from the other source cannot
       join rows already on hand. */
@@ -94,6 +99,7 @@ export function useExploreRows(query: string, shown: number) {
                 rows: page.items,
                 total: page.total,
                 nextOffset: page.nextOffset,
+                asOf: page.coverage.asOf,
                 source: page.delivery.source,
               };
             /* A chunk joins the rows it was read to follow, or nothing. */
@@ -104,6 +110,7 @@ export function useExploreRows(query: string, shown: number) {
               rows: [...prior.rows, ...page.items],
               total: page.total,
               nextOffset: page.nextOffset,
+              asOf: Math.min(prior.asOf, page.coverage.asOf),
             };
           });
         },
@@ -124,6 +131,10 @@ export function useExploreRows(query: string, shown: number) {
     stale,
     /** The rows on hand answer this very query and refresh, so an empty list is a real empty list. */
     settled: current !== undefined,
+    /** The cut of the rows on hand, stale ones included while a new query's
+        first page is pending, and nothing once this query's read failed:
+        a failed list carries no as-of. */
+    asOf: failed ? null : (loaded?.asOf ?? null),
     loading: offset !== null,
     error: failure?.query === query ? failure.message : undefined,
     refresh: () => setGeneration((n) => n + 1),

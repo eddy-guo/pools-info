@@ -5,6 +5,7 @@ import { formatMoney } from "@pools/core";
 import { Search } from "./search";
 import { UnitToggle } from "./unit-toggle";
 import { useEthPrice } from "./eth-price-provider";
+import { SubnavFreshness } from "./freshness";
 import { WalletProfileEntry } from "./wallet-profile";
 import { useBelowListKey } from "@/lib/list-release";
 
@@ -94,7 +95,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="network-subnav">
           <span className="network-context">v4 · Robinhood Chain</span>
-          <span className="subnav-divider" aria-hidden="true" />
+          <SubnavFreshness />
+          {/* The price and its divider hide together, keeping their reserved
+              width: a first paint or a failed price read shows the strip
+              without a bar trailing into nothing. */}
+          <span
+            className="subnav-divider subnav-price-divider"
+            aria-hidden="true"
+            style={{ visibility: usdPerEth === null ? "hidden" : "visible" }}
+          />
           <span
             className="subnav-eth-price"
             style={{ visibility: usdPerEth === null ? "hidden" : "visible" }}

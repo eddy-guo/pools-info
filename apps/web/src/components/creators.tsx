@@ -7,6 +7,7 @@ import type {
   CreatorsResponse,
 } from "@pools/core";
 import { DATA_UNAVAILABLE, fetchProduct } from "@/lib/use-product";
+import { useReportCut } from "@/lib/freshness";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
 import catalog from "../../../../data/catalog/chain.json";
@@ -150,6 +151,9 @@ type CreatorsState = {
   loadedShown: number;
   loading: boolean;
   settled: boolean;
+  /** The chain timestamp the rows on hand were measured through
+      (`coverage.asOf`), the page's freshness cut; the read names no block. */
+  asOf: number | null;
   error?: string;
 };
 
@@ -176,6 +180,7 @@ function useCreatorsBoard(
     loadedShown: 0,
     loading: true,
     settled: false,
+    asOf: null,
   });
   useEffect(() => {
     const isReset = state.key !== key || state.attempt !== attempt;
@@ -206,6 +211,13 @@ function useCreatorsBoard(
           loadedShown: baseLoaded + data.items.length,
           loading: false,
           settled: true,
+          /* A Show more's page can be read through a later cut than the
+             rows above it; the stamp keeps the oldest, never claiming the
+             top of the board is fresher than it is. */
+          asOf:
+            isReset || state.asOf === null
+              ? data.coverage.asOf
+              : Math.min(state.asOf, data.coverage.asOf),
         });
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -255,6 +267,9 @@ function CreatorDirectory() {
   );
   useListRelease(rowCount, shown);
   const empty = settled && total === 0;
+  /* The header's freshness stamp: the board's own cut; nothing once it
+     failed with no rows to show. */
+  useReportCut("creators", null, failed ? null : state.asOf);
 
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -493,10 +508,12 @@ function CreatorProfile({ address }: { address: string }) {
     Number.isInteger(rawShown) && rawShown > 0
       ? Math.min(rawShown, EXPLORE_ROWS_CAP)
       : SHOW_MORE_STEP;
-  const { list, loading, settled, error, refresh } = useExploreRows(
+  const { list, loading, settled, error, refresh, asOf } = useExploreRows(
     `window=24h&sort=launch&q=${address}`,
     shown,
   );
+  /* The header's freshness stamp: the launches are the page's one read. */
+  useReportCut("creator-launches", null, asOf);
   /* Nothing was served: the reserved rows stay reserved and blank rather
      than shimmering on for ever, and the panel says what happened over the
      top of them. */

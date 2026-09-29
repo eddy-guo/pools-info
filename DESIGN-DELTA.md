@@ -320,3 +320,11 @@ pnpm dev   # localhost:3100
 ```
 
 Compare in this order: row density → text brightness steps → border contrast → accent → radii. That's roughly the order of perceptual impact.
+
+## Header freshness stamp, 29 September 2026
+
+The export's network strip reads `● Live · v4 · Robinhood Chain | block 12,845,102 · indexed 8s ago | ETH $4,218.44`; the site had no stamp on any page (a11y pass C4, QA sweep items 1 and 30) and its one divider trailed into nothing whenever the price was hidden. The strip now carries `block N · indexed Ns ago` between the chain label and the price on every page, fed by the page's own read through `apps/web/src/lib/freshness.ts` (each page reports its read's `cutoff.block`/`asOf`, `coverage.asOf` or the pool's market cutoff; the leaderboard, creators and wallet reads name no block, so their stamp is the lag alone; a page with no read of its own, the wallet lookup, stamps nothing). No status word: the captain's rule is the stamp, and `Live`/`Delayed` copy stayed retired with the live-trades surface.
+
+Reserved slots: `.subnav-freshness` is `32ch` wide, 255px (`block 999,999,999 · indexed 999d ago`, the block set in Geist Mono as the export draws it, measures 229px at the strip's 12px; the slot leaves over half a pixel per glyph for Linux Chromium's whole-pixel advances) and `1lh` tall, and `.subnav-eth-price` now holds `1lh` too, so an empty slot and a filled one are the same box. Each reading of either stamp mounts as a new keyed node rather than rewriting text in place. Both dividers hide with their neighbour by `visibility`, keeping their width. Under 768px the strip is two lines inside its 44px: the chain label and the price on the first, the stamp on its own second line (`order` and `flex-basis: 100%`; two 13.75px lines, the 5px row gap and the padding come to 42.5px), so the phone header keeps 151px and fits 320px.
+
+The per-panel `Updated Nm ago` stamps (`UpdatedStamp` in `apps/web/src/components/freshness.tsx`) stay only where a panel's cut is not the page's: the Following activity feed, whose `Updated <UTC time>` now takes the same relative form, and the wallet's Trades tab. Both read the shared once-a-second clock (`apps/web/src/lib/clock.ts`), which the server never renders.

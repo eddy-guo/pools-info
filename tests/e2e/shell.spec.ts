@@ -26,8 +26,16 @@ for (const route of routes) {
     );
     await expect(page.locator(".subnav-live")).toHaveCount(0);
     await expect(strip).not.toContainText(/Live|Delayed|Paused|Offline/);
-    await expect(strip).not.toContainText("block");
-    await expect(strip).not.toContainText("indexed");
+    /* The freshness stamp is the page's own read cut and nothing else: the
+       block where the read names one, the lag from the read's timestamp,
+       and blank on the lookup page, which has no read to stamp. */
+    const stamp = page.locator(".subnav-freshness");
+    await expect(stamp).toHaveCount(1);
+    if (route === "/wallet/") await expect(stamp).toHaveText("");
+    else
+      await expect(stamp).toHaveText(
+        /^(block \d{1,3}(,\d{3})* · )?indexed \d+[smhd] ago$/,
+      );
     await expect(page.getByRole("link", { name: "Methodology" })).toHaveCount(
       0,
     );
