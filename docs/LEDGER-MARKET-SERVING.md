@@ -462,9 +462,9 @@ null where it cannot:
   over invested, the open position's whole return, null while unmarked; on a
   flat position the two are equal, since invested is then disposed cost.
 - **`avgEntryPriceWei`** is the average entry price of the held units, wei
-  per whole token: their average-cost basis, `costWei * 10^decimals /
-quantity` truncated, the price a card sets against `mark.priceWei`. Null
-  while flat, excluded or the decimals unknown. The fold keeps no count of raw
+  per whole token: their average-cost basis (`costWei` times ten to the
+  `decimals` over `quantity`, truncated), the price a card sets against
+  `mark.priceWei`. Null while flat, excluded or the decimals unknown. The fold keeps no count of raw
   tokens bought or sold (only the held quantity, and no row per swap), so a
   lifetime average entry price and an average exit price cannot be derived
   and are not served; serving them would need a writer change, not a read.
@@ -473,9 +473,9 @@ quantity` truncated, the price a card sets against `mark.priceWei`. Null
   exact seconds; null while flat) and `openHoldSeconds`, how long it has
   been held at the cut (`asOf - openedAt`, the open position's hold time),
   and from its hour rows the `closures`, `wins`, `losses`, summed
-  `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds /
-closures`, the header's `avgHold` per position) and `bestWei`, the best
-  single sale's gain. Null for an excluded position, whose inventory is not
+  `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds`
+  over `closures`, the header's `avgHold` per position) and `bestWei`, the
+  best single sale's gain. Null for an excluded position, whose inventory is not
   served.
 - **`activity`** is when the wallet traded the pool: `firstHour` and
   `lastHour`, the UTC hours of its first and last attributed swap as unix
@@ -503,10 +503,10 @@ Cost: the cut, one catalog probe by pool id, one unique-index probe for the
 window's flow, the hours traded in and the lifetime closures in one pass),
 then the coverage's two counts and the counterparty legs. On the production-shape copy (Postgres 18, 2.18M
 positions, 3.06M hour rows, migrated through 026) the position statement
-reads 18 to 20 buffers and runs in 0.06 ms warm, 0.6 to 2.7 ms on first
-touch (8 to 45 buffers read from disk); the busiest wallet-pool pair (879
-hour rows) reads 1,394 buffers, 1.4 ms warm and 30 ms on first touch. The
-route answers in 14 to 17 ms warm end to end, of which the coverage
+reads 14 to 15 buffers and runs in 0.04 to 0.06 ms warm, 1 to 2.5 ms on
+first touch (8 to 10 buffers read from disk); the busiest wallet-pool pair
+(879 hour rows) reads 702 buffers, 0.5 ms warm and 22 to 30 ms on first
+touch. The route answers in 14 to 15 ms warm end to end, of which the coverage
 envelope's two counts (the catalog's 3,952 buffers, about 9 to 14 ms, and
 `agg_pool_state`'s 1,559, about 6 ms) are the bulk, the same envelope every
 ledger read pays; a first read after a process start is 25 to 140 ms with
