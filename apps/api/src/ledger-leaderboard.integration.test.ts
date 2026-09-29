@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AnalyticsLeaderboardResponse,
   AnalyticsWalletSummary,
+  SearchResponse,
   LedgerSwap,
   LedgerTransfer,
 } from "@pools/core";
@@ -719,6 +720,10 @@ test(
     const profile = async (w: string) =>
       (await get(`/v1/wallets/${w}?window=All`))
         .wallet as AnalyticsWalletSummary;
+    const search = async (w: string) =>
+      (await get(`/v1/search?q=${w}`)) as SearchResponse;
+    const walletResult = async (w: string) =>
+      (await search(w)).entries.find((entry) => entry.group === "Wallets")!;
 
     // A relayed round trip: another address sends each swap and `who` only
     // receives or pays the tokens, so the ledger attributes both legs to it
@@ -761,6 +766,36 @@ test(
       [W[1], 3],
       [W[2], 4],
     ]);
+    const week = (await get(
+      "/v1/leaderboard?window=7d&limit=100",
+    )) as AnalyticsLeaderboardResponse;
+    for (const w of [W[1], W[2], W[4], W[5]]) {
+      const result = await walletResult(w);
+      assert.equal(result.id, `wallet:${w}`);
+      assert.deepEqual(result.traderRank, {
+        rank: week.items.find((item) => item.address === w)!.rank,
+        window: "7d",
+        metric: "realized",
+        asOf: week.items[0].asOf,
+      });
+    }
+    // A creator may also trade. The creator entry stays distinct; the
+    // wallet entry receives only its trader-board rank.
+    const creator = await search(W[2]);
+    assert.equal(
+      creator.entries.find((entry) => entry.group === "Creators")?.address,
+      W[2],
+    );
+    assert.equal(
+      creator.entries.find((entry) => entry.group === "Creators")?.traderRank,
+      undefined,
+    );
+    // Known only from the ledger, the own-launch trader and an unrecognised
+    // address all have no rank. The last still gets the existing lookup.
+    assert.equal((await walletResult(Z)).traderRank, undefined);
+    const unknown = await walletResult(addr(0xdead));
+    assert.equal(unknown.id, `lookup:${addr(0xdead)}`);
+    assert.equal(unknown.traderRank, undefined);
     const w2 = first.items.find((i) => i.address === W[2])!;
     assert.deepEqual(
       [
@@ -841,6 +876,16 @@ test(
     ]);
     assert.equal((await profile(W[4])).rank, null);
     assert.equal((await profile(W[5])).rank, 1);
+    assert.equal((await walletResult(W[4])).traderRank, undefined);
+    const currentWeek = (await get(
+      "/v1/leaderboard?window=7d&limit=100",
+    )) as AnalyticsLeaderboardResponse;
+    assert.deepEqual((await walletResult(W[5])).traderRank, {
+      rank: currentWeek.items.find((item) => item.address === W[5])!.rank,
+      window: "7d",
+      metric: "realized",
+      asOf: currentWeek.items[0].asOf,
+    });
     const cursor2 = cursor1 + 9;
     await applyLedgerBatch(db, batch(cursor1 + 1, cursor2, new Rows()));
     assert.ok(await refreshLedgerWindows(db, { minIntervalMs: 0 }));

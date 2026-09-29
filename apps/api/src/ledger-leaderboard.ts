@@ -93,9 +93,18 @@ export async function ledgerCoverage(
   };
 }
 /** Eligible for the board at the requested gate; `w` names the wallet row. */
-const eligible = (minTrades: number, w: string) =>
-  `x.supported_trades>=${minTrades} AND x.supported_positions>0
+const eligible = (minTrades: number, w: string, x = "x") =>
+  `${x}.supported_trades>=${minTrades} AND ${x}.supported_positions>0
    AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=${w}.address AND c.kind='contract')`;
+
+/** The profile and search read the same default realized top 100 as the
+ * board, including its trader-only totals and observed-contract exclusion.
+ * The inner LIMIT bounds the window function to the served board. */
+export const ledgerRealizedRanksSql = `SELECT wallet_ref,row_number() OVER (ORDER BY realized_wei DESC,address)::int AS rank FROM (
+  SELECT t.wallet_ref,t.realized_wei,v.address FROM agg_trader_windows t JOIN agg_wallets v USING (wallet_ref)
+  WHERE t.chain_id=4663 AND t."window"=$1 AND ${eligible(ledgerLeaderboardPolicy.minTrades, "v", "t")}
+  ORDER BY t.realized_wei DESC,v.address LIMIT ${ledgerLeaderboardPolicy.rankedWallets}
+) top`;
 
 /** The board for the window, or null when the ledger has folded nothing yet
  * (no cursor or no pool hour), in which case the accounting tables answer

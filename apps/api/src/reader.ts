@@ -232,7 +232,7 @@ export async function readData(
       readWallet(query, request.wallet!, request.window)
     );
   if (request.route === "search")
-    return readSearch(query, request.q, request.group);
+    return readSearch(query, request.q, request.group, marketSource);
   if (request.route === "feed") {
     const streams = await query(
       `SELECT s.stream_key, s.pool_id, ${coverageColumns}

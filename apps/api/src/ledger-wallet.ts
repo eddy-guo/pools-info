@@ -11,6 +11,7 @@ import { catalogPool } from "./explore-read";
 import {
   ledgerCoverage,
   ledgerWindowRefresh,
+  ledgerRealizedRanksSql,
   summaryColumns,
 } from "./ledger-leaderboard";
 import { ledgerCut } from "./ledger-market";
@@ -195,14 +196,7 @@ export async function readLedgerWallet(
   const row =
     (
       await query(
-        `SELECT (SELECT b.rank FROM (
-           SELECT wallet_ref,row_number() OVER (ORDER BY realized_wei DESC,address)::int AS rank FROM (
-             SELECT t.wallet_ref,t.realized_wei,v.address FROM agg_trader_windows t JOIN agg_wallets v USING (wallet_ref)
-             WHERE t.chain_id=4663 AND t."window"=$1 AND t.supported_trades>=10 AND t.supported_positions>0
-               AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=v.address AND c.kind='contract')
-             ORDER BY t.realized_wei DESC,v.address LIMIT 100
-           ) top
-         ) b WHERE b.wallet_ref=x.wallet_ref) AS rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
+        `SELECT (SELECT b.rank FROM (${ledgerRealizedRanksSql}) b WHERE b.wallet_ref=x.wallet_ref) AS rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
          WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=$2`,
         [window, ref],
       )

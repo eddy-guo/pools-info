@@ -19,6 +19,13 @@ export interface SearchEntry {
   terms: string[];
   href: string;
   external?: boolean;
+  /** Present only for a wallet on the served default trader board. */
+  traderRank?: {
+    rank: number;
+    window: "7d";
+    metric: "realized";
+    asOf: number;
+  };
 }
 export interface SearchResponse {
   message?: string;
