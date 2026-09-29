@@ -176,7 +176,9 @@ export class HyperSyncUnauthorized extends Error {
   }
 }
 export class HyperSyncRateLimitExhausted extends Error {
-  constructor() {
+  /** The last answer's Retry-After in milliseconds, when it carried one,
+   * for the caller's own pause. */
+  constructor(readonly retryAfterMs: number | null = null) {
     super("HyperSync rate limit exhausted after 4 throttled attempts");
     this.name = "HyperSyncRateLimitExhausted";
   }
@@ -802,21 +804,20 @@ export class HyperSyncClient {
       } catch (error) {
         if (this.signal?.aborted) throw error;
         if (attempt + 1 >= hypersyncPolicy.maxAttempts)
-          throw Error("HyperSync request failed after retries");
+          throw Error("HyperSync request failed after retries", {
+            cause: error,
+          });
         await this.retry(attempt, null, "network");
         continue;
       }
       if (response.status === 429) {
         await response.body?.cancel().catch(() => {});
-        if (attempt + 1 >= hypersyncPolicy.maxAttempts)
-          throw new HyperSyncRateLimitExhausted();
         const header = Number(response.headers.get("retry-after"));
-        await this.retry(
-          attempt,
-          429,
-          "throttled",
-          Number.isFinite(header) && header > 0 ? header * 1000 : null,
-        );
+        const retryAfterMs =
+          Number.isFinite(header) && header > 0 ? header * 1000 : null;
+        if (attempt + 1 >= hypersyncPolicy.maxAttempts)
+          throw new HyperSyncRateLimitExhausted(retryAfterMs);
+        await this.retry(attempt, 429, "throttled", retryAfterMs);
         continue;
       }
       if (response.status === 401 || response.status === 403) {

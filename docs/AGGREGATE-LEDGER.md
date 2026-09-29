@@ -232,8 +232,9 @@ the next start rewinds (`ledger_launch_rewind`) before extending.
 is read from HyperSync; on a mismatch the newest still-canonical checkpoint
 is found and `walkBackLedger` restores the pre-images (`ledger_walk_back`),
 the tip loop's code path. Four throttled attempts on one request
-(`HyperSyncRateLimitExhausted`, or the RPC's equivalent) end the run with
-`stopped: "throttled"` and the reserved exit code 75; nothing restarts it.
+(`HyperSyncRateLimitExhausted`, or the RPC's equivalent) end the pass's run
+with `stopped: "throttled"` and the reserved exit code 75; nothing restarts
+it (the tip loop pauses instead: "Stops" under phase 3).
 Every committed range logs one `ledger_progress` line with the range's rows,
 requests, bytes and pages, the run's blocks per second, throttled retries,
 requests per million blocks and ETA, and the ledger's cumulative totals:
@@ -390,14 +391,35 @@ from then on would read as the whole history), and a window holding such an
 hour serves null. A position or hour row created from then on starts at
 zero. The history backfill fills the rest.
 
-**Stops.** A sustained throttle (four throttled attempts on one HyperSync or
-RPC request) ends the loop with exit code 75, a rejected token 77, a page
-over HyperSync's own caps 76, and a ledger that refuses to change (a walk-back
-its journal cannot serve, a conflicting batch, no ledger) 78; the service's
-supervisor turns each into a clean exit that Railway's `ON_FAILURE` policy
-does not restart. Any other failure is retried after 2, 4, 8 and 16 seconds;
-five failed cycles in a row exit 1 for a restart from the cursor. SIGTERM
-ends the loop on a committed batch.
+**Stops.** A throttle (four throttled attempts on one HyperSync or RPC
+request) pauses the loop rather than ending it: the first pause is a minute,
+each consecutive one doubles up to an hour, a `Retry-After` longer than the
+pause is honoured instead, every pause is logged
+(`ledger_tip_throttle_paused`, with its source, its wait and the running
+total), the cycle after a pause tries again from the same cursor, and a
+successful cycle resets the series. Only about six hours of consecutive
+pausing spend the budget (`ledger_tip_throttle_exhausted`), and the loop then
+exits 1 so the service restarts, never 0: an exit Railway counts as a success
+leaves the site frozen with no restart and no notification (the 29 Sep 2026
+resilience review). A rejected token exits 77, a page over HyperSync's own
+caps 76, and a ledger that refuses to change (a walk-back its journal cannot
+serve, a conflicting batch, no ledger) 78; the service's supervisor turns
+those three into a clean exit that Railway's `ON_FAILURE` policy does not
+restart. Any other failed cycle is retried after 2, 4, 8, 16, 32 and then 60
+seconds, and sixty failed cycles in a row (about an hour of paced attempts)
+exit 1 for a restart from the cursor, so an upstream outage costs one restart
+an hour rather than one every seventy seconds. A lost database connection
+ends the loop the way a signal does (`ledger_tip_stopping`, with the reason
+and the range in flight) and the service reconnects in-process, waiting 1, 2,
+4 … 60 seconds between attempts for up to an hour
+(`ledger_database_connect_failed`) before it exits 1; the same waits cover the
+first connection and the writer lock, and every reconnection re-reads the
+cursor and reconciles both streams exactly as a fresh start does. SIGTERM and
+SIGINT are logged by the supervisor (`service_stopping`) and the loop
+(`ledger_tip_stopping`) and end the loop on a committed batch; the service's
+Railway configuration allows 100 restarts before Railway marks the deployment
+crashed, a budget those in-process waits make the last resort rather than the
+first.
 
 **Health.** `run` serves `GET /health` on `PORT` (Railway's variable; 3103
 when unset) from `apps/indexer/src/ledger-tip-health.ts`: the loop's state

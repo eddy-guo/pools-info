@@ -17,14 +17,22 @@ export interface WorkerSpec {
 interface SupervisorRuntime {
   spawn: (worker: WorkerSpec) => ChildProcess;
   exitCode: (code: 0 | 1) => void;
-  log: (event: {
+  log: (
     event:
-      | "service_paused_rpc_rate_limit"
-      | "service_paused_broad_capacity"
-      | "service_paused_hypersync_unauthorized"
-      | "service_paused_ledger_inspection";
-    worker: WorkerSpec["name"];
-  }) => void;
+      | {
+          event:
+            | "service_paused_rpc_rate_limit"
+            | "service_paused_broad_capacity"
+            | "service_paused_hypersync_unauthorized"
+            | "service_paused_ledger_inspection";
+          worker: WorkerSpec["name"];
+        }
+      | {
+          event: "service_stopping";
+          signal: NodeJS.Signals;
+          workers: WorkerSpec["name"][];
+        },
+  ) => void;
 }
 
 /** Launch once. A capacity or rate-limit pause drains the unit successfully,
@@ -33,7 +41,7 @@ export function superviseWorkers(
   workers: readonly WorkerSpec[],
   runtime: SupervisorRuntime,
 ) {
-  const children = new Set<ChildProcess>();
+  const children = new Map<ChildProcess, WorkerSpec["name"]>();
   let stopping = false;
   let paused = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -51,11 +59,23 @@ export function superviseWorkers(
     if (children.size) {
       timer = setTimeout(() => {
         timer = undefined;
-        for (const child of children) child.kill("SIGKILL");
+        for (const child of children.keys()) child.kill("SIGKILL");
       }, 20000);
       timer.unref();
-      for (const child of [...children]) child.kill("SIGTERM");
+      for (const child of [...children.keys()]) child.kill("SIGTERM");
     }
+  }
+  /** An external stop (a deploy's SIGTERM, an operator's SIGINT): the signal
+   * is logged with the workers it drains, so a deploy's log says what ended
+   * the service, then the ordinary clean stop follows. */
+  function stopOnSignal(signal?: NodeJS.Signals) {
+    if (!stopping && signal)
+      runtime.log({
+        event: "service_stopping",
+        signal,
+        workers: [...children.values()],
+      });
+    stop(0);
   }
   for (const worker of workers) {
     if (stopping) break;
@@ -66,7 +86,7 @@ export function superviseWorkers(
       stop(1);
       break;
     }
-    children.add(child);
+    children.set(child, worker.name);
     child.once("error", () => stop(1));
     child.once("close", () => cleanedUp(child));
     child.once("exit", (code) => {
@@ -98,5 +118,5 @@ export function superviseWorkers(
       } else if (!stopping) stop(1);
     });
   }
-  return { stop: () => stop(0) };
+  return { stop: stopOnSignal };
 }

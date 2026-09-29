@@ -38,27 +38,35 @@ const errorTypes = new Set([
   "TimeoutError",
   "error",
 ]);
+/** The first allowlisted network code on the error or down its causes: a
+ * client's own failure wraps the fetch failure, whose cause carries the
+ * socket's code. */
+function networkCode(e: unknown) {
+  let value = e;
+  for (
+    let depth = 0;
+    depth < 4 && value && typeof value === "object";
+    depth++
+  ) {
+    const code = (value as { code?: unknown }).code;
+    if (typeof code === "string" && networkCodes.has(code)) return code;
+    value = (value as { cause?: unknown }).cause;
+  }
+  return null;
+}
 /** Exposes only an allowlisted class/code, never raw provider/SQL text, URLs,
  * connection strings, causes, stack traces or user-controlled error names. */
 export function errorDetails(e: unknown) {
   const value =
-    e && typeof e === "object"
-      ? (e as { name?: unknown; code?: unknown; cause?: { code?: unknown } })
-      : {};
+    e && typeof e === "object" ? (e as { name?: unknown; code?: unknown }) : {};
   const code = typeof value.code === "string" ? value.code : "";
-  const causeCode =
-    typeof value.cause?.code === "string" ? value.cause.code : "";
   return {
     errorType:
       typeof value.name === "string" && errorTypes.has(value.name)
         ? value.name
         : "unclassified",
     sqlState: sqlStates.has(code) ? code : null,
-    networkCode: networkCodes.has(code)
-      ? code
-      : networkCodes.has(causeCode)
-        ? causeCode
-        : null,
+    networkCode: networkCode(e),
   };
 }
 

@@ -18,6 +18,11 @@ test("collector diagnostics distinguish provider rejection, network failure and 
   });
   assert.equal(errorDetails(network).networkCode, "ECONNRESET");
   assert.match(safeError(network), /network_failed/);
+  // A client that wraps the fetch failure keeps the code reachable.
+  const wrapped = Error("HyperSync request failed after retries", {
+    cause: network,
+  });
+  assert.equal(errorDetails(wrapped).networkCode, "ECONNRESET");
   const conflict = Object.assign(
     Error("duplicate key details contain private SQL"),
     { code: "23505" },
