@@ -50,7 +50,8 @@ export interface WalletCodeStore {
 
 /** The board's candidates: every wallet servable at any gate or page, that the ledger never
  * saw initiate a swap (every attributed swap of every position it holds
- * went to it as the transaction's counterparty), and whose code has not
+ * went to it as the transaction's counterparty or as its share of a pooled
+ * swap), and whose code has not
  * been read, or was read as no contract more than `recheckDays` ago. */
 export const candidatesSql = `WITH top AS (
     SELECT DISTINCT t.wallet_ref FROM unnest(ARRAY['1h','6h','24h','7d','30d','All']) AS v(name)
@@ -58,7 +59,7 @@ export const candidatesSql = `WITH top AS (
     CROSS JOIN LATERAL trader_servable_refs(v.name,m.metric) AS t(wallet_ref)
   )
   SELECT '0x'||encode(w.address,'hex') AS address FROM top JOIN agg_wallets w USING (wallet_ref)
-  WHERE NOT EXISTS (SELECT 1 FROM agg_positions p WHERE p.chain_id=4663 AND p.wallet_ref=top.wallet_ref AND p.counterparty_swaps<p.buys+p.sells)
+  WHERE NOT EXISTS (SELECT 1 FROM agg_positions p WHERE p.chain_id=4663 AND p.wallet_ref=top.wallet_ref AND p.counterparty_swaps+p.pooled_swaps<p.buys+p.sells)
     AND NOT EXISTS (SELECT 1 FROM wallet_code_observations c WHERE c.chain_id=4663 AND c.address=w.address
       AND (c.kind='contract' OR c.observed_at>now()-interval '${contractCensusPolicy.recheckDays} days'))
   ORDER BY w.address LIMIT $1`;

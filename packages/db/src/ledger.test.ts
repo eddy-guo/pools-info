@@ -689,6 +689,7 @@ test("applyLedgerBatch needs the writer lock, applies once per content hash, ref
     transfers: 1,
     launches: 0,
     attributed: 1,
+    pooled: 0,
     unattributed: 0,
     unregisteredSwaps: 0,
     positions: 1,
@@ -963,7 +964,16 @@ test("the database refuses forged identities, wrong scales, other chains and an 
   await refused(
     "UPDATE agg_pool_hours SET low_sqrt_price_x96=high_sqrt_price_x96+1",
   );
-  await refused("UPDATE agg_pool_hours SET buyers=buys+1");
+  // Since migration 027 an hour's buyers or sellers may exceed its buys or
+  // sells (a pooled swap's contributors), so only the sign is refused.
+  await refused("UPDATE agg_pool_hours SET buyers=-1");
+  await refused("UPDATE agg_positions SET pooled_swaps=1");
+  await refused("UPDATE agg_positions SET flags=ARRAY['pooled_route']");
+  await refused("UPDATE agg_positions SET bought_raw=1");
+  await refused("UPDATE agg_positions SET bought_raw=bought_raw+1");
+  await refused("UPDATE agg_live_trades SET attribution='pooled'");
+  await refused("UPDATE agg_batches SET pooled=attributed+1");
+  await refused("UPDATE agg_streams SET fold_rule=3");
   await refused("UPDATE agg_pool_hours SET unattributed=trades+1");
   await refused("UPDATE agg_pool_state SET holders=-1");
   await refused("UPDATE agg_batches SET archive_height=to_block+127");

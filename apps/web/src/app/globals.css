@@ -5775,6 +5775,16 @@ button.icon-button:disabled {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* The rule-change disclosure takes the row's left side and yields to the
+   Still held figure on a narrow phone rather than widening the row. */
+.wallet-positions-context > .wallet-rule-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Positions and launches never fail on their own (the whole page does); a
    wallet's positions answer shorter than the reservation releases it with
    the rows it does not fill (answeredRowCount). The Trades tab reads from a

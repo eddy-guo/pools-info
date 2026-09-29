@@ -226,6 +226,13 @@ export const ledgerRules: LedgerRules = {
   router: contracts.router,
 };
 export type LedgerMode = "pass" | "tip";
+/** The attribution rule a stream's whole history is folded under (migration
+ * 027): 1 leaves a pooled swap unattributed, 2 attributes it pro rata to its
+ * contributors (`LedgerRules.pooledSwaps`). Fixed when the stream is created
+ * and read by the writer on every batch; a rule change is a re-fold into a
+ * fresh ledger, never an update of a live stream. */
+export type LedgerFoldRule = 1 | 2;
+export const ledgerFoldRules: readonly LedgerFoldRule[] = [1, 2];
 export interface LedgerStreamState {
   start: number;
   cursor: number | null;
@@ -234,6 +241,10 @@ export interface LedgerStreamState {
   head: number | null;
   headTimestamp: number | null;
   mode: LedgerMode;
+  foldRule: LedgerFoldRule;
+  /** When readers started serving the stream under its rule (unix seconds),
+   * set at the swap-in and disclosed on the wallet page; null until then. */
+  foldRuleSince: number | null;
 }
 /** A launch the caller registered in indexed_pools for this range; the ledger
  * verifies the registration and counts it into the batch's evidence. */
@@ -270,7 +281,9 @@ export interface LedgerApplied {
   swaps: number;
   transfers: number;
   launches: number;
+  /** Swaps attributed to a wallet, the pooled ones (rule 2) among them. */
   attributed: number;
+  pooled: number;
   unattributed: number;
   unregisteredSwaps: number;
   positions: number;
@@ -370,21 +383,43 @@ function streamState(row: Record<string, unknown>): LedgerStreamState {
     head: n(row.head_block),
     headTimestamp: n(row.head_timestamp),
     mode: row.mode as LedgerMode,
+    foldRule: Number(row.fold_rule) as LedgerFoldRule,
+    foldRuleSince: n(row.fold_rule_since),
   };
 }
 const streamSelect =
-  "SELECT start_block,cursor_block,encode(cursor_hash,'hex') AS cursor_hash,cursor_timestamp,head_block,head_timestamp,mode FROM agg_streams WHERE chain_id=4663 AND stream_key=$1";
+  "SELECT start_block,cursor_block,encode(cursor_hash,'hex') AS cursor_hash,cursor_timestamp,head_block,head_timestamp,mode,fold_rule,fold_rule_since FROM agg_streams WHERE chain_id=4663 AND stream_key=$1";
+/** The stream row, created under `rule` when it does not exist yet: the
+ * main stream under the rule named (rule 1 when none is), the crowd stream
+ * under the main stream's rule, since the two share one ledger. An existing
+ * stream keeps the rule it was created with, and naming a different one is
+ * refused (`ledger_fold_rule_mismatch`) rather than folding two rules into
+ * one history; so is a crowd stream under a rule the main stream is not. */
 export async function ensureLedgerStream(
   db: Client,
   mode: LedgerMode = "pass",
   key: LedgerStreamKey = ledgerStream.key,
+  rule?: LedgerFoldRule,
 ) {
   if (mode !== "pass" && mode !== "tip") throw Error("ledger_invalid_mode");
+  if (rule !== undefined && !ledgerFoldRules.includes(rule))
+    throw Error("ledger_invalid_fold_rule");
   await db.query(
-    "INSERT INTO agg_streams(chain_id,stream_key,start_block,mode) VALUES (4663,$1,$2,$3) ON CONFLICT DO NOTHING",
-    [checkedKey(key), ledgerStream.start, mode],
+    `INSERT INTO agg_streams(chain_id,stream_key,start_block,mode,fold_rule)
+     VALUES (4663,$1,$2,$3,coalesce($4::smallint,
+       CASE WHEN $1=$5 THEN NULL ELSE (SELECT fold_rule FROM agg_streams WHERE chain_id=4663 AND stream_key=$5) END,1))
+     ON CONFLICT DO NOTHING`,
+    [checkedKey(key), ledgerStream.start, mode, rule ?? null, ledgerStream.key],
   );
-  return readLedgerStream(db, key);
+  const state = await readLedgerStream(db, key);
+  if (rule !== undefined && state.foldRule !== rule)
+    throw Error("ledger_fold_rule_mismatch");
+  if (key !== ledgerStream.key) {
+    const main = await db.query(streamSelect, [ledgerStream.key]);
+    if (main.rowCount && Number(main.rows[0].fold_rule) !== state.foldRule)
+      throw Error("ledger_fold_rule_mismatch");
+  }
+  return state;
 }
 export async function readLedgerStream(
   db: Client,
@@ -590,12 +625,19 @@ export async function applyLedgerBatch(
         transfers: batch.transfers.length + (batch.claims?.length ?? 0),
         launches: batch.launches.length,
         attributed: 0,
+        pooled: 0,
         unattributed: 0,
         unregisteredSwaps: 0,
         positions: 0,
         newWallets: 0,
       };
     }
+    // The stream's own rule, never the deployment's: the ledger keeps the
+    // rule it was built under (migration 027).
+    const rules: LedgerRules = {
+      ...ledgerRules,
+      pooledSwaps: stream.foldRule >= 2,
+    };
     const expectedFrom =
       stream.cursor === null ? stream.start : stream.cursor + 1;
     if (
@@ -671,7 +713,7 @@ export async function applyLedgerBatch(
       return planLedgerBatch(
         { swaps: [], transfers: claims, registry: [pool] },
         {
-          ...ledgerRules,
+          ...rules,
           infrastructure: [
             claims[0].auction,
             ...crowdStrategies.map((s) => s.strategy),
@@ -683,19 +725,21 @@ export async function applyLedgerBatch(
     const events = [
       ...planLedgerBatch(
         { swaps, transfers, registry: [...byPool.values()] },
-        ledgerRules,
+        rules,
       ),
       ...claimEvents,
     ].sort(logOrder);
     const keys = ledgerKeys(events);
-    const attributed = events.filter((e) => e.kind === "swap").length,
+    const pooled = events.filter((e) => e.kind === "pooled_swap").length,
+      attributed =
+        events.filter((e) => e.kind === "swap").length + pooled,
       unattributed = events.filter(
         (e) => e.kind === "unattributed_swap",
       ).length;
     // The batch row first: the journal and the live trades reference it.
     await db.query(
-      `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes)
-       VALUES (4663,$1,$2,$3,decode($4,'hex'),decode($5,'hex'),$6,$7,$8,decode($9,'hex'),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      `INSERT INTO agg_batches(chain_id,stream_key,to_block,from_block,from_parent_hash,block_hash,to_timestamp,archive_height,registry_pools,content_hash,query,pages,swaps,transfers,launches,attributed,unattributed,unregistered_swaps,requests,bytes,pooled)
+       VALUES (4663,$1,$2,$3,decode($4,'hex'),decode($5,'hex'),$6,$7,$8,decode($9,'hex'),$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         key,
         batch.to,
@@ -716,6 +760,7 @@ export async function applyLedgerBatch(
         unregisteredSwaps,
         batch.requests,
         batch.bytes,
+        pooled,
       ],
     );
     const poolRef = (poolId: string) => byPool.get(poolId)!.ref;
@@ -820,6 +865,9 @@ export async function applyLedgerBatch(
           sells: num(r.sells),
           wrapperSwaps: num(r.wrapper_swaps),
           counterpartySwaps: num(r.counterparty_swaps),
+          pooledSwaps: num(r.pooled_swaps),
+          boughtRaw: nullable(r.bought_raw, big),
+          soldRaw: nullable(r.sold_raw, big),
           cycleOpenedAt: nullable(r.cycle_opened_at, num),
           cycleGain: nullable(r.cycle_gain_wei, big),
           closedCycles: nullable(r.closed_cycles, num),
@@ -964,9 +1012,9 @@ export async function applyLedgerBatch(
       [...applied.changed.positions].map((k) => state.positions.get(k)!),
     ))
       await db.query(
-        `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,cycle_opened_at,cycle_gain_wei,closed_cycles,flash_cycles,shortest_cycle_seconds,first_block,last_block,last_timestamp,supported,flags)
-         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,quantity_raw numeric,cost_wei numeric,invested_wei numeric,proceeds_wei numeric,disposed_cost_wei numeric,realized_wei numeric,inflow_raw numeric,outflow_raw numeric,outflow_cost_wei numeric,buys int,sells int,wrapper_swaps int,counterparty_swaps int,cycle_opened_at bigint,cycle_gain_wei numeric,closed_cycles int,flash_cycles int,shortest_cycle_seconds bigint,first_block bigint,last_block bigint,last_timestamp bigint,supported boolean,flags text[])
-         ON CONFLICT (chain_id,pool_ref,wallet_ref) DO UPDATE SET quantity_raw=EXCLUDED.quantity_raw,cost_wei=EXCLUDED.cost_wei,invested_wei=EXCLUDED.invested_wei,proceeds_wei=EXCLUDED.proceeds_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,realized_wei=EXCLUDED.realized_wei,inflow_raw=EXCLUDED.inflow_raw,outflow_raw=EXCLUDED.outflow_raw,outflow_cost_wei=EXCLUDED.outflow_cost_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,wrapper_swaps=EXCLUDED.wrapper_swaps,counterparty_swaps=EXCLUDED.counterparty_swaps,cycle_opened_at=EXCLUDED.cycle_opened_at,cycle_gain_wei=EXCLUDED.cycle_gain_wei,closed_cycles=EXCLUDED.closed_cycles,flash_cycles=EXCLUDED.flash_cycles,shortest_cycle_seconds=EXCLUDED.shortest_cycle_seconds,first_block=EXCLUDED.first_block,last_block=EXCLUDED.last_block,last_timestamp=EXCLUDED.last_timestamp,supported=EXCLUDED.supported,flags=EXCLUDED.flags`,
+        `INSERT INTO agg_positions(chain_id,pool_ref,wallet_ref,quantity_raw,cost_wei,invested_wei,proceeds_wei,disposed_cost_wei,realized_wei,inflow_raw,outflow_raw,outflow_cost_wei,buys,sells,wrapper_swaps,counterparty_swaps,pooled_swaps,bought_raw,sold_raw,cycle_opened_at,cycle_gain_wei,closed_cycles,flash_cycles,shortest_cycle_seconds,first_block,last_block,last_timestamp,supported,flags)
+         SELECT 4663,r.* FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,quantity_raw numeric,cost_wei numeric,invested_wei numeric,proceeds_wei numeric,disposed_cost_wei numeric,realized_wei numeric,inflow_raw numeric,outflow_raw numeric,outflow_cost_wei numeric,buys int,sells int,wrapper_swaps int,counterparty_swaps int,pooled_swaps int,bought_raw numeric,sold_raw numeric,cycle_opened_at bigint,cycle_gain_wei numeric,closed_cycles int,flash_cycles int,shortest_cycle_seconds bigint,first_block bigint,last_block bigint,last_timestamp bigint,supported boolean,flags text[])
+         ON CONFLICT (chain_id,pool_ref,wallet_ref) DO UPDATE SET quantity_raw=EXCLUDED.quantity_raw,cost_wei=EXCLUDED.cost_wei,invested_wei=EXCLUDED.invested_wei,proceeds_wei=EXCLUDED.proceeds_wei,disposed_cost_wei=EXCLUDED.disposed_cost_wei,realized_wei=EXCLUDED.realized_wei,inflow_raw=EXCLUDED.inflow_raw,outflow_raw=EXCLUDED.outflow_raw,outflow_cost_wei=EXCLUDED.outflow_cost_wei,buys=EXCLUDED.buys,sells=EXCLUDED.sells,wrapper_swaps=EXCLUDED.wrapper_swaps,counterparty_swaps=EXCLUDED.counterparty_swaps,pooled_swaps=EXCLUDED.pooled_swaps,bought_raw=EXCLUDED.bought_raw,sold_raw=EXCLUDED.sold_raw,cycle_opened_at=EXCLUDED.cycle_opened_at,cycle_gain_wei=EXCLUDED.cycle_gain_wei,closed_cycles=EXCLUDED.closed_cycles,flash_cycles=EXCLUDED.flash_cycles,shortest_cycle_seconds=EXCLUDED.shortest_cycle_seconds,first_block=EXCLUDED.first_block,last_block=EXCLUDED.last_block,last_timestamp=EXCLUDED.last_timestamp,supported=EXCLUDED.supported,flags=EXCLUDED.flags`,
         [
           JSON.stringify(
             chunk.map((p) => ({
@@ -985,6 +1033,9 @@ export async function applyLedgerBatch(
               sells: p.sells,
               wrapper_swaps: p.wrapperSwaps,
               counterparty_swaps: p.counterpartySwaps,
+              pooled_swaps: p.pooledSwaps,
+              bought_raw: p.boughtRaw === null ? null : p.boughtRaw.toString(),
+              sold_raw: p.soldRaw === null ? null : p.soldRaw.toString(),
               cycle_opened_at: p.cycleOpenedAt,
               cycle_gain_wei:
                 p.cycleGain === null ? null : p.cycleGain.toString(),
@@ -1209,6 +1260,7 @@ export async function applyLedgerBatch(
       transfers: batch.transfers.length + (batch.claims?.length ?? 0),
       launches: batch.launches.length,
       attributed,
+      pooled,
       unattributed,
       unregisteredSwaps,
       positions: applied.changed.positions.size,

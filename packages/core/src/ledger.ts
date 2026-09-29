@@ -16,12 +16,16 @@ export type LedgerFlag =
   | "unattributed_outflow"
   | "wrapper_route"
   | "counterparty_route"
+  | "pooled_route"
   | "unknown_basis"
   | "unattributed_swap_activity";
-/** Flags a supported position may carry: they describe, they never exclude. */
+/** Flags a supported position may carry: they describe, they never exclude.
+ * `pooled_route` marks a position with a swap attributed pro rata through a
+ * pooled transaction (fold rule 2, `LedgerRules.pooledSwaps`). */
 export const ledgerInformationalFlags: readonly LedgerFlag[] = [
   "wrapper_route",
   "counterparty_route",
+  "pooled_route",
 ];
 /** Flags that exclude a position: its finances are never served. The ledger
  * vouches for a position it witnessed end to end, swap by swap. Tokens that
@@ -38,7 +42,14 @@ export const ledgerExcludingFlags: readonly LedgerFlag[] = [
   "unknown_basis",
   "unattributed_swap_activity",
 ];
-export type LedgerAttribution = "initiator" | "counterparty" | "unattributed";
+/** How a swap in the live ring reached a wallet: `pooled` is a swap split
+ * pro rata over its contributors (fold rule 2), which the ring keeps as one
+ * row without a wallet, as it keeps an unattributed one. */
+export type LedgerAttribution =
+  | "initiator"
+  | "counterparty"
+  | "pooled"
+  | "unattributed";
 export type LedgerSide = "buy" | "sell";
 
 /** Addresses the attribution rule treats as infrastructure. The manager and
@@ -48,6 +59,16 @@ export interface LedgerRules {
   manager: string;
   router: string;
   infrastructure?: readonly string[];
+  /** Fold rule 2 (docs/AGGREGATE-LEDGER.md, "Pooled swaps", decided 29 Sep
+   * 2026): a swap no single address covers, whose token moved in the swap's
+   * direction for two or more addresses, none against it, and for exactly
+   * the swapped amount in all, is attributed to each of them pro rata by the
+   * token it moved (`pooledSwapShares`). Under rule 1 (unset or false) such
+   * a swap stays unattributed and every mover is excluded. A stream folds
+   * under one rule for its whole history: the writer reads the stream's
+   * rule and never a deployment's default, so the rule a ledger was built
+   * under is the rule it keeps. */
+  pooledSwaps?: boolean;
 }
 /** One registered PoolManager Swap log joined to its transaction. */
 export interface LedgerSwap {
@@ -107,6 +128,13 @@ interface SwapQuote {
   tick: number;
   initiator: string;
 }
+/** One contributor's part of a pooled swap: the token it moved into (a sell)
+ * or out of (a buy) the swap, and its share of the swap's ETH leg. */
+export interface LedgerPooledShare {
+  wallet: string;
+  tokenRaw: bigint;
+  ethWei: bigint;
+}
 /** Position-level effects of a batch, in application order. */
 export type LedgerEvent =
   | (LogSite &
@@ -115,6 +143,16 @@ export type LedgerEvent =
         poolId: string;
         wallet: string;
         attribution: "initiator" | "counterparty";
+        wrapper: boolean;
+      })
+  | (LogSite &
+      SwapQuote & {
+        kind: "pooled_swap";
+        poolId: string;
+        /** The contributors in first-appearance order; their token amounts
+         * sum to tokenRaw and their shares to ethWei. One trade for the pool,
+         * one swap per contributor for the wallets. */
+        shares: LedgerPooledShare[];
         wrapper: boolean;
       })
   | (LogSite &
@@ -147,6 +185,15 @@ export interface LedgerPosition {
   sells: number;
   wrapperSwaps: number;
   counterpartySwaps: number;
+  /** Swaps attributed pro rata through a pooled transaction (rule 2). */
+  pooledSwaps: number;
+  /** Token units bought and sold through attributed swaps, so an average
+   * entry or exit price is exact (invested / bought, proceeds / sold). Null
+   * together on a position written before these were folded (migration
+   * 027), and a later swap leaves them null: a total from then on would read
+   * as the whole history. A position created since starts at zero. */
+  boughtRaw: bigint | null;
+  soldRaw: bigint | null;
   cycleOpenedAt: number | null;
   cycleGain: bigint | null;
   /** Cycles closed by a sale since hold times are folded, those held under
@@ -332,7 +379,15 @@ type CheckedTransfer = LogSite & {
  * in the transaction are inflows at zero cost or outflows with basis removal.
  * A transaction with two swaps of one pool, or without a single candidate,
  * leaves the swap unattributed and marks every address whose balance of the
- * token moved in it; nothing of that transaction is applied.
+ * token moved in it; nothing of that transaction is applied. Under rule 2
+ * (`rules.pooledSwaps`) a swap without a single candidate is first tried as
+ * a pooled swap: two or more addresses moved the token in the swap's
+ * direction, none against it, and together exactly the swapped amount (a
+ * batch-sell contract collecting many wallets' tokens and selling them in
+ * one swap, or one buy fanned out to many); each is attributed its own
+ * movement with its `pooledSwapShares` share of the ETH leg, and no residual
+ * movement is left. The initiator is one contributor among the others when
+ * it moved tokens and nothing otherwise, as under rule 1.
  * Swaps apply before residual transfers; transactions in block order, both in
  * log order. */
 export function planLedgerBatch(
@@ -341,6 +396,7 @@ export function planLedgerBatch(
 ): LedgerEvent[] {
   const manager = address(rules.manager, "manager"),
     router = address(rules.router, "router");
+  const pooled = rules.pooledSwaps === true;
   const infrastructure = new Set([
     manager,
     ledgerZeroAddress,
@@ -504,7 +560,29 @@ export function planLedgerBatch(
           ? candidates[0]
           : null;
       if (beneficiary === null) {
-        events.push(unattributed(s, moved));
+        const shares = pooled ? pooledContributions(s, moved, net, sign) : null;
+        if (shares === null) {
+          events.push(unattributed(s, moved));
+          continue;
+        }
+        events.push({
+          kind: "pooled_swap",
+          txHash: s.txHash,
+          logIndex: s.logIndex,
+          block: s.block,
+          blockHash: s.blockHash,
+          timestamp: s.timestamp,
+          poolId: s.poolId,
+          shares,
+          wrapper: s.wrapper,
+          side: s.side,
+          ethWei: s.ethWei,
+          tokenRaw: s.tokenRaw,
+          sqrtPriceX96: s.sqrtPriceX96,
+          liquidity: s.liquidity,
+          tick: s.tick,
+          initiator: s.initiator,
+        });
         continue;
       }
       events.push({
@@ -547,6 +625,81 @@ export function planLedgerBatch(
   return events;
 }
 
+/** Rule 2's pooled swap, or null: every address whose balance of the token
+ * moved did so in the swap's direction, there are at least two, and their
+ * movements sum to exactly the swapped amount. A movement against the
+ * direction, a total the swap does not account for (a mint, a burn, a fee
+ * taken in tokens) or a single mover leaves the swap to rule 1's outcome. */
+function pooledContributions(
+  s: CheckedSwap,
+  moved: readonly string[],
+  net: Map<string, bigint>,
+  sign: bigint,
+): LedgerPooledShare[] | null {
+  if (moved.length < 2) return null;
+  const contributors: { wallet: string; tokenRaw: bigint }[] = [];
+  let total = 0n;
+  for (const a of moved) {
+    const tokenRaw = net.get(a)! * sign;
+    if (tokenRaw <= 0n) return null;
+    contributors.push({ wallet: a, tokenRaw });
+    total += tokenRaw;
+  }
+  if (total !== s.tokenRaw) return null;
+  return pooledSwapShares(s.ethWei, s.tokenRaw, contributors);
+}
+/** Each contributor's share of a pooled swap's ETH leg, in the contributors'
+ * order (rule 2's rounding rule): the integer part of
+ * `ethWei * tokenRaw_i / tokenRaw`, and the wei those parts leave (fewer
+ * than there are contributors) handed one each to the contributors whose
+ * exact share lost the most to truncation, the lower address first among
+ * equal losses, so the shares sum to `ethWei` exactly and the same rows give
+ * the same shares everywhere. The token amounts must sum to `tokenRaw`. */
+export function pooledSwapShares(
+  ethWei: bigint,
+  tokenRaw: bigint,
+  contributors: readonly { wallet: string; tokenRaw: bigint }[],
+): LedgerPooledShare[] {
+  let moved = 0n;
+  for (const c of contributors) {
+    if (c.tokenRaw <= 0n) throw Error("ledger_invalid_pooled_share");
+    moved += c.tokenRaw;
+  }
+  if (contributors.length < 2 || ethWei <= 0n || moved !== tokenRaw)
+    throw Error("ledger_invalid_pooled_swap");
+  const shares = contributors.map((c) => {
+    const exact = ethWei * c.tokenRaw;
+    return {
+      wallet: c.wallet,
+      tokenRaw: c.tokenRaw,
+      ethWei: exact / tokenRaw,
+      lost: exact % tokenRaw,
+    };
+  });
+  let left = ethWei - shares.reduce((sum, s) => sum + s.ethWei, 0n);
+  const byLoss = [...shares].sort((a, b) =>
+    a.lost !== b.lost
+      ? a.lost > b.lost
+        ? -1
+        : 1
+      : a.wallet < b.wallet
+        ? -1
+        : a.wallet > b.wallet
+          ? 1
+          : 0,
+  );
+  for (const s of byLoss) {
+    if (left === 0n) break;
+    s.ethWei += 1n;
+    left--;
+  }
+  return shares.map(({ wallet, tokenRaw, ethWei }) => ({
+    wallet,
+    tokenRaw,
+    ethWei,
+  }));
+}
+
 /** The rows the events can touch; a wallet's first block is the earliest event
  * that names it. */
 export function ledgerKeys(events: readonly LedgerEvent[]): LedgerKeys {
@@ -562,20 +715,29 @@ export function ledgerKeys(events: readonly LedgerEvent[]): LedgerKeys {
     positions.set(positionKey(poolId, w), { poolId, wallet: w });
     wallets.set(w, Math.min(wallets.get(w) ?? block, block));
   };
+  const walletHour = (w: string, poolId: string, hour: number) =>
+    walletHours.set(walletHourKey(w, poolId, hour), {
+      wallet: w,
+      poolId,
+      hour,
+    });
   for (const e of events) {
     pools.add(e.poolId);
     if (e.kind === "unattributed_swap") {
       for (const w of e.wallets) wallet(e.poolId, w, e.block);
+    } else if (e.kind === "pooled_swap") {
+      for (const s of e.shares) wallet(e.poolId, s.wallet, e.block);
     } else wallet(e.poolId, e.wallet, e.block);
-    if (e.kind === "swap" || e.kind === "unattributed_swap") {
+    if (
+      e.kind === "swap" ||
+      e.kind === "unattributed_swap" ||
+      e.kind === "pooled_swap"
+    ) {
       const hour = ledgerHour(e.timestamp);
       poolHours.set(poolHourKey(e.poolId, hour), { poolId: e.poolId, hour });
-      if (e.kind === "swap")
-        walletHours.set(walletHourKey(e.wallet, e.poolId, hour), {
-          wallet: e.wallet,
-          poolId: e.poolId,
-          hour,
-        });
+      if (e.kind === "swap") walletHour(e.wallet, e.poolId, hour);
+      if (e.kind === "pooled_swap")
+        for (const s of e.shares) walletHour(s.wallet, e.poolId, hour);
     }
   }
   return {
@@ -608,6 +770,9 @@ function newPosition(
     sells: 0,
     wrapperSwaps: 0,
     counterpartySwaps: 0,
+    pooledSwaps: 0,
+    boughtRaw: 0n,
+    soldRaw: 0n,
     cycleOpenedAt: null,
     cycleGain: null,
     closedCycles: 0,
@@ -668,6 +833,7 @@ function refreshFlags(p: LedgerPosition) {
   if (p.outflow > 0n) flags.add("unattributed_outflow");
   if (p.wrapperSwaps > 0) flags.add("wrapper_route");
   if (p.counterpartySwaps > 0) flags.add("counterparty_route");
+  if (p.pooledSwaps > 0) flags.add("pooled_route");
   p.flags = [...flags].sort();
   p.supported = !p.flags.some((f) => ledgerExcludingFlags.includes(f));
 }
@@ -683,7 +849,9 @@ function basisOf(p: LedgerPosition, tokenRaw: bigint) {
  * `unknown_basis`, as foldTrades does; any inflow or outflow excludes it
  * (`zero_cost_inflow`, `unattributed_outflow`), the figures folding on for
  * the position's own row; an unattributed swap excludes every position its
- * token touched. Inventory cycles open when the quantity leaves zero and
+ * token touched, and a pooled swap (rule 2) folds each contributor's share
+ * as its own swap while counting once for the pool. Inventory cycles open
+ * when the quantity leaves zero and
  * close on the sell that returns it to zero, exactly the closures
  * walletMetrics derives; an outflow that empties the inventory ends the cycle
  * without a closure, since a transfer out is not a sale. */
@@ -730,15 +898,12 @@ export function applyLedgerEvents(
       p.cycleGain = 0n;
     }
   };
-  const walletHour = (e: LedgerEvent & { wallet: string }) => {
-    const hour = ledgerHour(e.timestamp);
-    const key = walletHourKey(e.wallet, e.poolId, hour);
+  const walletHour = (wallet: string, poolId: string, timestamp: number) => {
+    const hour = ledgerHour(timestamp);
+    const key = walletHourKey(wallet, poolId, hour);
     let row = state.walletHours.get(key);
     if (!row)
-      state.walletHours.set(
-        key,
-        (row = newWalletHour(e.wallet, e.poolId, hour)),
-      );
+      state.walletHours.set(key, (row = newWalletHour(wallet, poolId, hour)));
     out.changed.walletHours.add(key);
     return row;
   };
@@ -828,8 +993,127 @@ export function applyLedgerEvents(
     row.lastTradeTimestamp = e.timestamp;
     out.changed.pools.add(e.poolId);
   };
+  /** One attributed swap, or one contributor's share of a pooled swap,
+   * folded into the wallet's position and hour row: foldTrades made
+   * incremental. The pool's own rows are the caller's, since a pooled swap
+   * is one trade for the pool and one swap per contributor for the wallets. */
+  const fill = (
+    at: LogSite,
+    poolId: string,
+    hour: LedgerPoolHour,
+    wallet: string,
+    side: LedgerSide,
+    ethWei: bigint,
+    tokenRaw: bigint,
+    route: { wrapper: boolean; counterparty: boolean; pooled: boolean },
+  ) => {
+    const p = position(poolId, wallet, at);
+    const row = walletHour(wallet, poolId, at.timestamp);
+    if (route.wrapper) p.wrapperSwaps++;
+    if (route.counterparty) p.counterpartySwaps++;
+    if (route.pooled) p.pooledSwaps++;
+    row.volume += ethWei;
+    if (side === "buy") {
+      if (row.buys++ === 0) hour.buyers++;
+      const before = p.quantity;
+      p.quantity += tokenRaw;
+      p.cost += ethWei;
+      p.invested += ethWei;
+      p.buys++;
+      if (p.boughtRaw !== null) p.boughtRaw += tokenRaw;
+      openCycle(p, before, at);
+      refreshFlags(p);
+      if (p.supported) {
+        row.supportedTrades++;
+        row.spent += ethWei;
+      }
+      return;
+    }
+    if (row.sells++ === 0) hour.sellers++;
+    p.sells++;
+    p.proceeds += ethWei;
+    if (p.soldRaw !== null) p.soldRaw += tokenRaw;
+    const sale: LedgerSale = {
+      txHash: at.txHash,
+      logIndex: at.logIndex,
+      block: at.block,
+      blockHash: at.blockHash,
+      timestamp: at.timestamp,
+      poolId,
+      wallet,
+      ethWei,
+      tokenRaw,
+      realized: 0n,
+      disposedCost: 0n,
+      closedGain: null,
+      closedHoldSeconds: null,
+      supported: false,
+    };
+    if (tokenRaw > p.quantity) {
+      // Unknown basis: the whole held cost is disposed, the position is
+      // excluded and its inventory emptied, as foldTrades does.
+      sale.disposedCost = p.cost;
+      sale.realized = ethWei - p.cost;
+      p.disposedCost += p.cost;
+      p.realized += ethWei - p.cost;
+      p.quantity = 0n;
+      p.cost = 0n;
+      p.cycleOpenedAt = null;
+      p.cycleGain = null;
+      refreshFlags(p);
+      exclude(p, "unknown_basis");
+      out.sales.push(sale);
+      return;
+    }
+    const basis = basisOf(p, tokenRaw);
+    const gain = ethWei - basis;
+    p.quantity -= tokenRaw;
+    p.cost -= basis;
+    p.disposedCost += basis;
+    p.realized += gain;
+    sale.disposedCost = basis;
+    sale.realized = gain;
+    if (p.cycleGain !== null) p.cycleGain += gain;
+    const closed = p.quantity === 0n && p.cycleOpenedAt !== null;
+    const flash =
+      closed && at.timestamp - p.cycleOpenedAt! < ledgerFlashHoldSeconds;
+    if (closed) {
+      sale.closedGain = p.cycleGain;
+      sale.closedHoldSeconds = at.timestamp - p.cycleOpenedAt!;
+      p.cycleOpenedAt = null;
+      p.cycleGain = null;
+      if (p.closedCycles !== null && p.flashCycles !== null) {
+        p.closedCycles++;
+        if (flash) p.flashCycles++;
+        p.shortestCycleSeconds = Math.min(
+          p.shortestCycleSeconds ?? sale.closedHoldSeconds,
+          sale.closedHoldSeconds,
+        );
+      }
+    }
+    refreshFlags(p);
+    sale.supported = p.supported;
+    out.sales.push(sale);
+    if (!p.supported) return;
+    row.supportedTrades++;
+    row.proceeds += ethWei;
+    row.disposedCost += basis;
+    row.realized += gain;
+    if (row.best === null || gain > row.best) row.best = gain;
+    if (closed) {
+      row.closures++;
+      row.holdSeconds += sale.closedHoldSeconds!;
+      if (flash && row.flashClosures !== null) row.flashClosures++;
+      if (sale.closedGain! > 0n) row.wins++;
+      else if (sale.closedGain! < 0n) row.losses++;
+    }
+  };
   for (const e of events) {
-    if (e.kind === "swap" || e.kind === "unattributed_swap") {
+    if (
+      e.kind === "swap" ||
+      e.kind === "unattributed_swap" ||
+      e.kind === "pooled_swap"
+    ) {
       poolState(e);
       const hour = poolHour(e, e.kind === "unattributed_swap");
       out.liveTrades.push({
@@ -844,110 +1128,37 @@ export function applyLedgerEvents(
         ethWei: e.ethWei,
         tokenRaw: e.tokenRaw,
         sqrtPriceX96: e.sqrtPriceX96,
-        attribution: e.kind === "swap" ? e.attribution : "unattributed",
+        attribution:
+          e.kind === "swap"
+            ? e.attribution
+            : e.kind === "pooled_swap"
+              ? "pooled"
+              : "unattributed",
       });
       if (e.kind === "unattributed_swap") {
         for (const w of e.wallets)
           exclude(position(e.poolId, w, e), "unattributed_swap_activity");
         continue;
       }
-      const p = position(e.poolId, e.wallet, e);
-      const row = walletHour(e);
-      if (e.wrapper) p.wrapperSwaps++;
-      if (e.attribution === "counterparty") p.counterpartySwaps++;
-      row.volume += e.ethWei;
-      if (e.side === "buy") {
-        if (row.buys++ === 0) hour.buyers++;
-        const before = p.quantity;
-        p.quantity += e.tokenRaw;
-        p.cost += e.ethWei;
-        p.invested += e.ethWei;
-        p.buys++;
-        openCycle(p, before, e);
-        refreshFlags(p);
-        if (p.supported) {
-          row.supportedTrades++;
-          row.spent += e.ethWei;
-        }
-        continue;
-      }
-      if (row.sells++ === 0) hour.sellers++;
-      p.sells++;
-      p.proceeds += e.ethWei;
-      const sale: LedgerSale = {
-        txHash: e.txHash,
-        logIndex: e.logIndex,
-        block: e.block,
-        blockHash: e.blockHash,
-        timestamp: e.timestamp,
-        poolId: e.poolId,
-        wallet: e.wallet,
-        ethWei: e.ethWei,
-        tokenRaw: e.tokenRaw,
-        realized: 0n,
-        disposedCost: 0n,
-        closedGain: null,
-        closedHoldSeconds: null,
-        supported: false,
-      };
-      if (e.tokenRaw > p.quantity) {
-        // Unknown basis: the whole held cost is disposed, the position is
-        // excluded and its inventory emptied, as foldTrades does.
-        sale.disposedCost = p.cost;
-        sale.realized = e.ethWei - p.cost;
-        p.disposedCost += p.cost;
-        p.realized += e.ethWei - p.cost;
-        p.quantity = 0n;
-        p.cost = 0n;
-        p.cycleOpenedAt = null;
-        p.cycleGain = null;
-        refreshFlags(p);
-        exclude(p, "unknown_basis");
-        out.sales.push(sale);
-        continue;
-      }
-      const basis = basisOf(p, e.tokenRaw);
-      const gain = e.ethWei - basis;
-      p.quantity -= e.tokenRaw;
-      p.cost -= basis;
-      p.disposedCost += basis;
-      p.realized += gain;
-      sale.disposedCost = basis;
-      sale.realized = gain;
-      if (p.cycleGain !== null) p.cycleGain += gain;
-      const closed = p.quantity === 0n && p.cycleOpenedAt !== null;
-      const flash =
-        closed && e.timestamp - p.cycleOpenedAt! < ledgerFlashHoldSeconds;
-      if (closed) {
-        sale.closedGain = p.cycleGain;
-        sale.closedHoldSeconds = e.timestamp - p.cycleOpenedAt!;
-        p.cycleOpenedAt = null;
-        p.cycleGain = null;
-        if (p.closedCycles !== null && p.flashCycles !== null) {
-          p.closedCycles++;
-          if (flash) p.flashCycles++;
-          p.shortestCycleSeconds = Math.min(
-            p.shortestCycleSeconds ?? sale.closedHoldSeconds,
-            sale.closedHoldSeconds,
+      if (e.kind === "pooled_swap") {
+        for (const share of e.shares)
+          fill(
+            e,
+            e.poolId,
+            hour,
+            share.wallet,
+            e.side,
+            share.ethWei,
+            share.tokenRaw,
+            { wrapper: e.wrapper, counterparty: false, pooled: true },
           );
-        }
+        continue;
       }
-      refreshFlags(p);
-      sale.supported = p.supported;
-      out.sales.push(sale);
-      if (!p.supported) continue;
-      row.supportedTrades++;
-      row.proceeds += e.ethWei;
-      row.disposedCost += basis;
-      row.realized += gain;
-      if (row.best === null || gain > row.best) row.best = gain;
-      if (closed) {
-        row.closures++;
-        row.holdSeconds += sale.closedHoldSeconds!;
-        if (flash && row.flashClosures !== null) row.flashClosures++;
-        if (sale.closedGain! > 0n) row.wins++;
-        else if (sale.closedGain! < 0n) row.losses++;
-      }
+      fill(e, e.poolId, hour, e.wallet, e.side, e.ethWei, e.tokenRaw, {
+        wrapper: e.wrapper,
+        counterparty: e.attribution === "counterparty",
+        pooled: false,
+      });
       continue;
     }
     const p = position(e.poolId, e.wallet, e);
@@ -1005,6 +1216,11 @@ export function ledgerIdentitiesHold(p: LedgerPosition) {
       (p.closedCycles === null || p.closedCycles === 0) &&
     (p.flashCycles ?? 0) <= (p.closedCycles ?? 0) &&
     (!p.flashCycles || p.shortestCycleSeconds! < ledgerFlashHoldSeconds) &&
+    p.pooledSwaps > 0 === p.flags.includes("pooled_route") &&
+    (p.boughtRaw === null) === (p.soldRaw === null) &&
+    (p.boughtRaw === null ||
+      p.flags.includes("unknown_basis") ||
+      p.quantity === p.boughtRaw + p.inflow - p.soldRaw! - p.outflow) &&
     p.supported === !p.flags.some((f) => ledgerExcludingFlags.includes(f))
   );
 }

@@ -23,6 +23,13 @@ export interface Position {
   investedWei: Amount;
   buys: number;
   sells: number;
+  /** Token units bought and sold through the position's attributed swaps,
+   * so `investedWei / boughtRaw` and `proceedsWei / soldRaw` are its exact
+   * average entry and exit prices. Served by the ledger route; null where the
+   * fold has not recorded them (a position written before they were folded,
+   * or the frozen accounting tables). */
+  boughtRaw?: Amount | null;
+  soldRaw?: Amount | null;
   flags: string[];
   realizations: { timestamp: number; wei: Amount }[];
   /** Read API rows from the aggregate ledger only. When the open inventory

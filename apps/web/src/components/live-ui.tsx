@@ -23,6 +23,15 @@ export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
   new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
   " UTC";
+/** A calendar day in UTC, "1 Oct 2026": for a date that names a rule, not a
+ * moment. */
+export const utcDay = (seconds: number) =>
+  new Date(seconds * 1000).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 /**
  * An ETH amount under the site's one figure rule (`ethFigure` in
  * `@pools/core`: two decimals from 0.01 ETH, compact from a million, four

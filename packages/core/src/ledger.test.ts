@@ -15,6 +15,7 @@ import {
   ledgerKeys,
   ledgerZeroAddress,
   planLedgerBatch,
+  pooledSwapShares,
   positionKey,
   type LedgerEvent,
   type LedgerPosition,
@@ -545,15 +546,18 @@ function transfer(
   };
 }
 const registry = [{ poolId: pool, token }];
-function plan(swaps: LedgerSwap[], transfers: LedgerTransfer[]) {
-  return planLedgerBatch({ swaps, transfers, registry }, rules);
+/** Rule 2: pooled swaps attributed pro rata (docs/AGGREGATE-LEDGER.md). */
+const pooledRules = { ...rules, pooledSwaps: true };
+function plan(swaps: LedgerSwap[], transfers: LedgerTransfer[], r = rules) {
+  return planLedgerBatch({ swaps, transfers, registry }, r);
 }
 function run(
   swaps: LedgerSwap[],
   transfers: LedgerTransfer[],
   state = createLedgerState(),
+  r = rules,
 ) {
-  const events = plan(swaps, transfers);
+  const events = plan(swaps, transfers, r);
   const keys = ledgerKeys(events);
   const application = applyLedgerEvents(state, events);
   stateHolds(state);
@@ -1566,4 +1570,516 @@ test("an unattributed outflow excludes the position: the basis leaves with the t
     [1, 9n * E, 0, 0n],
   );
   stateHolds(state);
+});
+
+// Fold rule 2: a pooled swap (docs/AGGREGATE-LEDGER.md, "Pooled swaps"). A
+// batch-sell contract collects many wallets' tokens and sells them in one
+// PoolManager swap, so no single address's net movement covers the swap;
+// rule 1 leaves it unattributed and excludes every contributor, rule 2
+// attributes each contributor its own movement with its pro-rata share of
+// the ETH leg. The contract nets to zero (a pass-through) and is no wallet.
+const batchSeller = addr(0x900);
+/** A pooled sell: each contributor sends its tokens to the batch contract,
+ * which sends the total to the manager in one swap. */
+function pooledSell(
+  n: number,
+  ethWei: bigint,
+  contributions: [string, bigint][],
+  fields: Omit<Partial<LedgerSwap>, "side" | "ethWei" | "tokenRaw"> = {},
+) {
+  const total = contributions.reduce((sum, [, v]) => sum + v, 0n);
+  const swaps = [
+    swap(n, {
+      side: "sell",
+      ethWei,
+      tokenRaw: total,
+      initiator: batchSeller,
+      txTo: batchSeller,
+      logIndex: 90,
+      ...fields,
+    }),
+  ];
+  const transfers = [
+    ...contributions.map(([w, v], i) => transfer(n, 11 + i, w, batchSeller, v)),
+    transfer(n, 80, batchSeller, rules.manager, total),
+  ];
+  return { swaps, transfers };
+}
+/** Two contributors' buys at blocks n and n + 1, so both hold tokens. */
+function bought(state: LedgerState, n: number, holders: [string, bigint][]) {
+  for (const [i, [w, v]] of holders.entries())
+    run(
+      [swap(n + i, { side: "buy", ethWei: v * E, tokenRaw: v, initiator: w })],
+      [transfer(n + i, 11, rules.manager, w, v)],
+      state,
+    );
+}
+
+test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves it unattributed and excludes every contributor", () => {
+  const a = addr(0x901),
+    b = addr(0x902);
+  // 10 ETH plus 7 wei for 100 tokens: the shares cannot be exact, so the
+  // remainder rule decides the last wei (b's exact share lost 0.8 wei, a's
+  // 0.2, so b gets it).
+  const ethWei = E * 10n + 7n;
+  const sell = pooledSell(3, ethWei, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  // Rule 1, the default: unattributed, both excluded, nothing applied.
+  const old = createLedgerState();
+  bought(old, 1, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const before = run(sell.swaps, sell.transfers, old);
+  assert.deepEqual(
+    before.events.map((e) => e.kind),
+    ["unattributed_swap"],
+  );
+  assert.deepEqual((before.events[0] as { wallets: string[] }).wallets, [
+    a,
+    b,
+  ]);
+  for (const w of [a, b]) {
+    assert.equal(position(old, w).supported, false);
+    assert.deepEqual(position(old, w).flags, ["unattributed_swap_activity"]);
+    assert.equal(position(old, w).sells, 0);
+  }
+  assert.equal(before.application.liveTrades[0].attribution, "unattributed");
+  // Rule 2: one pooled swap, each contributor's own movement, the shares
+  // summing to the ETH leg exactly.
+  const state = createLedgerState();
+  bought(state, 1, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const { events, application } = run(
+    sell.swaps,
+    sell.transfers,
+    state,
+    pooledRules,
+  );
+  assert.equal(events.length, 1);
+  const e = events[0];
+  assert.equal(e.kind, "pooled_swap");
+  if (e.kind !== "pooled_swap") throw Error("unreachable");
+  assert.deepEqual(e.shares, [
+    { wallet: a, tokenRaw: 60n, ethWei: E * 6n + 4n },
+    { wallet: b, tokenRaw: 40n, ethWei: E * 4n + 3n },
+  ]);
+  assert.equal(e.wrapper, true, "tx.to was the batch contract, not the router");
+  assert.equal(e.initiator, batchSeller);
+  // The batch contract is a pass-through, never a wallet.
+  assert.equal(state.positions.has(positionKey(pool, batchSeller)), false);
+  // Each contributor sold its own tokens at its share: a bought 60 for 60
+  // ETH and sold them for 6 ETH and 4 wei.
+  const pa = position(state, a),
+    pb = position(state, b);
+  assert.deepEqual(
+    [pa.quantity, pa.cost, pa.proceeds, pa.disposedCost, pa.realized],
+    [0n, 0n, E * 6n + 4n, E * 60n, E * 6n + 4n - E * 60n],
+  );
+  assert.deepEqual(
+    [pb.quantity, pb.proceeds, pb.disposedCost, pb.realized],
+    [0n, E * 4n + 3n, E * 40n, E * 4n + 3n - E * 40n],
+  );
+  for (const p of [pa, pb]) {
+    assert.equal(p.supported, true);
+    assert.deepEqual(p.flags, ["pooled_route", "wrapper_route"]);
+    assert.equal(p.pooledSwaps, 1);
+    assert.equal(p.sells, 1);
+    assert.equal(p.buys, 1);
+    assert.equal(p.closedCycles, 1);
+    assert.ok(ledgerIdentitiesHold(p));
+  }
+  assert.deepEqual([pa.boughtRaw, pa.soldRaw], [60n, 60n]);
+  assert.deepEqual([pb.boughtRaw, pb.soldRaw], [40n, 40n]);
+  // One trade for the pool, one sale per contributor for the wallets: the
+  // hour holds the two buys and the one pooled sell, with two sellers.
+  const hour = state.poolHours.get(`${pool}:${ledgerHour(3000)}`)!;
+  assert.deepEqual(
+    [hour.trades, hour.buys, hour.sells, hour.buyers, hour.sellers, hour.unattributed, hour.volume],
+    [3, 2, 1, 2, 2, 0, E * 100n + ethWei],
+  );
+  assert.equal(state.pools.get(pool)!.trades, 3);
+  assert.equal(state.pools.get(pool)!.volume, E * 100n + ethWei);
+  assert.deepEqual(
+    application.liveTrades.map((t) => [t.wallet, t.attribution, t.ethWei]),
+    [[null, "pooled", ethWei]],
+  );
+  assert.deepEqual(
+    application.sales.map((s) => [s.wallet, s.ethWei, s.tokenRaw, s.supported]),
+    [
+      [a, E * 6n + 4n, 60n, true],
+      [b, E * 4n + 3n, 40n, true],
+    ],
+  );
+  // Each wallet's hour row carries its own share and its closure beside
+  // the buy it made in the same hour.
+  const ha = state.walletHours.get(`${a}:${pool}:${ledgerHour(3000)}`)!;
+  assert.deepEqual(
+    [ha.buys, ha.sells, ha.supportedTrades, ha.proceeds, ha.volume, ha.closures, ha.losses],
+    [1, 1, 2, E * 6n + 4n, E * 66n + 4n, 1, 1],
+  );
+  // Announced by the keys: both positions and both hour rows.
+  const keys = ledgerKeys(events);
+  assert.deepEqual(
+    keys.positions.map((k) => k.wallet).sort(),
+    [a, b].sort(),
+  );
+  assert.equal(keys.walletHours.length, 2);
+});
+
+test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to the largest losses first and the lower address among equal ones", () => {
+  // 10 wei over three equal contributors: 3 each and one wei left, which
+  // the lowest address takes since every exact share lost the same third.
+  const [x, y, z] = [addr(0x903), addr(0x901), addr(0x902)];
+  assert.deepEqual(
+    pooledSwapShares(10n, 3n, [
+      { wallet: x, tokenRaw: 1n },
+      { wallet: y, tokenRaw: 1n },
+      { wallet: z, tokenRaw: 1n },
+    ]).map((s) => [s.wallet, s.ethWei]),
+    [
+      [x, 3n],
+      [y, 4n],
+      [z, 3n],
+    ],
+  );
+  // Fifty contributors of uneven sizes: every share is its exact value
+  // truncated or one wei above, never more, and the total is exact.
+  const contributors = Array.from({ length: 50 }, (_, i) => ({
+    wallet: addr(0x1000 + ((i * 7919) % 50)),
+    tokenRaw: BigInt(1 + ((i * 104729) % 977)) * 10n ** 18n + BigInt(i),
+  }));
+  const tokenRaw = contributors.reduce((sum, c) => sum + c.tokenRaw, 0n);
+  const ethWei = 6000423542526057991n;
+  const shares = pooledSwapShares(ethWei, tokenRaw, contributors);
+  assert.equal(shares.length, 50);
+  assert.equal(
+    shares.reduce((sum, s) => sum + s.ethWei, 0n),
+    ethWei,
+  );
+  let extra = 0n;
+  for (const [i, s] of shares.entries()) {
+    const floor = (ethWei * contributors[i].tokenRaw) / tokenRaw;
+    assert.equal(s.wallet, contributors[i].wallet);
+    assert.equal(s.tokenRaw, contributors[i].tokenRaw);
+    assert.ok(s.ethWei === floor || s.ethWei === floor + 1n);
+    extra += s.ethWei - floor;
+  }
+  assert.ok(extra < 50n);
+  // The same rows give the same shares, whatever order the caller holds them in.
+  const reversed = pooledSwapShares(ethWei, tokenRaw, [...contributors].reverse());
+  assert.deepEqual(
+    [...reversed].sort((a, b) => (a.wallet < b.wallet ? -1 : 1)),
+    [...shares].sort((a, b) => (a.wallet < b.wallet ? -1 : 1)),
+  );
+  // Movements that do not sum to the swapped amount, one contributor, or a
+  // zero ETH leg are refused: the plan never asks.
+  assert.throws(
+    () => pooledSwapShares(10n, 4n, [{ wallet: x, tokenRaw: 1n }, { wallet: y, tokenRaw: 1n }]),
+    /ledger_invalid_pooled_swap/,
+  );
+  assert.throws(
+    () => pooledSwapShares(10n, 1n, [{ wallet: x, tokenRaw: 1n }]),
+    /ledger_invalid_pooled_swap/,
+  );
+  assert.throws(
+    () => pooledSwapShares(10n, 2n, [{ wallet: x, tokenRaw: 2n }, { wallet: y, tokenRaw: 0n }]),
+    /ledger_invalid_pooled_share/,
+  );
+});
+
+test("a pooled swap through the plan: fifty contributors, a pass-through mover, a shortfall, a counter-movement, two swaps of the pool, and a pooled buy", () => {
+  const holders: [string, bigint][] = Array.from({ length: 50 }, (_, i) => [
+    addr(0x2000 + i),
+    BigInt(10 + i),
+  ]);
+  const state = createLedgerState();
+  bought(state, 1, holders);
+  // Fifty contributors: fifty shares, fifty supported sellers, one sell.
+  const fifty = pooledSell(100, E * 7n + 3n, holders);
+  const { events } = run(fifty.swaps, fifty.transfers, state, pooledRules);
+  assert.equal(events[0].kind, "pooled_swap");
+  if (events[0].kind !== "pooled_swap") throw Error("unreachable");
+  assert.equal(events[0].shares.length, 50);
+  assert.equal(
+    events[0].shares.reduce((sum, s) => sum + s.ethWei, 0n),
+    E * 7n + 3n,
+  );
+  for (const [w] of holders) {
+    assert.equal(position(state, w).supported, true);
+    assert.equal(position(state, w).quantity, 0n);
+    assert.equal(position(state, w).pooledSwaps, 1);
+  }
+  const hour = state.poolHours.get(`${pool}:${ledgerHour(100000)}`)!;
+  assert.deepEqual([hour.trades, hour.sells, hour.sellers], [1, 1, 50]);
+
+  // A wallet whose tokens only pass through the transaction (in and out
+  // in the same amount) moved nothing: it is neither a contributor nor
+  // excluded, and no position is opened for it.
+  const a = addr(0x901),
+    b = addr(0x902),
+    relay = addr(0x903);
+  const passed = createLedgerState();
+  bought(passed, 200, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const viaRelay = {
+    swaps: pooledSell(203, E * 10n, [
+      [a, 60n],
+      [b, 40n],
+    ]).swaps,
+    transfers: [
+      transfer(203, 11, a, relay, 60n),
+      transfer(203, 12, relay, batchSeller, 60n),
+      transfer(203, 13, b, batchSeller, 40n),
+      transfer(203, 80, batchSeller, rules.manager, 100n),
+    ],
+  };
+  const relayed = run(viaRelay.swaps, viaRelay.transfers, passed, pooledRules);
+  assert.equal(relayed.events[0].kind, "pooled_swap");
+  assert.deepEqual(
+    (relayed.events[0] as { shares: { wallet: string }[] }).shares.map(
+      (s) => s.wallet,
+    ),
+    [a, b],
+  );
+  assert.equal(passed.positions.has(positionKey(pool, relay)), false);
+  assert.equal(position(passed, a).supported, true);
+
+  // The movements fall short of the swapped amount (the contract kept a
+  // fee in tokens, or the token burned some): rule 2 does not guess who
+  // covers the gap, so the swap stays unattributed and every mover excluded.
+  const short = createLedgerState();
+  bought(short, 300, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const shortfall = {
+    swaps: pooledSell(303, E * 10n, [
+      [a, 60n],
+      [b, 40n],
+    ]).swaps, // tokenRaw 100
+    transfers: [
+      transfer(303, 11, a, batchSeller, 60n),
+      transfer(303, 12, b, batchSeller, 30n),
+      transfer(303, 80, batchSeller, rules.manager, 100n),
+      transfer(303, 81, ledgerZeroAddress, batchSeller, 10n),
+    ],
+  };
+  const gap = run(shortfall.swaps, shortfall.transfers, short, pooledRules);
+  assert.equal(gap.events[0].kind, "unattributed_swap");
+  assert.equal(position(short, a).supported, false);
+  assert.equal(position(short, b).supported, false);
+  assert.equal(position(short, a).quantity, 60n, "nothing was applied");
+
+  // A movement against the swap's direction (a wallet received tokens in
+  // the same sell) leaves the swap unattributed under rule 2 as well.
+  const mixed = createLedgerState();
+  bought(mixed, 400, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const c = addr(0x904);
+  const against = {
+    swaps: pooledSell(403, E * 10n, [
+      [a, 60n],
+      [b, 40n],
+    ]).swaps,
+    transfers: [
+      transfer(403, 11, a, batchSeller, 60n),
+      transfer(403, 12, b, batchSeller, 45n),
+      transfer(403, 13, batchSeller, c, 5n),
+      transfer(403, 80, batchSeller, rules.manager, 100n),
+    ],
+  };
+  const counter = run(against.swaps, against.transfers, mixed, pooledRules);
+  assert.equal(counter.events[0].kind, "unattributed_swap");
+  assert.deepEqual((counter.events[0] as { wallets: string[] }).wallets, [
+    a,
+    b,
+    c,
+  ]);
+
+  // Two swaps of one pool in the transaction: an arbitrage loop, still
+  // unattributed, since no movement can be split between two swaps.
+  const looped = createLedgerState();
+  bought(looped, 500, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const twice = pooledSell(503, E * 10n, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const loop = run(
+    [
+      ...twice.swaps,
+      swap(503, {
+        side: "buy",
+        ethWei: E,
+        tokenRaw: 1n,
+        initiator: batchSeller,
+        logIndex: 95,
+      }),
+    ],
+    [...twice.transfers, transfer(503, 96, rules.manager, batchSeller, 1n)],
+    looped,
+    pooledRules,
+  );
+  assert.deepEqual(
+    loop.events.map((e) => e.kind),
+    ["unattributed_swap", "unattributed_swap"],
+  );
+
+  // A pooled buy: one swap bought for many, the tokens fanned out; each
+  // recipient's position opens at its share of the cost.
+  const fanned = createLedgerState();
+  const buy = run(
+    [
+      swap(600, {
+        side: "buy",
+        ethWei: E * 3n + 1n,
+        tokenRaw: 30n,
+        initiator: batchSeller,
+        txTo: batchSeller,
+      }),
+    ],
+    [
+      transfer(600, 11, rules.manager, batchSeller, 30n),
+      transfer(600, 12, batchSeller, a, 10n),
+      transfer(600, 13, batchSeller, b, 20n),
+    ],
+    fanned,
+    pooledRules,
+  );
+  assert.equal(buy.events[0].kind, "pooled_swap");
+  assert.deepEqual(
+    (buy.events[0] as { shares: unknown[] }).shares,
+    [
+      { wallet: a, tokenRaw: 10n, ethWei: E + 0n },
+      { wallet: b, tokenRaw: 20n, ethWei: E * 2n + 1n },
+    ],
+  );
+  assert.deepEqual(
+    [position(fanned, a).cost, position(fanned, a).quantity, position(fanned, a).boughtRaw],
+    [E, 10n, 10n],
+  );
+  assert.equal(position(fanned, b).cost, E * 2n + 1n);
+  const buyHour = fanned.poolHours.get(`${pool}:${ledgerHour(600000)}`)!;
+  assert.deepEqual([buyHour.buys, buyHour.buyers, buyHour.sellers], [1, 2, 0]);
+  assert.equal(buy.application.liveTrades[0].attribution, "pooled");
+});
+
+test("the initiator of a pooled swap is one contributor among the others, never its beneficiary", () => {
+  const a = addr(0x901),
+    b = addr(0x902);
+  const state = createLedgerState();
+  bought(state, 1, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  // a sends the transaction itself: its share is still its own 60 tokens'
+  // worth, and b's is b's.
+  const sell = pooledSell(
+    3,
+    E * 10n,
+    [
+      [a, 60n],
+      [b, 40n],
+    ],
+    { initiator: a },
+  );
+  const { events, application } = run(sell.swaps, sell.transfers, state, pooledRules);
+  assert.equal(events[0].kind, "pooled_swap");
+  assert.deepEqual(
+    (events[0] as { shares: { wallet: string; ethWei: bigint }[] }).shares.map(
+      (s) => [s.wallet, s.ethWei],
+    ),
+    [
+      [a, E * 6n],
+      [b, E * 4n],
+    ],
+  );
+  assert.equal(application.liveTrades[0].wallet, null);
+  assert.equal(position(state, a).counterpartySwaps, 0);
+  assert.equal(position(state, b).counterpartySwaps, 0);
+  // The same transaction under rule 1 excludes both: the sender is no
+  // beneficiary there either.
+  const old = createLedgerState();
+  bought(old, 1, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  assert.equal(run(sell.swaps, sell.transfers, old).events[0].kind, "unattributed_swap");
+});
+
+test("bought and sold unit totals fold from every attributed swap, stay null on a position from before the fold, and hold the units identity", () => {
+  const state = createLedgerState();
+  run(
+    [swap(1, { side: "buy", ethWei: E, tokenRaw: 100n })],
+    [transfer(1, 11, rules.manager, wallet, 100n)],
+    state,
+  );
+  run(
+    [swap(2, { side: "sell", ethWei: E, tokenRaw: 30n })],
+    [transfer(2, 11, wallet, rules.manager, 30n)],
+    state,
+  );
+  run(
+    [swap(3, { side: "buy", ethWei: E, tokenRaw: 5n })],
+    [transfer(3, 11, rules.manager, wallet, 5n)],
+    state,
+  );
+  const p = position(state, wallet);
+  assert.deepEqual([p.boughtRaw, p.soldRaw, p.quantity], [105n, 30n, 75n]);
+  // An oversell empties the inventory and flags unknown_basis: the totals
+  // keep counting the swaps and the identity is waived by the flag.
+  run(
+    [swap(4, { side: "sell", ethWei: E, tokenRaw: 80n })],
+    [transfer(4, 11, wallet, rules.manager, 80n)],
+    state,
+  );
+  assert.deepEqual([p.boughtRaw, p.soldRaw, p.quantity], [105n, 110n, 0n]);
+  assert.ok(p.flags.includes("unknown_basis"));
+  assert.ok(ledgerIdentitiesHold(p));
+  // A position the fold met before the totals existed keeps them null,
+  // whatever it trades from then on.
+  const legacy = createLedgerState();
+  run(
+    [swap(1, { side: "buy", ethWei: E, tokenRaw: 100n })],
+    [transfer(1, 11, rules.manager, wallet, 100n)],
+    legacy,
+  );
+  position(legacy, wallet).boughtRaw = null;
+  position(legacy, wallet).soldRaw = null;
+  run(
+    [swap(2, { side: "sell", ethWei: E, tokenRaw: 30n })],
+    [transfer(2, 11, wallet, rules.manager, 30n)],
+    legacy,
+  );
+  assert.deepEqual(
+    [position(legacy, wallet).boughtRaw, position(legacy, wallet).soldRaw],
+    [null, null],
+  );
+  assert.ok(ledgerIdentitiesHold(position(legacy, wallet)));
+  // A transfer in or out counts in the identity through inflow and outflow.
+  const moved = createLedgerState();
+  run(
+    [swap(1, { side: "buy", ethWei: E, tokenRaw: 100n })],
+    [transfer(1, 11, rules.manager, wallet, 100n)],
+    moved,
+  );
+  run([], [transfer(2, 11, wallet, addr(0x301), 10n)], moved);
+  run([], [transfer(3, 11, addr(0x301), wallet, 4n)], moved);
+  const m = position(moved, wallet);
+  assert.deepEqual(
+    [m.boughtRaw, m.soldRaw, m.inflow, m.outflow, m.quantity],
+    [100n, 0n, 4n, 10n, 94n],
+  );
+  assert.ok(ledgerIdentitiesHold(m));
 });

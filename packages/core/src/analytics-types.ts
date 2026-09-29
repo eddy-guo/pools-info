@@ -232,6 +232,12 @@ export interface AnalyticsWalletResponse {
   curveSampled?: boolean;
   /** Per-position realization lists are omitted by the SQL aggregate reader. */
   positionRealizationsIncluded?: boolean;
+  /** Since when a sell routed through a pooled swap (many wallets' tokens
+   * sold in one swap by a batch contract) is attributed to each contributor
+   * pro rata by the token it moved (unix seconds, the ledger's swap-in to
+   * fold rule 2): the wallet page's disclosure. Null while pooled sells are
+   * excluded instead (rule 1) and before the swap-in date is recorded. */
+  pooledSwapsAttributedSince: number | null;
 }
 /** The pool's latest price state, the basis of a position's `unrealizedWei`
  * (`GET /v1/wallets/:address/positions/:poolId`). */

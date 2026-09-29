@@ -1049,6 +1049,7 @@ test("the configuration gates the pass, keeps the free-tier pacing floor and ref
       maxRequests: 100000,
       maxRanges: null,
       maxRangeBlocks: 1000000,
+      foldRule: null,
     },
   );
   const on = ledgerPassConfig({
@@ -1222,6 +1223,7 @@ test("the progress counters accumulate per run and per million blocks of history
     unsupportedSwaps: 0,
     transfers: swaps,
     attributed: swaps,
+    pooled: 0,
     unattributed: 0,
     unregisteredSwaps: 0,
     positionsChanged: swaps,
@@ -1297,5 +1299,25 @@ test("the progress counters accumulate per run and per million blocks of history
   assert.equal(
     (replayed.progress as { run: Record<string, number> }).run.ranges,
     3,
+  );
+});
+
+test("LEDGER_FOLD_RULE names the rule a stream the pass creates folds under: 1, 2 or unset", () => {
+  const env = { LEDGER_PASS_ENABLED: "1", ENVIO_API_TOKEN: "t" };
+  assert.equal(ledgerPassConfig(env).foldRule, null);
+  assert.equal(ledgerPassConfig({ ...env, LEDGER_FOLD_RULE: "2" }).foldRule, 2);
+  assert.equal(ledgerPassConfig({ ...env, LEDGER_FOLD_RULE: "1" }).foldRule, 1);
+  for (const value of ["0", "3", "two"])
+    assert.throws(
+      () => ledgerPassConfig({ ...env, LEDGER_FOLD_RULE: value }),
+      /Invalid LEDGER_FOLD_RULE/,
+    );
+  assert.match(
+    ledgerPassSafeError(Error("Invalid LEDGER_FOLD_RULE; expected 1 or 2")),
+    /^ledger_pass_configuration_invalid/,
+  );
+  assert.match(
+    ledgerPassSafeError(Error("ledger_fold_rule_mismatch")),
+    /^ledger_fold_rule_mismatch: the stream is folded under another rule/,
   );
 });

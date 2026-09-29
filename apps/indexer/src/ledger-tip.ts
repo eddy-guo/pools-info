@@ -20,10 +20,12 @@ import {
   refreshLedgerWindows,
   setLedgerMode,
   type Client,
+  type LedgerFoldRule,
   type LedgerWindowsRefreshed,
 } from "@pools/db";
 import {
   integer,
+  ledgerFoldRuleConfig,
   ledgerPassSafeError,
   ledgerRpcUrl,
   reconcileLedgerPass,
@@ -75,6 +77,10 @@ export interface LedgerTipConfig {
   staleMs: number;
   /** The health listener's port: Railway's `PORT`. */
   healthPort: number;
+  /** `LEDGER_FOLD_RULE`, or null when unset: set, the ledger's stream must
+   * be folded under this rule or the loop refuses to extend it (migration
+   * 027). The loop never creates a stream, so it never chooses a rule. */
+  foldRule: LedgerFoldRule | null;
 }
 export const ledgerTipDefaults = Object.freeze({
   /** Blocks per range; a range that completes whole doubles the next one up
@@ -206,6 +212,7 @@ export function ledgerTipConfig(
       86400000,
     ),
     healthPort: integer(env, "PORT", ledgerTipDefaults.healthPort, 1, 65535),
+    foldRule: ledgerFoldRuleConfig(env),
   };
 }
 /** Both gates are required before any authenticated request is built. */
@@ -278,6 +285,8 @@ export interface LedgerTipCycleOptions {
     range: { from: number; to: number; lane?: "crowd" } | null,
   ) => void;
   onMainCommitted?: (cursor: number | null) => void;
+  /** The rule the stream must be folded under, when configured. */
+  foldRule?: LedgerFoldRule;
 }
 /** One cycle: head, reconcile, at most one range, windows. Every write is a
  * committed batch or nothing, so the loop can stop at any point of it. */
@@ -298,7 +307,7 @@ export async function runLedgerTipCycle(
   // A cursor above the archive height (a lagging HyperSync node) cannot be
   // read back yet; wait until the archive passes it.
   if (saved.cursor <= height) {
-    const reconciled = await reconcileLedgerPass(db, client, log);
+    const reconciled = await reconcileLedgerPass(db, client, log, options.foldRule);
     options.onMainCommitted?.(reconciled.ledger.cursor);
     options.signal?.throwIfAborted();
     const result = await runLedgerRange(db, client, {
@@ -395,7 +404,7 @@ export const ledgerTipExitCodes: Record<LedgerTipStop, number> = {
 /** Conditions a restart cannot clear: the ledger refuses to change until an
  * operator looks. */
 const inspection =
-  /^ledger_(walkback_unavailable|batch_conflict|pass_streams_diverged|tip_requires_pass|tip_ledger_incomplete|stream_missing|unknown_ancestor|launch_stream_identity)$/;
+  /^ledger_(walkback_unavailable|batch_conflict|pass_streams_diverged|tip_requires_pass|tip_ledger_incomplete|stream_missing|unknown_ancestor|launch_stream_identity|fold_rule_mismatch)$/;
 /** The loop's progress as `/health` reports it (ledger-tip-health.ts):
  * each committed cycle, each failed one with its back-off, and the stop. */
 export interface LedgerTipObserver {
@@ -426,6 +435,9 @@ export interface LedgerTipOptions {
   throttled?: () => number;
   /** Waits between cycles; tests replace it. */
   wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** The rule the ledger must be folded under, when configured: a stream
+   * under another rule is refused for inspection rather than extended. */
+  foldRule?: LedgerFoldRule;
 }
 export interface LedgerTipSummary {
   stopped: LedgerTipStop;
@@ -616,6 +628,18 @@ export async function runLedgerTip(
     log({ event: "ledger_tip_refused", error: ledgerTipSafeError(error) });
     return finish("inspection", error);
   }
+  // A ledger folded under another rule than the deployment names is never
+  // extended under this one: a rule change is a re-fold into a fresh ledger.
+  if (options.foldRule !== undefined && stream.foldRule !== options.foldRule) {
+    const error = Error("ledger_fold_rule_mismatch");
+    log({
+      event: "ledger_tip_refused",
+      error: ledgerTipSafeError(error),
+      foldRule: stream.foldRule,
+      configured: options.foldRule,
+    });
+    return finish("inspection", error);
+  }
   if (stream.mode !== "tip") {
     await setLedgerMode(db, "tip");
     log({ event: "ledger_tip_took_over", cursor: stream.cursor });
@@ -624,6 +648,7 @@ export async function runLedgerTip(
     event: "ledger_tip_started",
     cursor: stream.cursor,
     cursorTimestamp: stream.timestamp,
+    foldRule: stream.foldRule,
     rangeBlocks: options.rangeBlocks,
     maxRangeBlocks: options.maxRangeBlocks,
     maxPages: options.maxPages,
@@ -703,6 +728,7 @@ export async function runLedgerTip(
         onMainCommitted: (cursor) => {
           committedCursor = cursor;
         },
+        foldRule: options.foldRule,
       });
     } catch (error) {
       inFlight = null;
@@ -861,6 +887,7 @@ export async function runLedgerTip(
           swaps: x.swaps,
           transfers: x.transfers,
           attributed: x.attributed,
+          pooled: x.pooled,
           unattributed: x.unattributed,
           positionsChanged: x.positionsChanged,
           requests: x.requests,
@@ -878,6 +905,7 @@ export async function runLedgerTip(
         unsupportedSwaps: r.unsupportedSwaps,
         transfers: r.transfers,
         attributed: r.attributed,
+        pooled: r.pooled,
         unattributed: r.unattributed,
         unregisteredSwaps: r.unregisteredSwaps,
         swapSelection: r.swapSelection,
@@ -933,7 +961,7 @@ export async function runLedgerTip(
  * nothing and makes no request. */
 export async function ledgerTipStatus(db: Client) {
   const stream = await db.query(
-    `SELECT cursor_block::text,cursor_timestamp::text,head_block::text,head_timestamp::text,checked_at,mode,
+    `SELECT cursor_block::text,cursor_timestamp::text,head_block::text,head_timestamp::text,checked_at,mode,fold_rule,fold_rule_since::text,
        (SELECT collected_at FROM agg_batches b WHERE b.chain_id=s.chain_id AND b.stream_key=s.stream_key ORDER BY to_block DESC LIMIT 1) AS last_batch_at
      FROM agg_streams s WHERE chain_id=4663 AND stream_key='ledger:agg:v1'`,
   );
@@ -967,6 +995,8 @@ export async function ledgerTipStatus(db: Client) {
           checkedAt: s.checked_at,
           lastBatchAt: s.last_batch_at,
           mode: s.mode,
+          foldRule: Number(s.fold_rule),
+          foldRuleSince: n(s.fold_rule_since),
         }
       : null,
     ring: {

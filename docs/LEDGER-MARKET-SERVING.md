@@ -392,7 +392,12 @@ response is the accounting reader's, field for field; what its values mean:
   the window's own figures per pool, summed from `agg_wallet_hours` from the
   refresh's own first hour so they sum to the summary's; `position` is the
   fold's lifetime state (`quantity`, `costWei`, lifetime `realizedWei`,
-  `investedWei`, `proceedsWei`, `buys`, `sells`) with its times: `openedAt`,
+  `investedWei`, `proceedsWei`, `buys`, `sells`, and since migration 027
+  `boughtRaw` and `soldRaw`, the token units bought and sold through the
+  position's attributed swaps, so `investedWei / boughtRaw` and
+  `proceedsWei / soldRaw` are its exact average entry and exit prices, both
+  null on a position written before the fold recorded them, never a partial
+  count) with its times: `openedAt`,
   when its open inventory cycle began (`cycle_opened_at`, unix seconds; null
   while flat), and `firstHour` and `lastHour`, the UTC hours of its first and
   last attributed swap as unix seconds at the hour's start, from the same
@@ -429,6 +434,14 @@ response is the accounting reader's, field for field; what its values mean:
   accounting tables, which would put two worlds on one page.
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
+- **`pooledSwapsAttributedSince`** is the wallet page's disclosure of the
+  rule change: the unix time from which a sell routed through a pooled swap
+  is attributed to each contributor pro rata by the token it moved
+  (`agg_streams.fold_rule_since`, set at the swap-in of a ledger folded
+  under rule 2), or null while the served ledger folds under rule 1 or the
+  swap-in date is not recorded yet. The page states the day in UTC beside
+  the positions list, in the fixed-height row that holds Still held, and
+  renders nothing there for null.
 
 Failure behaviour is the board's: a ledger with no cursor or no pool hour
 answers as with `broad`; a window without a refresh row answers 503

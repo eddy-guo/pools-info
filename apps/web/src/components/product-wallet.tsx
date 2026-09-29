@@ -22,6 +22,7 @@ import {
   WindowTabs,
   useWindow,
   utc,
+  utcDay,
   explorer,
 } from "./live-ui";
 import {
@@ -407,6 +408,26 @@ export function ProductWallet({ address }: { address: string }) {
                       Realized: {period} · Holding, cost, unrealized: lifetime
                     </p>
                     <div className="wallet-positions-context">
+                      {/* The rule-change disclosure: the date from which a
+                        sell routed through a pooled swap (many wallets'
+                        tokens sold in one swap by a batch contract) is
+                        attributed to each contributor, read from the
+                        response as the ledger's own swap-in date and never
+                        hard-coded here; nothing while the read serves none.
+                        The slot shares this fixed-height row, so the line's
+                        arrival moves nothing, and it is keyed to remount
+                        rather than rewrite text in place. */}
+                      <span className="wallet-rule-note">
+                        {data?.pooledSwapsAttributedSince != null && (
+                          <span
+                            key={data.pooledSwapsAttributedSince}
+                            title="Sells routed through a pooled swap are attributed to each contributor by the tokens it moved, from this date on. Before it, such positions were excluded."
+                          >
+                            Pooled sells attributed from{" "}
+                            {utcDay(data.pooledSwapsAttributedSince)}
+                          </span>
+                        )}
+                      </span>
                       <span>Still held</span>
                       <strong data-pending={!data}>
                         {!data ? (

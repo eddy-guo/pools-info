@@ -36,8 +36,10 @@ import {
   rewind,
   setLedgerMode,
   walkBackLedger,
+  ledgerFoldRules,
   type Client,
   type LedgerBatch,
+  type LedgerFoldRule,
   type LedgerStreamState,
   type Stream,
 } from "@pools/db";
@@ -68,6 +70,23 @@ export interface LedgerPassConfig {
    * this; a cut range resets it to rangeBlocks. Equal to rangeBlocks keeps
    * every range at the base size. */
   maxRangeBlocks: number;
+  /** The fold rule a stream this run creates is folded under
+   * (`LEDGER_FOLD_RULE`, migration 027); null leaves a new stream under rule
+   * 1 and an existing stream under its own. Set, it must match an existing
+   * stream's rule or the run refuses (`ledger_fold_rule_mismatch`): a ledger
+   * is never folded under two rules. */
+  foldRule: LedgerFoldRule | null;
+}
+/** `LEDGER_FOLD_RULE`: 1 or 2, or null when unset. */
+export function ledgerFoldRuleConfig(env: NodeJS.ProcessEnv) {
+  const raw = env.LEDGER_FOLD_RULE;
+  if (raw === undefined || raw === "") return null;
+  if (!/^[12]$/.test(raw.trim()))
+    throw Error("Invalid LEDGER_FOLD_RULE; expected 1 or 2");
+  const rule = Number(raw.trim()) as LedgerFoldRule;
+  if (!ledgerFoldRules.includes(rule))
+    throw Error("Invalid LEDGER_FOLD_RULE; expected 1 or 2");
+  return rule;
 }
 export const ledgerPassDefaults = Object.freeze({
   /** 30 requests per minute: the free tier's measured sustained rate with
@@ -169,6 +188,7 @@ export function ledgerPassConfig(
       ),
       ledgerPassPolicy.maxRangeBlocks,
     ),
+    foldRule: ledgerFoldRuleConfig(env),
   };
 }
 /** Both gates are required before any authenticated request is built. */
@@ -227,8 +247,9 @@ export async function reconcileLedgerPass(
   db: Client,
   client: HyperSyncClient,
   log: Log = quiet,
+  foldRule?: LedgerFoldRule,
 ): Promise<{ ledger: LedgerStreamState; launches: Stream }> {
-  let ledger = await ensureLedgerStream(db, "pass");
+  let ledger = await ensureLedgerStream(db, "pass", ledgerStream.key, foldRule);
   let launches = await ensureLedgerLaunchStream(db);
   if (ledger.cursor !== null) {
     const canonical = await canonicalHash(client, ledger.cursor);
@@ -276,6 +297,9 @@ export interface LedgerRangeProgress {
   unsupportedSwaps: number;
   transfers: number;
   attributed: number;
+  /** Of attributed, the swaps split pro rata over their contributors (fold
+   * rule 2; always 0 under rule 1). */
+  pooled: number;
   unattributed: number;
   /** Swaps outside the registry: the manager-wide selection's, dropped
    * before the batch, and any the writer found unregistered at commit. */
@@ -462,6 +486,7 @@ export async function runLedgerRange(
     unsupportedSwaps: collection.unsupportedSwaps,
     transfers: collection.transfers.length,
     attributed: applied.attributed,
+    pooled: applied.pooled,
     unattributed: applied.unattributed,
     unregisteredSwaps: collection.unregisteredSwaps + applied.unregisteredSwaps,
     positionsChanged: applied.positions,
@@ -626,6 +651,7 @@ export class LedgerPassProgress {
       unsupportedSwaps: p.unsupportedSwaps,
       transfers: p.transfers,
       attributed: p.attributed,
+      pooled: p.pooled,
       unattributed: p.unattributed,
       unregisteredSwaps: p.unregisteredSwaps,
       positionsChanged: p.positionsChanged,
@@ -688,6 +714,9 @@ export interface LedgerPassOptions {
   maxRanges?: number;
   /** Throttled retries seen by the client's onRetry, read per range. */
   throttled?: () => number;
+  /** The rule a stream this run creates folds under; an existing stream's
+   * must match. Unset accepts the stream's own (rule 1 for a new one). */
+  foldRule?: LedgerFoldRule;
 }
 export interface LedgerPassSummary {
   stopped:
@@ -801,7 +830,12 @@ export async function runLedgerPass(
     }
     return summary;
   };
-  const initial = await ensureLedgerStream(db, "pass");
+  const initial = await ensureLedgerStream(
+    db,
+    "pass",
+    ledgerStream.key,
+    options.foldRule,
+  );
   if (initial.mode === "tip") {
     summary.stopped = "handed_over";
     log({
@@ -826,7 +860,7 @@ export async function runLedgerPass(
   let ledger: LedgerStreamState;
   let height: number;
   try {
-    ({ ledger } = await reconcileLedgerPass(db, client, log));
+    ({ ledger } = await reconcileLedgerPass(db, client, log, options.foldRule));
     height = await client.height();
   } catch (error) {
     if (classifyStop(error)) return finish(null);
@@ -838,6 +872,7 @@ export async function runLedgerPass(
     event: "ledger_pass_started",
     cursor: ledger.cursor,
     start: ledger.start,
+    foldRule: ledger.foldRule,
     archiveHeight: height,
     safeTo: height - hypersyncPolicy.safeDistance,
     rangeBlocks: options.rangeBlocks,
@@ -1099,8 +1134,13 @@ export async function compareLedgerSelections(
     local: run(local),
   };
 }
-export async function ledgerPassStatus(db: Client) {
-  const ledger = await ensureLedgerStream(db, "pass");
+export async function ledgerPassStatus(db: Client, foldRule?: LedgerFoldRule) {
+  const ledger = await ensureLedgerStream(
+    db,
+    "pass",
+    ledgerStream.key,
+    foldRule,
+  );
   const launches = await ensureLedgerLaunchStream(db);
   return {
     ledger,
@@ -1132,6 +1172,10 @@ export function ledgerPassSafeError(e: unknown): string {
     )
   )
     return `ledger_pass_configuration_invalid: ${message}`;
+  if (message === "Invalid LEDGER_FOLD_RULE; expected 1 or 2")
+    return `ledger_pass_configuration_invalid: ${message}`;
+  if (message === "ledger_fold_rule_mismatch")
+    return "ledger_fold_rule_mismatch: the stream is folded under another rule than LEDGER_FOLD_RULE names; a rule change is a re-fold into a fresh ledger";
   if (/^ledger_[a-z_]+$/.test(message)) return message;
   if (/^(Wrong chain|Invalid chain head)$/.test(message))
     return "rpc_endpoint_rejected: the JSON-RPC endpoint is not chain 4663";

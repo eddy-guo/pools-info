@@ -258,6 +258,9 @@ export async function readWallet(
             proceedsWei: String(p.proceeds_wei),
             buys: p.buys,
             sells: p.sells,
+            // The frozen accounting tables keep no unit totals.
+            boughtRaw: null,
+            soldRaw: null,
             flags: [],
             realizations: [],
           }
@@ -273,5 +276,8 @@ export async function readWallet(
     curve,
     launches: launches.slice(0, 500).map(catalogPool),
     launchesTruncated: launches.length > 500,
+    // The accounting tables predate the ledger's rules; no pooled swap is
+    // attributed on this path.
+    pooledSwapsAttributedSince: null,
   };
 }

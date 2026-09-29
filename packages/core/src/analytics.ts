@@ -593,6 +593,8 @@ function walletResult(
     curve,
     launches: model.catalog.filter((p) => p.launchSender === address),
     window,
+    // The preloaded model folds no pooled swap.
+    pooledSwapsAttributedSince: null,
   };
   // Unknown address lookups do not create an unbounded visitor cache.
   if (model.walletAudits.has(address)) memo.set(address, result);

@@ -35,6 +35,8 @@ test("ledger windows are whole hours ending with the newest hour, and 1h is the 
     startBlock: 0,
     newestHour: 497121,
     indexedAt: "2026-09-17T09:03:00.000Z",
+    foldRule: 1,
+    foldRuleSince: null,
   };
   assert.equal(ledgerWindowHour(cut, "24h"), 497121 - 23);
   assert.equal(ledgerWindowHour(cut, "6h"), 497121 - 5);

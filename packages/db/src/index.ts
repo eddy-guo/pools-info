@@ -833,6 +833,8 @@ export {
   setLedgerMode,
   observeLedgerHead,
   pruneLedgerLiveTrades,
+  ledgerFoldRules,
+  type LedgerFoldRule,
   type LedgerMode,
   type LedgerStreamKey,
   type LedgerStreamState,
