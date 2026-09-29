@@ -118,6 +118,15 @@ export const cardEth = (wei: string, signed = false) => {
 const weiTone = (wei: string): CardStat["tone"] =>
   BigInt(wei) > 0n ? "up" : BigInt(wei) < 0n ? "down" : "text";
 /**
+ * The trade count the card prints and gates on: the wallet's trades on
+ * supported positions, the figure the wallet page's Trades tile and every
+ * board column print. `tradeCount` also counts the swaps on the positions
+ * the PnL excludes, so a card built on it disagreed with the page it was
+ * shared from (0x68bb…5713, 7d, 29 Sep 2026: card 26, page and board 23).
+ */
+export const cardTradeCount = (wallet: AnalyticsWalletSummary) =>
+  wallet.supportedTradeCount;
+/**
  * The three footer stats. With notional hidden the card shows no amount at all,
  * only the percentage, the record and the count; with it shown the traded
  * volume joins them (the realized amount already sits beside the percentage).
@@ -146,7 +155,11 @@ export function cardStats(
           value: `${wallet.wins}W · ${wallet.losses}L`,
           tone: "text",
         },
-    { label: "Trades", value: count.format(wallet.tradeCount), tone: "text" },
+    {
+      label: "Trades",
+      value: count.format(cardTradeCount(wallet)),
+      tone: "text",
+    },
     {
       label: "Positions",
       value: count.format(wallet.supportedPositionCount),

@@ -11,6 +11,7 @@ import {
   cardHero,
   cardStats,
   cardTopPosition,
+  cardTradeCount,
   identiconCells,
   readCardWallet,
   type CardExportTrio,
@@ -452,7 +453,7 @@ export async function GET(
     );
     const w = result.wallet,
       hero = options.design === "export" ? cardExportHero(w) : cardHero(w);
-    if (!w.tradeCount || !hero)
+    if (!cardTradeCount(w) || !hero)
       return new Response("No saved PnL for this wallet", { status: 404 });
     const preset = cardPresets[options.preset].color,
       top = cardTopPosition(result.positions),
