@@ -65,6 +65,12 @@ server; `PLAYWRIGHT_WEB_PORT` pins it.
 `pnpm check` runs lint, strict typechecks, accounting/ingestion/read tests and the
 production build. `TEST_DATABASE_URL=... pnpm test:db` runs isolated Postgres
 integration tests, while `pnpm test:e2e` checks desktop and mobile product flows.
+Serialize these heavy suites across worktree homes with `scripts/validate-lock.sh`,
+for example `scripts/validate-lock.sh pnpm test:e2e`; the wrapper releases the
+shared lock as soon as the command exits. To check the protocol manually, run two
+wrappers with a short `sleep` and confirm they run in sequence; create the lock
+with a nonexistent pid and confirm it is reclaimed; then hold it with a live pid,
+interrupt a waiting wrapper, and confirm the holder lock remains.
 Main pushes deploy through existing Vercel/Railway connections after CI. Verify
 actual live service checkpoints and product responses before declaring a rollout
 successful; test fixtures alone do not establish production data coverage.
