@@ -392,6 +392,7 @@ test("share card figures are signed, amount-free without notional and never plac
     supportedTradeCount: 85,
     supportedPositionCount: 14,
     excludedPositionCount: 0,
+    excludedByFlag: null,
     bestWei: "11471084300772102",
     avgHold: null,
     last: null,

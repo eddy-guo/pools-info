@@ -61,9 +61,11 @@ export const pools = {
 };
 export const wallet = (n: number) => addr(0x10000 + n);
 export const W = Object.fromEntries(
-  [1, 2, 3, 4, 6, 7, 8, 9].map((n) => [n, wallet(n)]),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 11].map((n) => [n, wallet(n)]),
 ) as Record<number, `0x${string}`>;
 export const WRAPPER = wallet(10);
+/** The batch-sell contract: it sells what its callers pooled in one swap. */
+const BATCH = wallet(12);
 /** A sqrt price of 2^68: 2^192 / 2^136 = 2^56 wei per raw unit. */
 export const sqrtQ = (2n ** 68n).toString();
 
@@ -177,6 +179,60 @@ export class Rows {
         value: via.toString(),
       },
     );
+    return this;
+  }
+  /** A pooled sell in one transaction: each contributor sends its tokens to
+   * the batch contract, which sells the lot to the manager in one swap it
+   * initiates. No address's net movement covers the swap (the contract
+   * nets to zero), so the ledger leaves it unattributed and excludes every
+   * contributor's position with `unattributed_swap_activity`. */
+  pooledSell(
+    block: number,
+    contributors: (readonly [string, bigint])[],
+    eth: bigint,
+    pool: (typeof pools)[keyof typeof pools] = pools.P,
+  ) {
+    const i = this.logs.get(block) ?? 0;
+    const total = contributors.reduce((n, [, tokens]) => n + tokens, 0n);
+    this.logs.set(block, i + contributors.length + 2);
+    const site = {
+      txHash: hash(BigInt(block) * 100000n + BigInt(i)),
+      block,
+      blockHash: hash(block),
+      timestamp: ts(block),
+    };
+    contributors.forEach(([who, tokens], k) =>
+      this.transfers.push({
+        ...site,
+        logIndex: i + k,
+        token: pool.token,
+        from: who,
+        to: BATCH,
+        value: tokens.toString(),
+      }),
+    );
+    this.transfers.push({
+      ...site,
+      logIndex: i + contributors.length,
+      token: pool.token,
+      from: BATCH,
+      to: ledgerRules.manager,
+      value: total.toString(),
+    });
+    this.swaps.push({
+      ...site,
+      logIndex: i + contributors.length + 1,
+      poolId: pool.id,
+      token: pool.token,
+      initiator: BATCH,
+      txTo: BATCH,
+      side: "sell",
+      ethWei: eth.toString(),
+      tokenRaw: total.toString(),
+      sqrtPriceX96: "1000",
+      liquidity: "5",
+      tick: 1,
+    });
     return this;
   }
 }

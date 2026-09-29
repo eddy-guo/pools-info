@@ -539,6 +539,9 @@ function walletResult(
     supportedTradeCount: supportedTrades,
     supportedPositionCount: supportedCount,
     excludedPositionCount: excludedCount,
+    // The accounting audit's flags are not the ledger's, so it classifies
+    // no exclusion by ledger flag.
+    excludedByFlag: null,
     bestWei: best?.toString() ?? null,
     avgHold: closures ? holdSeconds / closures : null,
     last,

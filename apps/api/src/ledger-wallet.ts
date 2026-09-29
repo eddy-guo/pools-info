@@ -9,6 +9,7 @@ import { readLaunches, walletSummary } from "./accounting-read";
 import type { ReadQuery } from "./catalog-read";
 import { catalogPool } from "./explore-read";
 import {
+  excludedByFlagCounts,
   ledgerCoverage,
   ledgerWindowRefresh,
   ledgerRealizedRanksSql,
@@ -161,11 +162,14 @@ const firstHourSql = `SELECT min(h.hour) AS hour FROM agg_wallet_hours h JOIN ag
 /** The wallet's position counts and last activity as the window refresh
  * computes them (`positionStats` in `packages/db/src/ledger-windows.ts`), for
  * a wallet the ledger knows that has no hour in the window and so no row in
- * it: its window figures are then zero and its rank none. */
+ * it: its window figures are then zero and its rank none. The excluded
+ * count's breakdown by flag is counted in the same pass, as `summaryColumns`
+ * counts it beside a window row. */
 const positionStatsSql = `SELECT count(*) FILTER (WHERE supported AND buys+sells>0)::int AS supported_count,
     count(*) FILTER (WHERE NOT supported)::int AS excluded_count,
+    ${excludedByFlagCounts("p")} AS excluded_by_flag,
     (max(last_timestamp) FILTER (WHERE buys+sells>0))::text AS last
-  FROM agg_positions WHERE chain_id=4663 AND wallet_ref=$1`;
+  FROM agg_positions p WHERE chain_id=4663 AND wallet_ref=$1`;
 
 /** Additive read-time attribution from retained raw transfer endpoints and the
  * append-only positive-evidence registry. The registry is optional until the

@@ -1,8 +1,9 @@
-import type {
-  AnalyticsCoverage,
-  AnalyticsLeaderboardOptions,
-  AnalyticsLeaderboardResponse,
-  LiveWindow,
+import {
+  ledgerExcludingFlags,
+  type AnalyticsCoverage,
+  type AnalyticsLeaderboardOptions,
+  type AnalyticsLeaderboardResponse,
+  type LiveWindow,
 } from "@pools/core";
 import { walletSummary } from "./accounting-read";
 import type { ReadQuery } from "./catalog-read";
@@ -29,18 +30,42 @@ export const ledgerLeaderboardPolicy = Object.freeze({
   rankedWallets: 100,
 });
 
+/** The excluded positions of the `agg_positions` rows aliased `p`, counted
+ * per excluding flag into one jsonb object keyed by `ledgerExcludingFlags`
+ * (`walletSummary` serves it as `excludedByFlag`): a position carrying
+ * several flags counts under each, a flag no position carries is 0. */
+export const excludedByFlagCounts = (p: string) =>
+  `jsonb_build_object(${ledgerExcludingFlags
+    .map(
+      (f) =>
+        `'${f}',count(*) FILTER (WHERE NOT ${p}.supported AND '${f}'=ANY(${p}.flags))`,
+    )
+    .join(",")})`;
+/** Those counts for the wallet `wallet` names (a `wallet_ref` expression),
+ * read live from `agg_positions` as the row is served: one
+ * `agg_positions_wallet` range whose included `supported` column keeps the
+ * supported rows off the heap. A correlated scalar subquery, not a join, so
+ * a page of board rows runs it once per served row off the index and the
+ * planner never hashes the whole table for it. */
+export const excludedByFlagSql = (wallet: string) =>
+  `(SELECT ${excludedByFlagCounts("p")} FROM agg_positions p
+    WHERE p.chain_id=4663 AND p.wallet_ref=${wallet} AND NOT p.supported)`;
 /** Every column `walletSummary` reads, under its names, from a window row
  * `x`. Unrealized is not a board figure (it needs a price per position; the
  * wallet reader marks them), the window's cutoff is the cursor its rows were
  * summed to, and every row spans its whole window, since the ledger folds
- * every swap since launch. */
+ * every swap since launch. The position counts are the row's, summed at its
+ * refresh; their breakdown by flag is counted from the wallet's positions as
+ * the row is served, so it can run past the row's total by the positions
+ * excluded since the refresh (about a minute) besides the multi-flag ones. */
 export const summaryColumns = (
   address: string,
 ) => `'0x'||encode(${address},'hex') AS wallet,x.realized_wei::text AS realized,x.net_wei::text AS net,
   x.volume_wei::text AS volume,x.disposed_cost_wei::text AS disposed_cost,NULL::text AS unrealized,
   x.trades AS trade_count,x.supported_trades,x.wins,x.losses,x.closures,x.hold_seconds::text AS hold_seconds,
   x.best_wei::text AS best,x.last_timestamp::text AS last,x.supported_positions AS supported_count,
-  x.excluded_positions AS excluded_count,true AS complete_window`;
+  x.excluded_positions AS excluded_count,${excludedByFlagSql("x.wallet_ref")} AS excluded_by_flag,
+  true AS complete_window`;
 /** The window's refresh row: the cursor its rows were summed to. A window
  * the tip loop has not refreshed since the ledger's last walk-back has no
  * rows to stand on and answers a retryable 503 until the next refresh

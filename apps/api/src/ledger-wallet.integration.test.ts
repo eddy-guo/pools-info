@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import type {
-  AnalyticsLeaderboardResponse,
-  AnalyticsWalletPosition,
-  AnalyticsWalletResponse,
-  AnalyticsWalletSummary,
+import {
+  ledgerExcludingFlags,
+  type AnalyticsLeaderboardResponse,
+  type AnalyticsWalletPosition,
+  type AnalyticsWalletResponse,
+  type AnalyticsWalletSummary,
+  type ExcludedPositionsByFlag,
 } from "@pools/core";
 import {
   acquireLedgerWriter,
@@ -43,6 +45,18 @@ import { createApi } from "./server";
 
 // The fixture (trades applied through the ledger writer, every expectation
 // derived by hand from them) is shared with the single-position read's test.
+
+/** The breakdown every ledger-served summary carries: one count per
+ * excluding flag, zero unless named. */
+const byFlag = (
+  counts: Partial<ExcludedPositionsByFlag> = {},
+): ExcludedPositionsByFlag => ({
+  zero_cost_inflow: 0,
+  unattributed_outflow: 0,
+  unknown_basis: 0,
+  unattributed_swap_activity: 0,
+  ...counts,
+});
 
 test(
   "Postgres HTTP: MARKET_SOURCE=ledger serves the wallet page's header, window figures, positions and realized curve from the ledger, hand-checked, and the accounting profile until the ledger has folded anything",
@@ -212,8 +226,24 @@ test(
     // unsampled, and a curve that runs below zero.
     for (let hour = 400; hour <= 1078; hour++)
       rows.roundTrips(blockOf(hour, 3), W[9], 1, -1000n);
+    // W5 and W11 buy P in hour 1076 and sell it together through the batch
+    // contract in one transaction: no address's net movement covers that
+    // swap, so the ledger leaves it unattributed and excludes both positions
+    // (unattributed_swap_activity); the buys stay trades and volume, the
+    // pooled proceeds reach no figure.
+    rows
+      .trade(blockOf(1076, 0), W[5], "buy", E, 10n)
+      .trade(blockOf(1076, 0), W[11], "buy", 5n * tenth, 5n)
+      .pooledSell(
+        blockOf(1076, 1),
+        [
+          [W[5], 10n],
+          [W[11], 5n],
+        ],
+        15n * tenth,
+      );
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
-    assert.equal(applied.unattributed, 0);
+    assert.equal(applied.unattributed, 1);
     assert.deepEqual(
       (
         await db.query(
@@ -364,6 +394,7 @@ test(
         supportedTradeCount: inWindow ? 12 : 13,
         supportedPositionCount: 2,
         excludedPositionCount: 0,
+        excludedByFlag: byFlag(),
         bestWei: (5n * tenth).toString(),
         avgHold: 36000 / 6,
         last: ts(blockOf(1075, 0)),
@@ -501,6 +532,7 @@ test(
         supportedTradeCount: inWindow ? 1 : 0,
         supportedPositionCount: 1,
         excludedPositionCount: 0,
+        excludedByFlag: byFlag(),
         bestWei: null,
         avgHold: null,
         last: ts(blockOf(1000, 0)),
@@ -574,6 +606,7 @@ test(
       supportedTradeCount: 10,
       supportedPositionCount: 1,
       excludedPositionCount: 1,
+      excludedByFlag: byFlag({ unknown_basis: 1 }),
       bestWei: (tenth / 2n).toString(),
       avgHold: 0,
       last: ts(blockOf(1074, 1)),
@@ -633,6 +666,7 @@ test(
       supportedTradeCount: 0,
       supportedPositionCount: 0,
       excludedPositionCount: 1,
+      excludedByFlag: byFlag({ zero_cost_inflow: 1 }),
       bestWei: null,
       avgHold: null,
       last: ts(blockOf(1073, 3)),
@@ -676,6 +710,7 @@ test(
       [
         w8.wallet.supportedPositionCount,
         w8.wallet.excludedPositionCount,
+        w8.wallet.excludedByFlag,
         w8.wallet.tradeCount,
         w8.wallet.supportedTradeCount,
         w8.wallet.realizedWei,
@@ -689,6 +724,7 @@ test(
       [
         0,
         1,
+        byFlag({ unattributed_outflow: 1 }),
         1,
         0,
         "0",
@@ -701,6 +737,79 @@ test(
       ],
     );
     assert.deepEqual(w8.curve, []);
+    // W5 and W11 pooled their P through the batch contract: each position is
+    // excluded for the unattributed swap, the breakdown names that flag and
+    // nothing else, and the buy stays a trade and volume with no finance
+    // served, the pooled proceeds reaching nothing; the wallet's last
+    // activity is the pooled sale's own transaction.
+    for (const [who, eth] of [
+      [W[5], E],
+      [W[11], 5n * tenth],
+    ] as const) {
+      const pooled = await profile(who, "24h");
+      assert.deepEqual(pooled.wallet, {
+        address: who,
+        rank: null,
+        realizedWei: "0",
+        netWei: "0",
+        unrealizedWei: null,
+        volumeWei: eth.toString(),
+        roi: null,
+        wins: 0,
+        losses: 0,
+        winRate: null,
+        tradeCount: 1,
+        supportedTradeCount: 0,
+        supportedPositionCount: 0,
+        excludedPositionCount: 1,
+        excludedByFlag: byFlag({ unattributed_swap_activity: 1 }),
+        bestWei: null,
+        avgHold: null,
+        last: ts(blockOf(1076, 1)),
+        asOf: ts(cursor1),
+        oldestAsOf: ts(cursor1),
+        completeWindow: true,
+      } satisfies AnalyticsWalletSummary);
+      assert.deepEqual(
+        pooled.positions.map((p) => [
+          p.poolId,
+          p.supported,
+          p.flags,
+          p.realizedWei,
+          p.netWei,
+          p.unrealizedWei,
+          p.volumeWei,
+          p.position,
+        ]),
+        [
+          [
+            pools.P.id,
+            false,
+            ["unattributed_swap_activity"],
+            null,
+            null,
+            null,
+            eth.toString(),
+            null,
+          ],
+        ],
+      );
+      assert.deepEqual([pooled.curve, pooled.curveSampled], [[], false]);
+      // The breakdown is keyed by the fold's own excluding flags, in their
+      // order, on every window.
+      for (const window of ["7d", "All"])
+        assert.deepEqual(
+          Object.keys((await profile(who, window)).wallet.excludedByFlag!),
+          [...ledgerExcludingFlags],
+        );
+    }
+    // The accounting fallback classifies no exclusion by ledger flag: the
+    // key is served, null.
+    assert.equal(
+      (await get("broad", `/v1/wallets/${W[5]}?window=24h`)).data.wallet
+        .excludedByFlag,
+      null,
+    );
 
     // W4's 48 hours of round trips: the 23 inside the 24h window realize
     // 2.3 ETH, all of them 4.8, and the one P position carries the same

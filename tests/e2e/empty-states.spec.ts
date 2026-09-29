@@ -192,6 +192,7 @@ const unobservedWallet = {
   supportedTradeCount: 0,
   supportedPositionCount: 0,
   excludedPositionCount: 0,
+  excludedByFlag: null,
   bestWei: null,
   avgHold: null,
   last: null,

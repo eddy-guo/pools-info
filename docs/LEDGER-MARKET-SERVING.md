@@ -264,8 +264,25 @@ changes:
   `bestWei` the best single sale; `tradeCount` every attributed swap and
   `supportedTradeCount` those on supported positions; `last` the wallet's
   last activity across its positions (the same in every window).
-  `unrealizedWei` is null on every row: it needs a price per position and is
-  the wallet page's figure. `asOf` and `oldestAsOf`, on the coverage and on
+  `supportedPositionCount` and `excludedPositionCount` are the row's counts,
+  summed at its refresh; `excludedByFlag` (29 Sep 2026) breaks the excluded
+  count down by excluding flag (`zero_cost_inflow`, `unattributed_outflow`,
+  `unknown_basis`, `unattributed_swap_activity`, the keys
+  `ledgerExcludingFlags` lists), counted from the wallet's `agg_positions`
+  rows as the row is served: a position carrying several flags counts under
+  each, a flag no position carries is 0, and the counts can run past the
+  row's total by the positions excluded since its refresh (about a minute).
+  It is null on the accounting fallback, which classifies no exclusion by
+  ledger flag. The website discloses the `unattributed_swap_activity` count
+  on the row and on the wallet header as "N positions excluded (pooled or
+  unattributed swap)": a sell pooled with other wallets' tokens through a
+  batch contract is how a position usually gets that flag (52 of the 7d #1
+  trader's 53 exclusions on the 27 Sep backup, 69 of that board's 100 rows
+  with at least one), but a pooled buy and a transaction with several swaps
+  of one pool are left unattributed the same way, so the label names the
+  flag's whole meaning rather than a sale. `unrealizedWei` is null on
+  every row: it needs a price per position and is the wallet page's
+  figure. `asOf` and `oldestAsOf`, on the coverage and on
   every row, are the cursor the window's rows were summed to
   (`agg_window_refreshes.through_timestamp`, at most a refresh interval behind
   the ledger cursor), and `completeWindow` is true, since the ledger folds
@@ -324,7 +341,15 @@ reader. The refresh keeps both row sets: a typical one-batch refresh took
 whose hour moved 0.6-0.7 s against 2.9-3.2 s (the old per-row probe of the
 hour index that decided which summed wallets had left a window, 2.9 s on
 7d, is one hashed read now), and a full rebuild 27-30 s. Migration 025 fills
-the trader rows and ranks in 14 s there.
+the trader rows and ranks in 14 s there. `excludedByFlag` adds one
+correlated `agg_positions_wallet` range per served row, a scalar subquery
+so the planner runs it per row off the index rather than hashing the table
+(the index's included `supported` keeps the supported rows off the heap):
+on the 27 Sep backup with migrations 023-026 applied (Postgres 18.6,
+`EXPLAIN (ANALYZE, BUFFERS)`, 29 Sep 2026) the ranked statement reads
+5.5k shared buffers for the 25-row 7d board and 15.3-16.4k for 100 rows on
+7d, 30d and All in both orders, in 1.5-11 ms warm, and the reads answered
+in 13-37 ms end to end.
 
 ## The wallet page
 
@@ -349,7 +374,11 @@ response is the accounting reader's, field for field; what its values mean:
   its lifetime position counts and last activity. A wallet the ledger has
   never attributed a swap or transfer to is the empty profile the accounting
   reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
-  window's refresh cursor, `completeWindow` true.
+  window's refresh cursor, `completeWindow` true. `excludedByFlag` is the
+  board row's (above): the excluded count per excluding flag, counted from
+  the wallet's positions as the page is served, beside the window row and
+  in the position stats alike, so the header can disclose the positions
+  excluded for an unattributed swap.
 - **`wallet.unrealizedWei`** is the page's own addition to the wallet row: the
   sum of the marks of every supported position (over the whole set, not the
   500 served), or null while any of them is unmarked. A position's mark is
@@ -427,7 +456,12 @@ more `agg_positions_wallet` range (the supported positions) with one
 `agg_wallet_hours` primary-key range per position, grouped per hour and
 summed in one window pass: 3,176 shared buffers and 4 ms warm for that
 busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
-`min(hour)` over the same ranges on All. Warm on the production-shape copy
+`min(hour)` over the same ranges on All. The breakdown's
+`agg_positions_wallet` range runs inside the window-row statement (or the
+position stats): on the 27 Sep backup (Postgres 18.6) it costs the 7d #1
+trader (459 supported positions, 53 excluded) 1.0k shared buffers and
+0.4 ms, and the widest wallet, `0x…dead` with 64,625 excluded positions,
+12.9k buffers and 23 ms, the page answering in 50 and 240 ms warm. Warm on the production-shape copy
 (Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
 current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
 
