@@ -629,7 +629,8 @@ test("an older healthy credit header cannot lift a newer block", async (t) => {
   const c = client(baseUrl, { now: () => time });
   const older = c.readPage("transactions", wallet, null);
   try {
-    while (seen.length < 1) await new Promise((resolve) => setImmediate(resolve));
+    while (seen.length < 1)
+      await new Promise((resolve) => setImmediate(resolve));
     await c.readPage("transactions", wallet, null);
     assert.equal(seen.length, 2);
   } finally {

@@ -187,6 +187,7 @@ export function createCreditBudget({
       admittedGeneration: number,
     ) {
       roll();
+      /** A call admitted before the latest low reading cannot lift its block. */
       if (admittedGeneration !== generation) return;
       if (observed !== null) remaining = observed;
       if (observed !== null) {
