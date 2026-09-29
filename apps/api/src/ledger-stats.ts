@@ -58,7 +58,7 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
            WHERE t.chain_id=4663 AND t.block_number>$4 AND t.block_number<=$2
              AND t.timestamp>=$5 AND t.wallet_ref IS NOT NULL`
         : `SELECT w.wallet_ref FROM agg_wallet_hours w JOIN eligible e USING(pool_ref)
-           WHERE w.chain_id=4663${window === "All" ? "" : " AND w.hour>=$4"}`;
+           WHERE w.chain_id=4663 AND w.hour>=$4`;
   const { rows } = await query(
     `WITH eligible AS MATERIALIZED (${eligible}), flow AS (${flowSql}), active AS (${activeSql})
      SELECT (SELECT count(*)::text FROM eligible) AS measured_pools,

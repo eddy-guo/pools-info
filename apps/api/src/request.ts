@@ -153,27 +153,27 @@ export function parseRequest(input: string): ReadRequest {
             ]
           : route === "stats"
             ? ["window"]
-          : route === "leaderboard"
-            ? ["window", "minTrades", "metric", "offset", "limit"]
-            : route === "creators"
-              ? ["window", "sort", "direction", "offset", "limit"]
-              : route === "profile" || route === "pool"
-                ? ["window"]
-                : route === "search"
-                  ? ["q", "group"]
-                  : route === "pools"
-                    ? ["q", "limit", "cursor"]
-                    : route === "live-trades"
-                      ? ["poolId"]
-                      : route === "trades"
-                        ? ["poolId", "limit", "cursor"]
-                        : route === "wallet"
-                          ? ["limit", "cursor"]
-                          : route === "history"
-                            ? ["kind", "cursor"]
-                            : route === "feed"
-                              ? ["pools"]
-                              : [];
+            : route === "leaderboard"
+              ? ["window", "minTrades", "metric", "offset", "limit"]
+              : route === "creators"
+                ? ["window", "sort", "direction", "offset", "limit"]
+                : route === "profile" || route === "pool"
+                  ? ["window"]
+                  : route === "search"
+                    ? ["q", "group"]
+                    : route === "pools"
+                      ? ["q", "limit", "cursor"]
+                      : route === "live-trades"
+                        ? ["poolId"]
+                        : route === "trades"
+                          ? ["poolId", "limit", "cursor"]
+                          : route === "wallet"
+                            ? ["limit", "cursor"]
+                            : route === "history"
+                              ? ["kind", "cursor"]
+                              : route === "feed"
+                                ? ["pools"]
+                                : [];
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key) || url.searchParams.getAll(key).length !== 1)
       throw new RequestError(400, "invalid_parameter");

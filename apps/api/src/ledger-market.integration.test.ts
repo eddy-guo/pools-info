@@ -943,6 +943,20 @@ test(
     await failsClosed("UPDATE agg_streams SET cursor_timestamp=$1", [H * 3600 - 1]);
     await db.query("UPDATE agg_streams SET cursor_timestamp=$1", [cursorTime]);
     assert.equal((await get("ledger", launchOrder("24h"))).status, 200);
+
+    // Without a batch before the rolling hour, the ring cannot prove full
+    // 1h coverage. The stats header must withhold flow figures, not show zero.
+    await db.query(
+      `UPDATE agg_batches SET to_timestamp=$1
+       WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND to_block<$2`,
+      [cursorTime, cursorBlock],
+    );
+    const incompleteStats = await get("ledger", "/v1/stats?window=1h");
+    assert.equal(incompleteStats.status, 200);
+    assert.equal(incompleteStats.data.completeWindow, false);
+    assert.equal(incompleteStats.data.volumeWei, null);
+    assert.equal(incompleteStats.data.trades, null);
+    assert.equal(incompleteStats.data.activeTraders, null);
   },
 );
 
