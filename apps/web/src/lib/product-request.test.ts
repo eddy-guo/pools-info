@@ -266,6 +266,42 @@ test("a stale upstream window cannot masquerade as the newly selected window", a
   );
 });
 
+test("leaderboard proxy accepts the API default and forwards a selected window", async (t) => {
+  const prior = process.env.INDEXER_API_URL,
+    disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const forwarded: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
+    const url = new URL(String(input));
+    forwarded.push(url.toString());
+    return Response.json(
+      await preloadedProduct("leaderboard", url.searchParams),
+    );
+  });
+
+  const defaultBoard = await readProduct<AnalyticsLeaderboardResponse>(
+    ["leaderboard"],
+    new URLSearchParams(),
+  );
+  assert.equal(defaultBoard.window, "7d");
+  const selectedBoard = await readProduct<AnalyticsLeaderboardResponse>(
+    ["leaderboard"],
+    new URLSearchParams("window=All"),
+  );
+  assert.equal(selectedBoard.window, "All");
+  assert.deepEqual(forwarded, [
+    "https://index.example/v1/leaderboard",
+    "https://index.example/v1/leaderboard?window=All",
+  ]);
+});
+
 test("share card options round-trip through the query the modal and the route share", () => {
   assert.deepEqual(parseCardOptions(new URLSearchParams("")), {
     window: "All",
