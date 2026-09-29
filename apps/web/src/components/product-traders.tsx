@@ -358,7 +358,7 @@ function MobileTraderCard({
 
 /**
  * The export's podium card: a rank medallion in the trader's own identity
- * hue, the address chip, the headline PnL, a neutral realized/ROI line, the
+ * hue, the address chip, the headline PnL, a neutral metric/ROI line, the
  * win/loss bar and the record. Not a link itself - AddressChip already
  * carries the wallet's navigation, copy and explorer actions, and nesting
  * another interactive wrapper around those would be invalid HTML.
@@ -418,7 +418,7 @@ function PodiumCard({
       <div className="trader-podium-card-meta">
         {w ? (
           <>
-            realized · ROI{" "}
+            {metric === "realized" ? "realized" : "Net ETH"} · ROI{" "}
             {w.roi === null ? (
               <Unavailable />
             ) : (
@@ -646,6 +646,11 @@ export function ProductTraders() {
         </div>
       </div>
       <MyRank window={window} />
+      {view === "following" && (
+        <p className="following-figures-caption">
+          Wallet profile figures, not board rankings.
+        </p>
+      )}
       <section className="panel leaderboard-panel" ref={panelRef}>
         {view === "leaderboard" ? (
           <>
