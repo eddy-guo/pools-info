@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import net from "node:net";
 import test from "node:test";
@@ -384,7 +385,7 @@ test("forwarded headers on direct traffic never make an identity, and an unconfi
       cacheMs: 100000,
       ingress: ingressSettings({
         TRUSTED_PROXY_ADDRESSES: "10.0.0.1",
-        TRUSTED_PROXY_SECRET: "0123456789abcdef",
+        TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
         CLIENT_TOKENS_PER_MINUTE: "10",
       }),
     }),
@@ -435,7 +436,7 @@ test("forwarded headers on direct traffic never make an identity, and an unconfi
 });
 
 test("the proxy secret names the visitor the site proxy vouches for, and nobody else", async (t) => {
-  const secret = "correct-horse-battery-staple";
+  const secret = randomBytes(32).toString("hex");
   const url = await listen(
     t,
     createApi(stubReader(), {
