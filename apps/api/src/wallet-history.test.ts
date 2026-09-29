@@ -577,7 +577,7 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
   assert.throws(
     () => budget.spend(1),
     (e: BlockscoutError) =>
-      e.kind === "budget_exhausted" && e.retryAfter === 3600,
+      e.kind === "budget_exhausted" && e.retryAfter === 180,
   );
   now += 3600_000;
   budget.spend(1);
@@ -586,6 +586,54 @@ test("credit budget spends per call, refuses past the cap, resets at UTC midnigh
   assert.equal(budget.snapshot().remaining, null);
   budget.spend(1);
   assert.throws(() => createCreditBudget({ dailyCap: 0 }), /cap/);
+});
+
+test("a scheduled explorer probe lifts a credit block on a healthy reading", async (t) => {
+  let time = Date.parse("2026-09-15T12:00:00Z");
+  let credits = 10;
+  const { baseUrl, seen } = await upstream(t, async () => ({
+    body: JSON.stringify({ items: [], next_page_params: null }),
+    headers: { "x-credits-remaining": String(credits) },
+  }));
+  const c = client(baseUrl, { now: () => time });
+  await c.readPage("transactions", wallet, null);
+  assert.equal(seen.length, 1);
+  await assert.rejects(
+    c.readPage("transactions", wallet, null),
+    (e: BlockscoutError) =>
+      e.kind === "budget_exhausted" && e.retryAfter === 180,
+  );
+  time += 4 * 60_000;
+  credits = 250_000;
+  await c.readPage("transactions", wallet, null);
+  assert.equal(seen.length, 2);
+  await c.readPage("transactions", wallet, null);
+  assert.equal(seen.length, 3);
+});
+
+test("a failed credit probe is the only call admitted in its interval", async (t) => {
+  let time = Date.parse("2026-09-15T12:00:00Z");
+  const { baseUrl, seen } = await upstream(t, async () => ({
+    body: JSON.stringify({ items: [], next_page_params: null }),
+    headers: { "x-credits-remaining": "10" },
+  }));
+  const c = client(baseUrl, { now: () => time });
+  await c.readPage("transactions", wallet, null);
+  time += 3 * 60_000;
+  const attempts = await Promise.allSettled(
+    Array.from({ length: 5 }, () => c.readPage("transactions", wallet, null)),
+  );
+  assert.equal(
+    attempts.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  assert.equal(seen.length, 2);
+  time += 60_000;
+  await assert.rejects(
+    c.readPage("transactions", wallet, null),
+    (e: BlockscoutError) => e.kind === "budget_exhausted",
+  );
+  assert.equal(seen.length, 2);
 });
 
 test("page parameters accept only bounded query-safe scalars", () => {

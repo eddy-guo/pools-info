@@ -63,6 +63,7 @@ export function createApi(
   // JSON reads, and their own in-flight bound beside the fetch slots.
   const imageBudget = limiter(maxImagesPerMinute);
   let active = 0,
+    activeExplorer = 0,
     activeImages = 0;
   const server = createServer(async (req, res) => {
     const startedAt = now();
@@ -90,6 +91,7 @@ export function createApi(
       const databaseRead = !["ready", "history", "eth-price"].includes(
         request.route,
       );
+      if (request.route === "ready") reader.assertReady?.();
       const version = databaseRead ? reader.assertReady?.() : undefined;
       const retryAfter = (
         request.route === "pool-image" ? imageBudget : readBudget
@@ -136,9 +138,15 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (active >= 16)
-          throw new RequestError(503, "busy", { retryAfter: 5 });
-        active++;
+        const explorerRead =
+          request.route === "history" || request.route === "following";
+        if (explorerRead ? activeExplorer >= 8 : active >= 16)
+          throw new RequestError(503, "busy", {
+            retryAfter: 5,
+            ...(explorerRead ? { reason: "explorer_slots" } : {}),
+          });
+        if (explorerRead) activeExplorer++;
+        else active++;
         result = (async () => {
           try {
             const body = JSON.stringify(
@@ -170,7 +178,8 @@ export function createApi(
             }
             return body;
           } finally {
-            active--;
+            if (explorerRead) activeExplorer--;
+            else active--;
           }
         })();
         pending.set(request.cacheKey, result);

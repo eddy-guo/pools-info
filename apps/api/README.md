@@ -9,8 +9,8 @@ same exact average-cost rules as the frontend. Indexer migrations, evidence
 verification, holder reconstruction and publication remain separate.
 
 Database-backed product routes refuse immediately while the database is warming
-with `503`, `reason: "warming"` and `Retry-After: 5`; `/ready` remains independent
-of warming. Startup/reconnect warming, failed-set retries and five-minute
+with `503`, `reason: "warming"` and `Retry-After: 5`; `/ready` also refuses
+until the warm set passes. Startup/reconnect warming, failed-set retries and five-minute
 keep-warm checks are automatic in the API and ledger tip service. See
 [Database reader warming](../../docs/DATABASE-WARMING.md) for the scope,
 bounds, cancellation and residual eviction window.
@@ -31,6 +31,8 @@ migrations itself.
 
 For Railway, use the existing repository and region, root `/`, Dockerfile
 `apps/api/Dockerfile`, default image start command, and health-check `/ready`.
+Railway waits for the warm set before switching traffic on the first deploy with
+this change; that wait is intentional.
 Set `DATABASE_URL` through Railway's private Postgres reference; Railway supplies
 `PORT`, otherwise it defaults to 3102. Keep the database private. This read
 service can have a Railway HTTPS domain for the Next.js server to call. No new
@@ -493,8 +495,9 @@ Budget and failure behaviour. Every upstream call passes a sliding-window
 limiter (at most five starts in any second, the free tier's rate; a call that
 would wait longer than two seconds fails instead of queueing) and a per-process
 credit counter that resets at UTC midnight. The explorer's `x-credits-remaining`
-header is a backstop: when the key itself is nearly out, calls pause for an
-hour regardless of the local count. The counter is per process: during a
+header is a backstop: when the key itself is nearly out, calls pause for up to
+an hour regardless of the local count, with one recovery call admitted every
+three minutes. A healthy credit header lifts the block immediately. The counter is per process: during a
 Railway rolling deploy the old and new instance each keep their own, so the
 day's real spend can briefly count from zero again; the default cap of 30,000
 keeps three process lifetimes in one day (two such deploys) inside the 100,000
@@ -505,10 +508,14 @@ and bodies above 4 MiB are rejected. There is no retry. Pages are cached in proc
 32 MiB); a page past its TTL is still served with `stale:true` for up to a day
 whenever the explorer or the budget cannot answer, otherwise the route returns
 503 `{error:"wallet_history_unavailable", reason}` with `Retry-After`, where
-`reason` is `not_configured`, `budget_exhausted` (seconds to UTC midnight),
+`reason` is `not_configured`, `budget_exhausted` (until a recovery probe or UTC midnight),
 `upstream_unavailable` (timeouts, 429, 5xx, or an unreadable page), or
 `key_rejected` (401, 402, or 403 from the explorer). Ordinary request limits
 and coalescing apply, and the key never appears in any response or log line.
+Explorer-backed history and Following reads use a separate eight-request
+in-flight pool. When that pool is full, new explorer reads return
+`503 {error:"busy",reason:"explorer_slots"}` with `Retry-After: 5`; database
+routes retain their own 16 slots.
 The one chain RPC the route makes is the trades kind's `eth_getLogs` above,
 through the explorer's own gateway under the same key, limiter and budget.
 

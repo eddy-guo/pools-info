@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { createApi } from "./server";
 import { DatabaseWarmth } from "./database-warmth";
 import { RequestError } from "./request";
+import type { WalletHistory } from "./wallet-history";
 
 function deferred() {
   let resolve!: () => void;
@@ -97,7 +98,7 @@ test("warming refuses all database routes before reads/cache/budget while health
     );
   }
   assert.equal(reads, 1);
-  assert.equal((await fetch(base + "/ready")).status, 200);
+  assert.equal((await fetch(base + "/ready")).status, 503);
   assert.equal((await fetch(base + "/health")).status, 200);
   for (const [path, reason, retry] of [
     [`/v1/wallets/${wallet}/history`, "upstream", "17"],
@@ -109,9 +110,102 @@ test("warming refuses all database routes before reads/cache/budget while health
     assert.equal((await response.json()).reason, reason);
   }
   await warmth.refresh();
+  assert.equal((await fetch(base + "/ready")).status, 200);
   const fresh = await fetch(base + "/v1/explore");
   assert.equal(fresh.headers.get("x-data-cache"), "MISS");
   assert.deepEqual(await fresh.json(), { reads: 2 });
+});
+
+test("readiness follows a pending warm set on the fake clock", async (t) => {
+  let time = 0;
+  const finish = deferred();
+  const warmth = new DatabaseWarmth(
+    async (context) => {
+      context.identity("db");
+      await finish.promise;
+    },
+    { now: () => time },
+  );
+  const server = createApi(
+    {
+      assertReady: (version) => warmth.assertReady(version),
+      read: async () => ({ ready: true }),
+      close: async () => {},
+    },
+    { now: () => time },
+  );
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.close();
+    await once(server, "close");
+    await warmth.close();
+  });
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const warming = warmth.refresh();
+  assert.equal((await fetch(base + "/ready")).status, 503);
+  assert.equal((await fetch(base + "/health")).status, 200);
+  assert.equal((await fetch(base + "/v1/status")).status, 503);
+  time += 10_000;
+  assert.equal((await fetch(base + "/ready")).status, 503);
+  finish.resolve();
+  await warming;
+  assert.equal((await fetch(base + "/ready")).status, 200);
+  assert.equal((await fetch(base + "/v1/status")).status, 200);
+});
+
+test("slow explorer reads cannot occupy database slots", async (t) => {
+  const releases: (() => void)[] = [];
+  let started = 0;
+  const history = {
+    read: async () => {
+      started++;
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return { items: [] };
+    },
+    peekTrades: () => null,
+    refreshTrades: async () => {},
+  };
+  const server = createApi(
+    { read: async () => ({ items: [] }), close: async () => {} },
+    { history: history as unknown as WalletHistory, maxPerMinute: 1000 },
+  );
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    releases.forEach((release) => release());
+    server.close();
+    await once(server, "close");
+  });
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const held = Array.from({ length: 8 }, (_, i) =>
+    fetch(`${base}/v1/wallets/0x${i.toString(16).padStart(40, "0")}/history`),
+  );
+  try {
+    while (started < 8) await new Promise((resolve) => setImmediate(resolve));
+    const excess = await fetch(
+      `${base}/v1/wallets/0x${"f".repeat(40)}/history`,
+      { signal: AbortSignal.timeout(1000) },
+    );
+    assert.equal(excess.status, 503);
+    assert.deepEqual(await excess.json(), {
+      error: "busy",
+      reason: "explorer_slots",
+    });
+    const following = await fetch(
+      `${base}/v1/following?wallets=0x${"b".repeat(40)}`,
+    );
+    assert.equal(following.status, 503);
+    assert.deepEqual(await following.json(), {
+      error: "busy",
+      reason: "explorer_slots",
+    });
+    for (const path of ["/v1/explore", `/v1/pools/0x${"a".repeat(64)}`])
+      assert.equal((await fetch(base + path)).status, 200, path);
+  } finally {
+    releases.forEach((release) => release());
+    await Promise.allSettled(held);
+  }
 });
 
 test("a response started before invalidation cannot be served or cached after recovery", async (t) => {

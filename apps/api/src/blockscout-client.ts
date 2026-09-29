@@ -49,6 +49,8 @@ export const freeTierRequestsPerSecond = 5;
  * (scout measurement, 2026-09-16); this leaves headroom for a slow page
  * without the route falsely declaring the explorer unavailable. */
 export const defaultBlockscoutTimeoutMs = 12000;
+/** An upstream credit block admits one billed recovery probe every three minutes. */
+export const creditProbeIntervalMs = 3 * 60_000;
 const userAgent = "pools-info-api/0.1.0";
 
 export type BlockscoutFailure =
@@ -142,6 +144,7 @@ export function createCreditBudget({
   let day = "",
     spent = 0,
     upstreamBlockedUntil = 0,
+    nextProbeAt = 0,
     remaining: number | null = null;
   function roll() {
     const today = utcDay(now());
@@ -150,15 +153,18 @@ export function createCreditBudget({
       spent = 0;
       remaining = null;
       upstreamBlockedUntil = 0;
+      nextProbeAt = 0;
     }
   }
   function assertAvailable(cost: number, reserve = 0) {
     roll();
     const t = now();
-    if (upstreamBlockedUntil > t)
+    // Tell callers when to retry so a quiet instance still gets a recovery
+    // probe, while later requests in that interval remain blocked.
+    if (upstreamBlockedUntil > t && nextProbeAt > t)
       throw new BlockscoutError(
         "budget_exhausted",
-        Math.ceil((upstreamBlockedUntil - t) / 1000),
+        Math.ceil((Math.min(upstreamBlockedUntil, nextProbeAt) - t) / 1000),
       );
     if (spent + cost + reserve > dailyCap)
       throw new BlockscoutError("budget_exhausted", secondsToUtcMidnight(t));
@@ -167,13 +173,22 @@ export function createCreditBudget({
     assertAvailable,
     spend(cost: number, reserve = 0) {
       assertAvailable(cost, reserve);
+      if (upstreamBlockedUntil > now())
+        nextProbeAt = now() + creditProbeIntervalMs;
       spent += cost;
     },
     /** The header counts every process using the key, not only this one. */
     observeRemaining(observed: number | null, nextCost: number) {
       if (observed !== null) remaining = observed;
-      if (observed !== null && observed < nextCost)
-        upstreamBlockedUntil = now() + 3600000;
+      if (observed !== null) {
+        if (observed < nextCost) {
+          upstreamBlockedUntil = now() + 3600000;
+          nextProbeAt = now() + creditProbeIntervalMs;
+        } else {
+          upstreamBlockedUntil = 0;
+          nextProbeAt = 0;
+        }
+      }
     },
     /** `remaining` is the key's balance as the explorer last stated it,
      * across every process using the key; null before any answer. */

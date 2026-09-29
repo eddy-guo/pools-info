@@ -4,9 +4,11 @@ The read API refuses database-backed product routes while warming with HTTP
 503, `{"error":"data_temporarily_unavailable","reason":"warming"}` and
 `Retry-After: 5`. The gate runs before response caches and request coalescing;
 responses from an earlier readiness generation cannot be published after
-invalidation. `/ready` still checks database/schema access and returns 200
-while warming. `/health`, Blockscout wallet history and ETH price retain their
-own behavior. Icons refuse with the database routes.
+invalidation. `/ready` checks database/schema access and returns 200 only after
+the warm set passes. Railway waits on `/ready` before switching traffic, so
+the first deploy with this change waits for the warm set's duration. `/health`,
+Blockscout wallet history and ETH price retain their own behavior. Icons refuse
+with the database routes.
 
 The website's existing unavailable behavior is a prerequisite: live failures
 must never substitute the committed preloaded dataset. `PRODUCT_FIXTURES=1`
