@@ -514,3 +514,28 @@ string because its unrendered form still references the old `Postgres`
 service, which no longer exists, confirming it targets a deleted database and
 not `LedgerPostgres`, the current live database (host/name compared, no
 credential printed). `api`, `ledger-tip` and `LedgerPostgres` were untouched.
+
+## The tip service renamed `chain-sync`
+
+The Railway service that runs the tip loop (`zestful-fulfillment` /
+production / `61e93a6a-b3f8-404a-980c-b05c2d79eb35`) was renamed from
+`ledger-tip` to `chain-sync` on 2026-09-29 at 14:45:42Z under the captain's
+option B from the rename inventory: nothing consumed its private hostname
+and a routine restart was acceptable. The rename was one `serviceUpdate` of
+the display name and nothing else. It staged no change, started no
+deployment and restarted nothing: the active deployment `aa4a971c` (04:27:48Z,
+the #184 merge) kept running, its `ledger_tip_cycle` lines continued every
+80-90 s, and the cursor advanced with no gap or rewind (75736415 at 14:43:25Z
+before, 75745796 at 14:59:10Z after, `lagBlocks 128` throughout) while
+`/ready`, `/v1/status` and the site stayed up over the 14 minutes read. A
+Railway control-plane blip at 14:48-14:51Z (GraphQL API 503 "no healthy
+upstream", one `/ready` connect failure at the edge) passed with the api's
+own deployment untouched. `RAILWAY_PRIVATE_DOMAIN` still read
+`ledger-tip.railway.internal` 14 minutes after the rename; no variable
+references that hostname. Railway's GitHub commit statuses for later
+deployments carry the new name (`zestful-fulfillment - chain-sync`); `main`
+has no rule that requires either. `LedgerPostgres` keeps its name, and the
+earlier mentions of `ledger-tip` in this document are the same service under
+its old name. Rollback is the same mutation with `name: "ledger-tip"`; the
+before/after record is `data/pools-railway-rename-n2/rename.md` in the
+firstmate home.

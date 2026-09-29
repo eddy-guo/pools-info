@@ -301,7 +301,9 @@ trades but whose `agg_positions` or `agg_wallet_hours` are empty, as a restore
 that leaves them for later would be: folding into empty positions would book
 sales without their buys. It is off unless `LEDGER_TIP_ENABLED=1` and
 `ENVIO_API_TOKEN` are set; the variables are in `.env.example`. On Railway it
-is its own service, `apps/indexer/railway.ledger-tip.json`, whose start
+is its own service, `chain-sync` (named `ledger-tip` until 29 Sep 2026;
+`apps/indexer/railway.chain-sync.json` mirrors its settings, which Railway
+holds on the service itself with no config file path set), whose start
 command `src/ledger-tip-service.ts` supervises this one worker; the indexer
 service's `src/service.ts` starts discovery, analytics and the recent worker
 over Alchemy and is never its start command.
