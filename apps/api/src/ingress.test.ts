@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 import {
   clientIdentity,
@@ -112,7 +113,7 @@ test("only a trusted peer's last forwarded entry names the client; direct traffi
 });
 
 test("the proxy secret names the visitor only when it matches exactly", () => {
-  const secret = "correct-horse-battery-staple";
+  const secret = randomBytes(32).toString("hex");
   const identity = ingressSettings({
     TRUSTED_PROXY_SECRET: secret,
     TRUSTED_PROXY_ADDRESSES: "10.0.0.0/8",
@@ -148,9 +149,9 @@ test("the proxy secret names the visitor only when it matches exactly", () => {
   // A wrong, truncated, extended or absent secret falls back to the address
   // contract, under which this direct peer is the client.
   for (const wrong of [
-    "correct-horse-battery-stapl",
-    "correct-horse-battery-staple!",
-    "Correct-horse-battery-staple",
+    secret.slice(0, -1),
+    secret + "!",
+    (secret[0] === "a" ? "b" : "a") + secret.slice(1),
     "",
   ])
     assert.equal(
@@ -207,7 +208,7 @@ test("settings parse their variables and refuse malformed values", () => {
     CLIENT_TOKENS_PER_MINUTE: "300",
     TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
     CLIENT_IDENTITY: "peer",
-    TRUSTED_PROXY_SECRET: "0123456789abcdef",
+    TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
   });
   assert.equal(full.clientTokensPerMinute, 300);
   assert.deepEqual(identitySources(full.identity), [
