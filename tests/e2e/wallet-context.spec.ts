@@ -491,7 +491,7 @@ test("the wallet profile has no local identity action or unique stored state", a
   ).toBeNull();
 });
 
-test("the header's wallet menu sets and forgets the browser wallet, reframing the wallet page and the traders YOU row with it", async ({
+test("the You page sets and forgets the browser wallet, reframing the wallet page and the traders YOU row with it", async ({
   page,
 }) => {
   await settled(page, `/wallet/${topWallet}/?window=All`);
@@ -503,6 +503,8 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   await expect(title).toHaveText("0x4745…bce1");
 
   await control.click();
+  await expect(page).toHaveURL(/\/you\/$/);
+  await page.getByRole("button", { name: "Set my wallet" }).click();
   await page.getByLabel("Your wallet address").fill(topWallet);
   await page.getByRole("button", { name: "Use this wallet" }).click();
   await expect(
@@ -511,6 +513,7 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   expect(
     await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
   ).toBe(topWallet);
+  await settled(page, `/wallet/${topWallet}/?window=All`);
   await expect(title).toHaveText("Portfolio");
 
   await settled(page, "/traders/?window=All");
@@ -519,10 +522,10 @@ test("the header's wallet menu sets and forgets the browser wallet, reframing th
   await expect(myRank.locator(".mono")).toHaveText("0x4745…bce1");
 
   await control.click();
-  await page.getByRole("menuitem", { name: "Forget this wallet" }).click();
-  await expect(myRank).toContainText(
-    "Set your wallet in the header to see your rank here",
-  );
+  await expect(page).toHaveURL(/\/you\/$/);
+  await page.getByRole("button", { name: "Forget this wallet" }).click();
+  await settled(page, "/traders/?window=All");
+  await expect(myRank).toContainText("Set your wallet to see your rank here");
 
   await settled(page, `/wallet/${topWallet}/?window=All`);
   await expect(title).toHaveText("0x4745…bce1");

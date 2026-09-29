@@ -14,17 +14,74 @@ const savedPool = Object.values(captures.snapshots).find(
     !chain.markets.some((market) => market.id === snapshot.markets[0].id),
 )!.markets[0];
 const unknownPool = `0x${"f".repeat(64)}`;
+/* The You page lists this browser's own follow list and watchlist, which
+   the served shell cannot see: its pre-paint script sizes each section from
+   localStorage before first paint and hydration mounts the rows on that
+   geometry. The lists are seeded here so both sections carry rows, and the
+   feed behind the follow list (a billed explorer read) is answered from a
+   fixture. Its rows are new nodes by design, so the node-identity checks
+   below do not apply to it; its geometry and CLS checks do. */
+const youWallets = [wallet, "0x1111111111111111111111111111111111111111"];
+const youPools = [chain.markets[1], chain.markets[4], chain.markets[7]];
+const youFeed = {
+  source: "blockscout",
+  scope: "explorer_registry_trades",
+  items: [
+    {
+      id: `0x${"4".repeat(64)}:1`,
+      wallet,
+      poolId: youPools[1].id,
+      token: youPools[1].token,
+      symbol: youPools[1].symbol,
+      name: youPools[1].name,
+      decimals: 18,
+      txHash: `0x${"4".repeat(64)}`,
+      logIndex: 1,
+      block: 1000,
+      timestamp: 1789635351,
+      side: "buy",
+      tokenRaw: "204380635229317043485969",
+      method: "0x3593564c",
+    },
+  ],
+  hasMore: false,
+  notice: "Each followed wallet's newest explorer trades.",
+  note: "Explorer history for display only; not accounting or PnL evidence.",
+  coverage: {
+    requestedWallets: 2,
+    returnedTokens: 1,
+    wallets: [...youWallets].sort().map((address) => ({
+      wallet: address,
+      status: "read",
+      fetchedAt: "2026-09-25T21:44:28.479Z",
+      reason: null,
+      olderTrades: true,
+      horizonBlock: 100,
+    })),
+    generatedAt: "2026-09-25T21:44:36.065Z",
+    complete: false,
+    registryExhaustive: false,
+  },
+};
 /* `releases`: the fixture answers fewer rows than the page this route
    reserves, so its sentinel keeps its place and may only grow shorter as the
    unfilled rows go. `empty`: that answer has no rows, so no formatted number
    is left to survive. */
-const routes: {
+type Route = {
   name: string;
   url: string;
   sentinel: string;
   releases?: boolean;
   empty?: boolean;
-}[] = [
+  /** Browser-local state the page reads, set before it loads. */
+  seed?: Record<string, string>;
+  /** The rows mount at hydration from that state rather than resolving in
+      place, so the first row and number are not the served shell's. */
+  hydratesRows?: boolean;
+  /** Nothing on the page waits for a read, so no pending slot ever shows. */
+  nothingPending?: boolean;
+};
+const routes: Route[] = [
   {
     name: "screener",
     url: "/",
@@ -102,12 +159,37 @@ const routes: {
     url: `/pool/${unknownPool}/`,
     sentinel: ".nullable-pool-page .live-six-stats",
   },
+  /* The You page with nothing saved: two empty states and no read but the
+     shell's price strip, painted once. */
+  {
+    name: "you",
+    url: "/you/",
+    sentinel: ".you-page .you-identity",
+    hydratesRows: true,
+    nothingPending: true,
+  },
+  {
+    name: "you-seeded",
+    url: "/you/",
+    sentinel: ".you-page .you-identity",
+    seed: {
+      "poolsinfo.following.v1": JSON.stringify(youWallets),
+      "poolsinfo.watchlist.v1": JSON.stringify(youPools.map((p) => p.id)),
+      "poolsinfo.my-wallet.v1": wallet,
+    },
+    hydratesRows: true,
+  },
 ];
 
 for (const entry of routes) {
   test(`${entry.name} retains first-paint geometry as real saved data resolves`, async ({
     page,
   }, testInfo) => {
+    if (entry.seed)
+      await page.addInitScript((seed) => {
+        for (const [key, value] of Object.entries(seed))
+          localStorage.setItem(key, value);
+      }, entry.seed);
     await page.addInitScript(() => {
       const state = { cls: 0, shifts: [] as unknown[] };
       Object.assign(window, { layoutMeasurement: state });
@@ -156,6 +238,14 @@ for (const entry of routes) {
           json: { error: "Saved publication unavailable" },
         });
       }
+      if (
+        entry.name === "you-seeded" &&
+        new URL(route.request().url()).pathname === "/api/product/following/"
+      ) {
+        await gate;
+        responses.push(route.request().url());
+        return route.fulfill({ json: youFeed });
+      }
       const creatorRead =
         entry.name === "creator-detail-many"
           ? creatorLaunchesPage(manyLaunches, route.request().url())
@@ -197,7 +287,7 @@ for (const entry of routes) {
       releaseScripts();
       /* A preloaded pool paints whole from its snapshot, so it has no
          pending state to show while the saved read is held. */
-      if (entry.name !== "pool")
+      if (entry.name !== "pool" && !entry.nothingPending)
         await expect
           .poll(() => page.locator('[data-pending="true"]:visible').count())
           .toBeGreaterThan(0);
@@ -283,7 +373,7 @@ for (const entry of routes) {
           "the toolbar fits its panel",
         ).toBe(true);
       }
-      if (!entry.name.includes("pool"))
+      if (!entry.name.includes("pool") && !entry.hydratesRows)
         expect(
           await page.evaluate(
             () =>
@@ -298,7 +388,8 @@ for (const entry of routes) {
       if (
         !entry.name.includes("pool") &&
         entry.name !== "launches" &&
-        !entry.empty
+        !entry.empty &&
+        !entry.hydratesRows
       )
         expect(
           await page.evaluate(() => {

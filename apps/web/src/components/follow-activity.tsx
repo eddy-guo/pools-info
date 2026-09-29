@@ -27,6 +27,21 @@ export const FOLLOWING_ROWS = 25;
 
 export type FollowActivityFeed = ReturnType<typeof useFollowActivity>;
 
+/** A feed that has read nothing yet and never will: what the You page paints
+    for a follow list it cannot see before hydration, so the live feed that
+    replaces it lands on identical geometry. */
+export const pendingFeed: FollowActivityFeed = {
+  data: undefined,
+  items: [],
+  pending: true,
+  error: undefined,
+  loading: true,
+  refresh: () => {},
+  paused: false,
+  setPaused: () => {},
+  status: () => "pending",
+};
+
 /** The follow list's trade feed, read every 30 seconds while the page is
     visible and updates are not paused. Polls wait for the previous read. */
 export function useFollowActivity(addresses: string[]) {
@@ -98,7 +113,7 @@ export function FollowStatus({
   );
 }
 
-function TokenLink({ trade }: { trade: FollowingTrade }) {
+export function TokenLink({ trade }: { trade: FollowingTrade }) {
   const label = trade.symbol ?? shortAddress(trade.token);
   return trade.poolId ? (
     <Link href={`/pool/${trade.poolId}/`} title={trade.name ?? trade.token}>

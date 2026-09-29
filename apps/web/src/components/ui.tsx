@@ -22,9 +22,11 @@ import {
   type PricePoint,
 } from "@pools/core";
 import { useEthPrice } from "./eth-price-provider";
-import { useUnit, useWatchlist } from "./state";
+import { useUnit } from "./state";
 import { usdPrice } from "@/lib/usd-price";
 import { tokenInitials } from "@/lib/token-identity";
+import { useProfileStore } from "@/lib/profile-store";
+import { confirmWatch } from "./saved-toast";
 
 export function TokenIcon({
   pool,
@@ -496,8 +498,8 @@ export function CrowdLine({
   );
 }
 export function WatchButton({ id }: { id: string }) {
-  const { ids, toggle } = useWatchlist();
-  const active = ids.includes(id);
+  const { watch, toggleWatch } = useProfileStore();
+  const active = watch.includes(id);
   /* The control itself is always the current storage state - there is no
      separate optimistic flag to roll back, since `ids` reads localStorage
      directly. A failed write leaves the icon exactly where it was; this
@@ -509,7 +511,11 @@ export function WatchButton({ id }: { id: string }) {
       className={`icon-button watch ${active ? "active" : ""}`}
       aria-label={active ? "Remove from watchlist" : "Add to watchlist"}
       aria-pressed={active}
-      onClick={() => setSaveFailed(!toggle(id))}
+      onClick={() => {
+        const result = toggleWatch(id);
+        setSaveFailed(result === "failed");
+        confirmWatch(result, () => toggleWatch(id));
+      }}
     >
       <Star size={16} fill={active ? "currentColor" : "none"} />
       {saveFailed && (

@@ -1,13 +1,18 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Wallet } from "lucide-react";
-import { shortAddress, walletHref } from "@pools/core";
+import { usePathname } from "next/navigation";
+import { UserRound } from "lucide-react";
+import { shortAddress } from "@pools/core";
+import { useProfileStore } from "@/lib/profile-store";
 import { Avatar } from "./ui";
-import { useMyWallet, isWalletAddress } from "./my-wallet";
-import { PnlCardModal } from "./pnl-card-modal";
+import { isWalletAddress } from "./my-wallet";
+import { SavedCountBadge, useSavedCount } from "./saved-count";
 
-function SetWalletDialog({
+/** The one way this browser marks a wallet as its own: a typed address,
+    saved like the follow list, with no connection and no signature. The
+    You page opens it from its identity row. */
+export function SetWalletDialog({
   onClose,
   onSet,
 }: {
@@ -78,166 +83,52 @@ function SetWalletDialog({
   );
 }
 
-function WalletMenu({
-  address,
-  triggerRef,
-  onClose,
-  onShare,
-  onForget,
-}: {
-  address: string;
-  triggerRef: React.RefObject<HTMLButtonElement | null>;
-  onClose: () => void;
-  onShare: () => void;
-  onForget: () => void;
-}) {
-  const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    function onPointerDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (!menu.current?.contains(target) && !triggerRef.current?.contains(target))
-        onClose();
-    }
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onPointerDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onPointerDown);
-    };
-  }, [onClose, triggerRef]);
-  return (
-    <div
-      ref={menu}
-      role="menu"
-      aria-label="Wallet menu"
-      className="wallet-menu"
-    >
-      <Link
-        role="menuitem"
-        className="wallet-menu-item"
-        href={walletHref(address)}
-        onClick={onClose}
-      >
-        Portfolio
-      </Link>
-      <Link
-        role="menuitem"
-        className="wallet-menu-item"
-        href="/traders/?view=following"
-        onClick={onClose}
-      >
-        Following
-      </Link>
-      <Link
-        role="menuitem"
-        className="wallet-menu-item"
-        href="/?view=watchlist"
-        onClick={onClose}
-      >
-        Watchlist
-      </Link>
-      <button
-        type="button"
-        role="menuitem"
-        className="wallet-menu-item"
-        onClick={onShare}
-      >
-        Share PnL card
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="wallet-menu-item wallet-menu-forget"
-        onClick={onForget}
-      >
-        Forget this wallet
-      </button>
-    </div>
-  );
-}
-
 /**
- * The header's entry into the one wallet this browser calls its own: no
- * connection or signing, just PR 67's my-wallet store surfaced where a real
- * connect button would sit. One trigger button persists across both states
- * so its reserved box and keyboard focus never move when the wallet changes.
+ * The header's entry into what this browser keeps for itself: one
+ * persistent link to the You page in the slot a connect button would take,
+ * reading "You" until a wallet is marked and the wallet's identity chip
+ * after, with the saved count beside either. The box is one fixed size in
+ * both states, so marking a wallet or saving something moves nothing beside
+ * it; the count mounts after hydration as its own node inside that box. The
+ * page it opens is where a wallet is marked or forgotten, so no menu or
+ * dialog hangs off the header.
  */
 export function WalletProfileEntry() {
-  const { address, set, available } = useMyWallet();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  function closeMenu() {
-    setMenuOpen(false);
-    trigger.current?.focus();
-  }
+  const { address } = useProfileStore();
+  const { watch, follow, total } = useSavedCount();
+  const pathname = usePathname();
+  const here = pathname === "/you" || pathname.startsWith("/you/");
   return (
     <div className="wallet-profile-entry">
-      <button
-        ref={trigger}
-        type="button"
+      <Link
+        href="/you/"
         className={address ? "connect-button wallet-chip" : "connect-button"}
-        disabled={!available}
-        aria-haspopup={address ? "menu" : "dialog"}
-        aria-expanded={address ? menuOpen : undefined}
         aria-label={
-          address ? `Wallet menu, ${shortAddress(address)}` : "Set my wallet"
+          total
+            ? `You: ${watch} watched, ${follow} followed`
+            : "You: nothing saved yet"
         }
-        onClick={() =>
-          address ? setMenuOpen((open) => !open) : setDialogOpen(true)
-        }
+        aria-current={here ? "page" : undefined}
+        title={address ? shortAddress(address) : undefined}
       >
+        {/* Keyed apart: hydration swaps the label for the chip as new nodes,
+            never by rewriting the label's text in place, which Chrome would
+            score as the text's start moves inside the centred box. */}
         {address ? (
-          <>
+          <Fragment key="chip">
             <Avatar address={address} />
             <span className="wallet-chip-address mono">
               {shortAddress(address)}
             </span>
-          </>
+          </Fragment>
         ) : (
-          <>
-            <Wallet size={15} />
-            <span className="connect-label">Set my wallet</span>
-          </>
+          <Fragment key="you">
+            <UserRound size={15} />
+            <span className="connect-label">You</span>
+          </Fragment>
         )}
-      </button>
-      {address && menuOpen && (
-        <WalletMenu
-          address={address}
-          triggerRef={trigger}
-          onClose={closeMenu}
-          onShare={() => {
-            closeMenu();
-            setShareOpen(true);
-          }}
-          onForget={() => {
-            closeMenu();
-            set("");
-          }}
-        />
-      )}
-      {dialogOpen && (
-        <SetWalletDialog
-          onClose={() => setDialogOpen(false)}
-          onSet={(next) => {
-            set(next);
-            setDialogOpen(false);
-          }}
-        />
-      )}
-      {address && (
-        <PnlCardModal
-          address={address}
-          window="All"
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-        />
-      )}
+        <SavedCountBadge count={total} />
+      </Link>
     </div>
   );
 }

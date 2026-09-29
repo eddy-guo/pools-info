@@ -248,7 +248,7 @@ test("primary, secondary and ghost controls share deliberate interaction states"
   });
   expectFocus(await focusVisible(page, secondary), secondaryRest);
 
-  const ghost = page.getByRole("button", { name: "Set my wallet" });
+  const ghost = page.locator(".header-actions .connect-button");
   const ghostRest = await visual(ghost);
   expect(ghostRest).toMatchObject({
     background: colors.panelRaised,

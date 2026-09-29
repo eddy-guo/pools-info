@@ -15,6 +15,7 @@ const geistMono = localFont({
 import { Shell } from "@/components/shell";
 import "./globals.css";
 import { EthPriceProvider } from "@/components/eth-price-provider";
+import { ToastProvider } from "@/components/saved-toast";
 import { LiveProvider } from "@/components/live-provider";
 import initial from "../../../../data/snapshots/chain.json";
 import type { ChainSnapshot } from "@pools/core";
@@ -67,7 +68,9 @@ export default function RootLayout({
           fixtureMode={fixtureMode}
         >
           <EthPriceProvider>
-            <Shell>{children}</Shell>
+            <ToastProvider>
+              <Shell>{children}</Shell>
+            </ToastProvider>
           </EthPriceProvider>
         </LiveProvider>
       </body>

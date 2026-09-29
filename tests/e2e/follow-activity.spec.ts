@@ -123,7 +123,7 @@ test("followed activity keeps its trades on outage, pauses and replaces them wit
     });
   });
   try {
-    await page.goto("/wallet/");
+    await page.goto("/you/");
     const feed = page.getByRole("region", {
       name: "Following activity",
       exact: true,
@@ -224,7 +224,7 @@ test("a trade the explorer sent without symbol, decimals, time or pool invents n
       ),
     }),
   );
-  await page.goto("/wallet/");
+  await page.goto("/you/");
   const feed = page.getByRole("region", { name: "Following activity" });
   const row = feed
     .locator(
@@ -265,8 +265,8 @@ test("a wallet the feed has not read yet reads as loading, an unavailable one as
       ),
     }),
   );
-  await page.goto("/wallet/");
-  const list = page.getByRole("region", { name: "Followed wallets" });
+  await page.goto("/you/");
+  const list = page.getByRole("list", { name: "Followed wallets" });
   const item = (address: string) =>
     list.getByRole("listitem").filter({ hasText: address });
   await expect(item(pending).getByText("Loading")).toHaveAttribute(
@@ -292,7 +292,7 @@ test("an explorer outage for every followed wallet is the panel's unavailable st
       json: { error: "data_unavailable" },
     }),
   );
-  await page.goto("/wallet/");
+  await page.goto("/you/");
   const feed = page.getByRole("region", { name: "Following activity" });
   await expect(
     feed.getByRole("heading", { name: "Following activity unavailable" }),
@@ -389,7 +389,7 @@ for (const viewport of [
         ),
       });
     });
-    await page.goto("/wallet/");
+    await page.goto("/you/");
     const feed = page.getByRole("region", { name: "Following activity" });
     const stamp = feed.locator(".wallet-positions-context time");
     await expect(stamp).toHaveAttribute("datetime", "2026-09-25T21:44:07.000Z");
@@ -418,7 +418,7 @@ for (const viewport of [
     await expect(feed.getByText(/Newest 25 shown/)).toBeVisible();
     await expect(
       page
-        .getByRole("region", { name: "Followed wallets" })
+        .getByRole("list", { name: "Followed wallets" })
         .getByText("Loading"),
     ).toHaveCount(0);
     const measured = await page.evaluate(

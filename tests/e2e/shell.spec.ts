@@ -11,6 +11,7 @@ const routes = [
   `/creators/${chain.markets[0].launchSender.toLowerCase()}/`,
   "/wallet/",
   `/wallet/${wallet}/`,
+  "/you/",
 ];
 
 for (const route of routes) {
@@ -28,10 +29,13 @@ for (const route of routes) {
     await expect(strip).not.toContainText(/Live|Delayed|Paused|Offline/);
     /* The freshness stamp is the page's own read cut and nothing else: the
        block where the read names one, the lag from the read's timestamp,
-       and blank on the lookup page, which has no read to stamp. */
+       and blank on the lookup page, which has no read to stamp, and on the
+       You page with nothing saved, which reads nothing (you.spec.ts holds
+       its stamp once something is saved). */
     const stamp = page.locator(".subnav-freshness");
     await expect(stamp).toHaveCount(1);
-    if (route === "/wallet/") await expect(stamp).toHaveText("");
+    if (route === "/wallet/" || route === "/you/")
+      await expect(stamp).toHaveText("");
     else
       await expect(stamp).toHaveText(
         /^(block \d{1,3}(,\d{3})* · )?indexed \d+[smhd] ago$/,
@@ -48,10 +52,15 @@ for (const route of routes) {
       "Creators",
     ]);
     await expect(page.locator(".header-actions .search-trigger")).toBeVisible();
+    // The slot a connect button would take is the entry into the You page:
+    // one link in both wallet states, its name carrying the saved counts.
     const connect = page.locator(".header-actions .connect-button");
     await expect(connect).toBeVisible();
-    await expect(connect).toHaveAttribute("aria-haspopup", "dialog");
-    await expect(connect).toHaveAccessibleName("Set my wallet");
+    await expect(connect).toHaveAttribute("href", "/you/");
+    await expect(connect).toHaveAccessibleName("You: nothing saved yet");
+    if (route === "/you/")
+      await expect(connect).toHaveAttribute("aria-current", "page");
+    else await expect(connect).not.toHaveAttribute("aria-current");
     const search = await page
       .locator(".header-actions .search-trigger")
       .boundingBox();
@@ -73,14 +82,13 @@ for (const route of routes) {
         "the control clears the unit toggle",
       ).toBeGreaterThanOrEqual(toggle!.x + toggle!.width);
     } else {
-      await expect(connect).toContainText("Set my wallet");
+      await expect(connect).toContainText("You");
       expect(box!.height).toBeGreaterThanOrEqual(36);
     }
-    await connect.click();
-    const setWalletDialog = page.getByRole("dialog", { name: "Set my wallet" });
-    await expect(setWalletDialog).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(setWalletDialog).toBeHidden();
+    // Nothing saved yet: the entry carries no count, and no menu or dialog
+    // hangs off the header; the page it opens is where a wallet is marked.
+    await expect(connect.locator(".connect-count")).toHaveCount(0);
+    await expect(page.getByRole("menu")).toHaveCount(0);
     // The product footer was removed. Only the chart library's required
     // attribution survives it: its licence wants its NOTICE line and a link
     // to tradingview.com on a page users see, so the on-chart logo is off
@@ -292,9 +300,9 @@ test.describe("Wallet profile entry", () => {
     page,
     isMobile,
   }) => {
-    await page.goto("/");
+    await page.goto("/you/");
     const trigger = control(page);
-    await trigger.click();
+    await page.getByRole("button", { name: "Set my wallet" }).click();
     const dialog = page.getByRole("dialog", { name: "Set my wallet" });
     await expect(dialog).toBeVisible();
     const input = dialog.getByLabel("Your wallet address");
@@ -308,7 +316,7 @@ test.describe("Wallet profile entry", () => {
     await input.fill(wallet);
     await dialog.getByRole("button", { name: "Use this wallet" }).click();
     await expect(dialog).toBeHidden();
-    await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    await expect(trigger).toHaveAccessibleName("You: nothing saved yet");
     if (!isMobile) await expect(trigger).toContainText("0x4745…bce1");
     const after = await trigger.boundingBox();
     expect(
@@ -320,7 +328,7 @@ test.describe("Wallet profile entry", () => {
     ).toBe(wallet);
   });
 
-  test("the connected menu reaches every destination, closes on Escape with focus returned, and forgets the wallet", async ({
+  test("the connected chip links to the You page, which shows the wallet's YOU row and forgets it", async ({
     page,
   }) => {
     await page.addInitScript((address) => {
@@ -328,51 +336,25 @@ test.describe("Wallet profile entry", () => {
     }, wallet);
     await page.goto("/");
     const trigger = control(page);
-    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toHaveAttribute("href", "/you/");
+    await expect(trigger).toHaveAccessibleName("You: nothing saved yet");
     await trigger.click();
-    await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    const menu = page.getByRole("menu", { name: "Wallet menu" });
-    await expect(menu).toBeVisible();
-    await expect(menu.getByRole("menuitem")).toHaveText([
-      "Portfolio",
-      "Following",
-      "Watchlist",
-      "Share PnL card",
-      "Forget this wallet",
-    ]);
-    await page.keyboard.press("Escape");
-    await expect(menu).toBeHidden();
-    await expect(trigger).toHaveAttribute("aria-expanded", "false");
-    await expect(trigger).toBeFocused();
-
-    await trigger.click();
-    await menu.getByRole("menuitem", { name: "Portfolio" }).click();
-    await expect(page).toHaveURL(`/wallet/${wallet}/`);
-    await expect(page.locator(".page-heading h1")).toHaveText("Portfolio");
-
-    await trigger.click();
-    await menu.getByRole("menuitem", { name: "Following" }).click();
-    await expect(page).toHaveURL(/\/traders\/\?view=following$/);
-
-    await trigger.click();
-    await menu.getByRole("menuitem", { name: "Watchlist" }).click();
-    await expect(page).toHaveURL(/\/\?view=watchlist$/);
-
-    await trigger.click();
-    await menu.getByRole("menuitem", { name: "Share PnL card" }).click();
-    const share = page.getByRole("dialog", { name: "Share PnL card" });
-    await expect(share).toBeVisible();
-    await expect(share.getByText("Preview · All realized")).toBeVisible();
-    await page.getByRole("button", { name: "Close share card" }).click();
-    await expect(share).toBeHidden();
-
-    await trigger.click();
-    await menu.getByRole("menuitem", { name: "Forget this wallet" }).click();
-    await expect(menu).toBeHidden();
-    await expect(trigger).toHaveAccessibleName("Set my wallet");
+    await expect(page).toHaveURL(/\/you\/$/);
+    const identity = page.locator(".you-identity");
+    await expect(identity).toContainText("0x4745…bce1");
+    await expect(identity).toContainText(/YOU/);
+    await expect(
+      identity.getByRole("link", { name: /Portfolio/ }),
+    ).toHaveAttribute("href", `/wallet/${wallet}/?window=7d`);
+    await identity.getByRole("button", { name: "Forget this wallet" }).click();
+    await expect(identity).not.toContainText("0x4745…bce1");
+    await expect(
+      identity.getByRole("button", { name: "Set my wallet" }),
+    ).toBeVisible();
     expect(
       await page.evaluate(() => localStorage.getItem("poolsinfo.my-wallet.v1")),
     ).toBeNull();
+    await expect(trigger).toContainText("You");
   });
 
   test("the mobile chip collapses to the identity tile only", async ({
@@ -390,6 +372,7 @@ test.describe("Wallet profile entry", () => {
     expect(box!.height).toBe(44);
     expect((await trigger.innerText()).trim()).toBe("");
     await expect(trigger.locator(".avatar")).toBeVisible();
+    await expect(trigger).toHaveAttribute("href", "/you/");
   });
 
   test("a stored wallet paints the connected chip on the screener with zero layout shift", async ({
@@ -414,7 +397,7 @@ test.describe("Wallet profile entry", () => {
       timeout: 20000,
     });
     await expect(page.locator('[data-pending="true"]:visible')).toHaveCount(0);
-    await expect(control(page)).toHaveAttribute("aria-haspopup", "menu");
+    await expect(control(page)).toHaveClass(/wallet-chip/);
     await page.evaluate(
       () =>
         new Promise<void>((resolve) =>

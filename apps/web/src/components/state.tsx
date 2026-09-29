@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { normalizePoolIds, parseSavedWatchlist } from "@/lib/watchlist";
+import type { WatchToggle } from "./saved-toast";
 const subscribe = (callback: () => void) => {
   window.addEventListener("popstate", callback);
   return () => window.removeEventListener("popstate", callback);
@@ -107,19 +108,23 @@ export function useWatchlist() {
   const ids = parseSavedWatchlist(value);
   return {
     ids,
-    toggle: (id: string) => {
+    /** Stars or unstars, and says which; "failed" when the browser could
+        not save it. */
+    toggle: (id: string): WatchToggle => {
       const normalized = normalizePoolIds([id])[0];
-      if (!normalized) return false;
+      if (!normalized) return "failed";
       // Read at the interaction boundary so another tab's latest stars survive.
       const current = parseSavedWatchlist(savedWatchlist());
-      return writeLocal(
+      const adding = !current.includes(normalized);
+      const saved = writeLocal(
         "poolsinfo.watchlist.v1",
         JSON.stringify(
-          current.includes(normalized)
-            ? current.filter((v) => v !== normalized)
-            : [...current, normalized],
+          adding
+            ? [...current, normalized]
+            : current.filter((v) => v !== normalized),
         ),
       );
+      return saved ? (adding ? "watched" : "unwatched") : "failed";
     },
     add: (incoming: readonly string[]) =>
       writeLocal(

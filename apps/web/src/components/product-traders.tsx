@@ -181,7 +181,7 @@ function useLeaderboard(
     pool page prints its trade count (30,160, never 30160). */
 const tradeCount = (w: AnalyticsWalletSummary) =>
   (w.rankingTradeCount ?? w.supportedTradeCount).toLocaleString("en-US");
-const tradeCountLabel = (w: AnalyticsWalletSummary) =>
+export const tradeCountLabel = (w: AnalyticsWalletSummary) =>
   countLabel(w.rankingTradeCount ?? w.supportedTradeCount, "trade");
 function DesktopTraderRow({
   w,
@@ -531,24 +531,38 @@ function MyRank({ window }: { window: LiveWindow }) {
         <span className="my-rank-chip">YOU</span>
       </span>
       <span className="my-rank-summary">
-        Set your wallet in the header to see your rank here
+        Set your wallet to see your rank here
       </span>
     </div>
   );
 }
-function MyRankRow({
+/** The marked wallet's identity and its summary in the window: the export's
+    "YOU · RANK N" row's contents, shared with the You page's identity row.
+    Each state is its own node, so a resolved value never rewrites the
+    pending text in place. */
+export function MyRankFacts({
   address,
   window,
+  cutSource,
 }: {
   address: string;
   window: LiveWindow;
+  /** Names this read to the header's freshness stamp, where it is one of the
+      page's own reads (the You page); the leaderboard stamps from its board
+      read and leaves it unset, so nothing is reported there. */
+  cutSource?: string;
 }) {
   const { data, error } = useProduct<AnalyticsWalletResponse>(
     `wallets/${address}?window=${window}`,
   );
   const w = data?.wallet;
+  useReportCut(
+    cutSource ?? "my-rank",
+    null,
+    cutSource ? (data?.coverage.asOf ?? null) : null,
+  );
   return (
-    <Link className="my-rank" href={`/wallet/${address}/?window=${window}`}>
+    <>
       <span className="my-rank-identity">
         <Avatar address={address} small />
         <span className="mono my-rank-address">{shortAddress(address)}</span>
@@ -556,8 +570,6 @@ function MyRankRow({
           {w?.rank ? `YOU · RANK ${w.rank}` : "YOU"}
         </span>
       </span>
-      {/* Each state is its own node, so a resolved value never rewrites the
-          pending text in place. */}
       {!w && error ? (
         <span className="my-rank-summary" key="unavailable">
           unavailable
@@ -576,6 +588,19 @@ function MyRankRow({
           not ranked in this window
         </span>
       )}
+    </>
+  );
+}
+function MyRankRow({
+  address,
+  window,
+}: {
+  address: string;
+  window: LiveWindow;
+}) {
+  return (
+    <Link className="my-rank" href={`/wallet/${address}/?window=${window}`}>
+      <MyRankFacts address={address} window={window} />
       <span className="my-rank-link">
         <span>Your wallet</span> →
       </span>

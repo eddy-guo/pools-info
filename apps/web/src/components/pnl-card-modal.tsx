@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import { shortAddress, type LiveWindow } from "@pools/core";
 import {
   cardDesigns,
@@ -12,37 +12,7 @@ import {
   type CardPreset,
 } from "@/lib/card-options";
 import styles from "./pnl-card-modal.module.css";
-
-/**
- * The design toggle's own choice, independent of the wallet or window and
- * shared with every open card modal the way `useFollowing`'s store is: read
- * through `useSyncExternalStore` so a value that differs from the server's
- * default never shows as a hydration mismatch.
- */
-const designStorageKey = "poolsinfo.card-design.v1";
-const designChanged = "poolsinfo-card-design-changed";
-function readDesign(): CardDesign {
-  try {
-    const saved = localStorage.getItem(designStorageKey);
-    return saved && Object.hasOwn(cardDesigns, saved)
-      ? (saved as CardDesign)
-      : defaultCardOptions.design;
-  } catch {
-    return defaultCardOptions.design;
-  }
-}
-function subscribeDesign(notify: () => void) {
-  const storage = (event: StorageEvent) => {
-    if (event.key === designStorageKey || event.key === null) notify();
-  };
-  window.addEventListener("storage", storage);
-  window.addEventListener(designChanged, notify);
-  return () => {
-    window.removeEventListener("storage", storage);
-    window.removeEventListener(designChanged, notify);
-  };
-}
-const defaultDesignSnapshot = () => defaultCardOptions.design;
+import { useCardDesign } from "./card-design";
 
 /** The card's geometry, as fractions of 1200 x 630, drawn while the PNG renders. */
 const bones: [number, number, number, number][] = [
@@ -75,25 +45,13 @@ export function PnlCardModal({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [preset, setPreset] = useState<CardPreset>(defaultCardOptions.preset);
-  const design = useSyncExternalStore(
-    subscribeDesign,
-    readDesign,
-    defaultDesignSnapshot,
-  );
+  const { design, setDesign: chooseDesign } = useCardDesign();
   const [anonymous, setAnonymous] = useState(false);
   const [notional, setNotional] = useState(false);
   const [ready, setReady] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
-  function chooseDesign(next: CardDesign) {
-    try {
-      localStorage.setItem(designStorageKey, next);
-      window.dispatchEvent(new Event(designChanged));
-    } catch {
-      // Best effort: the toggle just won't persist in this browser.
-    }
-  }
   /* The notional toggle is offered disabled, with its reason, on a design
      that does not honour it; the choice is kept for the designs that do. */
   const notionalOffered = cardDesigns[design].notional;

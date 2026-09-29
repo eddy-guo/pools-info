@@ -28,7 +28,8 @@ export function useFollowedLeaderboard(
     key: string;
     items: AnalyticsWalletSummary[];
     error: string;
-  }>({ key: "", items: [], error: "" });
+    asOf: number | null;
+  }>({ key: "", items: [], error: "", asOf: null });
   const key = `${window}:${attempt}:${addresses.join(",")}`;
   useEffect(() => {
     if (!active || !addresses.length) return;
@@ -38,16 +39,19 @@ export function useFollowedLeaderboard(
     ).fill(null);
     let failures = 0;
     let cursor = 0;
+    let asOf: number | null = null;
     async function worker() {
       for (;;) {
         const index = cursor++;
         if (index >= addresses.length) return;
         try {
-          const { wallet } = await fetchProduct<AnalyticsWalletResponse>(
-            `wallets/${addresses[index]}?window=${window}`,
-            controller.signal,
-          );
+          const { wallet, coverage } =
+            await fetchProduct<AnalyticsWalletResponse>(
+              `wallets/${addresses[index]}?window=${window}`,
+              controller.signal,
+            );
           results[index] = wallet;
+          asOf = asOf === null ? coverage.asOf : Math.min(asOf, coverage.asOf);
         } catch {
           failures++;
         }
@@ -66,6 +70,7 @@ export function useFollowedLeaderboard(
         key,
         items,
         error: failures && !items.length ? DATA_UNAVAILABLE : "",
+        asOf,
       });
     });
     return () => controller.abort();
@@ -79,6 +84,9 @@ export function useFollowedLeaderboard(
     stale: loading && state.items.length > 0,
     error: hasAddresses && fetched ? state.error : "",
     settled: !hasAddresses || fetched,
+    /** The oldest cut among the reads that answered, as a Show more's pages
+        report theirs; null until they settle or when none answered. */
+    asOf: hasAddresses && fetched ? state.asOf : null,
     /** Reruns every followed wallet's read, for the failed state's retry
         control. */
     refresh: () => setAttempt((n) => n + 1),
