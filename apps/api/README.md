@@ -198,8 +198,7 @@ Four Postgres connections, 2-second connection timeout, 3-second statement
 timeout, 16 concurrent database and readiness reads, separate 240 requests/minute
 budgets for non-explorer and explorer JSON reads per instance, and
 five-second cache/request coalescing keep a public read service bounded. Cache
-storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. This
-is an instance-wide pilot budget, not an account/IP tracking system. Search and
+storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. Search and
 wallet reads still need the read indexes as history grows; timeouts return a
 retryable 503. No HTTP response exposes credentials, SQL, or provider errors.
 
@@ -208,6 +207,72 @@ Errors use `{error:code}` with 400 for validation, 404 for missing routes/pools,
 unavailable data, or missing feed coverage. Responses use `Cache-Control:
 no-store`; only the bounded in-process cache is shared. No permissive CORS is
 enabled. Browsers should use Next.js's same-origin adapter.
+
+### Request limits and client identity
+
+Every limit is per process, in memory, and answers `429 {"error":"request_limit",
+"reason":<which>}` with a `Retry-After` in whole seconds that is exact for the
+budget that refused; a refused request does no work and spends nothing. In
+order, a JSON request meets:
+
+- `client_budget`: the caller's own token bucket, when the contract below can
+  name the caller. It holds `CLIENT_TOKENS_PER_MINUTE` tokens (default 120,
+  minimum 10) as both burst and refill, refilled continuously, and each
+  request costs by the work it starts: 1 for a fresh cache hit or a coalesced
+  in-flight read, 2 for a bounded database read (status, pools, a pool page,
+  trades, live trades, the feed, wallet activity, stats, the leaderboard, a
+  trade share, the ETH price), 4 for a catalog-wide or whole-wallet read
+  (explore, creators, search, a wallet profile) and 8 for a paid explorer
+  page (wallet history, following). `Retry-After` is the seconds until the
+  refill covers the cost. Ordinary browsing (the screener, a few pool pages
+  and a wallet page inside a minute) spends well under a third of the
+  default. At most 10,000 clients are tracked at once; the least recently
+  seen is dropped first, and a dropped client that returns starts full. HEAD
+  costs what GET costs, since it does the same read. A request the shared
+  ceiling then refuses is refunded to its client.
+- `shared_budget`: the process's 240 requests/minute ceilings, one for the
+  explorer-backed reads (wallet history, following) and one for every other
+  JSON route, hits included, unchanged as the backstop for everyone;
+  `Retry-After` is the window's remainder.
+- `busy` (503, `Retry-After: 5`): more than 16 distinct database reads, or 8
+  explorer reads, in flight.
+
+Icons keep their own `image_budget` of 1,200 requests/minute and are never
+charged to a client. `/ready` draws on its own `probe_budget` of 60 answers a
+minute in place of any visitor budget, so a health monitor is never starved by
+visitor traffic and a probe flood spends no visitor's budget; `/health` does no
+work and is never limited. `/v1/prices/eth-usd` is charged like any JSON read.
+
+Who the caller is comes from an explicit contract, never from a header any
+caller could set on direct traffic; a request the contract cannot attribute
+draws on the shared ceilings alone. Without any of the three settings the api
+cannot tell its callers apart and applies only those ceilings, so a
+deployment behind a proxy it has not been told to trust keeps its old
+capacity instead of folding every visitor into one budget:
+
+- `TRUSTED_PROXY_ADDRESSES`: comma-separated addresses or CIDR blocks of the
+  peers that are trusted proxies (the platform's edge in front of the api).
+  A request from such a peer is charged to the last `X-Forwarded-For` entry,
+  the one that proxy appended itself, so nothing a caller wrote earlier in
+  the header counts; a request from any other peer is charged to that peer
+  and its forwarded headers are ignored. A trusted peer that forwarded no
+  usable address leaves the request unattributed rather than charging the
+  proxy's own key. On Railway the service's public port is reachable only
+  through Railway's proxy, so the address that proxy connects from, as the
+  container sees it, is the entry to trust.
+- `TRUSTED_PROXY_SECRET` (at least 16 characters): the website's product
+  proxy presents it in `X-Pools-Proxy-Secret` beside the visitor's address in
+  `X-Pools-Client-Address` (its `INDEXER_PROXY_SECRET`), and that visitor is
+  charged, whatever the connection or forwarded chain say. A wrong secret
+  falls back to the address rules above. This is what lets a proxy with no
+  fixed egress address, such as the website on Vercel, keep each of its
+  visitors on their own budget rather than all of them on the proxy's.
+- `CLIENT_IDENTITY=peer`: the connection's own address is the client, for an
+  api reached directly with no proxy in front.
+
+IPv6 clients are charged by their /64. The startup log line names the
+configured sources (`clientIdentity`); identities are never logged, stored
+or answered back.
 
 ## Published analytics and product endpoints
 
@@ -393,8 +458,9 @@ Responses:
   keeps its generated icon on any 404.
 - `503 {error:"busy"}` with `Retry-After: 5` and `no-store` when the process's
   fetch slots and their waiting line are full, or when more than 64 image
-  requests are in flight; `429` with `Retry-After` from the route's own
-  1,200 requests/minute budget, separate from the JSON read budget.
+  requests are in flight; `429 {error:"request_limit",reason:"image_budget"}`
+  with `Retry-After` from the route's own 1,200 requests/minute budget,
+  separate from the JSON read budget and never charged to a client.
 
 Variables, all optional:
 
