@@ -802,15 +802,12 @@ test(
     ]);
     try {
       const unrankedSearch = await search(W[2]);
-      assert.deepEqual(
-        unrankedSearch,
-        {
-          ...rankedSearch,
-          entries: rankedSearch.entries.map(({ traderRank: _rank, ...entry }) =>
-            entry,
-          ),
-        },
-      );
+      assert.deepEqual(unrankedSearch, {
+        ...rankedSearch,
+        entries: rankedSearch.entries.map(
+          ({ traderRank: _rank, ...entry }) => entry,
+        ),
+      });
     } finally {
       await db.query("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [
         hash(cursor1).slice(2),
