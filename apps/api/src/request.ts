@@ -38,6 +38,7 @@ export type Route =
   | "trade-share"
   | "wallet"
   | "explore"
+  | "stats"
   | "leaderboard"
   | "creators"
   | "profile"
@@ -105,6 +106,7 @@ export function parseRequest(input: string): ReadRequest {
   else if (url.pathname === "/v1/feed") route = "feed";
   else if (url.pathname === "/v1/following") route = "following";
   else if (url.pathname === "/v1/explore") route = "explore";
+  else if (url.pathname === "/v1/stats") route = "stats";
   else if (url.pathname === "/v1/leaderboard") route = "leaderboard";
   else if (url.pathname === "/v1/creators") route = "creators";
   else if (url.pathname === "/v1/search") route = "search";
@@ -149,6 +151,8 @@ export function parseRequest(input: string): ReadRequest {
               "limit",
               "offset",
             ]
+          : route === "stats"
+            ? ["window"]
           : route === "leaderboard"
             ? ["window", "minTrades", "metric", "offset", "limit"]
             : route === "creators"
