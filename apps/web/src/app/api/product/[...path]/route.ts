@@ -5,6 +5,7 @@ import {
   productUnavailableResponse,
   readEthPrice,
   readProduct,
+  readScreenerStats,
   readWalletTradeHistory,
 } from "@/lib/product-server";
 export const runtime = "nodejs";
@@ -22,6 +23,23 @@ export async function GET(
     return Response.json(
       { error: "Invalid saved-data request" },
       { status: 400 },
+    );
+  }
+  if (path.length === 1 && path[0] === "stats") {
+    const result = await readScreenerStats(
+      (query.get("window") ?? "24h") as
+        "1h" | "6h" | "24h" | "7d" | "30d" | "All",
+    );
+    return Response.json(
+      result.status === 200
+        ? result.data
+        : {
+            error:
+              result.status === 404
+                ? "not_found"
+                : "stats_coverage_unavailable",
+          },
+      { status: result.status, headers: { "Cache-Control": "no-store" } },
     );
   }
   // Display-only market context with no saved counterpart: an outage stays an

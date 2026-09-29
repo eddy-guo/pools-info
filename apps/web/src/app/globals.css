@@ -5101,6 +5101,10 @@ button.icon-button:disabled {
   position: relative;
   min-height: 0;
 }
+.explore-page .pool-table th button[data-window-sort="true"] {
+  width: 30px;
+  justify-content: flex-end;
+}
 .explore-page .pool-table .sort-arrow {
   position: absolute;
   top: 0;
@@ -6595,6 +6599,75 @@ a.wallet-top-pool:hover {
 .change,
 .change-age {
   font-variant-numeric: tabular-nums;
+}
+.explore-page .screener-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: 112px;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.explore-page .screener-stats .stat {
+  min-width: 0;
+  padding: 16px 18px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+.explore-page .screener-stats .stat > span {
+  font-size: 12.5px;
+}
+.explore-page .screener-stats .stat > strong {
+  display: block;
+  min-height: 33px;
+  margin: 9px 0 7px;
+  font-size: 25px;
+  line-height: 33px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.explore-page .screener-stats .stat > strong .number {
+  white-space: nowrap;
+}
+.explore-page .screener-stats .stat > small {
+  min-height: 0;
+  font-size: 11.5px;
+}
+.explore-page .screener-stats .stats-empty {
+  display: inline-block;
+  min-width: 5ch;
+  height: 1em;
+  vertical-align: baseline;
+}
+.explore-page .screener-stats [data-pending="true"] .stats-empty {
+  background: var(--line);
+  border-radius: 4px;
+}
+@media (max-width: 600px) {
+  .explore-page .screener-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 104px;
+    grid-auto-rows: 86px;
+    gap: 10px;
+    min-height: 104px;
+    margin-bottom: 14px;
+  }
+  .explore-page .screener-stats[data-has-active="true"] {
+    grid-template-rows: 104px 86px;
+    min-height: 200px;
+  }
+  .explore-page .screener-stats .stat {
+    padding: 12px 14px;
+  }
+  .explore-page .screener-stats .stat:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .explore-page .screener-stats .stat > strong {
+    font-size: 21px;
+    line-height: 29px;
+    min-height: 29px;
+    margin: 7px 0 4px;
+  }
 }
 .data-table .number {
   display: inline-block;

@@ -21,7 +21,7 @@ export function productRequest(path: string[], input: URLSearchParams) {
     wallet.test(path[1]) &&
     path[2] === "history";
   if (!(
-    ["explore", "leaderboard", "search", "following", "creators"].includes(
+    ["explore", "leaderboard", "search", "following", "creators", "stats"].includes(
       endpoint,
     ) ||
     tradeShare ||
@@ -39,17 +39,19 @@ export function productRequest(path: string[], input: URLSearchParams) {
       ? ["kind", "cursor"]
       : endpoint === "following"
         ? ["wallets", "limit"]
-        : endpoint === "explore"
-          ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
-          : endpoint === "leaderboard"
-            ? ["window", "minTrades", "metric", "limit", "offset"]
-            : endpoint === "creators"
-              ? ["window", "sort", "direction", "limit", "offset"]
-              : endpoint === "search"
-                ? ["q", "group"]
-                : path[0] === "wallets" || path[0] === "pools"
-                  ? ["window"]
-                  : [];
+        : endpoint === "stats"
+          ? ["window"]
+          : endpoint === "explore"
+            ? ["window", "sort", "direction", "limit", "offset", "q", "view", "ids"]
+            : endpoint === "leaderboard"
+              ? ["window", "minTrades", "metric", "limit", "offset"]
+              : endpoint === "creators"
+                ? ["window", "sort", "direction", "limit", "offset"]
+                : endpoint === "search"
+                  ? ["q", "group"]
+                  : path[0] === "wallets" || path[0] === "pools"
+                    ? ["window"]
+                    : [];
   for (const [key, value] of input) {
     if (!allowed.includes(key) || input.getAll(key).length !== 1)
       throw Error("Invalid product query");

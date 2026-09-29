@@ -6,6 +6,7 @@ import {
   preloadedProduct,
   productUnavailableResponse,
   readProduct,
+  readScreenerStats,
 } from "./product-server";
 import {
   cardCurve,
@@ -20,6 +21,7 @@ import {
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
+import { validateStatsResponse } from "./stats-response";
 import {
   validateExploreResponse,
   validateWalletLaunches,
@@ -1500,4 +1502,120 @@ test("a wallet's own launches carry a launch type, through the proxy too", async
     readProduct(path, params),
     (error: unknown) => error instanceof ProductUnavailableError,
   );
+});
+const sample = () => ({
+  window: "24h",
+  asOf: 1790000000,
+  cutoff: { block: 12345678, hash: `0x${"a".repeat(64)}`, asOf: 1790000000 },
+  windowStart: 1789910400,
+  volumeWei: "123456789012345678901",
+  trades: 1234,
+  liquidityWei: null,
+  poolsLaunched: 42,
+  activeTraders: 123,
+  completeWindow: true,
+  coverage: {
+    catalogPools: 63000,
+    processedPools: 62000,
+    asOf: 1790000000,
+    oldestAsOf: 1790000000,
+    generatedAt: "2026-09-28T00:00:00.000Z",
+    complete: false,
+    registryExhaustive: false,
+    pnlScope: "attributed_positions_all_pools",
+    measuredPools: 62000,
+    activeTraderScope: "attributed_wallets_in_measured_pools",
+  },
+});
+
+test("stats route forwards only the contract windows", () => {
+  for (const window of ["1h", "6h", "24h", "7d", "30d", "All"]) {
+    const request = productRequest(["stats"], new URLSearchParams({ window }));
+    assert.equal(request.endpoint, "stats");
+    assert.equal(request.params.get("window"), window);
+  }
+  assert.throws(() =>
+    productRequest(["stats"], new URLSearchParams("window=2h")),
+  );
+  assert.throws(() =>
+    productRequest(["stats"], new URLSearchParams("sort=volume")),
+  );
+});
+
+test("stats validator accepts covered figures and an incomplete rolling hour", () => {
+  const complete = sample();
+  validateStatsResponse(complete, "24h");
+  const incomplete = {
+    ...complete,
+    window: "1h",
+    volumeWei: null,
+    trades: null,
+    activeTraders: null,
+    completeWindow: false,
+    poolsLaunched: 0,
+  };
+  validateStatsResponse(incomplete, "1h");
+});
+
+test("stats validator refuses missing, stale, or fabricated figures", () => {
+  assert.throws(() => validateStatsResponse(sample(), "7d"));
+  const invalid: unknown[] = [
+    { ...sample(), volumeWei: 123 },
+    { ...sample(), volumeWei: "1.5" },
+    { ...sample(), volumeWei: undefined },
+    { ...sample(), trades: -1 },
+    { ...sample(), poolsLaunched: null },
+    { ...sample(), activeTraders: "123" },
+    { ...sample(), completeWindow: undefined },
+    {
+      ...sample(),
+      coverage: { ...sample().coverage, measuredPools: undefined },
+    },
+    {
+      ...sample(),
+      coverage: { ...sample().coverage, activeTraderScope: "all_wallets" },
+    },
+    {
+      ...sample(),
+      coverage: { ...sample().coverage, activeTraderScope: undefined },
+    },
+  ];
+  for (const value of invalid)
+    assert.throws(() => validateStatsResponse(value, "24h"));
+});
+
+test("stats read treats a missing route, coverage refusal, and invalid body as no cards", async (t) => {
+  const origin = process.env.INDEXER_API_URL;
+  const disabled = process.env.CHAIN_REFRESH_DISABLED;
+  const fixtures = process.env.PRODUCT_FIXTURES;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (origin === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = origin;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+    if (fixtures === undefined) delete process.env.PRODUCT_FIXTURES;
+    else process.env.PRODUCT_FIXTURES = fixtures;
+  });
+  let response = Response.json(sample());
+  let requested = "";
+  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
+    requested = String(input);
+    return response.clone();
+  });
+  assert.equal((await readScreenerStats("24h")).status, 200);
+  assert.equal(requested, "https://index.example/v1/stats?window=24h");
+  response = Response.json({ error: "not_found" }, { status: 404 });
+  assert.deepEqual(await readScreenerStats("24h"), { status: 404 });
+  response = Response.json(
+    { error: "stats_coverage_unavailable" },
+    { status: 503 },
+  );
+  assert.deepEqual(await readScreenerStats("24h"), { status: 503 });
+  response = Response.json({ ...sample(), poolsLaunched: undefined });
+  assert.deepEqual(await readScreenerStats("24h"), { status: 503 });
+  process.env.CHAIN_REFRESH_DISABLED = "1";
+  process.env.PRODUCT_FIXTURES = "1";
+  assert.deepEqual(await readScreenerStats("24h"), { status: 503 });
 });
