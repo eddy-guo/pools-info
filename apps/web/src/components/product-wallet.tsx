@@ -454,7 +454,10 @@ export function ProductWallet({ address }: { address: string }) {
                                         launchTx: p.launchTx,
                                       })}
                                     >
-                                      <Avatar address={p.token} />
+                                      <Avatar
+                                        address={p.token}
+                                        symbol={p.symbol}
+                                      />
                                       <span>{p.symbol}</span>
                                     </Link>
                                   ) : (
@@ -537,7 +540,10 @@ export function ProductWallet({ address }: { address: string }) {
                                       launchTx: p.launchTx,
                                     })}
                                   >
-                                    <Avatar address={p.token} />
+                                    <Avatar
+                                      address={p.token}
+                                      symbol={p.symbol}
+                                    />
                                     <span>{p.symbol}</span>
                                   </Link>
                                   <span className="mobile-position-pnl">
@@ -939,6 +945,7 @@ export function ProductWallet({ address }: { address: string }) {
                       <PoolImage
                         poolId={p.poolId}
                         token={p.token}
+                        symbol={p.symbol}
                         hasImage={false}
                         size="small"
                       />

@@ -166,6 +166,7 @@ function PoolCell({
       <PoolImage
         poolId={pool.id}
         token={pool.token}
+        symbol={pool.symbol}
         hasImage={!!pool.imageUrl}
       />
       <span>
@@ -767,6 +768,7 @@ export function ProductExplore({
                     <PoolImage
                       poolId={p.id}
                       token={p.token}
+                      symbol={p.symbol}
                       hasImage={!!p.imageUrl}
                       size="small"
                     />

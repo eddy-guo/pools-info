@@ -24,6 +24,7 @@ import {
 import { useEthPrice } from "./eth-price-provider";
 import { useUnit, useWatchlist } from "./state";
 import { usdPrice } from "@/lib/usd-price";
+import { tokenInitials } from "@/lib/token-identity";
 
 export function TokenIcon({
   pool,
@@ -43,17 +44,18 @@ export function TokenIcon({
   );
 }
 /**
- * The identity tile where no image exists: the export's two-character
- * monogram on the address's own tint, so no row carries the accent. The
- * letters are decoration drawn by the stylesheet from `data-initials`, so a
- * cell's text stays the address and nothing else.
+ * A token's symbol labels its fallback tile; a wallet stays letterless.
+ * Both keep the hue from their address. The letters are decoration drawn
+ * by the stylesheet, so the cell's text stays unchanged.
  */
 export function Avatar({
   address,
+  symbol,
   small = false,
   large = false,
 }: {
   address: string;
+  symbol?: string | null;
   small?: boolean;
   large?: boolean;
 }) {
@@ -62,7 +64,7 @@ export function Avatar({
     <span
       aria-hidden="true"
       className={`avatar ${small ? "small" : ""} ${large ? "large" : ""}`}
-      data-initials={address.slice(2, 4).toUpperCase()}
+      data-initials={tokenInitials(symbol)}
       style={
         {
           "--avatar-bg": tint.background,

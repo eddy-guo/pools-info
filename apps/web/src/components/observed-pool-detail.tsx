@@ -82,6 +82,7 @@ export function PoolHeading({
             <PoolImage
               poolId={id}
               token={pool.token}
+              symbol={pool.symbol}
               hasImage={!!pool.imageUrl}
               size="large"
             />

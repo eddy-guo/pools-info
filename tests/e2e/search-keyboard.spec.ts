@@ -17,6 +17,12 @@ test("search stays idle while closed and ArrowDown shows an accent focus ring", 
   await dialog.getByRole("textbox").fill(chain.markets[0].symbol);
   const first = dialog.locator(".search-result").first();
   await expect(first).toBeVisible();
+  const title = await first.locator("strong").textContent();
+  const symbol = title?.split(" · ").at(-1) ?? "";
+  await expect(first.locator(".avatar")).toHaveAttribute(
+    "data-initials",
+    symbol.slice(0, 2).toUpperCase(),
+  );
   await page.keyboard.press("ArrowDown");
   await expect(first).toBeFocused();
   await expect(first).toHaveCSS("outline-style", "solid");

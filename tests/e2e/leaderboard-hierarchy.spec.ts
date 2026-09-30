@@ -258,12 +258,12 @@ test("the podium shows a rank medallion, chip, PnL, realized/ROI line, disclosur
       };
     });
   expect(podiumIdentity).toMatchObject({
-    initials: address!.slice(2, 4).toUpperCase(),
+    initials: null,
     hidden: "true",
     width: 30,
     height: 30,
   });
-  expect(podiumIdentity.pseudo).toContain(podiumIdentity.initials);
+  expect(podiumIdentity.pseudo).toBe('""');
 
   const pnl = await typography(
     first.locator(".trader-podium-card-pnl .number"),
@@ -291,8 +291,7 @@ test("the podium shows a rank medallion, chip, PnL, realized/ROI line, disclosur
     /^\d+W · \d+L\d+ trades$/,
   );
 
-  // The board uses the wallet header's canonical monogram rather than a
-  // second identity algorithm.
+  // The board and wallet header share the same letterless address tile.
   await page.goto(`/wallet/${address}/?window=All`);
   const walletIdentity = await page
     .locator(".page-heading .avatar")

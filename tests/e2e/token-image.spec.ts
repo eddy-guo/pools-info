@@ -15,6 +15,7 @@ test("token images load lazily through the local endpoint and retain generated f
   baseURL,
 }) => {
   const imageRequests = new Set<string>();
+  const symbols = new Map<string, string>();
   let failImages = false;
   await page.route("**/api/markets/", (route) =>
     route.fulfill({ status: 503, json: { error: "disabled" } }),
@@ -24,8 +25,10 @@ test("token images load lazily through the local endpoint and retain generated f
     const data = structuredClone(
       await preloadedProduct("explore", query),
     ) as AnalyticsExploreResponse;
-    for (const pool of data.items)
+    for (const pool of data.items) {
+      symbols.set(pool.id, pool.symbol);
       pool.imageUrl = "https://pools.trade/a-real-metadata-url.png";
+    }
     await route.fulfill({
       json: { ...data, delivery: { source: "preloaded", notice: null } },
     });
@@ -77,9 +80,11 @@ test("token images load lazily through the local endpoint and retain generated f
   await expect(icons.first()).toHaveAttribute("data-image-state", "failed");
   await expect(icons.first().locator("img")).toHaveCount(0);
   await expect(icons.first().locator(".avatar")).toBeVisible();
+  const poolId = await icons.first().getAttribute("data-pool-image");
+  const symbol = symbols.get(poolId!)!;
   await expect(icons.first().locator(".avatar")).toHaveAttribute(
     "data-initials",
-    /^[0-9A-F]{2}$/,
+    symbol.slice(0, 2).toUpperCase(),
   );
   expect(externalImages).toEqual([]);
 });

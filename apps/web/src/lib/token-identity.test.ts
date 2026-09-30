@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  searchResultSymbol,
   searchResultTitle,
+  tokenInitials,
   tokenLabel,
   tokenLine,
   tokenSubSymbol,
@@ -62,4 +64,15 @@ test("a search title of another shape is kept", () => {
     searchResultTitle("Look up this address", token),
     "Look up this address",
   );
+});
+
+test("token fallback initials use the symbol, including short and emoji symbols", () => {
+  assert.equal(tokenInitials("frog"), "FR");
+  assert.equal(tokenInitials("k"), "K");
+  assert.equal(tokenInitials("😀"), "😀");
+  assert.equal(tokenInitials("a😀x"), "A😀");
+  assert.equal(tokenInitials(" "), null);
+  assert.equal(tokenInitials(null), null);
+  assert.equal(searchResultSymbol("Pepe in Hood (PEPE)"), "PEPE");
+  assert.equal(searchResultSymbol("Inspect address on explorer"), null);
 });

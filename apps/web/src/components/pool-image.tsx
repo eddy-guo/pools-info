@@ -6,6 +6,7 @@ import styles from "./pool-image.module.css";
 type Props = {
   poolId: string;
   token: string;
+  symbol?: string | null;
   hasImage: boolean;
   size?: "normal" | "small" | "large";
 };
@@ -14,7 +15,13 @@ export function PoolImage(props: Props) {
   return <LazyPoolImage key={`${props.poolId}:${props.hasImage}`} {...props} />;
 }
 
-function LazyPoolImage({ poolId, token, hasImage, size = "normal" }: Props) {
+function LazyPoolImage({
+  poolId,
+  token,
+  symbol,
+  hasImage,
+  size = "normal",
+}: Props) {
   const ref = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
   const [state, setState] = useState<"pending" | "loaded" | "failed">(
@@ -57,7 +64,7 @@ function LazyPoolImage({ poolId, token, hasImage, size = "normal" }: Props) {
       data-pool-image={poolId}
       data-image-state={state}
     >
-      <Avatar address={token} small={size === "small"} />
+      <Avatar address={token} symbol={symbol} small={size === "small"} />
       {visible && hasImage && state !== "failed" && (
         // The internal endpoint validates and re-encodes bytes. Creator URLs
         // never become a browser src; bypassing another optimizer avoids double work.
