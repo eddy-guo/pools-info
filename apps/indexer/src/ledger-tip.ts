@@ -275,7 +275,7 @@ export interface LedgerTipCycleOptions {
   log?: Log;
   /** Called once the cycle's range is planned, before its first request. */
   onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
-  onMainCommitted?: (cursor: number) => void;
+  onMainCommitted?: (cursor: number | null) => void;
 }
 /** One cycle: head, reconcile, at most one range, windows. Every write is a
  * committed batch or nothing, so the loop can stop at any point of it. */
@@ -296,7 +296,8 @@ export async function runLedgerTipCycle(
   // A cursor above the archive height (a lagging HyperSync node) cannot be
   // read back yet; wait until the archive passes it.
   if (saved.cursor <= height) {
-    await reconcileLedgerPass(db, client, log);
+    const reconciled = await reconcileLedgerPass(db, client, log);
+    options.onMainCommitted?.(reconciled.ledger.cursor);
     options.signal?.throwIfAborted();
     const result = await runLedgerRange(db, client, {
       rangeBlocks: options.rangeBlocks,
@@ -566,13 +567,12 @@ export async function runLedgerTip(
   // once with what the loop was doing, and the loop then ends on its
   // committed cursor.
   let inFlight: { from: number; to: number } | null = null;
-  let startCursor: number | null = null;
   let committedCursor: number | null = null;
   const stopping = () =>
     log({
       event: "ledger_tip_stopping",
       reason: abortReason(options.signal),
-      cursor: committedCursor ?? startCursor,
+      cursor: committedCursor,
       inFlight,
       cycle: summary.cycles + 1,
     });
@@ -639,7 +639,7 @@ export async function runLedgerTip(
   let crowdFailures = 0,
     crowdSkip = 0;
   const catchUp = { at: performance.now(), blocks: 0 };
-  startCursor = stream.cursor;
+  committedCursor = stream.cursor;
   /** The idle wait at the tip and a throttle's pause: reader warming gets
    * the time, and the next cycle cancels it. */
   const rest = async (ms: number) => {

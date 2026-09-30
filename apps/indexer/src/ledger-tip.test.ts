@@ -1202,6 +1202,47 @@ test(
   },
 );
 
+test(
+  "a stop after reorg reconciliation names the rewound cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    await runLedgerTip(db, tipOptions(fake, [], { maxCycles: 3 }));
+    assert.equal((await readLedgerStream(db)).cursor, start + 499);
+    fake.logs = tipChain({ forked: true }).fake.logs;
+    fake.reorgFrom = start + 350;
+    const log: Record<string, unknown>[] = [];
+    let stopped = false;
+    const options = tipOptions(fake, log, {
+      fetch: async (input, init) => {
+        if (!stopped && (await readLedgerStream(db)).cursor === start + 299) {
+          stopped = true;
+          options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+        }
+        return fake.fetch(input, init);
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: { from: start + 300, to: start + 399 },
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
 test("the worker logs one stop during initial database reconnect", async (t) => {
   const child = spawn(
     process.execPath,
