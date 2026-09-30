@@ -109,8 +109,8 @@ is at its row bound, 1h serves no volume, trade count or change and its
   `docs/LEDGER-CUTOVER.md`. The supply itself is served beside it as
   `market.supplyRaw` on every pool market response (raw token units, null
   when the pool is unindexed or its supply has not been read), so a holding's
-  share of supply is `quantity / supplyRaw`
-  rather than a lossy `fdvWei / priceWei`.
+  share of supply is `quantity / supplyRaw` when supply is nonzero, rather
+  than a lossy `fdvWei / priceWei`.
 - **Creator fee** (`market.creatorFees`, pool page only, optional): whether
   the deployment that launched the pool takes creator fees, from
   `indexed_pools.creator_fees` (migration 021, written by the launch lane at
@@ -445,16 +445,17 @@ same `walletPosition` in `ledger-wallet.ts`, so a consumer of the page reuses
 its type, and `ledger-position.integration.test.ts` pins the two equal on
 every window, under a units conflict and in a pool with unknown decimals
 too: the mark in wei (`markSql`) does not depend on the decimals, so only
-the figures per whole token are withheld without trusted units. Beside it, what a card needs and the ledger can vouch for, each
-null where it cannot:
+the figures per whole token are withheld without trusted units. Beside it
+are the card's additional figures, null where the ledger cannot vouch for
+them:
 
 - **`pool`** is the catalog row (`CatalogPool`), the identity a card names the
   token by.
 - **`mark`** is the price state behind `unrealizedWei` at the ledger cut:
   `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, null while
-  the token's decimals are unknown or a verified snapshot inside the ledger
-  cut disagrees with indexed decimals), the swap that
-  set it (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
+  the token's decimals are unknown, exceed 36, or a verified snapshot inside
+  the ledger cut disagrees with indexed decimals), the swap that set it
+  (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
   fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
   null for an excluded or unmarked one). Null when the pool has no swap
   folded. A newer deep publication can make the pool page's current price
@@ -470,7 +471,7 @@ null where it cannot:
   per whole token: their average-cost basis (`costWei` times ten to the
   `decimals` over `quantity`, truncated), the price a card sets against
   `mark.priceWei`. Null while flat, excluded or the decimals are unknown or
-  conflict with a verified snapshot. The fold keeps no count of raw
+  conflict with a verified snapshot or exceed 36. The fold keeps no count of raw
   token units bought or sold (only the held quantity, and no row per swap), so a
   lifetime average entry price and an average exit price cannot be derived
   and are not served; serving them would need a writer change, not a read.
