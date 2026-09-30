@@ -12,9 +12,7 @@ export type LedgerTipStartingStep =
   "connecting" | "locking" | "migrating" | "first_cycle";
 
 export interface LedgerTipHealthReport {
-  /** 200 when true, 503 when false: the loop has stopped, or its last
-   * committed cycle (the process start, before the first) is older than
-   * `staleAfterSeconds`. */
+  /** 200 after startup checks pass, while cursor progress is fresh. */
   ok: boolean;
   /** `starting` until the first cycle completes, `cycling` after a
    * committed cycle, `retrying` in the back-off after a failed one, and
@@ -25,6 +23,8 @@ export interface LedgerTipHealthReport {
   uptimeSeconds: number;
   lastCycleAt: string | null;
   sinceLastCycleSeconds: number | null;
+  lastProgressAt: string | null;
+  sinceLastProgressSeconds: number | null;
   staleAfterSeconds: number;
   stale: boolean;
   cycles: number;
@@ -63,6 +63,9 @@ interface LastCycle {
 export class LedgerTipHealth implements LedgerTipObserver {
   private readonly now: () => number;
   private readonly startedAt: number;
+  private validated = false;
+  private cursor: number | null = null;
+  private lastProgressAt: number | null = null;
   private state: LedgerTipHealthReport["state"] = "starting";
   private step: LedgerTipStartingStep = "connecting";
   private last: LastCycle | null = null;
@@ -84,8 +87,16 @@ export class LedgerTipHealth implements LedgerTipObserver {
   starting(step: LedgerTipStartingStep) {
     if (this.state === "starting") this.step = step;
   }
+  ready(cursor: number) {
+    if (this.state === "stopped") return;
+    this.cursor = cursor;
+    this.validated = true;
+  }
   cycle(cycle: LedgerTipCycle) {
     if (this.state === "stopped") return;
+    if (this.cursor !== null && cycle.cursor > this.cursor)
+      this.lastProgressAt = this.now();
+    this.cursor = cycle.cursor;
     this.state = "cycling";
     this.cycles++;
     this.failures = 0;
@@ -117,17 +128,25 @@ export class LedgerTipHealth implements LedgerTipObserver {
   }
   report(): LedgerTipHealthReport {
     const now = this.now();
-    const since = this.last?.at ?? this.startedAt;
+    const since = this.lastProgressAt ?? this.startedAt;
     const stale = now - since > this.options.staleMs;
     const seconds = (ms: number) => Math.max(0, Math.floor(ms / 1000));
     return {
-      ok: this.state !== "stopped" && !stale,
+      ok: this.validated && this.state !== "stopped" && !stale,
       state: this.state,
       step: this.state === "starting" ? this.step : null,
       startedAt: new Date(this.startedAt).toISOString(),
       uptimeSeconds: seconds(now - this.startedAt),
       lastCycleAt: this.last ? new Date(this.last.at).toISOString() : null,
       sinceLastCycleSeconds: this.last ? seconds(now - this.last.at) : null,
+      lastProgressAt:
+        this.lastProgressAt === null
+          ? null
+          : new Date(this.lastProgressAt).toISOString(),
+      sinceLastProgressSeconds:
+        this.lastProgressAt === null
+          ? null
+          : seconds(now - this.lastProgressAt),
       staleAfterSeconds: Math.floor(this.options.staleMs / 1000),
       stale,
       cycles: this.cycles,

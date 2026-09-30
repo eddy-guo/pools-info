@@ -403,18 +403,19 @@ ends the loop on a committed batch.
 when unset) from `apps/indexer/src/ledger-tip-health.ts`: the loop's state
 (`starting` with its step, `cycling`, `retrying` with the back-off and the
 fixed error text, `stopped` with the stop and its exit code), the last
-committed cycle's time, cursor, head, lag in blocks and seconds, and 200
-until the loop has stopped or that cycle (the process start, before the
-first) is older than `LEDGER_STALE_MS` (600000, ten minutes: six missed
-cycles), then 503. The handler reads memory the loop's observer hooks fill
+committed cycle's time, cursor, head, lag in blocks and seconds, and last
+cursor progress time. It answers 503 until the database and tip-loop checks
+pass, then 200 until the loop stops or cursor progress (process start before
+the first advance) is older than `LEDGER_STALE_MS` (600000, ten minutes),
+then 503. The handler reads memory the loop's observer hooks fill
 and never touches the database or the network, so it cannot slow a cycle;
 the server is unref'd, so it never keeps the worker alive past its exit.
 The `chain-sync` service's Railway healthcheck path is this route (set on
 the service, mirrored in `railway.chain-sync.json`). Railway polls it only
 at deploy time, until the first 200, and never continuously: the listener
-therefore starts before the database work and answers 200 while this
-instance still waits for the previous one's writer lock, or Railway would
-never stop the previous instance and the handover would deadlock. The
+therefore starts before the database work and answers 200 after validation
+while this instance still waits for the previous one's writer lock, or Railway
+would never stop the previous instance and the handover would deadlock. The
 continuous signal is the api's: `/health` and `/v1/status` judge the
 stream's `updated_at` age by the same variable (`apps/api/README.md`,
 "Ledger freshness"), and the operator's firstmate home polls `/v1/status`

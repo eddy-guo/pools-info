@@ -47,11 +47,13 @@ async function holdsLedger(db: Client) {
   const r = await db.query(
     "SELECT to_regclass('agg_streams') IS NOT NULL AS present",
   );
-  if (!r.rows[0].present) return false;
+  if (!r.rows[0].present) return null;
   const stream = await db.query(
     "SELECT cursor_block FROM agg_streams WHERE chain_id=4663 AND stream_key='ledger:agg:v1'",
   );
-  return stream.rows[0]?.cursor_block != null;
+  return stream.rows[0]?.cursor_block == null
+    ? null
+    : Number(stream.rows[0].cursor_block);
 }
 async function locks(db: Client) {
   // A deployment overlap: the previous instance releases on SIGTERM.
@@ -73,9 +75,6 @@ async function main() {
   const config = ledgerTipConfig();
   let healthServer: Server | null = null;
   if (mode === "run") {
-    // Listening before the database work: a deploy's healthcheck must pass
-    // while this instance still waits for the previous one's writer lock,
-    // or Railway never stops the previous one and the handover deadlocks.
     health = new LedgerTipHealth({ staleMs: config.staleMs });
     healthServer = await serveLedgerTipHealth(health, {
       port: config.healthPort,
@@ -93,7 +92,8 @@ async function main() {
   });
   await db.connect();
   try {
-    if (!(await holdsLedger(db))) {
+    const cursor = await holdsLedger(db);
+    if (cursor === null) {
       const error = Error("ledger_tip_requires_pass");
       process.exitCode = ledgerTipExitCodes.inspection;
       health?.stopped("inspection", ledgerTipSafeError(error));
@@ -110,6 +110,7 @@ async function main() {
       return;
     }
     assertLedgerTipAllowed(config);
+    health?.ready(cursor);
     let throttled = 0;
     const pacer = new HyperSyncPacer();
     const client = () =>

@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:net";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { LedgerTipHealth, serveLedgerTipHealth } from "./ledger-tip-health";
 import type { LedgerTipCycle } from "./ledger-tip";
 
@@ -23,7 +25,7 @@ const cycle = (n: number): LedgerTipCycle => ({
 });
 const minute = 60000;
 
-test("the report follows the loop: starting steps, cycles, retries, stops, and 503 once the last cycle is older than the threshold", () => {
+test("the report follows startup, cursor progress, retries, stops, and staleness", () => {
   let now = 1_790_000_000_000;
   const health = new LedgerTipHealth({ staleMs: 10 * minute, now: () => now });
   // Starting: fresh for the threshold measured from the process start, so a
@@ -33,8 +35,10 @@ test("the report follows the loop: starting steps, cycles, retries, stops, and 5
   let r = health.report();
   assert.deepEqual(
     [r.ok, r.state, r.step, r.stale, r.uptimeSeconds, r.lastCycleAt, r.cursor],
-    [true, "starting", "locking", false, 180, null, null],
+    [false, "starting", "locking", false, 180, null, null],
   );
+  health.ready(cycle(0).cursor);
+  assert.equal(health.report().ok, true);
   now += 8 * minute;
   r = health.report();
   assert.deepEqual([r.ok, r.state, r.stale], [false, "starting", true]);
@@ -130,10 +134,104 @@ test("the report follows the loop: starting steps, cycles, retries, stops, and 5
       false,
     ],
   );
-  assert.equal(new LedgerTipHealth({ staleMs: 1000 }).report().ok, true);
+  assert.equal(new LedgerTipHealth({ staleMs: 1000 }).report().ok, false);
   assert.throws(
     () => new LedgerTipHealth({ staleMs: 0 }),
     /Invalid LEDGER_STALE_MS/,
+  );
+});
+
+test("idle cycles leave the freshness clock unchanged until the cursor advances", () => {
+  let now = 1_790_000_000_000;
+  const health = new LedgerTipHealth({ staleMs: 10 * minute, now: () => now });
+  const first = cycle(1);
+  health.ready(first.cursor);
+  health.cycle(first);
+  now += 9 * minute;
+  health.cycle({ ...first, head: first.head + 800, lagBlocks: 928 });
+  assert.deepEqual(
+    [health.report().ok, health.report().lastProgressAt],
+    [true, null],
+  );
+  now += 2 * minute;
+  health.cycle({ ...first, head: first.head + 1600, lagBlocks: 1728 });
+  assert.deepEqual(
+    [health.report().ok, health.report().stale, health.report().cycles],
+    [false, true, 3],
+  );
+  health.cycle(cycle(2));
+  assert.deepEqual(
+    [health.report().ok, health.report().lastProgressAt],
+    [true, new Date(now).toISOString()],
+  );
+});
+
+test("the running worker stays unhealthy while its database connection is pending", async (t) => {
+  const sockets = new Set<import("node:net").Socket>();
+  const database = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
+  database.listen(0, "127.0.0.1");
+  await once(database, "listening");
+  const connected = once(database, "connection");
+  t.after(() => {
+    for (const socket of sockets) socket.destroy();
+    database.close();
+  });
+  const portHolder = createServer();
+  portHolder.listen(0, "127.0.0.1");
+  await once(portHolder, "listening");
+  const port = (portHolder.address() as { port: number }).port;
+  portHolder.close();
+  await once(portHolder, "close");
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)), "run"],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: `postgresql://test@127.0.0.1:${(database.address() as { port: number }).port}/test`,
+        LEDGER_TIP_ENABLED: "1",
+        ENVIO_API_TOKEN: "test-token",
+        HYPERSYNC_URL: "http://127.0.0.1:1",
+        PORT: String(port),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  t.after(() => child.kill("SIGKILL"));
+  await new Promise<void>((resolve, reject) => {
+    let output = "";
+    let errors = "";
+    child.stderr!.on("data", (chunk: Buffer) => {
+      errors += chunk.toString();
+    });
+    const timeout = setTimeout(
+      () => reject(Error(`health listener did not start: ${output} ${errors}`)),
+      30000,
+    );
+    child.stdout!.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes('"event":"ledger_tip_health_listening"')) {
+        clearTimeout(timeout);
+        resolve();
+      } else if (output.includes('"event":"ledger_tip_health_unavailable"')) {
+        clearTimeout(timeout);
+        reject(Error(`health listener unavailable: ${output} ${errors}`));
+      }
+    });
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      reject(Error(`worker exited before health listener started: ${output} ${errors}`));
+    });
+  });
+  await connected;
+  const response = await fetch(`http://127.0.0.1:${port}/health`);
+  assert.equal(response.status, 503);
+  assert.deepEqual(
+    [(await response.json()).ok, sockets.size],
+    [false, 1],
   );
 });
 
@@ -157,8 +255,13 @@ test("the listener answers GET and HEAD /health with the report's status, refuse
     [{ event: "ledger_tip_health_listening", port }],
   );
   const base = `http://127.0.0.1:${port}`;
-  health.cycle(cycle(1));
   let response = await fetch(base + "/health");
+  assert.equal(response.status, 503);
+  health.ready(cycle(0).cursor);
+  response = await fetch(base + "/health");
+  assert.equal(response.status, 200);
+  health.cycle(cycle(1));
+  response = await fetch(base + "/health");
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   let body = await response.json();
