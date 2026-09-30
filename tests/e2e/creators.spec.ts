@@ -225,8 +225,8 @@ test("creators sort and window map onto the read API's keys and reset the reveal
   await expect(launches).toHaveAttribute("aria-pressed", "true");
   await expect(windowAll).toHaveAttribute("aria-pressed", "true");
   await expect(tradedHeader).toHaveText("Traded");
-  const allHeaderWidth = await tradedHeader.evaluate((node) =>
-    node.getBoundingClientRect().width,
+  const allHeaderWidth = await tradedHeader.evaluate(
+    (node) => node.getBoundingClientRect().width,
   );
 
   await window7d.click();
@@ -474,8 +474,8 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     }
     return;
   }
-  // The panel reserves its default 25-row shape; only the first five carry
-  // this fixture's data, the rest render as empty reserved rows.
+  // The panel reserves its default 25-row shape until the board lands, then
+  // keeps only the five rows this fixture's board fills.
   const rowsLocator = panel.locator('tbody tr[data-row="resolved"]');
   await expect(rowsLocator).toHaveCount(5);
 
@@ -526,10 +526,7 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   await expect(launchesCell).toHaveText("14");
   await expect(launchesCell).toHaveCSS("text-align", "right");
   await expect(launchesCell).toHaveCSS("font-size", "14px");
-  await expect(launchesCell).toHaveCSS(
-    "font-variant-numeric",
-    "tabular-nums",
-  );
+  await expect(launchesCell).toHaveCSS("font-variant-numeric", "tabular-nums");
 
   // Still trading: the 132x5 bar plus "traded of measured · pct%" beneath it.
   const stillCell = rowsLocator.first().locator("td").nth(3);
@@ -624,18 +621,11 @@ test("a creator's unmeasured launches show their identity and launch time with e
       : 'tbody tr[data-row="resolved"]',
   );
   await expect(rows).toHaveCount(10);
-  // The page reserves its default 25-row shape from the URL; the rows past
-  // this creator's ten stay blank rather than shimmering for nothing.
+  // The page reserves its default 25-row shape from the URL until the read
+  // lands, then keeps only this creator's ten rows: no blank rows past them.
   await expect(
     panel.locator(isMobile ? ".mobile-launch" : "tbody tr"),
-  ).toHaveCount(25);
-  await expect(
-    panel.locator(
-      isMobile
-        ? '.mobile-launch[data-row="reserved"]'
-        : 'tbody tr[data-row="reserved"]',
-    ),
-  ).toHaveCount(15);
+  ).toHaveCount(10);
   await expect(panel.locator(".pagination-count")).toHaveText(
     "Showing 10 of 10",
   );

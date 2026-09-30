@@ -14,9 +14,10 @@ import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
 import { AddressChip, AddressLabel, EmptyState, UnavailableState } from "./ui";
+import { useListRelease } from "@/lib/list-release";
 import {
   EXPLORE_ROWS_CAP,
-  reservedRowCount,
+  answeredRowCount,
   SHOW_MORE_STEP,
   ShowMore,
 } from "./product-common";
@@ -244,9 +245,16 @@ function CreatorDirectory() {
   // top-100 leaderboard even before the data side caps the read itself.
   const total = settled ? Math.min(state.total, CAP) : null;
   const knownAbsent = (index: number) => settled && index >= state.total;
-  /* No board was served: the reserved rows stay blank rather than shimmering
-     on for ever, and the panel says what happened. */
+  /* No board was served: the reserved rows stay reserved and blank rather
+     than shimmering on for ever, and the panel says what happened over the
+     top of them, so nothing under the board moves. */
   const failed = forKey && !!state.error && items.length === 0;
+  const rowCount = answeredRowCount(
+    shown,
+    settled ? Math.min(state.total, CAP) : null,
+  );
+  useListRelease(rowCount, shown);
+  const empty = settled && total === 0;
 
   const focusFromRef = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -313,124 +321,136 @@ function CreatorDirectory() {
             {state.error}
           </p>
         )}
-        <div className="table-scroll desktop-creators" data-failed={failed}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Creator</th>
-                <th>Launches</th>
-                <th>{window === "All" ? "Traded" : "Traded in window"}</th>
-                <th>Volume</th>
-                <th>Median</th>
-                <th>Best</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from(
-                { length: reservedRowCount(shown, failed) },
-                (_, index) => items[index],
-              ).map((r, index) => {
-                const absent = knownAbsent(index);
-                const pending = !r && !absent;
-                return (
-                  <tr
-                    key={index}
-                    data-row-index={index}
-                    aria-hidden={!r}
-                    data-row={r ? "resolved" : "reserved"}
-                  >
-                    <td className="rank-number" data-pending={pending}>
-                      {r ? index + 1 : pending ? "Pending" : "\u00a0"}
-                    </td>
-                    <td data-pending={pending}>
-                      {r ? (
-                        <AddressChip
-                          address={r.address}
-                          href={`/creators/${r.address}/`}
-                          size="large"
-                          badge={
-                            r.boughtOwnLaunch === true ? (
-                              <span className="badge lavender">BOUGHT OWN</span>
-                            ) : undefined
-                          }
-                        />
-                      ) : pending ? (
-                        "Creator pending"
-                      ) : (
-                        "\u00a0"
-                      )}
-                    </td>
-                    <td data-pending={pending}>
-                      {r ? (
-                        // Keyed so a new count replaces its text node: rewriting
-                        // right-aligned text in place moves its start, which
-                        // Chrome scores as a layout shift.
-                        <Fragment key={r.launches}>{r.launches}</Fragment>
-                      ) : pending ? (
-                        "Pending"
-                      ) : (
-                        "\u00a0"
-                      )}
-                    </td>
-                    <td data-pending={pending}>
-                      {r ? (
-                        <StillTrading r={r} />
-                      ) : pending ? (
-                        "Pending"
-                      ) : (
-                        "\u00a0"
-                      )}
-                    </td>
-                    <td data-pending={pending}>
-                      <Eth wei={r?.volumeWei} pending={pending} />
-                    </td>
-                    <td data-pending={pending}>
-                      <Eth wei={r?.medianVolumeWei} pending={pending} />
-                    </td>
-                    <td data-pending={pending}>
-                      {r ? (
-                        r.bestLaunch ? (
-                          <Link className="mono" href={poolHref(r.bestLaunch)}>
-                            {r.bestLaunch.symbol}
-                          </Link>
+        {/* A failed or empty answer's message overlays the top of the rows
+            the board still reserves, right under the heading. */}
+        <div
+          className="table-region"
+          data-empty={empty || failed}
+          data-released={rowCount < shown}
+        >
+          <div className="table-scroll desktop-creators">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Creator</th>
+                  <th>Launches</th>
+                  <th>{window === "All" ? "Traded" : "Traded in window"}</th>
+                  <th>Volume</th>
+                  <th>Median</th>
+                  <th>Best</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(
+                  { length: rowCount },
+                  (_, index) => items[index],
+                ).map((r, index) => {
+                  const absent = knownAbsent(index);
+                  const pending = !r && !absent && !failed;
+                  return (
+                    <tr
+                      key={index}
+                      data-row-index={index}
+                      aria-hidden={!r}
+                      data-row={r ? "resolved" : "reserved"}
+                    >
+                      <td className="rank-number" data-pending={pending}>
+                        {r ? index + 1 : pending ? "Pending" : "\u00a0"}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          <AddressChip
+                            address={r.address}
+                            href={`/creators/${r.address}/`}
+                            size="large"
+                            badge={
+                              r.boughtOwnLaunch === true ? (
+                                <span className="badge lavender">
+                                  BOUGHT OWN
+                                </span>
+                              ) : undefined
+                            }
+                          />
+                        ) : pending ? (
+                          "Creator pending"
                         ) : (
-                          <Unavailable />
-                        )
-                      ) : pending ? (
-                        "Pending"
-                      ) : (
-                        "\u00a0"
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="mobile-creators" data-failed={failed}>
-          {Array.from(
-            { length: reservedRowCount(shown, failed) },
-            (_, index) => items[index],
-          ).map((r, index) => (
-            <MobileCreatorRow
-              key={index}
-              r={r}
-              index={index}
-              pending={!r && !knownAbsent(index)}
-            />
-          ))}
-        </div>
-        {failed && (
-          <UnavailableState subject="Creators" onRetry={state.refresh} />
-        )}
-        {settled && total === 0 && (
-          <div className="empty-state">
-            <h3>No creators in this window</h3>
-            <p>Switch the window or sort to find launches to group.</p>
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          // Keyed so a new count replaces its text node: rewriting
+                          // right-aligned text in place moves its start, which
+                          // Chrome scores as a layout shift.
+                          <Fragment key={r.launches}>{r.launches}</Fragment>
+                        ) : pending ? (
+                          "Pending"
+                        ) : (
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          <StillTrading r={r} />
+                        ) : pending ? (
+                          "Pending"
+                        ) : (
+                          "\u00a0"
+                        )}
+                      </td>
+                      <td data-pending={pending}>
+                        <Eth wei={r?.volumeWei} pending={pending} />
+                      </td>
+                      <td data-pending={pending}>
+                        <Eth wei={r?.medianVolumeWei} pending={pending} />
+                      </td>
+                      <td data-pending={pending}>
+                        {r ? (
+                          r.bestLaunch ? (
+                            <Link
+                              className="mono"
+                              href={poolHref(r.bestLaunch)}
+                            >
+                              {r.bestLaunch.symbol}
+                            </Link>
+                          ) : (
+                            <Unavailable />
+                          )
+                        ) : pending ? (
+                          "Pending"
+                        ) : (
+                          "\u00a0"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
+          <div className="mobile-creators">
+            {Array.from({ length: rowCount }, (_, index) => items[index]).map(
+              (r, index) => (
+                <MobileCreatorRow
+                  key={index}
+                  r={r}
+                  index={index}
+                  pending={!r && !knownAbsent(index) && !failed}
+                />
+              ),
+            )}
+          </div>
+          {failed && (
+            <UnavailableState subject="Creators" onRetry={state.refresh} />
+          )}
+          {empty && (
+            <div className="empty-state">
+              <h3>No creators in this window</h3>
+              <p>Switch the window or sort to find launches to group.</p>
+            </div>
+          )}
+        </div>
         <ShowMore
           shown={shown}
           total={failed ? 0 : total}
@@ -477,14 +497,17 @@ function CreatorProfile({ address }: { address: string }) {
     `window=24h&sort=launch&q=${address}`,
     shown,
   );
-  /* Nothing was served: the reserved rows stay blank rather than shimmering
-     on for ever, and the panel says what happened. */
+  /* Nothing was served: the reserved rows stay reserved and blank rather
+     than shimmering on for ever, and the panel says what happened over the
+     top of them. */
   const failed = !!error && !list;
   const total = list ? list.total : null;
+  /* An answer shorter than a page keeps only the rows it fills. */
   const rows = Array.from(
-    { length: reservedRowCount(shown, failed) },
+    { length: answeredRowCount(shown, total) },
     (_, index) => list?.rows[index],
   );
+  useListRelease(rows.length, shown);
   const skeletonAt = (index: number) =>
     !failed && (!list || (loading && index < list.total));
   const empty = settled && total === 0;
@@ -550,14 +573,12 @@ function CreatorProfile({ address }: { address: string }) {
             Updating saved launches
           </span>
         )}
-        {/* The reserved row geometry stays put when the creator has fewer
-            launches than a page, or none: the empty state overlays the top
-            of that area rather than sitting under a screen of blank rows. A
-            failed first read is different: `rows` above is already length
-            zero, so this region collapses on its own and the failed state
-            below renders right under the heading with nothing reserved
-            past it. */}
-        <div className="table-region" data-empty={empty}>
+        {/* A creator with fewer launches than a page keeps only the rows
+            they fill, and one with none keeps a short slot the empty state
+            overlays. A failed first read keeps every reserved row, blank,
+            and the failed state overlays the top of them, right under the
+            heading. */}
+        <div className="table-region" data-empty={empty || failed}>
           <div className="table-scroll desktop-creator-launches">
             <table className="data-table creator-launches-table">
               {/* Fixed widths so a row streamed in later, with a longer

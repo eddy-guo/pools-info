@@ -1,5 +1,6 @@
 "use client";
 
+import { useBelowListKey } from "@/lib/list-release";
 import { showMoreCount } from "@/lib/show-more-count";
 
 /**
@@ -33,12 +34,31 @@ export function PendingValue({
  * reserves its target row count for CLS 0; a failed one collapses that
  * reservation entirely rather than holding a screen (or several, on a
  * narrow viewport) of blank rows behind the retry control its
- * `UnavailableState` renders in their place. Shared by every list with this
- * pending-then-failed shape: the creators board, the trader leaderboard, the
- * screener and a creator's own launches.
+ * `UnavailableState` renders in their place. The trader leaderboard, the
+ * Following activity and the wallet's Trades tab keep this shape; the lists
+ * over one counted answer use `answeredRowCount` below.
  */
 export function reservedRowCount(shown: number, failed: boolean) {
   return failed ? 0 : shown;
+}
+
+/** The rows an empty answer keeps, for its EmptyState to sit in. */
+export const EMPTY_SLOT_ROWS = 3;
+
+/**
+ * The rows a list over one counted answer (the creators board, a creator's
+ * launches, the screener, a wallet's positions) reserves: every row its URL
+ * names until the current query's answer lands, a failed read included, so
+ * nothing under the list moves while the retry control overlays the top of
+ * the region; then only the rows that answer fills, or a short slot for its
+ * EmptyState. `answered` is that answer's total, null while it is pending,
+ * stale or failed. The release happens under the rows already on show, so
+ * nothing above the cut moves; the list reports it to `useListRelease` so
+ * the nodes under it remount rather than shift.
+ */
+export function answeredRowCount(shown: number, answered: number | null) {
+  if (answered === null) return shown;
+  return answered === 0 ? EMPTY_SLOT_ROWS : Math.min(shown, answered);
 }
 
 /** The running-total step every "Show more" list grows by. */
@@ -80,8 +100,9 @@ export function ShowMore({
       : Math.min(total, cap)
     : (cap ?? Infinity);
   const remaining = Math.max(0, ceiling - shown);
+  const releaseKey = useBelowListKey();
   return (
-    <div className="pagination">
+    <div className="pagination" key={releaseKey}>
       <span className="pagination-count">{showMoreCount(shown, total)}</span>
       {remaining > 0 && (
         <button

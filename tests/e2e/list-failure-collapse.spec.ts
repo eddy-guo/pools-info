@@ -3,12 +3,13 @@ import { test, expect, type Page } from "@playwright/test";
 /**
  * The shared pending-then-failed contract for a growable list: creators,
  * traders, the screener and the wallet's positions all reserve rows while a
- * first read is genuinely pending, and collapse that reservation entirely
- * once the read fails, so the retry control lands right under the list
- * heading instead of a screen (or several, at 390px) of blank rows below it.
- * `reservedRowCount` in `apps/web/src/components/product-common.tsx` is the
- * shared piece; these checks exercise it through each of its four
- * consumers rather than asserting on it directly.
+ * first read is genuinely pending, and the retry control lands right under
+ * the list heading once the read fails, never a screen (or several, at
+ * 390px) of blank rows below it. The lists over one counted answer
+ * (`answeredRowCount` in `apps/web/src/components/product-common.tsx`: the
+ * creators board and the screener) keep their reserved geometry and overlay
+ * the failed state on its top, so nothing under them moves; the trader
+ * leaderboard (`reservedRowCount`) still collapses its reservation.
  */
 const wallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
@@ -24,6 +25,8 @@ type ListCase = {
       several-row toolbar (view tabs, filter, window tabs) above the table
       at 390px - still "at the top", never below a screen of reserved rows. */
   maxHeadingOffset: number;
+  /** The failed list keeps the height it reserved while pending. */
+  keepsGeometry: boolean;
 };
 
 const cases: ListCase[] = [
@@ -38,6 +41,7 @@ const cases: ListCase[] = [
         .filter({ visible: true }),
     panel: (page) => page.locator(".creators-panel"),
     maxHeadingOffset: 200,
+    keepsGeometry: true,
   },
   {
     name: "traders",
@@ -50,6 +54,7 @@ const cases: ListCase[] = [
         .filter({ visible: true }),
     panel: (page) => page.locator(".leaderboard-panel"),
     maxHeadingOffset: 200,
+    keepsGeometry: false,
   },
   {
     name: "screener",
@@ -62,11 +67,12 @@ const cases: ListCase[] = [
         .filter({ visible: true }),
     panel: (page) => page.locator(".explore-page .panel").first(),
     maxHeadingOffset: 350,
+    keepsGeometry: true,
   },
 ];
 
 for (const c of cases) {
-  test(`${c.name}: pending rows reserve, a failed first read collapses them and the retry control sits at the top`, async ({
+  test(`${c.name}: pending rows reserve, a failed first read ${c.keepsGeometry ? "keeps their geometry" : "collapses them"} and the retry control sits at the top`, async ({
     page,
   }, testInfo) => {
     // The screener's own list read shares its endpoint with the launch
@@ -101,9 +107,10 @@ for (const c of cases) {
     await expect(
       page.getByRole("heading", { name: `${c.subject} unavailable` }),
     ).toHaveCount(0);
+    const pendingPanel = (await c.panel(page).boundingBox())!;
 
-    // Fail the first read: the reserved rows collapse to none, and the
-    // compact UnavailableState with its retry control takes their place.
+    // Fail the first read: no reserved row stays on show, and the compact
+    // UnavailableState with its retry control sits in their place.
     mode = "fail";
     releaseHeld();
     const heading = page.getByRole("heading", {
@@ -120,6 +127,11 @@ for (const c of cases) {
       messageBox.y - panelBox.y,
       "the retry control sits at the top of the list area, not below a screen of blank rows",
     ).toBeLessThan(c.maxHeadingOffset);
+    if (c.keepsGeometry)
+      expect(
+        panelBox,
+        "the failed list keeps the geometry it reserved, so nothing under it moves",
+      ).toEqual(pendingPanel);
 
     // 390px still reads as a compact panel, not a page stretched by a
     // reservation nothing shows any more.

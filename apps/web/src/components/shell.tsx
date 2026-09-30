@@ -6,12 +6,16 @@ import { Search } from "./search";
 import { UnitToggle } from "./unit-toggle";
 import { useEthPrice } from "./eth-price-provider";
 import { WalletProfileEntry } from "./wallet-profile";
+import { useBelowListKey } from "@/lib/list-release";
 
 const oneEthWei = (10n ** 18n).toString();
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const usdPerEth = useEthPrice();
+  /* A list that releases rows it reserved moves the footer up; a new footer
+     node at its new place is not a layout shift (lib/list-release.ts). */
+  const footerKey = useBelowListKey();
   return (
     <div className="site-shell">
       <a className="skip-link" href="#main">
@@ -109,7 +113,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           (attributionLogo in candles.tsx) is off under the repo's
           no-third-party-mark rule, so this stays as the smallest compliant
           form. */}
-      <footer className="footer">
+      <footer className="footer" key={footerKey}>
         <p className="footer-credit">
           TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc.{" "}
           <a
