@@ -9,21 +9,25 @@ for (const populated of [false, true]) {
   }, testInfo) => {
     if (testInfo.project.name === "mobile")
       await page.setViewportSize({ width: 390, height: 844 });
-    await page.addInitScript((id) => {
-      if (id) localStorage.setItem("poolsinfo.watchlist.v1", JSON.stringify([id]));
-      else localStorage.removeItem("poolsinfo.watchlist.v1");
-      const state = { cls: 0 };
-      Object.assign(window, { watchlistLayout: state });
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          const shift = entry as PerformanceEntry & {
-            value: number;
-            hadRecentInput: boolean;
-          };
-          if (!shift.hadRecentInput) state.cls += shift.value;
-        }
-      }).observe({ type: "layout-shift", buffered: true });
-    }, populated ? savedId : null);
+    await page.addInitScript(
+      (id) => {
+        if (id)
+          localStorage.setItem("poolsinfo.watchlist.v1", JSON.stringify([id]));
+        else localStorage.removeItem("poolsinfo.watchlist.v1");
+        const state = { cls: 0 };
+        Object.assign(window, { watchlistLayout: state });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            const shift = entry as PerformanceEntry & {
+              value: number;
+              hadRecentInput: boolean;
+            };
+            if (!shift.hadRecentInput) state.cls += shift.value;
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      },
+      populated ? savedId : null,
+    );
     let releaseScripts!: () => void;
     const scripts = new Promise<void>((resolve) => {
       releaseScripts = resolve;
@@ -33,7 +37,7 @@ for (const populated of [false, true]) {
       await route.continue();
     });
 
-    await page.goto("/?view=watchlist");
+    await page.goto("/?view=watchlist", { waitUntil: "domcontentloaded" });
     const head = page.getByRole("region", { name: "Saved watchlist" });
     const table = page.locator(".explore-page .table-region");
     await expect(head.locator("strong")).toHaveText("Your watchlist");
