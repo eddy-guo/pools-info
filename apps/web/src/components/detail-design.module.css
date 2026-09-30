@@ -323,6 +323,10 @@
   border-bottom: 1px solid var(--line);
   color: var(--muted);
 }
+.search :global(.search-dialog-head:focus-within) {
+  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
 .search :global(.search-dialog-head input) {
   flex: 1;
   min-width: 0;

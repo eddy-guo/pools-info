@@ -136,6 +136,10 @@ select:focus-visible {
 input:focus-visible {
   outline: none;
 }
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--control-focus-ring);
+  outline-offset: 2px;
+}
 ::selection {
   background: #1c6f5e;
   color: #fff;
@@ -1430,23 +1434,6 @@ main {
   max-width: 680px;
   margin: 25px auto 70px;
 }
-.lookup-form {
-  display: flex;
-  gap: 10px;
-  margin: 25px 0;
-}
-.lookup-form input {
-  flex: 1;
-  min-width: 0;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 12px;
-  color: var(--text);
-}
-.lookup-form input:focus {
-  border-color: var(--accent);
-}
 .share-dialog {
   padding: 0;
   position: fixed;
@@ -1992,9 +1979,6 @@ main {
     padding: 16px;
     overflow-wrap: anywhere;
   }
-  .lookup-form {
-    flex-direction: column;
-  }
   .trades-table th,
   .trades-table td {
     font-size: 12px;
@@ -2440,6 +2424,11 @@ main {
   padding: 10px 12px;
   max-width: 100%;
   color: var(--text);
+}
+.live-lookup input:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--control-focus-ring);
+  outline-offset: 2px;
 }
 .live-filters {
   display: flex;
