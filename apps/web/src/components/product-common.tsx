@@ -1,5 +1,7 @@
 "use client";
 
+import { showMoreCount } from "@/lib/show-more-count";
+
 /**
  * Pending values occupy the same line box as resolved values, without fake
  * data. The skeleton and the value are separate nodes: a text run that changes
@@ -80,11 +82,7 @@ export function ShowMore({
   const remaining = Math.max(0, ceiling - shown);
   return (
     <div className="pagination">
-      <span className="pagination-count">
-        {known && total
-          ? `Showing ${Math.min(shown, total).toLocaleString()} of ${total.toLocaleString()}`
-          : "0 results"}
-      </span>
+      <span className="pagination-count">{showMoreCount(shown, total)}</span>
       {remaining > 0 && (
         <button
           type="button"

@@ -284,13 +284,20 @@ test("the served leaderboard reserves the rows its URL names before hydration", 
   await page.route(scripts, (route) => route.abort());
   await page.goto(url, { waitUntil: "domcontentloaded" });
   const served = await footTop();
+  const count = page.locator("main .leaderboard-panel .pagination-count");
+  // No read has named a count yet: the line holds its place and claims no
+  // "0 results" the board does not have.
+  await expect(count).toHaveText("");
+  const servedCount = (await count.boundingBox())!;
   await page.unroute(scripts);
 
   await page.goto(url);
   const panel = page.locator("main .leaderboard-panel");
-  await expect(panel.locator(".pagination .pagination-count")).toHaveText(
-    /^Showing 50 of /,
-  );
+  await expect(count).toHaveText(/^Showing 50 of /);
+  expect(
+    (await count.boundingBox())!.height,
+    "the empty count line is as tall as the count that lands in it",
+  ).toBe(servedCount.height);
   await expect(panel.locator(".desktop-traders tbody tr")).toHaveCount(47);
   await expect(panel.locator(".mobile-trader")).toHaveCount(47);
   expect(
