@@ -382,3 +382,134 @@ for (const entry of routes) {
     }
   });
 }
+
+/* `/traders/` is prerendered with the ranked board's podium and 22 reserved
+   rows; a `view=following` URL swaps that for the browser-local Following
+   list once hydration reads the URL and the store. With nothing followed the
+   served board collapsed to the empty state and the footer moved into view
+   (0.0396 at 1440, 0.0703 at 1024), so the served shell must already paint
+   the list the store holds. */
+const followingCases = [
+  { store: "empty", count: 0 },
+  { store: "populated", count: 3 },
+] as const;
+for (const { store, count } of followingCases)
+  for (const width of [1440, 1024, 390])
+    test(`following view with a ${store} store keeps its served geometry at ${width}`, async ({
+      page,
+      isMobile,
+      request,
+    }, testInfo) => {
+      test.skip(isMobile !== (width === 390), "one width per project");
+      const board = await request.get(
+        "/api/product/leaderboard/?window=7d&metric=realized&offset=0&limit=25",
+      );
+      const followed = (
+        (await board.json()) as { items: { address: string }[] }
+      ).items
+        .slice(0, count)
+        .map((wallet) => wallet.address);
+      expect(followed).toHaveLength(count);
+      await page.setViewportSize({ width, height: isMobile ? 844 : 1000 });
+      await page.addInitScript((addresses) => {
+        localStorage.setItem(
+          "poolsinfo.following.v1",
+          JSON.stringify(addresses),
+        );
+        const state = { cls: 0, shifts: [] as unknown[] };
+        Object.assign(window, { layoutMeasurement: state });
+        new PerformanceObserver((list) => {
+          for (const raw of list.getEntries()) {
+            const shift = raw as PerformanceEntry & {
+              hadRecentInput: boolean;
+              value: number;
+              sources?: unknown[];
+            };
+            if (!shift.hadRecentInput) {
+              state.cls += shift.value;
+              state.shifts.push({ value: shift.value, sources: shift.sources });
+            }
+          }
+        }).observe({ type: "layout-shift", buffered: true });
+      }, followed);
+      /* Holding the client scripts fixes the order: the served shell paints
+         alone first, then hydration swaps in the Following view. */
+      let releaseScripts!: () => void;
+      const scripts = new Promise<void>((resolve) => {
+        releaseScripts = resolve;
+      });
+      await page.route("**/_next/static/**/*.js", async (route) => {
+        await scripts;
+        await route.continue();
+      });
+      const rects = () =>
+        page.evaluate(() =>
+          [".leaderboard-panel", ".footer"].map((selector) =>
+            document.querySelector(selector)!.getBoundingClientRect().toJSON(),
+          ),
+        );
+      try {
+        await page.goto("/traders/?view=following", { waitUntil: "commit" });
+        await expect(page.locator(".footer")).toBeAttached();
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        const before = await rects();
+        await page.screenshot({
+          path: testInfo.outputPath(`following-${store}-${width}-served.png`),
+        });
+        releaseScripts();
+        await expect(
+          page.getByRole("button", { name: "Following" }),
+        ).toHaveAttribute("aria-pressed", "true");
+        if (count)
+          await expect(
+            page
+              .locator(".following-traders [data-row=resolved]")
+              .filter({ visible: true }),
+          ).toHaveCount(count);
+        else
+          await expect(
+            page.getByRole("heading", {
+              name: "You are not following anyone yet",
+            }),
+          ).toBeVisible();
+        await page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => resolve()),
+              ),
+            ),
+        );
+        const after = await rects();
+        await page.screenshot({
+          path: testInfo.outputPath(`following-${store}-${width}-resolved.png`),
+        });
+        const measurement = await page.evaluate(
+          () =>
+            (
+              window as unknown as {
+                layoutMeasurement: { cls: number; shifts: unknown[] };
+              }
+            ).layoutMeasurement,
+        );
+        console.log(
+          JSON.stringify({ store, width, before, after, ...measurement }),
+        );
+        expect(after, "panel and footer keep their served geometry").toEqual(
+          before,
+        );
+        expect(
+          measurement.cls,
+          "every non-input layout shift since navigation, past 0.001 of sub-pixel measurement noise",
+        ).toBeLessThan(0.001);
+      } finally {
+        releaseScripts();
+      }
+    });

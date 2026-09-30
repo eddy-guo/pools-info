@@ -1,6 +1,13 @@
 "use client";
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   identityTint,
   shortAddress,
@@ -24,7 +31,12 @@ import {
 } from "./ui";
 import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
-import { PODIUM_SIZE, RANKED_CAP as CAP, rankedShown } from "@/lib/ranked-rows";
+import {
+  FOLLOWED_CAP,
+  PODIUM_SIZE,
+  RANKED_CAP as CAP,
+  rankedShown,
+} from "@/lib/ranked-rows";
 import { countLabel } from "@/lib/plural";
 import { excludedPositionsCaption } from "@/lib/excluded-positions";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
@@ -48,8 +60,23 @@ function relativeAge(seconds: number, now: number) {
   if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
   return `${Math.floor(delta / 86400)}d`;
 }
-/** Followed wallets are already capped by the local follow store itself. */
-const FOLLOWED_CAP = 200;
+const noHydrationUpdates = () => () => {};
+
+function FollowingEmpty({ prepaint = false }: { prepaint?: boolean }) {
+  return (
+    <div
+      className={
+        prepaint ? "empty-state following-prepaint-empty" : "empty-state"
+      }
+    >
+      <h3>You are not following anyone yet</h3>
+      <p>
+        Follow a wallet from this leaderboard or a wallet profile to see it
+        here.
+      </p>
+    </div>
+  );
+}
 
 type Metric = "realized" | "net";
 
@@ -551,6 +578,15 @@ export function ProductTraders() {
     { window, setWindow } = useWindow("7d");
   const metric = (params.get("metric") ?? "realized") as Metric;
   const view = params.get("view") === "following" ? "following" : "leaderboard";
+  /* The served shell cannot read the URL, so it is always the ranked board's;
+     on a Following URL rankedRowsScript marks the root before first paint and
+     globals.css reshapes that one shell (`data-prepaint`) into the geometry
+     the Following view will hydrate to, rather than a second copy of it. */
+  const prepaint = !useSyncExternalStore(
+    noHydrationUpdates,
+    () => true,
+    () => false,
+  );
   /* The same reading the pre-paint script makes of this URL, so the reserved
      row area it sized before first paint is the one this list then fills. */
   const shown = rankedShown(params.get("limit"));
@@ -681,12 +717,19 @@ export function ProductTraders() {
         </div>
       </div>
       <MyRank window={window} />
-      {view === "following" && (
-        <p className="following-figures-caption">
+      {(prepaint || view === "following") && (
+        <p
+          className="following-figures-caption"
+          data-prepaint={prepaint ? "" : undefined}
+        >
           Wallet profile figures, not board rankings.
         </p>
       )}
-      <section className="panel leaderboard-panel" ref={panelRef}>
+      <section
+        className="panel leaderboard-panel"
+        ref={panelRef}
+        data-prepaint={prepaint ? "" : undefined}
+      >
         {view === "leaderboard" ? (
           <>
             {state.loading && items.length > 0 && (
@@ -866,17 +909,10 @@ export function ProductTraders() {
                 />
               </>
             )}
-            {!followedTotal && (
-              <div className="empty-state">
-                <h3>You are not following anyone yet</h3>
-                <p>
-                  Follow a wallet from this leaderboard or a wallet profile to
-                  see it here.
-                </p>
-              </div>
-            )}
+            {!followedTotal && <FollowingEmpty />}
           </>
         )}
+        {prepaint && <FollowingEmpty prepaint />}
       </section>
     </div>
   );
