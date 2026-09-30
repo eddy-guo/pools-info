@@ -785,6 +785,39 @@ test(
     assert.equal(kBroad.status, 200, JSON.stringify(kBroad.data));
     assert.equal(kBroad.data.analytics.snapshot.markets[0].creatorFees, true);
     assert.equal("creatorFees" in kBroad.data.market, false);
+    assert.equal(kBroad.data.market.supplyRaw, (10n ** 27n).toString());
+    const unknown = word(807);
+    await db.query(
+      "INSERT INTO recent_streams(chain_id,stream_key,start_block) VALUES(4663,'discovery',$1)",
+      [laterLaunchBatch + 1],
+    );
+    await db.query(
+      `INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence)
+       VALUES(4663,'discovery',$1,$1,$2,$3,'test','{}')`,
+      [laterLaunchBatch + 1, word(laterLaunchBatch + 1), H * 3600 + 7200],
+    );
+    await db.query(
+      `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch)
+       VALUES(4663,$1,$2,'Recent','R',$3,$4,$5,$6,$7)`,
+      [unknown, address(807), laterLaunchBatch + 1, word(807), address(98), H * 3600 + 7200, laterLaunchBatch + 1],
+    );
+    for (const source of ["broad", "ledger"] as const) {
+      const fallback = await get(source, `/v1/pools/${U.id}?window=24h`);
+      assert.equal(fallback.status, 200, JSON.stringify(fallback.data));
+      assert.equal(fallback.data.market.supplyRaw, null);
+      const unindexed = await get(source, `/v1/pools/${unknown}?window=24h`);
+      assert.equal(unindexed.status, 200, JSON.stringify(unindexed.data));
+      assert.equal(unindexed.data.market.supplyRaw, null);
+    }
+    await db.query(
+      "UPDATE indexed_pools SET token_total_supply_raw=$1,token_supply_block=$2 WHERE pool_id=$3",
+      [(10n ** 27n).toString(), U.launchBlock + 1, U.id],
+    );
+    for (const source of ["broad", "ledger"] as const) {
+      const fallback = await get(source, `/v1/pools/${U.id}?window=24h`);
+      assert.equal(fallback.status, 200, JSON.stringify(fallback.data));
+      assert.equal(fallback.data.market.supplyRaw, (10n ** 27n).toString());
+    }
     for (const window of ["24h", "7d", "All"]) {
       const market = await poolPage(pools.N.id, window);
       const r = row(launchOrder(window), pools.N.id);

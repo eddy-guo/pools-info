@@ -107,8 +107,9 @@ is at its row bound, 1h serves no volume, trade count or change and its
   `pnpm supply:read run`, a Multicall3 read of `totalSupply()` over the public
   RPC with the block it was read at (`token_supply_block`); see
   `docs/LEDGER-CUTOVER.md`. The supply itself is served beside it as
-  `market.supplyRaw` (raw token units, null until read, absent on the broad
-  and raw paths), so a holding's share of supply is `quantity / supplyRaw`
+  `market.supplyRaw` on every pool market response (raw token units, null
+  when the pool is unindexed or its supply has not been read), so a holding's
+  share of supply is `quantity / supplyRaw`
   rather than a lossy `fdvWei / priceWei`.
 - **Creator fee** (`market.creatorFees`, pool page only, optional): whether
   the deployment that launched the pool takes creator fees, from
@@ -449,15 +450,15 @@ null where it cannot:
 
 - **`pool`** is the catalog row (`CatalogPool`), the identity a card names the
   token by.
-- **`mark`** is the price state behind `unrealizedWei`: the pool's latest
-  `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, the pool
-  page's price, null while the token's decimals are unknown or a verified
-  snapshot inside the ledger cut disagrees with indexed decimals, as the pool
-  page withholds its own), the swap that
+- **`mark`** is the price state behind `unrealizedWei` at the ledger cut:
+  `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, null while
+  the token's decimals are unknown or a verified snapshot inside the ledger
+  cut disagrees with indexed decimals), the swap that
   set it (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
   fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
   null for an excluded or unmarked one). Null when the pool has no swap
-  folded.
+  folded. A newer deep publication can make the pool page's current price
+  differ from this ledger-cut price.
 - **`roi`** is the ledger's ROI as the board and the wallet header define it:
   lifetime realized over lifetime disposed cost (`investedWei - costWei` on a
   supported position, since an outflow excludes), in percent to four decimals

@@ -34,8 +34,8 @@ import { RequestError } from "./request";
 
 /** $1 wallet_ref, $2 the window's first hour, $3 pool_ref: the wallet page's
  * columns for this one position (a primary-key probe of `agg_positions`), the
- * price state's identity and its price per whole token (`ledgerPriceSql`, the
- * pool page's figure), the fold's disposed cost, and from
+ * price state's identity and its price per whole token (`ledgerPriceSql` at
+ * the ledger cut), the fold's disposed cost, and from
  * one primary-key range of `agg_wallet_hours` the window's flow, the hours
  * traded in and the position's lifetime closures. */
 export const positionSql = `WITH marked AS (

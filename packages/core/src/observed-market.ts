@@ -14,11 +14,10 @@ export interface ObservedMarket {
    * supply. Served only with the aggregate ledger's market, null there until
    * the supply has been read; absent on the broad and raw paths. */
   fdvWei?: string | null;
-  /** The token's measured total supply in raw units, the figure `fdvWei`
-   * multiplies (`indexed_pools.token_total_supply_raw`, migration 019), so a
-   * holding's share of supply is `quantity / supplyRaw`. Served only with the
-   * aggregate ledger's market, null there until the supply has been read;
-   * absent on the broad and raw paths. */
+  /** The token's measured total supply in raw units from
+   * `indexed_pools.token_total_supply_raw` (migration 019). A holding's share
+   * of supply is `quantity / supplyRaw`. Null when the pool is unindexed or
+   * its supply has not been read. */
   supplyRaw?: string | null;
   /** Whether the pool's launching deployment takes creator fees. It is a
    * property of that deployment rather than of the pool, so it comes from the
