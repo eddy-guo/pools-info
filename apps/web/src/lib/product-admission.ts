@@ -1,5 +1,9 @@
 import { isIP } from "node:net";
-import { createTokenBuckets, type TokenBuckets } from "@pools/core";
+import {
+  createTokenBuckets,
+  ipv6ClientKey,
+  type TokenBuckets,
+} from "@pools/core";
 
 /**
  * The product proxy's own admission line, in front of every upstream read:
@@ -49,7 +53,8 @@ export function createAdmission(
      * ceilings alone, as every unattributed request does there. */
     admit(visitor: string | null): Admission {
       if (visitor === null) return { ok: true };
-      const answer = buckets.take(visitor, 1);
+      const key = isIP(visitor) === 6 ? ipv6ClientKey(visitor) : visitor;
+      const answer = buckets.take(key, 1);
       return answer.ok
         ? { ok: true }
         : { ok: false, retryAfterSeconds: answer.retryAfterSeconds };

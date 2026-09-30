@@ -495,7 +495,7 @@ test("one client's cached reads stop at its burst before the shared JSON ceiling
   const first = await as("203.0.113.1");
   assert.equal(first.status, 200);
   assert.equal(first.headers.get("x-data-cache"), "MISS");
-  for (let i = 0; i < 118; i++) {
+  for (let i = 0; i < 148; i++) {
     const hit = await as("203.0.113.1");
     assert.equal(hit.status, 200, `cached request ${i + 1}`);
     assert.equal(hit.headers.get("x-data-cache"), "HIT");

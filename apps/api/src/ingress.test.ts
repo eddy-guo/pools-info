@@ -199,7 +199,7 @@ test("settings parse their variables and refuse malformed values", () => {
   const defaults = ingressSettings({});
   assert.deepEqual(defaults, {
     clientTokensPerMinute: 60,
-    clientTokenBurst: 120,
+    clientTokenBurst: 150,
     maxClients: 10000,
     probesPerMinute: 60,
     identity: { trustedProxies: null, peer: false, proxySecret: null },
