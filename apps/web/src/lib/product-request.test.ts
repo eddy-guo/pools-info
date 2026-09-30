@@ -29,6 +29,7 @@ import {
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { fontCodePoints } from "./font-coverage";
+import { targetedMarketSnapshot } from "./chain-server";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
 import { validateStatsResponse } from "./stats-response";
@@ -2055,13 +2056,22 @@ test("the visitor reaches the read API only under the shared secret, on every up
     },
   );
   const reads = [
-    () => readProduct(["explore"], new URLSearchParams("limit=25"), "203.0.113.9"),
+    () =>
+      readProduct(["explore"], new URLSearchParams("limit=25"), "203.0.113.9"),
     () => readScreenerStats("24h", "203.0.113.9"),
-    () => readEthPrice(["prices", "eth-usd"], new URLSearchParams(), "203.0.113.9"),
+    () =>
+      readEthPrice(["prices", "eth-usd"], new URLSearchParams(), "203.0.113.9"),
     () =>
       readWalletTradeHistory(
         ["wallets", "0x" + "2".repeat(40), "history"],
         new URLSearchParams("kind=trades"),
+        "203.0.113.9",
+      ),
+    () =>
+      targetedMarketSnapshot(
+        "0x" + "3".repeat(64),
+        `0x${"4".repeat(64)}`,
+        false,
         "203.0.113.9",
       ),
   ];
@@ -2080,13 +2090,15 @@ test("the visitor reaches the read API only under the shared secret, on every up
     assert.equal(sent[0].get("x-pools-proxy-secret"), "s".repeat(16));
     assert.equal(sent[0].get("x-pools-client-address"), "203.0.113.9");
   }
-  // A visitor the platform did not name is not invented.
+  // A read with no visitor behind it (a share card's render) is not
+  // invented one: it presents the secret alone, so the api leaves it
+  // unattributed rather than charging this server's egress address.
   sent.length = 0;
   await readProduct(["explore"], new URLSearchParams("limit=25")).catch(
     () => undefined,
   );
   assert.equal(sent.length, 1);
-  assert.equal(sent[0].get("x-pools-proxy-secret"), null);
+  assert.equal(sent[0].get("x-pools-proxy-secret"), "s".repeat(16));
   assert.equal(sent[0].get("x-pools-client-address"), null);
 });
 

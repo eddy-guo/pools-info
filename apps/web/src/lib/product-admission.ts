@@ -63,17 +63,20 @@ export const admission = createAdmission();
  * contract: sent only when this deployment holds the shared secret the api
  * was configured with (`INDEXER_PROXY_SECRET`, the api's
  * `TRUSTED_PROXY_SECRET`), so the api charges that visitor's own budget
- * rather than this server's address. Without the secret nothing is sent and
- * the api's own contract decides.
+ * rather than this server's address. A read with no visitor behind it (a
+ * share card's render) still presents the secret, so the api leaves it
+ * unattributed and it draws on the shared ceilings alone, never on the
+ * budget of this server's egress address. Without the secret nothing is
+ * sent and the api's own contract decides.
  */
 export function upstreamIdentity(
   visitor: string | null,
   env: Record<string, string | undefined> = process.env,
 ): Record<string, string> {
   const secret = env.INDEXER_PROXY_SECRET;
-  if (!secret || visitor === null) return {};
+  if (!secret) return {};
   return {
     "X-Pools-Proxy-Secret": secret,
-    "X-Pools-Client-Address": visitor,
+    ...(visitor === null ? {} : { "X-Pools-Client-Address": visitor }),
   };
 }
