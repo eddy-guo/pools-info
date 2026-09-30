@@ -8,7 +8,7 @@ import { createSearchProvider, type SearchResult } from "@/lib/search-provider";
 import { Avatar } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
-import { searchResultTitle } from "@/lib/token-identity";
+import { searchResultSymbol, searchResultTitle } from "@/lib/token-identity";
 import { countLabel } from "@/lib/plural";
 const kindHints: Record<SearchResponse["kind"], string> = {
   text: "name",
@@ -242,7 +242,14 @@ export function Search() {
                       target={r.external ? "_blank" : undefined}
                       rel={r.external ? "noreferrer" : undefined}
                     >
-                      <Avatar address={r.address} />
+                      <Avatar
+                        address={r.address}
+                        symbol={
+                          r.group === "Tokens" && !r.external
+                            ? searchResultSymbol(r.title)
+                            : null
+                        }
+                      />
                       <span className="search-result-copy">
                         <strong>{title}</strong>
                         {address !== title && (

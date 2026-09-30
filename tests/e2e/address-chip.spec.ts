@@ -172,13 +172,8 @@ for (const cell of cells) {
         cell.identicon[project],
       );
       if (cell.name === "leaderboard trader") {
-        const initials = chip.title.slice(2, 4).toUpperCase();
-        expect(chip.initials, "initials come from the wallet address").toBe(
-          initials,
-        );
-        expect(chip.pseudo, "the monogram is visibly drawn").toContain(
-          initials,
-        );
+        expect(chip.initials, "wallet tiles stay letterless").toBeNull();
+        expect(chip.pseudo).toBe('""');
         expect(
           chip.avatarHidden,
           "the address remains the accessible name",

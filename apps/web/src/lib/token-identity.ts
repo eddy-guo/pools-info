@@ -11,6 +11,22 @@ export function tokenText(value: string | null | undefined): string | null {
 }
 
 /**
+ * The export's two-letter token mark, cut by code point so an emoji is never
+ * split into a lone surrogate. A missing symbol leaves the tile blank.
+ */
+export function tokenInitials(
+  symbol: string | null | undefined,
+): string | null {
+  const text = tokenText(symbol);
+  return text ? Array.from(text).slice(0, 2).join("").toUpperCase() : null;
+}
+
+/** Search titles carry the verified token symbol in their final parentheses. */
+export function searchResultSymbol(title: string): string | null {
+  return tokenText(/^(.*) \(([^()]*)\)$/s.exec(title)?.[2]);
+}
+
+/**
  * The line a token is known by: its name, then its symbol, then its short
  * address. Never a made-up placeholder; undefined only while the token itself
  * is not known yet.
