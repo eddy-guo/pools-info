@@ -12,7 +12,9 @@ test("production audit scope has no committed fixture pools", async ({
   await page.route("**/api/markets/**", (route) =>
     route.fulfill({ status: 503, json: { error: "data_unavailable" } }),
   );
-  await page.goto(`/traders/?pool=${market.id}&launch=${market.launchTx}`);
+  await page.goto(
+    `/wallet/${market.launchSender.toLowerCase()}/?pool=${market.id}&launch=${market.launchTx}`,
+  );
   await expect(
     page.getByText(
       "This pool could not be loaded within the current scan limits.",

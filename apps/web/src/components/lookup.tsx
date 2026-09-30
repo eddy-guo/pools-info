@@ -1,5 +1,4 @@
 "use client";
-import { FeaturePreview } from "./feature-preview";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FollowedWallets } from "./following";
@@ -15,23 +14,6 @@ export function WalletLookup() {
           <h1>
             Look up a wallet<span className="title-dot">.</span>
           </h1>
-          <p>
-            Enter any address. Results describe audited pool coverage, not a
-            complete wallet balance or history.
-          </p>
-        </div>
-      </div>
-      <div className="personal-rank">
-        <div>
-          <strong>Your public profile</strong>
-          <small>
-            Connect your wallet to make it yours. You can look up any address
-            below.
-          </small>
-        </div>
-        <div className="profile-actions">
-          <FeaturePreview feature="connect">Connect wallet</FeaturePreview>
-          <FeaturePreview feature="profile">Edit profile</FeaturePreview>
         </div>
       </div>
       <form

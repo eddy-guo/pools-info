@@ -35,7 +35,6 @@ import {
   UnavailableState,
   WinLossRecord,
 } from "./ui";
-import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
@@ -980,7 +979,6 @@ export function ProductWallet({ address }: { address: string }) {
                   )}
                 </div>
               </section>
-              <ComingSoonRow items={["Copy trading", "Profile editing"]} />
             </aside>
           </div>
         </>

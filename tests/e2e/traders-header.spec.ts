@@ -431,12 +431,15 @@ test("without a wallet the leaderboard's you row is the quiet prompt", async ({
   await settled(page);
   const row = page.locator(".my-rank");
   await expect(row).toHaveCount(1);
-  await expect(row).toHaveAttribute("href", "/wallet/");
+  // The prompt is plain text: no link to the lookup page, no invented action.
+  await expect(row).not.toHaveAttribute("href", /.*/);
+  await expect(row.locator("a, button")).toHaveCount(0);
   await expect(row.locator(".my-rank-chip")).toHaveText("YOU");
   await expect(row.locator(".my-rank-summary")).toHaveText(
     "Set your wallet in the header to see your rank here",
   );
-  await expect(row.locator(".my-rank-link")).toHaveText("Find your wallet →");
+  await expect(row.locator(".my-rank-link")).toHaveCount(0);
+  await expect(row).not.toContainText("Find your wallet");
   await expect(row, "no rank is invented").not.toContainText(/RANK|\d/);
   await expect(row.locator(".my-rank-empty")).toHaveCount(1);
   await expect(row.locator(".avatar")).toHaveCount(0);
