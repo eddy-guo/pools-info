@@ -104,7 +104,7 @@ function headIntoView(panel: HTMLElement | null, always = false) {
  * single-digit count) gains nothing from abbreviating "7" to anything
  * shorter, so only dropping the segment is correct for every row, not just
  * the ones with a large count to abbreviate. The full line still reaches
- * assistive tech and a mouse hover as this span's title/aria-label, so
+ * assistive tech through its text and a mouse hover through its title, so
  * nothing is lost, only not shown at every width. A crowd launch's line
  * carries the CROWD chip after it (`CrowdLine`), which never truncates.
  */
@@ -130,20 +130,16 @@ function RowSubtitle({
      nameless token before the age resolves) the line holds its height. */
   return (
     <CrowdLine launchType={pool.launchType}>
-      <span className="row-subtitle" title={full} aria-label={full}>
-        {symbol && (
-          <span className="mono" aria-hidden="true">
-            {symbol}
-          </span>
-        )}
+      <span className="row-subtitle" title={full}>
+        {symbol && <span className="mono">{symbol}</span>}
         {age && (
-          <span aria-hidden="true">
+          <span>
             {symbol && " · "}
             {age}
           </span>
         )}
         {tradeCount && (
-          <span className="row-subtitle-trades" aria-hidden="true">
+          <span className="row-subtitle-trades">
             {(symbol || age) && " · "}
             {tradeCount}
           </span>
@@ -244,11 +240,12 @@ function PoolChange({
   return (
     <span
       className="number change-age muted"
-      aria-label={`No ${window} change yet; launched ${age} ago`}
       title={`Launched ${age} ago - no ${window} baseline yet`}
     >
-      new<span aria-hidden="true"> · </span>
-      <span key={age}>{age}</span>
+      <span aria-hidden="true">
+        new · <span key={age}>{age}</span>
+      </span>
+      <span className="sr-only">{`No ${window} change yet; launched ${age} ago`}</span>
     </span>
   );
 }
@@ -953,7 +950,9 @@ export function ProductExplore({
                   </colgroup>
                   <thead>
                     <tr>
-                      <th aria-label="Watchlist" />
+                      <th>
+                        <span className="sr-only">Watchlist</span>
+                      </th>
                       {view === "crowd" ? (
                         sortable("Newest", "launch")
                       ) : (

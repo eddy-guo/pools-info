@@ -779,7 +779,9 @@ export function ProductTraders() {
                       <th>Positions</th>
                       <th>Best sale</th>
                       <th>Last</th>
-                      <th aria-label="Follow" />
+                      <th>
+                        <span className="sr-only">Follow</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -864,7 +866,9 @@ export function ProductTraders() {
                         <th>Positions</th>
                         <th>Best sale</th>
                         <th>Last</th>
-                        <th aria-label="Follow" />
+                        <th>
+                          <span className="sr-only">Follow</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>

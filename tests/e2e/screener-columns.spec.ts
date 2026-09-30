@@ -177,9 +177,10 @@ test("a young pool names its missing comparison without inventing a percentage",
   await page.goto("/");
   await expect(resolved(page)).toHaveCount(9);
   const young = resolved(page).nth(0).locator(".change-age");
-  await expect(young).toHaveText(/^new · [78]m$/);
-  await expect(young).toHaveAttribute(
-    "aria-label",
+  await expect(young.locator("[aria-hidden='true']")).toHaveText(
+    /^new · [78]m$/,
+  );
+  await expect(young.locator(".sr-only")).toHaveText(
     /^No 24h change yet; launched [78]m ago$/,
   );
   await expect(young, "no fabricated zero percentage").not.toContainText("%");

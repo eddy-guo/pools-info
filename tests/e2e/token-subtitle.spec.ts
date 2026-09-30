@@ -8,8 +8,9 @@ import { test, expect } from "@playwright/test";
    `pool-list (width < 868px)` query), the trailing trade count drops out as
    a whole unit - never a half-abbreviated number, never a dangling
    separator - leaving the untouched `SYMBOL · age`. The full line still
-   reaches assistive tech and a mouse hover as `.row-subtitle`'s
-   title/aria-label, so no information is lost, only not always shown. The
+   reaches assistive tech as `.row-subtitle`'s text (the dropped segment is
+   visually hidden, not removed) and a mouse hover as its title, so no
+   information is lost, only not always shown. The
    mobile card keeps its symbol and launch date (trade count is never sent
    there) and is checked against its price slot too. */
 
@@ -54,13 +55,19 @@ test("a token subtitle never truncates mid-segment on page one, compacting its t
           bottom: text.bottom,
         };
         const cell = price.getBoundingClientRect();
+        /* The dropped trade count stays in the accessibility tree as a
+           visually hidden 1px box, which innerText still reports, so the
+           painted line is the subtitle's text without that segment. */
+        const tradesVisible =
+          !!trades && trades.getBoundingClientRect().width > 1;
+        const painted = subtitle.cloneNode(true) as HTMLElement;
+        if (!tradesVisible)
+          painted.querySelector(".row-subtitle-trades")?.remove();
         return {
-          /* What actually paints, unlike textContent, which still reports a
-             display:none descendant's text. */
-          visibleText: (subtitle as HTMLElement).innerText,
+          visibleText: painted.textContent,
           fullTitle: rowSubtitle?.getAttribute("title") ?? null,
-          fullAriaLabel: rowSubtitle?.getAttribute("aria-label") ?? null,
-          tradesVisible: !!trades && trades.getClientRects().length > 0,
+          accessibleText: rowSubtitle?.textContent ?? null,
+          tradesVisible,
           truncated: subtitle.scrollWidth > subtitle.clientWidth,
           intersects:
             shown.left < cell.right &&
@@ -95,7 +102,7 @@ test("a token subtitle never truncates mid-segment on page one, compacting its t
         expect(row.fullTitle, `full title at ${width}px`).toMatch(
           /^.+ · (<1m|\d+[mhd]) · [\d,]+ trades$/,
         );
-        expect(row.fullAriaLabel, `aria-label at ${width}px`).toBe(
+        expect(row.accessibleText, `accessible text at ${width}px`).toBe(
           row.fullTitle,
         );
         if (width < compactBelow) {
