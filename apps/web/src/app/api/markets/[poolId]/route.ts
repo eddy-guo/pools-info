@@ -1,10 +1,10 @@
-import { targetedMarketSnapshot } from "@/lib/chain-server";
-import { admission, visitorAddress } from "@/lib/product-admission";
+import { targetedMarketSnapshot } from "../../../../lib/chain-server";
+import { admission, visitorAddress } from "../../../../lib/product-admission";
 import {
   ProductUnavailableError,
   productUnavailableResponse,
   readsUpstream,
-} from "@/lib/product-server";
+} from "../../../../lib/product-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 12;
@@ -43,7 +43,9 @@ export async function GET(
       ),
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof ProductUnavailableError)
+      return productUnavailableResponse(error);
     return Response.json(
       { error: "market_unavailable_or_outside_bounded_coverage" },
       { status: 503 },

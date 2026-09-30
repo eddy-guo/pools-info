@@ -2,13 +2,13 @@ import {
   auditedPoolSnapshot,
   currentChainSnapshot,
   capturedPoolSnapshot,
-} from "@/lib/chain-server";
-import { admission, visitorAddress } from "@/lib/product-admission";
+} from "../../../../../lib/chain-server";
+import { admission, visitorAddress } from "../../../../../lib/product-admission";
 import {
   ProductUnavailableError,
   productUnavailableResponse,
   readsUpstream,
-} from "@/lib/product-server";
+} from "../../../../../lib/product-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,7 +71,9 @@ export async function GET(
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof ProductUnavailableError)
+      return productUnavailableResponse(error);
     return Response.json(
       { error: "audit_unavailable" },
       {

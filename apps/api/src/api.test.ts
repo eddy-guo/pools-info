@@ -380,6 +380,7 @@ test("a client's spent budget refuses that client alone, names its wait exactly,
       ingress: ingressSettings({
         TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
         CLIENT_TOKENS_PER_MINUTE: "60",
+        CLIENT_TOKEN_BURST: "60",
       }),
     }),
   );
@@ -416,6 +417,29 @@ test("a client's spent budget refuses that client alone, names its wait exactly,
   assert.equal((await as("203.0.113.1")).status, 200);
 });
 
+test("one client's cached reads stop at its burst before the shared JSON ceiling", async (t) => {
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      cacheMs: 100000,
+      ingress: ingressSettings({ TRUSTED_PROXY_ADDRESSES: "127.0.0.1" }),
+    }),
+  );
+  const as = (client: string) =>
+    fetch(url + "/v1/status", { headers: { "x-forwarded-for": client } });
+  const first = await as("203.0.113.1");
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("x-data-cache"), "MISS");
+  for (let i = 0; i < 118; i++) {
+    const hit = await as("203.0.113.1");
+    assert.equal(hit.status, 200, `cached request ${i + 1}`);
+    assert.equal(hit.headers.get("x-data-cache"), "HIT");
+  }
+  await refusal(await as("203.0.113.1"), "client_budget", "1");
+  assert.equal((await as("203.0.113.2")).status, 200);
+});
+
 test("forwarded headers on direct traffic never make an identity, and an unconfigured api keeps only its shared ceiling", async (t) => {
   // The trusted proxy is some other address: every request here is direct
   // traffic from the loopback peer, whatever it claims to forward.
@@ -429,6 +453,7 @@ test("forwarded headers on direct traffic never make an identity, and an unconfi
         TRUSTED_PROXY_ADDRESSES: "10.0.0.1",
         TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
         CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
       }),
     }),
   );
@@ -488,6 +513,7 @@ test("the proxy secret names the visitor the site proxy vouches for, and nobody 
       ingress: ingressSettings({
         TRUSTED_PROXY_SECRET: secret,
         CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
       }),
     }),
   );
@@ -522,6 +548,7 @@ test("the shared ceiling still holds across clients, and a request it refuses co
       ingress: ingressSettings({
         TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
         CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
       }),
     }),
   );
@@ -557,6 +584,7 @@ test("readiness keeps its own probe allowance; a probe flood spends no visitor b
       ingress: ingressSettings({
         TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
         CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
       }),
     }),
   );
@@ -615,6 +643,7 @@ test("a request costs its client by the work it starts: cached, light, heavy or 
       ingress: ingressSettings({
         TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
         CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
       }),
     }),
   );
@@ -661,6 +690,7 @@ test("a read coalesced with an identical one in flight costs what a cache hit co
         ingress: ingressSettings({
           TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
           CLIENT_TOKENS_PER_MINUTE: "10",
+          CLIENT_TOKEN_BURST: "10",
         }),
       },
     ),

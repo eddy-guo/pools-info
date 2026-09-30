@@ -110,7 +110,7 @@ export function createApi(
   // One bucket per client, refilled continuously; a refusal spends nothing.
   const clients = createTokenBuckets(
     {
-      capacity: ingress.clientTokensPerMinute,
+      capacity: ingress.clientTokenBurst,
       refillPerSecond: ingress.clientTokensPerMinute / 60,
       maxKeys: ingress.maxClients,
     },

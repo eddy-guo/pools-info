@@ -25,8 +25,10 @@ import type { Route } from "./request";
  * rather than folding every visitor into one budget.
  */
 export const ingressPolicy = Object.freeze({
-  /** Tokens a client may spend per minute: its bucket's burst and refill. */
-  clientTokensPerMinute: 120,
+  /** Tokens added to a client's bucket per minute. */
+  clientTokensPerMinute: 60,
+  /** Tokens available to a client at once. */
+  clientTokenBurst: 120,
   /** Distinct clients tracked at once; the least recently seen goes first. */
   maxClients: 10_000,
   /** `/ready` answers per minute, independent of every visitor budget. */
@@ -68,6 +70,7 @@ export interface IdentitySettings {
 }
 export interface IngressSettings {
   clientTokensPerMinute: number;
+  clientTokenBurst: number;
   maxClients: number;
   probesPerMinute: number;
   identity: IdentitySettings;
@@ -89,13 +92,23 @@ export function ingressSettings(
   const secret = env.TRUSTED_PROXY_SECRET ?? "";
   if (secret !== "" && secret.length < 16)
     throw Error("TRUSTED_PROXY_SECRET must be at least 16 characters");
+  const clientTokensPerMinute = read(
+    "CLIENT_TOKENS_PER_MINUTE",
+    ingressPolicy.clientTokensPerMinute,
+    10,
+    100_000,
+  );
+  const clientTokenBurst = read(
+    "CLIENT_TOKEN_BURST",
+    ingressPolicy.clientTokenBurst,
+    clientTokensPerMinute,
+    100_000,
+  );
+  if (clientTokenBurst < clientTokensPerMinute)
+    throw Error("CLIENT_TOKEN_BURST must be at least CLIENT_TOKENS_PER_MINUTE");
   return {
-    clientTokensPerMinute: read(
-      "CLIENT_TOKENS_PER_MINUTE",
-      ingressPolicy.clientTokensPerMinute,
-      10,
-      100_000,
-    ),
+    clientTokensPerMinute,
+    clientTokenBurst,
     maxClients: ingressPolicy.maxClients,
     probesPerMinute: ingressPolicy.probesPerMinute,
     identity: {
