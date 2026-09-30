@@ -39,6 +39,7 @@ import {
 
 type Row = Record<string, any>; // PostgreSQL projections are mapped explicitly below.
 type Query = (sql: string, values?: unknown[]) => Promise<{ rows: Row[] }>;
+const broadHealth = { ok: true, ledger: null };
 export interface Reader {
   read(request: ReadRequest): Promise<unknown>;
   /** The verified registry's launch tokens past a pool ref, for the explorer
@@ -171,7 +172,7 @@ export async function readData(
     // answers while product routes warm, and never ok while the ledger has
     // stopped moving. The other source serves no ledger, so it has nothing
     // to measure here.
-    if (marketSource !== "ledger") return { ok: true, ledger: null };
+    if (marketSource !== "ledger") return broadHealth;
     const ledger = await readLedgerFreshness(query, freshness.staleMs);
     if (!ledger) return { ok: false, reason: "ledger_missing", ledger: null };
     return ledger.stale
@@ -583,6 +584,8 @@ export function createReader(
   return {
     assertReady: (expected) => warmth?.assertReady(expected) ?? 0,
     async read(request) {
+      if (request.route === "health" && marketSource !== "ledger")
+        return broadHealth;
       const product = request.route !== "ready" && request.route !== "health";
       const version = product ? warmth?.assertReady() : undefined;
       const client = await pool.connect().catch((error) => {

@@ -412,6 +412,14 @@ export interface LedgerTipSummary {
   through: number | null;
   error: string | null;
 }
+export async function ledgerTipIncomplete(db: Client): Promise<boolean> {
+  const result = await db.query(
+    `SELECT EXISTS (SELECT 1 FROM agg_batches WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND attributed>0)
+       AND (NOT EXISTS (SELECT 1 FROM agg_positions WHERE chain_id=4663)
+         OR NOT EXISTS (SELECT 1 FROM agg_wallet_hours WHERE chain_id=4663)) AS incomplete`,
+  );
+  return result.rows[0].incomplete === true;
+}
 async function abortableWait(ms: number, signal?: AbortSignal) {
   await sleep(ms, undefined, { signal }).catch((e) => {
     if (e?.name !== "AbortError") throw e;
@@ -478,12 +486,7 @@ export async function runLedgerTip(
   }
   // A copy of the ledger restored without its positions or wallet hours
   // would fold new trades into empty positions: sales without their buys.
-  const incomplete = await db.query(
-    `SELECT EXISTS (SELECT 1 FROM agg_batches WHERE chain_id=4663 AND stream_key='ledger:agg:v1' AND attributed>0)
-       AND (NOT EXISTS (SELECT 1 FROM agg_positions WHERE chain_id=4663)
-         OR NOT EXISTS (SELECT 1 FROM agg_wallet_hours WHERE chain_id=4663)) AS incomplete`,
-  );
-  if (incomplete.rows[0].incomplete) {
+  if (await ledgerTipIncomplete(db)) {
     const error = Error("ledger_tip_ledger_incomplete");
     log({ event: "ledger_tip_refused", error: ledgerTipSafeError(error) });
     return finish("inspection", error);

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { once } from "node:events";
+import { createApi } from "./server";
+import { createReader } from "./reader";
 import {
   ledgerFreshness,
   ledgerFreshnessDefaults,
@@ -78,4 +81,23 @@ test("LEDGER_STALE_MS defaults to ten minutes and is bounded", () => {
       /Invalid LEDGER_STALE_MS/,
       value,
     );
+});
+
+test("broad-source health stays available when its database is unreachable", async (t) => {
+  const reader = createReader("postgresql://test@127.0.0.1:1/test", undefined, {
+    marketSource: "broad",
+  });
+  const server = createApi(reader);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.close();
+    await once(server, "close");
+    await reader.close();
+  });
+  const response = await fetch(
+    `http://127.0.0.1:${(server.address() as { port: number }).port}/health`,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, ledger: null });
 });

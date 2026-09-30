@@ -17,6 +17,7 @@ import {
   createLedgerTipClient,
   ledgerTipConfig,
   ledgerTipExitCodes,
+  ledgerTipIncomplete,
   ledgerTipSafeError,
   ledgerTipStatus,
   runLedgerTip,
@@ -92,9 +93,10 @@ async function main() {
   });
   await db.connect();
   try {
-    const cursor = await holdsLedger(db);
-    if (cursor === null) {
-      const error = Error("ledger_tip_requires_pass");
+    const refuse = (
+      message: "ledger_tip_requires_pass" | "ledger_tip_ledger_incomplete",
+    ) => {
+      const error = Error(message);
       process.exitCode = ledgerTipExitCodes.inspection;
       health?.stopped("inspection", ledgerTipSafeError(error));
       console.error(
@@ -103,6 +105,10 @@ async function main() {
           error: ledgerTipSafeError(error),
         }),
       );
+    };
+    const cursor = await holdsLedger(db);
+    if (cursor === null) {
+      refuse("ledger_tip_requires_pass");
       return;
     }
     if (mode === "status") {
@@ -110,6 +116,10 @@ async function main() {
       return;
     }
     assertLedgerTipAllowed(config);
+    if (await ledgerTipIncomplete(db)) {
+      refuse("ledger_tip_ledger_incomplete");
+      return;
+    }
     health?.ready(cursor);
     let throttled = 0;
     const pacer = new HyperSyncPacer();

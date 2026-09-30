@@ -1,6 +1,10 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 import {
   decodeFunctionData,
   encodeFunctionResult,
@@ -49,6 +53,7 @@ import {
   ledgerTipConfig,
   ledgerTipDefaults,
   ledgerTipExitCodes,
+  ledgerTipIncomplete,
   ledgerTipSafeError,
   nextLedgerTipRange,
   runLedgerTip,
@@ -96,6 +101,89 @@ async function writer(db: Client) {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw Error("ledger writer lock unavailable");
+}
+async function assertIncompleteStartupUnhealthy(db: Client) {
+  const schema = (await db.query("SELECT current_schema() AS name")).rows[0]
+    .name as string;
+  const portHolder = createServer();
+  portHolder.listen(0, "127.0.0.1");
+  await once(portHolder, "listening");
+  const port = (portHolder.address() as { port: number }).port;
+  portHolder.close();
+  await once(portHolder, "close");
+  const url = new URL(process.env.TEST_DATABASE_URL!);
+  url.searchParams.set("options", `-c search_path=${schema}`);
+  await db.query("BEGIN");
+  await db.query("LOCK TABLE agg_batches IN ACCESS EXCLUSIVE MODE");
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)),
+      "run",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: url.toString(),
+        LEDGER_TIP_ENABLED: "1",
+        ENVIO_API_TOKEN: "test-token",
+        HYPERSYNC_URL: "http://127.0.0.1:1",
+        PORT: String(port),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let output = "";
+  let errors = "";
+  child.stdout!.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+  });
+  child.stderr!.on("data", (chunk: Buffer) => {
+    errors += chunk.toString();
+  });
+  const exited = once(child, "exit");
+  let inTransaction = true;
+  let exitTimeout: NodeJS.Timeout | null = null;
+  try {
+    let waiting = false;
+    for (let i = 0; i < 300; i++) {
+      if (child.exitCode !== null) break;
+      await db.query("SELECT pg_stat_clear_snapshot()");
+      const blocked = await db.query(
+        "SELECT 1 FROM pg_stat_activity WHERE application_name='pools-ledger-tip' AND wait_event_type='Lock' LIMIT 1",
+      );
+      if (
+        output.includes('"event":"ledger_tip_health_listening"') &&
+        blocked.rowCount
+      ) {
+        waiting = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(waiting, true);
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    assert.equal(response.status, 503);
+    await db.query("ROLLBACK");
+    inTransaction = false;
+    const [code] = await Promise.race([
+      exited,
+      new Promise<never>((_, reject) => {
+        exitTimeout = setTimeout(
+          () => reject(Error("worker did not refuse incomplete ledger")),
+          10000,
+        );
+      }),
+    ]);
+    assert.equal(code, ledgerTipExitCodes.inspection);
+    assert.equal(errors.includes("ledger_tip_ledger_incomplete"), true);
+  } finally {
+    if (exitTimeout) clearTimeout(exitTimeout);
+    if (inTransaction) await db.query("ROLLBACK");
+    child.kill("SIGKILL");
+  }
 }
 /** The public RPC as the launch lane reads it: name, symbol, decimals and
  * total supply through Multicall3 at a fixed head, and nothing else. */
@@ -879,15 +967,19 @@ test(
     await releaseLedgerWriter(db);
     await writer(copy);
     await passTwoRanges(copy, fake);
+    assert.equal(await ledgerTipIncomplete(copy), false);
     const passRequests = fake.requests.length;
     await copy.query("CREATE TEMP TABLE kept AS SELECT * FROM agg_positions");
     await copy.query("DELETE FROM agg_positions");
+    assert.equal(await ledgerTipIncomplete(copy), true);
+    await assertIncompleteStartupUnhealthy(copy);
     const partial = await runLedgerTip(copy, tipOptions(fake, log));
     assert.equal(partial.stopped, "inspection");
     assert.match(partial.error!, /^ledger_tip_ledger_incomplete/);
     assert.equal(fake.requests.length, passRequests);
     assert.equal((await readLedgerStream(copy)).mode, "pass");
     await copy.query("INSERT INTO agg_positions SELECT * FROM kept");
+    assert.equal(await ledgerTipIncomplete(copy), false);
     const restored = await runLedgerTip(copy, tipOptions(fake, log));
     assert.deepEqual(
       [restored.stopped, restored.through],
