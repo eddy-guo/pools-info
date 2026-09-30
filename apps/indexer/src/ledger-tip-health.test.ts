@@ -141,6 +141,29 @@ test("the report follows startup, cursor progress, retries, stops, and staleness
   );
 });
 
+test("a database session reconnect restores health after the next validated cursor and cycle", () => {
+  const health = new LedgerTipHealth({ staleMs: 10 * minute });
+  health.ready(cycle(0).cursor);
+  health.cycle(cycle(1));
+  health.stopped("aborted", null);
+  assert.equal(health.report().ok, false);
+
+  health.reconnecting();
+  let report = health.report();
+  assert.deepEqual(
+    [report.ok, report.state, report.step, report.stopped, report.exitCode],
+    [false, "starting", "connecting", null, null],
+  );
+  health.ready(cycle(1).cursor);
+  health.starting("locking");
+  health.cycle(cycle(2));
+  report = health.report();
+  assert.deepEqual(
+    [report.ok, report.state, report.step, report.cycles, report.cursor],
+    [true, "cycling", null, 2, cycle(2).cursor],
+  );
+});
+
 test("idle cycles leave the freshness clock unchanged until the cursor advances", () => {
   let now = 1_790_000_000_000;
   const health = new LedgerTipHealth({ staleMs: 10 * minute, now: () => now });

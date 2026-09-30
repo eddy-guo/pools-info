@@ -297,6 +297,7 @@ async function main() {
   try {
     for (let n = 1; ; n++) {
       if ((await session(mode, config, n)) === "done") return;
+      health?.reconnecting();
       emit({ event: "ledger_tip_reconnecting", session: n + 1 });
     }
   } finally {
