@@ -408,13 +408,9 @@ export function ProductWallet({ address }: { address: string }) {
                       Realized: {period} · Holding, cost, unrealized: lifetime
                     </p>
                     <div className="wallet-positions-context">
-                      {/* The rule-change disclosure: the date on which a sell
-                        routed through a pooled swap (many wallets' tokens
-                        sold in one swap by a batch contract) came to be
-                        attributed to each contributor, the whole history
-                        re-folded under it, read from the
-                        response as the ledger's own swap-in date and never
-                        hard-coded here; nothing while the read serves none.
+                      {/* The rule-change disclosure reads the ledger's swap-in
+                        date from the response, including for eligible earlier
+                        pooled sells; nothing appears while the read serves none.
                         The slot shares this fixed-height row, so the line's
                         arrival moves nothing, and it is keyed to remount
                         rather than rewrite text in place. */}
@@ -422,7 +418,7 @@ export function ProductWallet({ address }: { address: string }) {
                         {data?.pooledSwapsAttributedSince != null && (
                           <span
                             key={data.pooledSwapsAttributedSince}
-                            title={`Since ${utcDay(data.pooledSwapsAttributedSince)}, every sell routed through a pooled swap (many wallets' tokens sold in one swap by a batch contract), earlier ones included, is attributed to each contributor by the tokens it moved. Before that, such positions were excluded from PnL.`}
+                            title={`Since ${utcDay(data.pooledSwapsAttributedSince)}, pooled sells whose token movements fully reconcile (many wallets' tokens sold in one swap by a batch contract), earlier ones included, are attributed to each contributor by the tokens it moved. Pooled sells that do not reconcile, and pooled buys, stay excluded from PnL.`}
                           >
                             Pooled-sell rule changed{" "}
                             {utcDay(data.pooledSwapsAttributedSince)}
