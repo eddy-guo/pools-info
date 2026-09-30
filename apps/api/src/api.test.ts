@@ -9,6 +9,7 @@ import {
   RequestError,
   searchPattern,
 } from "./request";
+import type { ReadRequest } from "./request";
 import { createApi } from "./server";
 import { ingressSettings } from "./ingress";
 import { readData } from "./reader";
@@ -409,8 +410,10 @@ test("feed fails closed if streams are absent or have no shared indexed interval
 
 /** A reader that answers every route at once, so only the ingress decides. */
 const stubReader = () => ({
-  async read() {
-    return { items: [] };
+  async read(request: ReadRequest) {
+    return request.route === "health"
+      ? { ok: true, ledger: null }
+      : { items: [] };
   },
   async close() {},
 });
