@@ -36,7 +36,4 @@ minimum request interval and maximum JSON-RPC batch size without credentials.
 
 ## The ledger tip loop is the exception
 
-`chain-sync` runs the aggregate ledger's tip loop. Its throttle handling
-pauses in-process and eventually exits 1 if the pause budget is spent. See
-[aggregate ledger stops](AGGREGATE-LEDGER.md#phase-3-the-tip-loop) for the
-waits, budget and log events.
+`chain-sync` follows the [aggregate ledger's stop policy](AGGREGATE-LEDGER.md#phase-3-the-tip-loop).

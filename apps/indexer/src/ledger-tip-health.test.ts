@@ -128,7 +128,7 @@ test("the report follows startup, cursor progress, retries, stops, and staleness
       false,
       "stopped",
       "throttled",
-      75,
+      1,
       "hypersync_rate_limit_exhausted: the tip loop stopped",
       3,
       false,

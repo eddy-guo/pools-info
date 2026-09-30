@@ -410,8 +410,9 @@ an hour rather than one every seventy seconds. A lost database connection
 ends the loop the way a signal does (`ledger_tip_stopping`, with the reason
 and the range in flight) and the service reconnects in-process, waiting 1, 2,
 4 … 60 seconds between attempts for up to an hour
-(`ledger_database_connect_failed`) before it exits 1; the same waits cover the
-first connection and the writer lock, and every reconnection re-reads the
+(`ledger_database_connect_failed`) before it exits 1. The first connection
+and the migration connection use the same backoff; writer-lock acquisition
+polls once per second for at least that hour. Every reconnection re-reads the
 cursor and reconciles both streams exactly as a fresh start does. SIGTERM and
 SIGINT are logged by the supervisor (`service_stopping`) and the loop
 (`ledger_tip_stopping`) and end the loop on a committed batch. The in-process
