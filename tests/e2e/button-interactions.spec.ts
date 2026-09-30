@@ -212,9 +212,14 @@ test("primary, secondary and ghost controls share deliberate interaction states"
   });
   expect(primaryDisabled.boxShadow).toBe("none");
 
-  const secondary = page
-    .locator(".personal-rank .button.secondary")
-    .filter({ hasText: "Connect wallet" });
+  await page.goto(
+    "/wallet/0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1/?window=All",
+  );
+  await page.evaluate(() => document.fonts.ready);
+  const secondary = page.getByRole("button", {
+    name: "Share PnL card",
+    exact: true,
+  });
   const secondaryRest = await visual(secondary);
   expect(secondaryRest).toMatchObject({
     background: colors.panelRaised,

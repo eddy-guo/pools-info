@@ -166,7 +166,7 @@ test("saved product refresh retains data during failures and recovers without br
   await expect(row).toBeVisible();
   expect(calls).toBe(3);
 });
-test("audited leaderboard links to real wallet metrics and scoped share cards, retaining audit on failure", async ({
+test("an audited pool's wallet view shows real wallet metrics and scoped share cards, retaining the audit on failure", async ({
   page,
 }) => {
   let calls = 0;
@@ -178,7 +178,7 @@ test("audited leaderboard links to real wallet metrics and scoped share cards, r
         : { status: 503, json: { error: "unavailable" } },
     );
   });
-  await page.goto(`/traders/?pool=${market.id}&launch=${market.launchTx}`);
+  await page.goto(walletHref(wallet, market));
   await expect(
     page.getByRole("combobox", { name: "Audit pool" }),
   ).toBeVisible();
@@ -187,31 +187,14 @@ test("audited leaderboard links to real wallet metrics and scoped share cards, r
     .getByRole("button", { name: /^(Audit traders|Refresh audit)$/ })
     .click();
   await expect(
-    page.getByRole("link", { name: "0x1111…1111", exact: true }).first(),
-  ).toBeVisible();
-  await page
-    .getByLabel("Minimum swaps")
-    .filter({ visible: true })
-    .selectOption("25");
-  await expect(
-    page.getByRole("heading", {
-      name: "No qualifying traders in this pool and window",
-    }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Minimum swaps")
-    .filter({ visible: true })
-    .selectOption("10");
+    page.getByRole("button", { name: "Refresh audit", exact: true }),
+  ).toBeEnabled();
   await page
     .getByRole("button", { name: "Refresh audit", exact: true })
     .click();
   await expect(
     page.getByText(/The previous audit remains visible/),
   ).toBeVisible();
-  await page
-    .getByRole("link", { name: "0x1111…1111", exact: true })
-    .first()
-    .click();
   await expect(
     page.getByRole("heading", { name: "0x1111…1111", exact: true }),
   ).toBeVisible();

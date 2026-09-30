@@ -24,6 +24,8 @@ const removedCopy = [
   "Swap-based estimate",
   "Grouped by launch transaction sender",
   "Edit profile",
+  "Coming soon",
+  "Profile editing",
   "PREVIEW",
   "Set up copy trading",
   "Before gas",
@@ -104,12 +106,8 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     sidebar.locator(".wallet-top-pool").first().locator("> :first-child"),
     "each pool row opens with its identity tile",
   ).toHaveAttribute("data-pool-image", /^0x/);
-  const comingSoon = sidebar.locator(".coming-soon-row");
-  await expect(comingSoon).toHaveText(
-    "Coming soonCopy trading · Profile editing",
-  );
-  await expect(comingSoon.locator("button, a")).toHaveCount(0);
-  await expect(comingSoon).toHaveCSS("color", "rgb(154, 154, 164)");
+  // The rail ends with the pool list: no row for features not built yet.
+  await expect(sidebar.locator("> *")).toHaveCount(1);
   // The export's tab counts, from the rows the read sent. Trades carries no
   // count of its own: the explorer history's length is never the wallet's
   // trade count, which stays on the Trades stat tile.

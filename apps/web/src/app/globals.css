@@ -461,14 +461,6 @@ main {
   color: var(--muted);
   letter-spacing: 0;
 }
-.subtle-badge {
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  border: 1px solid #3c3740;
-  border-radius: 3px;
-  padding: 1px 4px;
-}
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 292px;
@@ -1340,16 +1332,6 @@ main {
 }
 .podium-top .rank {
   font-size: 16px;
-}
-.podium-identity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.podium-identity strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
 }
 .podium-amount {
   font-size: 27px;
@@ -2430,22 +2412,6 @@ main {
   outline: 2px solid var(--control-focus-ring);
   outline-offset: 2px;
 }
-.live-filters {
-  display: flex;
-  gap: 12px 24px;
-  flex-wrap: wrap;
-  padding: 0 20px 16px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.live-filters label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.live-filters input {
-  accent-color: var(--accent);
-}
 .audit-action {
   padding: 0 20px 20px;
 }
@@ -2478,13 +2444,6 @@ main {
 }
 .live-podium strong {
   font-size: 18px;
-}
-.live-details {
-  margin: 20px;
-}
-.live-details summary {
-  cursor: pointer;
-  color: var(--accent);
 }
 .launch-rail {
   display: flex;
@@ -2700,111 +2659,12 @@ main {
   }
 }
 
-/* Shared previews show planned account features without claiming a session. */
-.feature-dialog {
-  width: min(480px, calc(100% - 32px));
-  max-height: 88dvh;
-  overflow: auto;
-  padding: 26px;
-  border: 1px solid #51434c;
-  border-radius: 16px;
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: 0 30px 100px #0009;
-}
-.feature-dialog::backdrop {
-  background: #070709bb;
-  backdrop-filter: blur(6px);
-}
-.feature-dialog-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 .preview-label {
   color: var(--accent);
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.feature-icon {
-  margin-top: 20px;
-  color: var(--accent);
-}
-.feature-dialog h2 {
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.03em;
-  margin: 20px 0 12px;
-}
-.feature-dialog p {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-.preview-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px;
-  background: #f2a4ce0a;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 20px 0;
-}
-.preview-notice svg {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--accent);
-}
-.preview-options {
-  display: grid;
-  gap: 8px;
-  margin-top: 20px;
-}
-.preview-options button {
-  display: flex;
-  justify-content: space-between;
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--muted);
-  padding: 15px;
-  border-radius: 8px;
-}
-.preview-options span {
-  font-size: 11px;
-  color: var(--faint);
-}
-.preview-profile {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  margin-top: 20px;
-}
-.preview-profile legend {
-  font-size: 11px;
-  color: var(--muted);
-}
-.preview-profile label {
-  display: grid;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 14px;
-}
-.preview-profile input,
-.preview-profile textarea {
-  width: 100%;
-  background: var(--bg);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 10px;
-}
-.personal-rank,
 .watchlist-sync {
   display: flex;
   gap: 18px;
@@ -2816,34 +2676,17 @@ main {
   background: var(--panel);
   margin-bottom: 20px;
 }
-.personal-rank strong,
-.personal-rank small,
 .watchlist-sync small {
   display: block;
-}
-.personal-rank strong {
-  margin: 5px 0;
-  font-size: 15px;
-}
-.personal-rank small,
-.watchlist-sync small {
   color: var(--muted);
   font-size: 12px;
   margin-top: 4px;
-}
-.personal-rank .preview-label {
-  margin-left: 10px;
 }
 .watchlist-sync {
   margin: 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
-}
-.profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 .search-help,
 .search-explainer {
@@ -2871,13 +2714,9 @@ main {
   }
 }
 @media (max-width: 700px) {
-  .personal-rank,
   .watchlist-sync {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .feature-dialog {
-    padding: 20px;
   }
 }
 /* The chart fills its region; the tooltip floats over it at the crosshair. */
@@ -3876,24 +3715,6 @@ button.icon-button:disabled {
 .desktop-pools .data-table td:nth-child(6) a:hover .mono {
   color: var(--color-accent);
 }
-.corpus-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px;
-  font-size: 11px;
-  color: var(--muted);
-  border-top: 1px solid #17171c;
-}
-.corpus-footer strong {
-  color: var(--color-text-2);
-  font-weight: 500;
-}
-.corpus-footer a {
-  color: var(--color-text-2);
-}
 .market-sidebar {
   display: flex;
   flex-direction: column;
@@ -3931,7 +3752,6 @@ button.icon-button:disabled {
   font-size: 12px;
   border-top: 1px solid #17171c;
 }
-.subtle-badge,
 .badge {
   border-radius: 5px;
   font-size: 9px;
@@ -4030,46 +3850,11 @@ button.icon-button:disabled {
   font-size: 11px;
   line-height: 1.7;
 }
-.live-details {
-  margin: 14px 16px;
-  font-size: 11px;
-}
-.live-details > summary {
-  min-height: var(--ctl-min);
-  padding: 7px 0;
-}
-.personal-rank {
-  margin-bottom: 14px;
-  padding: 13px 16px;
-  border: 1px solid #26262e;
-  border-radius: 14px;
-  background: rgb(255 255 255 / 2.6%);
-}
-.personal-rank .eyebrow {
-  display: none;
-}
-.personal-rank strong {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-}
-.personal-rank small {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.personal-rank > .button {
-  font-size: 12px;
-  padding: 7px 12px;
-}
 .preview-label {
   color: var(--muted);
   border-color: #33333d;
   background: transparent;
   font-size: 9px;
-}
-.ranking-controls {
-  border-top: 1px solid #17171c;
 }
 .live-podium {
   gap: 12px;
@@ -4085,92 +3870,8 @@ button.icon-button:disabled {
 .live-podium > a:first-child {
   border-color: #33333d;
 }
-.podium-identity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-.podium-identity > span:nth-child(2) {
-  min-width: 0;
-}
-.podium-identity > svg {
-  margin-left: auto;
-  color: #555560;
-}
-.podium-rank {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid #3a3a44;
-  border-radius: 10px;
-  color: var(--color-text-2);
-  background: #1c1c22;
-  font-size: 13px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.podium-rank.place-1 {
-  background: #262112;
-  border-color: #514521;
-  color: #e0b45c;
-}
-.podium-identity strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-}
-.podium-value {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.podium-value .number {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.podium-description {
-  color: var(--muted);
-  font-size: 11px;
-  margin: 3px 0 13px;
-}
-.record-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 68px;
-}
-.record-bar {
-  display: flex;
-  overflow: hidden;
-  height: 4px;
-  width: 100%;
-  border-radius: 3px;
-  background: #1c1c22;
-}
-.record-bar i {
-  height: 100%;
-  background: var(--green);
-}
-.record-bar b {
-  height: 100%;
-  background: var(--red);
-}
-.record-cell small {
-  font-size: 12px;
-  color: var(--muted);
-}
-.podium-trades {
-  position: absolute;
-  bottom: 16px;
-  right: 18px;
-  color: var(--muted);
-  font-size: 12px;
-}
 /* The trader leaderboard's own win/loss bar (podium, list and phone card):
-   a 5px two-colour fill plus "NW · NL" text, never the traders-by-pool
-   `.record-bar`/`.record-cell` pair above, which stays PoolTraders-only. */
+   a 5px two-colour fill plus "NW · NL" text. */
 .wl-bar {
   display: flex;
   flex: 0 0 auto;
@@ -4198,80 +3899,6 @@ button.icon-button:disabled {
   color: var(--color-text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-.live-filters {
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #17171c;
-  border-bottom: 1px solid #17171c;
-}
-.filter-caption {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-right: 3px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.live-filters label {
-  padding: 6px 8px;
-  min-height: var(--ctl-min);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  font-size: 12px;
-  color: var(--color-text-2);
-}
-.live-filters label:has(input:checked) {
-  border-color: #2a4c43;
-  background: #10211c;
-}
-.live-filters input {
-  accent-color: var(--ac);
-  width: 12px;
-  height: 12px;
-}
-.live-filters .disabled-filter {
-  color: var(--color-faint);
-}
-.disabled-filter small {
-  font-size: 11px;
-}
-.live-filters .minimum-filter {
-  margin-left: auto;
-  border: 0;
-  padding: 0;
-}
-.minimum-filter select {
-  min-height: var(--ctl-min);
-  padding: 4px 8px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 7px;
-  background: #101014;
-}
-.ranking-scope {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 11px 16px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.ranking-scope .subtle-badge {
-  flex-shrink: 0;
-}
-.trader-table {
-  min-width: 980px;
-}
-.trader-table td,
-.trader-table th {
-  text-align: right;
-}
-.trader-table td:nth-child(-n + 2),
-.trader-table th:nth-child(-n + 2),
-.trader-table td:nth-child(5),
-.trader-table th:nth-child(5) {
-  text-align: left;
 }
 .trader-identity {
   display: inline-flex;
@@ -4752,26 +4379,6 @@ button.icon-button:disabled {
   .mobile-pool-stats[data-launch-row] time {
     font-variant-numeric: tabular-nums;
   }
-  .corpus-footer {
-    padding: 11px 14px;
-    font-size: 11px;
-  }
-  .corpus-footer a {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-  }
-  .personal-rank {
-    padding: 13px;
-    gap: 12px;
-  }
-  .personal-rank strong {
-    font-size: 12px;
-  }
-  .personal-rank .button {
-    min-height: 44px;
-    white-space: nowrap;
-  }
   .live-controls {
     padding: 12px;
   }
@@ -4787,29 +4394,6 @@ button.icon-button:disabled {
   .live-podium {
     grid-template-columns: minmax(0, 1fr);
     padding: 0 12px 12px;
-  }
-  .live-filters {
-    padding: 12px;
-    gap: 7px;
-  }
-  .live-filters label {
-    min-height: 44px;
-    font-size: 12px;
-  }
-  .live-filters .filter-caption {
-    width: 100%;
-    margin-bottom: 3px;
-  }
-  .live-filters .minimum-filter {
-    margin-left: 0;
-  }
-  .minimum-filter select {
-    min-height: 44px;
-  }
-  .ranking-scope {
-    align-items: flex-start;
-    font-size: 11px;
-    padding: 11px 12px;
   }
   .footer {
     padding: 16px 14px;
@@ -6069,44 +5653,17 @@ a.wallet-top-pool:hover {
 .wallet-top-pools .panel-footnote {
   border-top: 0;
 }
-.coming-soon-row {
-  margin: 0;
-  padding: 0 16px;
-  min-height: var(--ctl-min);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-text-3);
-  font-size: 12px;
-  font-weight: 400;
-}
-.coming-soon-row > span {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-faint);
-}
 /* The Following tab reserves only the rows it actually has (fewer than 25 is
    common), so it keeps the row height but not the leaderboard's full-page
    reservation. */
-/* Ranks 1-3 sit in the podium above, so the reservation below covers only
-   the flat list's default 25-3=22 rows; the podium's own band (below) is
-   reserved separately and additively. A failed first read carries no rows
-   (`listCount` is zero) and drops this reservation, so its compact
-   UnavailableState sits right under the toolbar instead of a screen below
-   a blank, still-reserved board. */
-.leaderboard-panel
-  .desktop-traders:not(.following-traders):not([data-failed="true"]) {
-  min-height: calc(22 * 60px + 44px);
-}
-/* The ranked board alone grows with its URL: `--ranked-rows` is the row count
-   `limit` names, set before first paint by rankedRowsScript, so a served
-   shell under a restored scroll reserves the list the reader is returning to.
-   AuditLeaderboard shares the selector above and keeps the fixed 22 rows,
-   since a `limit` left in the URL beside `?pool=` is not its own count. This
-   rule is more specific than the one above, so it must repeat that one's
-   failed-read exclusion or a failed board reserves rows again. */
+/* Ranks 1-3 sit in the podium above, so the reservation covers only the flat
+   list: `--ranked-rows` is the row count `limit` names less those three (22
+   by default), set before first paint by rankedRowsScript, so a served shell
+   under a restored scroll reserves the list the reader is returning to. The
+   podium's own band (below) is reserved separately and additively. A failed
+   first read carries no rows (`listCount` is zero) and drops this
+   reservation, so its compact UnavailableState sits right under the toolbar
+   instead of a screen below a blank, still-reserved board. */
 .ranked-traders
   .leaderboard-panel
   .desktop-traders:not(.following-traders):not([data-failed="true"]) {
@@ -6154,24 +5711,6 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .mobile-traders {
     display: block;
   }
-  /* AuditLeaderboard (the per-pool traders panel, traders.tsx's PoolTraders,
-     reached at /traders/?pool=... - it shares the .traders-page wrapper with
-     the ranked leaderboard below, so that class alone can't tell them apart)
-     shares this same .leaderboard-panel/.mobile-trader markup with its own
-     224px card; the ranked leaderboard's 97px redesign below is scoped to
-     .ranked-traders, a marker only ProductTraders's own root carries, so it
-     never shrinks the per-pool card it doesn't own. */
-  .leaderboard-results .mobile-traders:not(.following-traders) {
-    min-height: calc(25 * 224px);
-  }
-  .leaderboard-results .mobile-trader {
-    height: 224px;
-    overflow: auto;
-  }
-  /* The identity follows its rank now that no badge holds the right edge. */
-  .leaderboard-results .mobile-trader-heading {
-    justify-content: flex-start;
-  }
   .ranked-traders
     .leaderboard-panel
     .mobile-traders:not(.following-traders):not([data-failed="true"]) {
@@ -6194,25 +5733,6 @@ a.wallet-top-pool:hover {
   }
   .mobile-trader-heading > svg {
     color: #555560;
-  }
-  .mobile-trader-value {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-top: 12px;
-  }
-  .mobile-trader-value > .number {
-    font-size: 22px;
-    font-weight: 600;
-  }
-  /* The caption follows the number; a pending row holds the number alone and
-     must keep the number's size so the card below it never moves on resolve. */
-  .mobile-trader-value > .number + span {
-    font-size: 11px;
-    color: var(--muted);
-  }
-  .mobile-trader > .record-cell {
-    margin-top: 14px;
   }
   /* The 97px phone trader row (the ranked leaderboard only): rank, identity and a copy
      control on one line with PnL over ROI at the right, then the win/loss
@@ -7033,7 +6553,8 @@ a.wallet-top-pool:hover {
   color: var(--color-text-3);
   white-space: nowrap;
 }
-.my-rank:hover {
+/* Only a marked wallet's row is a link; the unset prompt is plain text. */
+a.my-rank:hover {
   border-color: var(--color-line-bright);
 }
 .my-rank-identity {

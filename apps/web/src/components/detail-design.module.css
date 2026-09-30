@@ -112,96 +112,6 @@
   flex-wrap: wrap;
   margin: 12px 0;
 }
-.copyPanel {
-  border-color: color-mix(in srgb, var(--ac) 23%, var(--line));
-}
-.copyBody {
-  padding: 14px 16px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-.copyBody p {
-  margin: 0 0 14px;
-}
-.copyBody :global(.segmented) {
-  display: flex;
-  margin: 8px 0 14px;
-}
-.copyBody :global(.segmented) button {
-  flex: 1;
-}
-.rules {
-  display: grid;
-  gap: 5px;
-  margin: 10px 0 15px;
-}
-.rules label {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 32px;
-}
-.rules input {
-  accent-color: var(--ac);
-}
-.preview {
-  padding: 3px 7px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--ac) 8%, transparent);
-  color: var(--ac);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-.alert {
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  background: transparent;
-  padding: 12px 16px;
-  font-size: 13px;
-}
-.alert small {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  margin-top: 3px;
-}
-.alert:not(:disabled):hover {
-  background: var(--control-secondary-hover-bg);
-}
-.alert:not(:disabled):active {
-  background: var(--control-ghost-active-bg);
-}
-.switch {
-  flex: 0 0 34px;
-  height: 20px;
-  border-radius: 12px;
-  padding: 3px;
-  background: #282830;
-}
-.switch::before {
-  content: "";
-  display: block;
-  width: 14px;
-  height: 14px;
-  background: #f2f2f5;
-  border-radius: 50%;
-  transition: transform 0.15s;
-}
-.alert[aria-pressed="true"] .switch {
-  background: var(--ac);
-}
-.alert[aria-pressed="true"] .switch::before {
-  transform: translateX(14px);
-  background: #06120d;
-}
 .tabs {
   border-bottom: 1px solid var(--line);
   display: flex;
@@ -477,10 +387,7 @@
   }
   .breadcrumb a,
   .page:global(.pool-page) .breadcrumb a,
-  .tabs button,
-  .copyBody button,
-  .rules label,
-  .alert {
+  .tabs button {
     min-height: 44px;
   }
   .cardTop {

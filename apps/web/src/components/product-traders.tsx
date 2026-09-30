@@ -486,7 +486,7 @@ function MyRank({ window }: { window: LiveWindow }) {
   return address ? (
     <MyRankRow address={address} window={window} />
   ) : (
-    <Link className="my-rank" href="/wallet/">
+    <div className="my-rank">
       <span className="my-rank-identity">
         <span className="my-rank-empty" aria-hidden="true" />
         <span className="my-rank-chip">YOU</span>
@@ -494,10 +494,7 @@ function MyRank({ window }: { window: LiveWindow }) {
       <span className="my-rank-summary">
         Set your wallet in the header to see your rank here
       </span>
-      <span className="my-rank-link">
-        <span>Find your wallet</span> →
-      </span>
-    </Link>
+    </div>
   );
 }
 function MyRankRow({

@@ -12,7 +12,7 @@ import {
   poolHref,
   type LiveWindow,
 } from "@pools/core";
-import { FeaturePreview, TradingPreviewPanels } from "./feature-preview";
+import { CopyTradePreview } from "./copy-trade-preview";
 import { useLive } from "./live-provider";
 import { AddressLabel, Chart } from "./ui";
 import {
@@ -37,7 +37,8 @@ function PoolWalletView({ address }: { address: string }) {
   const [card, setCard] = useState(false),
     [copy, setCopy] = useState(""),
     [tab, setTab] = useState("Positions"),
-    [cardError, setCardError] = useState(false);
+    [cardError, setCardError] = useState(false),
+    [copyTrade, setCopyTrade] = useState(false);
   const cardDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (card) cardDialog.current?.showModal();
@@ -123,10 +124,14 @@ function PoolWalletView({ address }: { address: string }) {
           >
             Share PnL card
           </button>
-          <FeaturePreview feature="profile">Edit profile</FeaturePreview>
-          <FeaturePreview feature="copy" className="button">
+          <button
+            type="button"
+            className="button"
+            aria-haspopup="dialog"
+            onClick={() => setCopyTrade(true)}
+          >
             Copy trade
-          </FeaturePreview>
+          </button>
         </div>
       </div>
       <p className="page-intro-note">
@@ -315,7 +320,6 @@ function PoolWalletView({ address }: { address: string }) {
               </section>
             </div>
             <aside className="market-sidebar">
-              <TradingPreviewPanels />
               <section className="panel">
                 <div className="panel-heading">
                   <h2>Behaviour</h2>
@@ -397,6 +401,7 @@ function PoolWalletView({ address }: { address: string }) {
           </div>
         </>
       )}
+      <CopyTradePreview open={copyTrade} onClose={() => setCopyTrade(false)} />
       <dialog
         ref={cardDialog}
         className={styles.cardModal}
