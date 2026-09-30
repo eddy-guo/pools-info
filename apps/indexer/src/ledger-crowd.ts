@@ -34,6 +34,7 @@ import {
   type Stream,
 } from "@pools/db";
 import { ledgerBatchOf, type LedgerRangeProgress } from "./ledger-pass";
+import { errorDetails } from "./errors";
 
 /** The crowd lane (docs/CROWD-LAUNCHES.md) inside the ledger tip loop: the
  * pools.xyz crowd launches and their pools' trades, folded through a ledger
@@ -177,7 +178,9 @@ export async function runLedgerCrowdRange(
     multicall?: MulticallConfig;
     signal?: AbortSignal;
     log?: Log;
-    onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
+    onRange?: (
+      range: { from: number; to: number; lane?: "crowd" } | null,
+    ) => void;
   },
 ): Promise<LedgerCrowdRangeProgress | { idle: true; from: number }> {
   const started = performance.now();
@@ -193,7 +196,11 @@ export async function runLedgerCrowdRange(
       from: ledger.cursor === null ? ledger.start : ledger.cursor + 1,
     };
   options.signal?.throwIfAborted();
-  options.onRange?.({ from: range.fromBlock, to: range.toBlock, lane: "crowd" });
+  options.onRange?.({
+    from: range.fromBlock,
+    to: range.toBlock,
+    lane: "crowd",
+  });
   const registry = await ledgerRegistry(db, range.fromBlock - 1, "crowd");
   const pending = await crowdPendingAuctions(db, range.fromBlock);
   const c: CrowdRangeCollection = await collectCrowdRange(
@@ -324,7 +331,9 @@ export async function runLedgerCrowdStep(
     signal?: AbortSignal;
     log?: Log;
     safeError: (error: unknown) => string;
-    onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
+    onRange?: (
+      range: { from: number; to: number; lane?: "crowd" } | null,
+    ) => void;
   },
 ): Promise<LedgerCrowdStep> {
   const started = performance.now();
@@ -348,7 +357,11 @@ export async function runLedgerCrowdStep(
       options.onRange?.(null);
       if (options.signal?.aborted || crowdStopsTheLoop(error)) throw error;
       step.failed = options.safeError(error);
-      options.log?.({ event: "ledger_crowd_failed", error: step.failed });
+      options.log?.({
+        event: "ledger_crowd_failed",
+        error: step.failed,
+        ...errorDetails(error),
+      });
       return step;
     }
     if (result.idle) {

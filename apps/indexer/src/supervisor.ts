@@ -30,7 +30,6 @@ interface SupervisorRuntime {
       | {
           event: "service_stopping";
           signal: NodeJS.Signals;
-          workers: WorkerSpec["name"][];
         },
   ) => void;
 }
@@ -41,7 +40,7 @@ export function superviseWorkers(
   workers: readonly WorkerSpec[],
   runtime: SupervisorRuntime,
 ) {
-  const children = new Map<ChildProcess, WorkerSpec["name"]>();
+  const children = new Set<ChildProcess>();
   let stopping = false;
   let paused = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,21 +58,17 @@ export function superviseWorkers(
     if (children.size) {
       timer = setTimeout(() => {
         timer = undefined;
-        for (const child of children.keys()) child.kill("SIGKILL");
+        for (const child of children) child.kill("SIGKILL");
       }, 20000);
       timer.unref();
-      for (const child of [...children.keys()]) child.kill("SIGTERM");
+      for (const child of [...children]) child.kill("SIGTERM");
     }
   }
-  /** An external stop (a deploy's SIGTERM, an operator's SIGINT): the signal
-   * is logged with the workers it drains, so a deploy's log says what ended
-   * the service, then the ordinary clean stop follows. */
   function stopOnSignal(signal?: NodeJS.Signals) {
     if (!stopping && signal)
       runtime.log({
         event: "service_stopping",
         signal,
-        workers: [...children.values()],
       });
     stop(0);
   }
@@ -86,7 +81,7 @@ export function superviseWorkers(
       stop(1);
       break;
     }
-    children.set(child, worker.name);
+    children.add(child);
     child.once("error", () => stop(1));
     child.once("close", () => cleanedUp(child));
     child.once("exit", (code) => {

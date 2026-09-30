@@ -169,7 +169,7 @@ test("external shutdown drains all three workers successfully and cancels the es
   assert.deepEqual(f.logs, []);
 });
 
-test("a stop signal is logged once with the workers it drains, and the drain is the ordinary clean stop", (t) => {
+test("a stop signal is logged once and drains workers cleanly", (t) => {
   const f = fixture(t);
   f.supervisor.stop("SIGTERM");
   f.supervisor.stop("SIGINT");
@@ -177,7 +177,6 @@ test("a stop signal is logged once with the workers it drains, and the drain is 
     {
       event: "service_stopping",
       signal: "SIGTERM",
-      workers: ["recent", "indexer", "analytics"],
     },
   ]);
   assert.equal(f.exitCode(), 0);
