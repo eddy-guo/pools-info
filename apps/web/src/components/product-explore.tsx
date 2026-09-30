@@ -287,6 +287,8 @@ function ScreenerStats({
     window: initial?.window ?? window,
     data: initial,
   });
+  const [failedWindow, setFailedWindow] = useState<LiveWindow | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const selected = new URLSearchParams(location.search).get("window");
     const browserWindow =
@@ -308,36 +310,24 @@ function ScreenerStats({
         const data: unknown = await response.json();
         validateStatsResponse(data, window);
         if (controller.signal.aborted) return;
-        if (
-          (answer.data?.activeTraders === null) !==
-          (data.activeTraders === null)
-        ) {
-          // A phone loses or gains a card row. Let the server size the new
-          // window before painting it, instead of moving the screener below.
-          location.reload();
-        } else {
-          setAnswer({ window, data });
-        }
+        setAnswer({ window, data });
+        setFailedWindow(null);
       } catch {
-        // Removing a served row after a late 404/503 would move the table.
-        // Reload at the selected URL so the server omits it before first paint.
-        if (!controller.signal.aborted) location.reload();
+        if (!controller.signal.aborted) setFailedWindow(window);
       }
     });
     return () => controller.abort();
-  }, [answer.data?.activeTraders, answer.window, initial, window]);
+  }, [answer.window, attempt, initial, window]);
   if (!initial) return null;
   const pending = answer.window !== window;
-  const data = pending ? null : answer.data;
-  if (!pending && !data) return null;
+  const failed = failedWindow === window;
+  const data = answer.data;
   const labelWindow = answer.data?.window ?? initial.window;
-  const active = pending ? answer.data?.activeTraders : data?.activeTraders;
   return (
     <section
       className="stats-grid screener-stats"
       aria-label="Screener stats"
-      aria-busy={pending}
-      data-has-active={active !== null && active !== undefined}
+      aria-busy={pending || failed}
     >
       <div className="stat">
         <span>Volume · {labelWindow}</span>
@@ -360,18 +350,30 @@ function ScreenerStats({
           )}
         </strong>
       </div>
-      {active !== null && active !== undefined && (
-        <div className="stat">
-          <span title="Wallets with an attributed trade in the window">
-            Traders · {labelWindow}
-          </span>
-          <strong data-pending={pending}>
-            {data?.activeTraders === null || !data ? (
-              <span className="stats-empty" />
-            ) : (
-              data.activeTraders.toLocaleString("en-US")
-            )}
-          </strong>
+      <div className="stat">
+        <span title="Wallets with an attributed trade in the window">
+          Traders · {labelWindow}
+        </span>
+        <strong data-pending={pending}>
+          {data?.activeTraders === null || !data ? (
+            <span className="stats-empty" />
+          ) : (
+            data.activeTraders.toLocaleString("en-US")
+          )}
+        </strong>
+        <small>
+          {data?.activeTraders === null ? "Window incomplete" : null}
+        </small>
+      </div>
+      {failed && (
+        <div className="screener-stats-error">
+          <UnavailableState
+            subject="Screener stats"
+            onRetry={() => {
+              setFailedWindow(null);
+              setAttempt((current) => current + 1);
+            }}
+          />
         </div>
       )}
     </section>
