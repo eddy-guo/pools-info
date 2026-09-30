@@ -634,7 +634,8 @@ export function ProductExplore({
           };
           const left = metric(a);
           const right = metric(b);
-          if (left === null) return right === null ? a.id.localeCompare(b.id) : 1;
+          if (left === null)
+            return right === null ? a.id.localeCompare(b.id) : 1;
           if (right === null) return -1;
           return (
             (left > right ? 1 : left < right ? -1 : 0) *
@@ -916,7 +917,11 @@ export function ProductExplore({
                 region collapses on its own and the failed state below
                 renders right under the toolbar with nothing reserved past
                 it. */}
-            <div className="table-region" data-empty={empty} data-failed={failed}>
+            <div
+              className="table-region"
+              data-empty={empty}
+              data-failed={failed}
+            >
               <div
                 className="table-scroll desktop-pools"
                 aria-busy={loading}

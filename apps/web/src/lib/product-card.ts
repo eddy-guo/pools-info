@@ -85,7 +85,13 @@ export function readCardWallet(
   if (held && held.expires > now) return held.read;
   for (const [k, entry] of reads)
     if (entry.expires <= now || reads.size >= cardReadEntries) reads.delete(k);
-  const read = readCardWalletUncached(address, window, poolId, launchTx, visitor);
+  const read = readCardWalletUncached(
+    address,
+    window,
+    poolId,
+    launchTx,
+    visitor,
+  );
   reads.set(key, { expires: now + cardReadLifetimeMs, read });
   read.catch(() => {
     if (reads.get(key)?.read === read) reads.delete(key);

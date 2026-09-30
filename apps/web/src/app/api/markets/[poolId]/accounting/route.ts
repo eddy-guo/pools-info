@@ -3,7 +3,10 @@ import {
   currentChainSnapshot,
   capturedPoolSnapshot,
 } from "../../../../../lib/chain-server";
-import { admission, visitorAddress } from "../../../../../lib/product-admission";
+import {
+  admission,
+  visitorAddress,
+} from "../../../../../lib/product-admission";
 import {
   ProductUnavailableError,
   productUnavailableResponse,
