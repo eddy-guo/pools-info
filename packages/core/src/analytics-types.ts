@@ -214,10 +214,11 @@ export interface AnalyticsWalletResponse {
 /** The pool's latest price state, the basis of a position's `unrealizedWei`
  * (`GET /v1/wallets/:address/positions/:poolId`). */
 export interface WalletPositionMark {
-  /** The pool's latest sqrtPriceX96, exact. */
+  /** The pool's latest folded sqrtPriceX96 at the ledger cut, exact. */
   sqrtPriceX96: string;
-  /** Wei per whole token at that state, the pool page's price; null while the
-   * token's decimals are unknown or conflict with verified units. */
+  /** Wei per whole token at the ledger cut; null while the token's decimals
+   * are unknown or conflict with verified units. The pool page may serve a
+   * newer deep publication. */
   priceWei: string | null;
   /** The swap that set the state. */
   block: number;
@@ -262,7 +263,8 @@ export interface WalletPositionResponse {
   /** The average entry price of the held units, wei per whole token: their
    * average-cost basis `costWei` over `quantity`. Null while flat, excluded or
    * the decimals are unknown or conflict with verified units. The ledger keeps
-   * no count of tokens bought or sold, so no lifetime entry or exit average exists. */
+   * no totals of token units bought or sold, so no lifetime entry or exit
+   * average exists. */
   avgEntryPriceWei: string | null;
   /** Null for an excluded position, whose inventory is not served. */
   cycles: WalletPositionCycles | null;

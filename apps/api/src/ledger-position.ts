@@ -148,7 +148,7 @@ export async function readLedgerPosition(
   // The held units' average cost per whole token, exact and truncated: the
   // entry price of what the position still holds under average-cost
   // accounting. A lifetime entry or exit average would need the raw tokens
-  // bought or sold, which the ledger does not keep, so none is served.
+  // bought or sold, whose unit totals the ledger does not keep, so none is served.
   const held = position.position;
   const avgEntryPriceWei =
     held &&

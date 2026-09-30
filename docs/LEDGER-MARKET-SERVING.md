@@ -471,7 +471,7 @@ null where it cannot:
   `decimals` over `quantity`, truncated), the price a card sets against
   `mark.priceWei`. Null while flat, excluded or the decimals are unknown or
   conflict with a verified snapshot. The fold keeps no count of raw
-  tokens bought or sold (only the held quantity, and no row per swap), so a
+  token units bought or sold (only the held quantity, and no row per swap), so a
   lifetime average entry price and an average exit price cannot be derived
   and are not served; serving them would need a writer change, not a read.
 - **`cycles`** is the position's inventory cycles over its whole history,
