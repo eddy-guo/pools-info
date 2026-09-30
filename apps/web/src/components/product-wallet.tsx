@@ -45,7 +45,7 @@ import {
   SHOW_MORE_STEP,
   ShowMore,
 } from "./product-common";
-import { useListRelease } from "@/lib/list-release";
+import { useBelowListKey, useListRelease } from "@/lib/list-release";
 import { useQuery } from "./state";
 import { PnlCardModal } from "./pnl-card-modal";
 import {
@@ -157,6 +157,7 @@ export function ProductWallet({ address }: { address: string }) {
     (_, index) => data?.positions[index],
   );
   useListRelease(positionRows.length, shown);
+  const belowListKey = useBelowListKey();
   const focusAt = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const showMore = useCallback(() => {
@@ -907,7 +908,9 @@ export function ProductWallet({ address }: { address: string }) {
                 )}
               </section>
             </div>
-            <aside className="market-sidebar">
+            {/* Stacked under the positions on a phone, the sidebar remounts
+                there when they release reserved rows (lib/list-release.ts). */}
+            <aside className="market-sidebar" key={belowListKey}>
               <section className="panel">
                 <div className="panel-heading">
                   <h2>Most traded pools</h2>
