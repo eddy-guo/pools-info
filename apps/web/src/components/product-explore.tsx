@@ -19,7 +19,7 @@ import {
   type AnalyticsPoolRow,
   type LiveWindow,
 } from "@pools/core";
-import { fetchProduct, useProduct } from "@/lib/use-product";
+import { fetchProduct, retryAfterMilliseconds, useProduct } from "@/lib/use-product";
 import {
   validateStatsResponse,
   type ScreenerStatsResponse,
@@ -275,9 +275,11 @@ const isScreenerView = (value: string): value is ScreenerView =>
   SCREENER_VIEWS.some(([key]) => key === value);
 function ScreenerStats({
   initial,
+  initialRetryAfter,
   window,
 }: {
   initial: ScreenerStatsResponse | null;
+  initialRetryAfter: string | null;
   window: LiveWindow;
 }) {
   const [answer, setAnswer] = useState({
@@ -293,9 +295,17 @@ function ScreenerStats({
     if (browserWindow !== window) return;
     // A route absent at first paint has no row or reserved gap. A subsequent
     // deployment becomes visible on reload, when the server can size it first.
-    if (!initial || answer.window === window) return;
+    if (
+      (!initial && initialRetryAfter === null) ||
+      (initial && answer.window === window)
+    )
+      return;
+    const initialDelay = initial
+      ? 0
+      : retryAfterMilliseconds(initialRetryAfter);
+    if (initialDelay === null) return;
     const controller = new AbortController();
-    void Promise.resolve().then(async () => {
+    const read = async () => {
       try {
         const data: unknown = await fetchProduct<ScreenerStatsResponse>(
           `stats?window=${window}`,
@@ -303,6 +313,10 @@ function ScreenerStats({
         );
         validateStatsResponse(data, window);
         if (controller.signal.aborted) return;
+        if (!initial) {
+          location.reload();
+          return;
+        }
         if (
           (answer.data?.activeTraders === null) !==
           (data.activeTraders === null)
@@ -316,11 +330,24 @@ function ScreenerStats({
       } catch {
         // Removing a served row after a late 404/503 would move the table.
         // Reload at the selected URL so the server omits it before first paint.
-        if (!controller.signal.aborted) location.reload();
+        if (!controller.signal.aborted && initial) location.reload();
       }
-    });
-    return () => controller.abort();
-  }, [answer.data?.activeTraders, answer.window, initial, window]);
+    };
+    const timer = initial
+      ? null
+      : globalThis.setTimeout(() => void read(), initialDelay);
+    if (initial) void Promise.resolve().then(read);
+    return () => {
+      if (timer !== null) globalThis.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    answer.data?.activeTraders,
+    answer.window,
+    initial,
+    initialRetryAfter,
+    window,
+  ]);
   if (!initial) return null;
   const pending = answer.window !== window;
   const data = pending ? null : answer.data;
@@ -419,9 +446,11 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
 
 export function ProductExplore({
   initialStats,
+  initialStatsRetryAfter,
   initialSearch,
 }: {
   initialStats: ScreenerStatsResponse | null;
+  initialStatsRetryAfter: string | null;
   initialSearch: string;
 }) {
   const now = useSyncExternalStore<number | null>(
@@ -711,7 +740,11 @@ export function ProductExplore({
           <ArrowRight aria-hidden="true" />
         </Link>
       </div>
-      <ScreenerStats initial={initialStats} window={window} />
+      <ScreenerStats
+        initial={initialStats}
+        initialRetryAfter={initialStatsRetryAfter}
+        window={window}
+      />
       <section className="launch-section" aria-label="Just launched">
         <div className="section-caption">
           <span>

@@ -163,6 +163,7 @@ export function createApi(
         request.route !== "following" &&
         request.route !== "trade-share";
       const hit = cache.get(request.cacheKey);
+      let charged: { client: string; cost: number } | null = null;
       if (request.route === "ready") {
         const wait = probeBudget();
         if (wait !== null) refuse("probe_budget", wait);
@@ -184,11 +185,12 @@ export function createApi(
         if (client !== null) {
           const answer = clients.take(client, cost);
           if (!answer.ok) refuse("client_budget", answer.retryAfterSeconds);
+          charged = { client, cost };
         }
         const wait = (explorerRead ? explorerBudget : readBudget)();
         if (wait !== null) {
           // The shared ceiling refused work this client never received.
-          if (client !== null) clients.refund(client, cost);
+          if (charged !== null) clients.refund(charged.client, charged.cost);
           refuse("shared_budget", wait);
         }
       }
@@ -220,8 +222,10 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (explorerRead ? activeExplorer >= 8 : active >= 16)
+        if (explorerRead ? activeExplorer >= 8 : active >= 16) {
+          if (charged !== null) clients.refund(charged.client, charged.cost);
           throw new RequestError(503, "busy", { retryAfter: 5 });
+        }
         if (explorerRead) activeExplorer++;
         else active++;
         result = (async () => {

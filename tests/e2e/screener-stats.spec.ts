@@ -57,11 +57,23 @@ test.describe("contract-backed screener stats", () => {
   let origin: string;
   let status = 200;
   let body: ReturnType<typeof sample> = sample();
+  let limitOnce = false;
+  let statsReads = 0;
 
   test.beforeAll(async () => {
     api = createServer((request, response) => {
       if (!request.url?.startsWith("/v1/stats?")) {
         response.writeHead(404).end();
+        return;
+      }
+      statsReads++;
+      if (limitOnce) {
+        limitOnce = false;
+        response.writeHead(429, {
+          "Content-Type": "application/json",
+          "Retry-After": "2",
+        });
+        response.end(JSON.stringify({ error: "request_limit" }));
         return;
       }
       response.writeHead(status, { "Content-Type": "application/json" });
@@ -428,5 +440,63 @@ test.describe("contract-backed screener stats", () => {
       ]);
       expect(new Set(cards.map(({ left }) => left)).size).toBe(1);
     }
+  });
+
+  test("an initial request limit restores stats on a new stable paint", async ({
+    page,
+  }, testInfo) => {
+    if (testInfo.project.name === "mobile")
+      await page.setViewportSize({ width: 390, height: 844 });
+    const fixtureOrigin = String(testInfo.project.use.baseURL);
+    await page.route("**/api/product/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/api/product/stats/") return route.continue();
+      const fixture = await route.fetch({
+        url: `${fixtureOrigin}${url.pathname}${url.search}`,
+      });
+      return route.fulfill({ response: fixture });
+    });
+    await page.addInitScript(() => {
+      const measurement = { cls: 0 };
+      Object.assign(window, { screenerStatsMeasurement: measurement });
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          const shift = entry as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!shift.hadRecentInput) measurement.cls += shift.value;
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    status = 200;
+    body = sample();
+    const before = statsReads;
+    limitOnce = true;
+    await page.goto(origin, { waitUntil: "domcontentloaded" });
+    const stats = page.locator(".explore-page .screener-stats");
+    await expect(stats).toHaveCount(0);
+    expect(statsReads).toBe(before + 1);
+    const gap = await page.evaluate(() => {
+      const heading = document.querySelector(".page-heading")!;
+      const launches = document.querySelector(".launch-section")!;
+      return (
+        launches.getBoundingClientRect().top -
+        heading.getBoundingClientRect().bottom
+      );
+    });
+    expect(gap).toBeLessThanOrEqual(25);
+    await expect(stats.locator(".stat")).toHaveCount(3);
+    expect(statsReads).toBeGreaterThanOrEqual(before + 3);
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              screenerStatsMeasurement: { cls: number };
+            }
+          ).screenerStatsMeasurement.cls,
+      ),
+    ).toBe(0);
   });
 });

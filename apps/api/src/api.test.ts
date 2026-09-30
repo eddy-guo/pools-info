@@ -237,6 +237,67 @@ test("503 busy on the JSON in-flight bound carries Retry-After", async (t) => {
   await Promise.all(held);
 });
 
+test("busy database and explorer refusals leave the client's tokens available", async (t) => {
+  for (const kind of ["database", "explorer"] as const) {
+    await t.test(kind, async (t) => {
+      const limit = kind === "database" ? 16 : 8;
+      const releases: (() => void)[] = [];
+      let started = 0;
+      const hold = async () => {
+        started++;
+        if (started <= limit)
+          await new Promise<void>((resolve) => releases.push(resolve));
+        return { items: [] };
+      };
+      const history: WalletHistory = {
+        read: async () => (await hold()) as never,
+        peekTrades: () => null,
+        refreshTrades: async () => {
+          throw Error("Unexpected trades refresh");
+        },
+      };
+      const url = await listen(
+        t,
+        createApi(
+          { read: hold, async close() {} },
+          {
+            now: () => 0,
+            maxPerMinute: 1000,
+            history,
+            ingress: ingressSettings({
+              TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+              CLIENT_TOKENS_PER_MINUTE: "10",
+              CLIENT_TOKEN_BURST: "10",
+            }),
+          },
+        ),
+      );
+      const path = (n: number) =>
+        kind === "database"
+          ? `/v1/pools/0x${n.toString(16).padStart(64, "0")}`
+          : `/v1/wallets/0x${n.toString(16).padStart(40, "0")}/history`;
+      const as = (n: number, client: string) =>
+        fetch(url + path(n), { headers: { "x-forwarded-for": client } });
+      const held = Array.from({ length: limit }, (_, i) =>
+        as(i + 1, `198.51.100.${i + 2}`),
+      );
+      while (started < limit)
+        await new Promise((resolve) => setImmediate(resolve));
+      try {
+        for (let i = 0; i < (kind === "database" ? 6 : 2); i++) {
+          const busy = await as(limit + i + 1, "203.0.113.1");
+          assert.equal(busy.status, 503);
+          assert.deepEqual(await busy.json(), { error: "busy" });
+        }
+      } finally {
+        releases.forEach((release) => release());
+        await Promise.all(held);
+      }
+      assert.equal((await as(limit + 9, "203.0.113.1")).status, 200);
+    });
+  }
+});
+
 test("503 busy on the image in-flight bound carries Retry-After", async (t) => {
   const pool = (n: number) => "0x" + n.toString(16).padStart(64, "0");
   const releases: ((outcome: {
