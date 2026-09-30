@@ -205,15 +205,28 @@ test("settings parse their variables and refuse malformed values", () => {
     identity: { trustedProxies: null, peer: false, proxySecret: null },
   });
   assert.deepEqual(identitySources(defaults.identity), []);
+  const warnings: string[] = [];
   const full = ingressSettings({
     CLIENT_TOKENS_PER_MINUTE: "300",
     CLIENT_TOKEN_BURST: "300",
     TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
     CLIENT_IDENTITY: "peer",
     TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
-  });
-  assert.equal(full.clientTokensPerMinute, 300);
-  assert.equal(full.clientTokenBurst, 300);
+  }, (message) => warnings.push(message));
+  assert.equal(full.clientTokensPerMinute, 119);
+  assert.equal(full.clientTokenBurst, 120);
+  assert.ok(full.clientTokensPerMinute + full.clientTokenBurst < 240);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /CLIENT_TOKENS_PER_MINUTE/);
+  assert.match(warnings[0], /CLIENT_TOKEN_BURST/);
+  const large = ingressSettings(
+    { CLIENT_TOKEN_BURST: "1000000" },
+    (message) => warnings.push(message),
+  );
+  assert.equal(large.clientTokensPerMinute, 60);
+  assert.equal(large.clientTokenBurst, 179);
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[1], /CLIENT_TOKEN_BURST/);
   assert.deepEqual(identitySources(full.identity), [
     "proxy_secret",
     "trusted_proxies",
@@ -222,9 +235,8 @@ test("settings parse their variables and refuse malformed values", () => {
   for (const env of [
     { CLIENT_TOKENS_PER_MINUTE: "9" },
     { CLIENT_TOKENS_PER_MINUTE: "abc" },
-    { CLIENT_TOKEN_BURST: "59" },
+    { CLIENT_TOKEN_BURST: "9" },
     { CLIENT_TOKEN_BURST: "abc" },
-    { CLIENT_TOKENS_PER_MINUTE: "121" },
     { CLIENT_IDENTITY: "forwarded" },
     { TRUSTED_PROXY_SECRET: "short" },
     { TRUSTED_PROXY_ADDRESSES: "example.com" },

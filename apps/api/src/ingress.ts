@@ -25,6 +25,7 @@ import type { Route } from "./request";
  * rather than folding every visitor into one budget.
  */
 export const ingressPolicy = Object.freeze({
+  sharedJsonPerMinute: 240,
   /** Tokens added to a client's bucket per minute. */
   clientTokensPerMinute: 60,
   /** Tokens available to a client at once. */
@@ -77,13 +78,14 @@ export interface IngressSettings {
 }
 export function ingressSettings(
   env: Record<string, string | undefined> = process.env,
+  warn: (message: string) => void = console.warn,
 ): IngressSettings {
-  const read = (name: string, fallback: number, min: number, max: number) => {
+  const read = (name: string, fallback: number, min: number) => {
     const raw = env[name];
     if (raw === undefined || raw === "") return fallback;
-    const value = /^\d{1,9}$/.test(raw) ? Number(raw) : NaN;
-    if (!(value >= min && value <= max))
-      throw Error(`${name} must be an integer between ${min} and ${max}`);
+    const value = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!(value >= min))
+      throw Error(`${name} must be an integer of at least ${min}`);
     return value;
   };
   const identityMode = env.CLIENT_IDENTITY ?? "";
@@ -92,20 +94,35 @@ export function ingressSettings(
   const secret = env.TRUSTED_PROXY_SECRET ?? "";
   if (secret !== "" && secret.length < 16)
     throw Error("TRUSTED_PROXY_SECRET must be at least 16 characters");
-  const clientTokensPerMinute = read(
+  const requestedRefill = read(
     "CLIENT_TOKENS_PER_MINUTE",
     ingressPolicy.clientTokensPerMinute,
     10,
-    100_000,
   );
-  const clientTokenBurst = read(
+  const requestedBurst = read(
     "CLIENT_TOKEN_BURST",
     ingressPolicy.clientTokenBurst,
-    clientTokensPerMinute,
-    100_000,
+    10,
   );
-  if (clientTokenBurst < clientTokensPerMinute)
-    throw Error("CLIENT_TOKEN_BURST must be at least CLIENT_TOKENS_PER_MINUTE");
+  const clientTokensPerMinute = Math.min(
+    requestedRefill,
+    requestedBurst,
+    Math.floor((ingressPolicy.sharedJsonPerMinute - 1) / 2),
+  );
+  const clientTokenBurst = Math.min(
+    requestedBurst,
+    ingressPolicy.sharedJsonPerMinute - 1 - clientTokensPerMinute,
+  );
+  const clamped = [
+    ...(clientTokensPerMinute !== requestedRefill
+      ? ["CLIENT_TOKENS_PER_MINUTE"]
+      : []),
+    ...(clientTokenBurst !== requestedBurst ? ["CLIENT_TOKEN_BURST"] : []),
+  ];
+  if (clamped.length)
+    warn(
+      `Clamped ${clamped.join(", ")} below the ${ingressPolicy.sharedJsonPerMinute}-request shared JSON ceiling`,
+    );
   return {
     clientTokensPerMinute,
     clientTokenBurst,

@@ -23,7 +23,7 @@ export function createApi(
   reader: Reader,
   {
     now = Date.now,
-    maxPerMinute = 240,
+    maxPerMinute = ingressPolicy.sharedJsonPerMinute,
     cacheMs = 5000,
     images = null as TokenImageService | null,
     maxImagesPerMinute = 1200,
