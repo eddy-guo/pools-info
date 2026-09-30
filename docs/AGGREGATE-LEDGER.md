@@ -567,7 +567,10 @@ same way. A pooled swap is one trade for the pool (its hour's `trades`,
 or `buyers` count every contributor, so since migration 027 they may exceed
 `sells` or `buys`), one sale per contributor for the wallets (positions,
 hour rows, `LedgerSale`, closures), and one row in the live ring with
-`attribution = 'pooled'` and no wallet, as an unattributed swap is kept. A
+`attribution = 'pooled'` and no wallet, as an unattributed swap is kept,
+whose `pooled_wallet_refs` name its contributors so that the rolling hour's
+active traders (`/v1/stats?window=1h`) count them as the whole hours'
+`agg_wallet_hours` rows do for the longer windows. A
 position counts them in `pooled_swaps` and carries the informational flag
 `pooled_route`; the api's contract census reads a pooled swap as one the
 wallet did not initiate, like a counterparty swap.
@@ -586,12 +589,19 @@ under `LEDGER_FOLD_RULE` (unset: rule 1), and the tip loop, which never
 creates a stream, refuses a ledger whose rule differs from a configured
 `LEDGER_FOLD_RULE` (exit 78) and otherwise folds under the stream's. Rule 2
 reaches production only as a re-fold of the whole history into a fresh
-ledger under rule 2 that is then swapped in for the live one
-(`docs/LEDGER-CUTOVER.md`), never by folding on: a rule change on
+ledger under rule 2 that is then swapped in for the live one (the
+re-fold and its cutover are planned and approved separately, and recorded
+in `docs/LEDGER-CUTOVER.md` once run), never by folding on: a rule change on
 `supported` is not reversible from the database, and an excluded position's
 hour finances are kept nowhere else. `agg_streams.fold_rule_since` records
-the swap-in, and the wallet page discloses it (`pooledSwapsAttributedSince`
-on `GET /v1/wallets/:address`).
+the swap-in, and the wallet page discloses it as the date of the rule
+change (`pooledSwapsAttributedSince` on `GET /v1/wallets/:address`): the
+re-fold attributes the whole history, earlier pooled sells included, so the
+date names when the rule changed, not the first sell it covers. Migration
+027 adds every constraint on an existing table `NOT VALID`, since the rows
+already there satisfy them by construction and validating would scan
+`agg_positions` under the `ALTER`'s exclusive lock (0.5 s against 4.0 s on
+the 27 Sep backup; every constraint validates on it).
 
 **Unit totals.** `agg_positions.bought_raw` and `sold_raw` (migration 027)
 count the token units of every attributed swap, buy and sell, so a
@@ -614,8 +624,26 @@ contributor, the unit totals), `packages/core/src/ledger-pooled-fixture.test.ts`
 sold in the pooled swap for 38,173,752,269,579,151 wei, realized
 -0.011326 ETH), `packages/db/src/ledger-pooled-swaps.test.ts` (the writer
 under both rules, the ring row, the walk-back, the rule's immutability, 027
-on rows written before it) and `apps/indexer/src/ledger-tip.test.ts` (the
-loop's refusal of a mismatched rule).
+on rows written before it), `apps/api/src/ledger-wallet.integration.test.ts`
+(a rule-2 ledger served: the contributors' shares and unit totals, the
+disclosure date, the rolling hour's active traders) and
+`apps/indexer/src/ledger-tip.test.ts` (the loop's refusal of a mismatched
+rule). On a copy of the 27 Sep 2026 backup, the four wallets the figures
+audit recomputed from chain (`0x68bb…5713`, `0xe0f7…a610`, `0xb302…fd0f`,
+`0x0b75…f928`) re-fold through `planLedgerBatch`/`applyLedgerEvents` from
+their explorer legs and the full receipts of their 9 pooled transactions
+(12 legs, 4 through `0xbefe…24f7` and 8 through a second batch contract
+`0x7537…03f0`): under rule 1 every window row and every position equals
+the backup's to the wei; under rule 2 every non-pooled position is
+unchanged, all 12 pooled positions become supported with their shares
+(each within one wei of `ethWei * moved / tokenRaw`, each swap's shares
+summing exactly), and the window rows move by exactly those positions
+(e.g. `0x68bb…5713` 7d realized 12.508796 to 12.352517 ETH, 31 to 41
+supported trades). On the same copy after 027, a full window rebuild
+leaves every served figure of all 577,080 wallet window rows and 557,204
+trader window rows unchanged, and the api answers every board window and
+metric, explore, a pool page, stats and creators byte for byte as before,
+the wallet pages differing only by the new null fields.
 
 ## What phases 4 and 5 still owe
 

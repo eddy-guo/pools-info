@@ -77,8 +77,7 @@ export async function ledgerCut(query: ReadQuery): Promise<LedgerCut | null> {
     newestHour,
     indexedAt: new Date(r.collected_at).toISOString(),
     foldRule: Number(r.fold_rule) === 2 ? 2 : 1,
-    foldRuleSince:
-      r.fold_rule_since === null ? null : whole(r.fold_rule_since),
+    foldRuleSince: r.fold_rule_since === null ? null : whole(r.fold_rule_since),
   };
 }
 /** The rolling hour 1h names: the swaps from `start` (the cutoff's time

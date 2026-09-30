@@ -264,7 +264,16 @@ test(
             expected.positions.map((p) => ({
               ...p,
               flags: [...p.flags].sort(),
-              position: p.position ? { ...p.position, realizations: [] } : null,
+              // The accounting tables keep no unit totals; only the ledger
+              // route serves them (migration 027).
+              position: p.position
+                ? {
+                    ...p.position,
+                    boughtRaw: null,
+                    soldRaw: null,
+                    realizations: [],
+                  }
+                : null,
             })),
           );
         }

@@ -1637,10 +1637,7 @@ test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves 
     before.events.map((e) => e.kind),
     ["unattributed_swap"],
   );
-  assert.deepEqual((before.events[0] as { wallets: string[] }).wallets, [
-    a,
-    b,
-  ]);
+  assert.deepEqual((before.events[0] as { wallets: string[] }).wallets, [a, b]);
   for (const w of [a, b]) {
     assert.equal(position(old, w).supported, false);
     assert.deepEqual(position(old, w).flags, ["unattributed_swap_activity"]);
@@ -1699,7 +1696,15 @@ test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves 
   // hour holds the two buys and the one pooled sell, with two sellers.
   const hour = state.poolHours.get(`${pool}:${ledgerHour(3000)}`)!;
   assert.deepEqual(
-    [hour.trades, hour.buys, hour.sells, hour.buyers, hour.sellers, hour.unattributed, hour.volume],
+    [
+      hour.trades,
+      hour.buys,
+      hour.sells,
+      hour.buyers,
+      hour.sellers,
+      hour.unattributed,
+      hour.volume,
+    ],
     [3, 2, 1, 2, 2, 0, E * 100n + ethWei],
   );
   assert.equal(state.pools.get(pool)!.trades, 3);
@@ -1719,15 +1724,20 @@ test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves 
   // the buy it made in the same hour.
   const ha = state.walletHours.get(`${a}:${pool}:${ledgerHour(3000)}`)!;
   assert.deepEqual(
-    [ha.buys, ha.sells, ha.supportedTrades, ha.proceeds, ha.volume, ha.closures, ha.losses],
+    [
+      ha.buys,
+      ha.sells,
+      ha.supportedTrades,
+      ha.proceeds,
+      ha.volume,
+      ha.closures,
+      ha.losses,
+    ],
     [1, 1, 2, E * 6n + 4n, E * 66n + 4n, 1, 1],
   );
   // Announced by the keys: both positions and both hour rows.
   const keys = ledgerKeys(events);
-  assert.deepEqual(
-    keys.positions.map((k) => k.wallet).sort(),
-    [a, b].sort(),
-  );
+  assert.deepEqual(keys.positions.map((k) => k.wallet).sort(), [a, b].sort());
   assert.equal(keys.walletHours.length, 2);
 });
 
@@ -1771,7 +1781,11 @@ test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to
   }
   assert.ok(extra < 50n);
   // The same rows give the same shares, whatever order the caller holds them in.
-  const reversed = pooledSwapShares(ethWei, tokenRaw, [...contributors].reverse());
+  const reversed = pooledSwapShares(
+    ethWei,
+    tokenRaw,
+    [...contributors].reverse(),
+  );
   assert.deepEqual(
     [...reversed].sort((a, b) => (a.wallet < b.wallet ? -1 : 1)),
     [...shares].sort((a, b) => (a.wallet < b.wallet ? -1 : 1)),
@@ -1779,7 +1793,11 @@ test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to
   // Movements that do not sum to the swapped amount, one contributor, or a
   // zero ETH leg are refused: the plan never asks.
   assert.throws(
-    () => pooledSwapShares(10n, 4n, [{ wallet: x, tokenRaw: 1n }, { wallet: y, tokenRaw: 1n }]),
+    () =>
+      pooledSwapShares(10n, 4n, [
+        { wallet: x, tokenRaw: 1n },
+        { wallet: y, tokenRaw: 1n },
+      ]),
     /ledger_invalid_pooled_swap/,
   );
   assert.throws(
@@ -1787,7 +1805,11 @@ test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to
     /ledger_invalid_pooled_swap/,
   );
   assert.throws(
-    () => pooledSwapShares(10n, 2n, [{ wallet: x, tokenRaw: 2n }, { wallet: y, tokenRaw: 0n }]),
+    () =>
+      pooledSwapShares(10n, 2n, [
+        { wallet: x, tokenRaw: 2n },
+        { wallet: y, tokenRaw: 0n },
+      ]),
     /ledger_invalid_pooled_share/,
   );
 });
@@ -1958,15 +1980,16 @@ test("a pooled swap through the plan: fifty contributors, a pass-through mover, 
     pooledRules,
   );
   assert.equal(buy.events[0].kind, "pooled_swap");
+  assert.deepEqual((buy.events[0] as { shares: unknown[] }).shares, [
+    { wallet: a, tokenRaw: 10n, ethWei: E + 0n },
+    { wallet: b, tokenRaw: 20n, ethWei: E * 2n + 1n },
+  ]);
   assert.deepEqual(
-    (buy.events[0] as { shares: unknown[] }).shares,
     [
-      { wallet: a, tokenRaw: 10n, ethWei: E + 0n },
-      { wallet: b, tokenRaw: 20n, ethWei: E * 2n + 1n },
+      position(fanned, a).cost,
+      position(fanned, a).quantity,
+      position(fanned, a).boughtRaw,
     ],
-  );
-  assert.deepEqual(
-    [position(fanned, a).cost, position(fanned, a).quantity, position(fanned, a).boughtRaw],
     [E, 10n, 10n],
   );
   assert.equal(position(fanned, b).cost, E * 2n + 1n);
@@ -1994,7 +2017,12 @@ test("the initiator of a pooled swap is one contributor among the others, never 
     ],
     { initiator: a },
   );
-  const { events, application } = run(sell.swaps, sell.transfers, state, pooledRules);
+  const { events, application } = run(
+    sell.swaps,
+    sell.transfers,
+    state,
+    pooledRules,
+  );
   assert.equal(events[0].kind, "pooled_swap");
   assert.deepEqual(
     (events[0] as { shares: { wallet: string; ethWei: bigint }[] }).shares.map(
@@ -2015,7 +2043,10 @@ test("the initiator of a pooled swap is one contributor among the others, never 
     [a, 60n],
     [b, 40n],
   ]);
-  assert.equal(run(sell.swaps, sell.transfers, old).events[0].kind, "unattributed_swap");
+  assert.equal(
+    run(sell.swaps, sell.transfers, old).events[0].kind,
+    "unattributed_swap",
+  );
 });
 
 test("bought and sold unit totals fold from every attributed swap, stay null on a position from before the fold, and hold the units identity", () => {

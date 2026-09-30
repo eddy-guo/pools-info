@@ -226,7 +226,10 @@ export async function readData(
       );
       // The stream's fold rule and the position unit totals (migration
       // 027), which the ledger cut and the wallet page read.
-      await query("SELECT fold_rule,fold_rule_since FROM agg_streams WHERE false");
+      await query(
+        "SELECT fold_rule,fold_rule_since FROM agg_streams WHERE false",
+      );
+      await query("SELECT pooled_wallet_refs FROM agg_live_trades WHERE false");
       await query(
         "SELECT pooled_swaps,bought_raw,sold_raw FROM agg_positions WHERE false",
       );

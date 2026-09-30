@@ -731,8 +731,7 @@ export async function applyLedgerBatch(
     ].sort(logOrder);
     const keys = ledgerKeys(events);
     const pooled = events.filter((e) => e.kind === "pooled_swap").length,
-      attributed =
-        events.filter((e) => e.kind === "swap").length + pooled,
+      attributed = events.filter((e) => e.kind === "swap").length + pooled,
       unattributed = events.filter(
         (e) => e.kind === "unattributed_swap",
       ).length;
@@ -1160,14 +1159,18 @@ export async function applyLedgerBatch(
       );
     for (const chunk of chunks(applied.liveTrades))
       await db.query(
-        `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
-         SELECT 4663,$2,r.pool_ref,r.wallet_ref,decode(r.tx_hash,'hex'),r.log_index,r.block_number,decode(r.block_hash,'hex'),r.timestamp,r.side,r.eth_wei,r.token_raw,r.sqrt_price_x96,r.attribution,$3
-         FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,tx_hash text,log_index int,block_number bigint,block_hash text,timestamp bigint,side text,eth_wei numeric,token_raw numeric,sqrt_price_x96 numeric,attribution text)`,
+        `INSERT INTO agg_live_trades(chain_id,stream_key,pool_ref,wallet_ref,pooled_wallet_refs,tx_hash,log_index,block_number,block_hash,timestamp,side,eth_wei,token_raw,sqrt_price_x96,attribution,batch_end)
+         SELECT 4663,$2,r.pool_ref,r.wallet_ref,r.pooled_wallet_refs,decode(r.tx_hash,'hex'),r.log_index,r.block_number,decode(r.block_hash,'hex'),r.timestamp,r.side,r.eth_wei,r.token_raw,r.sqrt_price_x96,r.attribution,$3
+         FROM jsonb_to_recordset($1::jsonb) AS r(pool_ref int,wallet_ref int,pooled_wallet_refs int[],tx_hash text,log_index int,block_number bigint,block_hash text,timestamp bigint,side text,eth_wei numeric,token_raw numeric,sqrt_price_x96 numeric,attribution text)`,
         [
           JSON.stringify(
             chunk.map((t) => ({
               pool_ref: poolRef(t.poolId),
               wallet_ref: t.wallet === null ? null : walletRef.get(t.wallet)!,
+              pooled_wallet_refs:
+                t.pooledWallets === null
+                  ? null
+                  : t.pooledWallets.map((w) => walletRef.get(w)!),
               tx_hash: bytes(t.txHash),
               log_index: t.logIndex,
               block_number: t.block,
@@ -1359,7 +1362,7 @@ export async function walkBackLedger(
             const named = await db.query(
               `SELECT EXISTS (SELECT 1 FROM agg_positions WHERE chain_id=4663 AND wallet_ref=$1)
                  OR EXISTS (SELECT 1 FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1)
-                 OR EXISTS (SELECT 1 FROM agg_live_trades WHERE chain_id=4663 AND wallet_ref=$1) AS named`,
+                 OR EXISTS (SELECT 1 FROM agg_live_trades WHERE chain_id=4663 AND (wallet_ref=$1 OR $1=ANY(pooled_wallet_refs))) AS named`,
               values,
             );
             if (named.rows[0].named) continue;

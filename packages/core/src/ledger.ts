@@ -46,10 +46,7 @@ export const ledgerExcludingFlags: readonly LedgerFlag[] = [
  * pro rata over its contributors (fold rule 2), which the ring keeps as one
  * row without a wallet, as it keeps an unattributed one. */
 export type LedgerAttribution =
-  | "initiator"
-  | "counterparty"
-  | "pooled"
-  | "unattributed";
+  "initiator" | "counterparty" | "pooled" | "unattributed";
 export type LedgerSide = "buy" | "sell";
 
 /** Addresses the attribution rule treats as infrastructure. The manager and
@@ -264,6 +261,10 @@ export interface LedgerPoolState {
 export interface LedgerLiveTrade extends LogSite {
   poolId: string;
   wallet: string | null;
+  /** A pooled swap's contributors (rule 2), in the event's order; null on
+   * every other row. The ring keeps a pooled swap as one trade without a
+   * wallet, and these are what count its contributors as active traders. */
+  pooledWallets: string[] | null;
   side: LedgerSide;
   ethWei: bigint;
   tokenRaw: bigint;
@@ -1124,6 +1125,8 @@ export function applyLedgerEvents(
         timestamp: e.timestamp,
         poolId: e.poolId,
         wallet: e.kind === "swap" ? e.wallet : null,
+        pooledWallets:
+          e.kind === "pooled_swap" ? e.shares.map((s) => s.wallet) : null,
         side: e.side,
         ethWei: e.ethWei,
         tokenRaw: e.tokenRaw,

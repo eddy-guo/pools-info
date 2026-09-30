@@ -131,6 +131,7 @@ test("rule 1 leaves the recorded pooled sell unattributed and excludes all 147 c
     liveTrades.map((t) => [t.wallet, t.attribution]),
     [[null, "unattributed"]],
   );
+  assert.equal(liveTrades[0].pooledWallets, null);
 });
 
 test("rule 2 attributes the recorded pooled sell to its 147 contributors pro rata, the audited wallet's share reconciling to the wei", () => {
@@ -244,11 +245,22 @@ test("rule 2 attributes the recorded pooled sell to its 147 contributors pro rat
     liveTrades.map((t) => [t.wallet, t.attribution, t.ethWei]),
     [[null, "pooled", ethWei]],
   );
+  assert.deepEqual(
+    liveTrades[0].pooledWallets,
+    e.shares.map((s) => s.wallet),
+  );
   // The hour holds the wallet's buy and the one pooled sell, with 147
   // sellers: one trade for the pool, one sale per contributor.
   const hour = [...state.poolHours.values()][0];
   assert.deepEqual(
-    [hour.trades, hour.buys, hour.sells, hour.sellers, hour.unattributed, hour.volume],
+    [
+      hour.trades,
+      hour.buys,
+      hour.sells,
+      hour.sellers,
+      hour.unattributed,
+      hour.volume,
+    ],
     [2, 1, 1, 147, 0, ethWei + 49500000000000000n],
   );
   assert.equal(ledgerKeys(events).positions.length, 147);

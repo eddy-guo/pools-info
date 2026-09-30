@@ -973,3 +973,187 @@ test(
     assert.equal(w9later.curve.at(-2)!.time, 1079 * 3600);
   },
 );
+
+test(
+  "Postgres HTTP: a ledger folded under rule 2 serves a pooled sell's contributors their shares, unit totals and the rule's swap-in date, and counts them among the rolling hour's active traders",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async (t) => {
+    const url = process.env.TEST_DATABASE_URL!;
+    const db = createClient(url);
+    await db.connect();
+    const schema = "api_test_ledgerpooled_" + randomUUID().replaceAll("-", "");
+    await db.query(`CREATE SCHEMA "${schema}"`);
+    await db.query(`SET search_path TO "${schema}"`);
+    await migrate(db);
+    // One launch the ledger covers (the stats count only those): L, launched
+    // at the ledger's start and registered by its launch lane.
+    const L = {
+      ...pools.P,
+      id: hash(0x300),
+      token: addr(0x400),
+      symbol: "L",
+      launchBlock: base,
+    };
+    await db.query(
+      `INSERT INTO indexer_streams(chain_id,stream_key,kind,start_block,cursor_block,cursor_hash)
+       VALUES(4663,'launches:agg:v1','discovery',$1,$1,$2)`,
+      [base, hash(base)],
+    );
+    await db.query(
+      `INSERT INTO indexer_batches(chain_id,stream_key,from_block,to_block,block_hash,content_hash,evidence)
+       VALUES(4663,'launches:agg:v1',$1,$1,$2,$3,'{}')`,
+      [base, hash(base), "f".repeat(64)],
+    );
+    await db.query(
+      `INSERT INTO indexed_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_stream,source_batch,decimals)
+       VALUES(4663,$1,$2,'Pool L','L',$3,$4,$5,$6,'launches:agg:v1',$3,18)`,
+      [L.id, L.token, base, hash(0x301), addr(0x201), ts(base)],
+    );
+    const reader = createReader(url, schema, { marketSource: "ledger" });
+    const api = createApi(reader, { cacheMs: 0, maxPerMinute: 100000 });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+    let locked = false;
+    t.after(async () => {
+      await new Promise<void>((resolve) => api.close(() => resolve()));
+      await reader.close();
+      if (locked) await releaseLedgerWriter(db);
+      await db.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await db.end();
+    });
+    const get = async (path: string) => {
+      const response = await fetch(origin + path);
+      const data = await response.json();
+      assert.equal(response.status, 200, `${path} ${JSON.stringify(data)}`);
+      return data;
+    };
+    await ensureLedgerStream(db, "tip", ledgerStream.key, 2);
+    for (let i = 0; i < 600 && !locked; i++) {
+      locked = await acquireLedgerWriter(db);
+      if (!locked) await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(locked, "ledger writer lock unavailable");
+    // W1 buys 60 P for 6 ETH and W2 40 P for 4 ETH in hour 1076; in hour
+    // 1078 a batch contract collects all 100 and sells them in one swap for
+    // 12 ETH and 1 wei: W1's share is 7.2 ETH and the leftover wei (its
+    // exact share lost 0.6 wei to truncation, W2's 0.4), W2's 4.8 ETH.
+    const seller = wallet(11);
+    const sold = blockOf(1078, 2),
+      cursor = blockOf(1078, 4),
+      txHash = hash(0xfeed);
+    const buys = new Rows()
+      .trade(blockOf(1076, 0), W[1], "buy", 6n * E, 60n, L)
+      .trade(blockOf(1076, 0), W[2], "buy", 4n * E, 40n, L);
+    assert.equal(
+      (await applyLedgerBatch(db, batch(base, blockOf(1076, 8), buys)))
+        .attributed,
+      2,
+    );
+    const rows = new Rows();
+    const site = {
+      txHash,
+      block: sold,
+      blockHash: hash(sold),
+      timestamp: ts(sold),
+    };
+    rows.transfers.push(
+      {
+        ...site,
+        logIndex: 0,
+        token: L.token,
+        from: W[1],
+        to: seller,
+        value: "60",
+      },
+      {
+        ...site,
+        logIndex: 1,
+        token: L.token,
+        from: W[2],
+        to: seller,
+        value: "40",
+      },
+      {
+        ...site,
+        logIndex: 3,
+        token: L.token,
+        from: seller,
+        to: ledgerRules.manager,
+        value: "100",
+      },
+    );
+    rows.swaps.push({
+      ...site,
+      logIndex: 2,
+      poolId: L.id,
+      token: L.token,
+      initiator: seller,
+      txTo: seller,
+      side: "sell",
+      ethWei: (12n * E + 1n).toString(),
+      tokenRaw: "100",
+      sqrtPriceX96: "1000",
+      liquidity: "5",
+      tick: 1,
+    });
+    const applied = await applyLedgerBatch(
+      db,
+      batch(blockOf(1077, 0), cursor, rows),
+    );
+    assert.deepEqual(
+      [applied.attributed, applied.pooled, applied.unattributed],
+      [1, 1, 0],
+    );
+    assert.ok(await refreshLedgerWindows(db, { force: true }));
+    const shares = { [W[1]]: 72n * tenth + 1n, [W[2]]: 48n * tenth };
+    const invested = { [W[1]]: 6n * E, [W[2]]: 4n * E };
+    const bought = { [W[1]]: "60", [W[2]]: "40" };
+    const served = async () => {
+      const out = [];
+      for (const w of [W[1], W[2]]) {
+        const body: AnalyticsWalletResponse = await get(
+          `/v1/wallets/${w}?window=24h`,
+        );
+        const p = body.positions[0].position!;
+        assert.equal(body.positions.length, 1);
+        assert.deepEqual(
+          {
+            realized: body.wallet.realizedWei,
+            proceeds: p.proceedsWei,
+            invested: p.investedWei,
+            boughtRaw: p.boughtRaw,
+            soldRaw: p.soldRaw,
+          },
+          {
+            realized: (shares[w] - invested[w]).toString(),
+            proceeds: shares[w].toString(),
+            invested: invested[w].toString(),
+            boughtRaw: bought[w],
+            soldRaw: bought[w],
+          },
+        );
+        out.push(body.pooledSwapsAttributedSince);
+      }
+      return out;
+    };
+    // Until the swap-in is recorded the page discloses no date; after it,
+    // the date it is served from.
+    assert.deepEqual(await served(), [null, null]);
+    await db.query(
+      "UPDATE agg_streams SET fold_rule_since=$1 WHERE chain_id=4663 AND stream_key=$2",
+      [ts(cursor), ledgerStream.key],
+    );
+    assert.deepEqual(await served(), [ts(cursor), ts(cursor)]);
+    // The rolling hour holds only the pooled sell, one wallet-less ring row
+    // whose two contributors are the hour's active traders, as the whole
+    // hours' rows count them for 24h.
+    for (const window of ["1h", "24h"]) {
+      const stats = await get(`/v1/stats?window=${window}`);
+      assert.deepEqual(
+        [stats.trades, stats.activeTraders],
+        window === "1h" ? [1, 2] : [3, 2],
+        window,
+      );
+    }
+  },
+);

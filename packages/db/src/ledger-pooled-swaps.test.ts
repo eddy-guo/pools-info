@@ -215,7 +215,7 @@ const positions = async (db: Client) =>
 const ring = async (db: Client) =>
   (
     await db.query(
-      "SELECT attribution,wallet_ref,eth_wei::text AS eth_wei,token_raw::text AS token_raw FROM agg_live_trades ORDER BY block_number,log_index",
+      "SELECT attribution,wallet_ref,pooled_wallet_refs,eth_wei::text AS eth_wei,token_raw::text AS token_raw FROM agg_live_trades ORDER BY block_number,log_index",
     )
   ).rows;
 
@@ -268,7 +268,12 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
   assert.deepEqual(await positions(two), holding);
   const applied = await applyLedgerBatch(two, sold);
   assert.deepEqual(
-    [applied.attributed, applied.pooled, applied.unattributed, applied.positions],
+    [
+      applied.attributed,
+      applied.pooled,
+      applied.unattributed,
+      applied.positions,
+    ],
     [1, 1, 0, 2],
   );
   assert.deepEqual(await positions(two), [
@@ -311,11 +316,17 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
     2,
   );
   assert.deepEqual(
-    (await ring(two)).map((r) => [r.attribution, r.wallet_ref, r.eth_wei]),
+    (await ring(two)).map((r) => [
+      r.attribution,
+      r.wallet_ref,
+      r.pooled_wallet_refs,
+      r.eth_wei,
+    ]),
     [
-      ["initiator", 1, (E * 60n).toString()],
-      ["initiator", 2, (E * 40n).toString()],
-      ["pooled", null, ethWei.toString()],
+      ["initiator", 1, null, (E * 60n).toString()],
+      ["initiator", 2, null, (E * 40n).toString()],
+      // The contributors, which count as the rolling hour's active traders.
+      ["pooled", null, [1, 2], ethWei.toString()],
     ],
   );
   const hour = (
@@ -403,6 +414,7 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
   assert.deepEqual((await ring(one)).at(-1), {
     attribution: "unattributed",
     wallet_ref: null,
+    pooled_wallet_refs: null,
     eth_wei: ethWei.toString(),
     token_raw: "100",
   });
@@ -487,7 +499,13 @@ test("migration 027 on a ledger written before it: rule 1 recorded, pre-images g
   // first batch's row as the second's pre-image and the journal whole.
   await db.query(
     "INSERT INTO agg_streams(chain_id,stream_key,start_block,mode,cursor_block,cursor_hash,cursor_timestamp) VALUES (4663,$1,$2,'tip',$3,decode($4,'hex'),$5)",
-    [ledgerStream.key, base, base + 19, hash(base + 19).slice(2), ts(base + 19)],
+    [
+      ledgerStream.key,
+      base,
+      base + 19,
+      hash(base + 19).slice(2),
+      ts(base + 19),
+    ],
   );
   for (const [from, to] of [
     [base, base + 9],
@@ -545,17 +563,34 @@ test("migration 027 on a ledger written before it: rule 1 recorded, pre-images g
   await db.query(
     `INSERT INTO agg_wallet_hours(chain_id,wallet_ref,pool_ref,hour,realized_wei,disposed_cost_wei,proceeds_wei,spent_wei,volume_wei,buys,sells,supported_trades,wins,losses,closures,hold_seconds,flash_closures)
      VALUES (4663,$1,$2,$3,0,0,0,$4,$4,2,0,2,0,0,0,0,0)`,
-    [walletRef, poolRef, Math.floor(ts(base + 2) / 3600), (E * 100n).toString()],
+    [
+      walletRef,
+      poolRef,
+      Math.floor(ts(base + 2) / 3600),
+      (E * 100n).toString(),
+    ],
   );
   await db.query(
     `INSERT INTO agg_pool_hours(chain_id,pool_ref,hour,trades,buys,sells,unattributed,volume_wei,buyers,sellers,open_sqrt_price_x96,close_sqrt_price_x96,high_sqrt_price_x96,low_sqrt_price_x96,close_block,close_log_index)
      VALUES (4663,$1,$2,2,2,0,0,$3,1,0,1000,1000,1000,1000,$4,10)`,
-    [poolRef, Math.floor(ts(base + 2) / 3600), (E * 100n).toString(), base + 12],
+    [
+      poolRef,
+      Math.floor(ts(base + 2) / 3600),
+      (E * 100n).toString(),
+      base + 12,
+    ],
   );
   await db.query(
     `INSERT INTO agg_pool_state(chain_id,pool_ref,trades,volume_wei,holders,sqrt_price_x96,liquidity,tick,price_block,price_log_index,price_tx,price_timestamp,first_trade_timestamp,last_trade_timestamp)
      VALUES (4663,$1,2,$2,1,1000,5,1,$3,10,decode($4,'hex'),$5,$6,$5)`,
-    [poolRef, (E * 100n).toString(), base + 12, hash(1).slice(2), ts(base + 12), ts(base + 2)],
+    [
+      poolRef,
+      (E * 100n).toString(),
+      base + 12,
+      hash(1).slice(2),
+      ts(base + 12),
+      ts(base + 2),
+    ],
   );
   await db.query(
     "INSERT INTO agg_active_trader_counts(chain_id,through_block,through_timestamp,instant_traders,all_traders) VALUES (4663,$1,$2,1,1) ON CONFLICT (chain_id) DO UPDATE SET through_block=EXCLUDED.through_block,through_timestamp=EXCLUDED.through_timestamp,instant_traders=1,all_traders=1",
@@ -618,7 +653,9 @@ test("migration 027 on a ledger written before it: rule 1 recorded, pre-images g
             txHash: sellTx,
           }),
         ],
-        transfers: [transfer(base + 25, 11, A, ledgerRules.manager, 30n, sellTx)],
+        transfers: [
+          transfer(base + 25, 11, A, ledgerRules.manager, 30n, sellTx),
+        ],
       },
     ]),
   );

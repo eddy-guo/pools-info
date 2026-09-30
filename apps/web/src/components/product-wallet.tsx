@@ -408,10 +408,11 @@ export function ProductWallet({ address }: { address: string }) {
                       Realized: {period} · Holding, cost, unrealized: lifetime
                     </p>
                     <div className="wallet-positions-context">
-                      {/* The rule-change disclosure: the date from which a
-                        sell routed through a pooled swap (many wallets'
-                        tokens sold in one swap by a batch contract) is
-                        attributed to each contributor, read from the
+                      {/* The rule-change disclosure: the date on which a sell
+                        routed through a pooled swap (many wallets' tokens
+                        sold in one swap by a batch contract) came to be
+                        attributed to each contributor, the whole history
+                        re-folded under it, read from the
                         response as the ledger's own swap-in date and never
                         hard-coded here; nothing while the read serves none.
                         The slot shares this fixed-height row, so the line's
@@ -421,9 +422,9 @@ export function ProductWallet({ address }: { address: string }) {
                         {data?.pooledSwapsAttributedSince != null && (
                           <span
                             key={data.pooledSwapsAttributedSince}
-                            title="Sells routed through a pooled swap are attributed to each contributor by the tokens it moved, from this date on. Before it, such positions were excluded."
+                            title={`Since ${utcDay(data.pooledSwapsAttributedSince)}, every sell routed through a pooled swap (many wallets' tokens sold in one swap by a batch contract), earlier ones included, is attributed to each contributor by the tokens it moved. Before that, such positions were excluded from PnL.`}
                           >
-                            Pooled sells attributed from{" "}
+                            Pooled-sell rule changed{" "}
                             {utcDay(data.pooledSwapsAttributedSince)}
                           </span>
                         )}

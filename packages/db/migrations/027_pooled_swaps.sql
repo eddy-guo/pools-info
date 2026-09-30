@@ -4,10 +4,17 @@
 -- live ledger serves: the rule a stream folds under is the stream's own
 -- (fold_rule, 1 for every stream that exists when this runs) and never a
 -- deployment's default, so the live stream keeps folding under rule 1 until
--- a ledger re-folded from the first launch under rule 2 is swapped in for it
--- (docs/LEDGER-CUTOVER.md). The new columns are zero or null on every row
+-- a ledger re-folded from the first launch under rule 2 is swapped in for it.
+-- The new columns are zero or null on every row
 -- written before, and the constraints rule 2 needs hold over rule 1's rows as
 -- they stand. Applied by the tip loop at its start under the writer lock.
+-- Every constraint on an existing table is added NOT VALID: the rows already
+-- there satisfy it by construction (no pooled swap, no pooled_route flag,
+-- null unit totals, 017's stricter hour and ring rules), and validating would
+-- scan agg_positions under the ACCESS EXCLUSIVE lock the ALTER takes, which
+-- the api's readers queue behind for the whole scan. New and updated rows
+-- are checked all the same; a ledger re-folded under rule 2 writes every row
+-- under them.
 
 -- 1. The stream's rule, fixed when the stream is created; and the moment
 --    readers started serving rule 2 from it, which the wallet page discloses
@@ -18,7 +25,8 @@ ALTER TABLE agg_streams
 
 -- 2. Batches: of the attributed swaps, those attributed pro rata.
 ALTER TABLE agg_batches
-  ADD COLUMN pooled integer NOT NULL DEFAULT 0 CHECK (pooled>=0 AND pooled<=attributed);
+  ADD COLUMN pooled integer NOT NULL DEFAULT 0,
+  ADD CONSTRAINT agg_batches_pooled CHECK (pooled>=0 AND pooled<=attributed) NOT VALID;
 
 -- 3. Positions: the pooled swap counter with its informational flag, and
 --    the unit totals, null on a row written before this migration as
@@ -28,14 +36,17 @@ ALTER TABLE agg_batches
 --    inventory over an oversell or an outflow above the held quantity, both
 --    of which flag unknown_basis.
 ALTER TABLE agg_positions
-  ADD COLUMN pooled_swaps integer NOT NULL DEFAULT 0 CHECK (pooled_swaps>=0),
-  ADD COLUMN bought_raw numeric CHECK (bought_raw>=0 AND scale(bought_raw)=0),
-  ADD COLUMN sold_raw numeric CHECK (sold_raw>=0 AND scale(sold_raw)=0),
-  ADD CONSTRAINT agg_positions_pooled_flag CHECK ((pooled_swaps>0) = ('pooled_route' = ANY(flags))),
+  ADD COLUMN pooled_swaps integer NOT NULL DEFAULT 0,
+  ADD COLUMN bought_raw numeric,
+  ADD COLUMN sold_raw numeric,
+  ADD CONSTRAINT agg_positions_pooled_swaps CHECK (pooled_swaps>=0) NOT VALID,
+  ADD CONSTRAINT agg_positions_bought_raw CHECK (bought_raw>=0 AND scale(bought_raw)=0) NOT VALID,
+  ADD CONSTRAINT agg_positions_sold_raw CHECK (sold_raw>=0 AND scale(sold_raw)=0) NOT VALID,
+  ADD CONSTRAINT agg_positions_pooled_flag CHECK ((pooled_swaps>0) = ('pooled_route' = ANY(flags))) NOT VALID,
   ADD CONSTRAINT agg_positions_units CHECK (
     (bought_raw IS NULL) = (sold_raw IS NULL)
     AND (bought_raw IS NULL OR 'unknown_basis' = ANY(flags)
-      OR quantity_raw = bought_raw + inflow_raw - sold_raw - outflow_raw));
+      OR quantity_raw = bought_raw + inflow_raw - sold_raw - outflow_raw)) NOT VALID;
 
 -- 4. The XOR admits pooled_route beside the other informational flags. The
 --    constraint in place is found by its definition (migration 022 named it,
@@ -54,7 +65,7 @@ BEGIN
     RAISE EXCEPTION 'agg_positions flag constraint has an unexpected shape: %', old_def;
   END IF;
   EXECUTE format('ALTER TABLE agg_positions DROP CONSTRAINT %I', old_name);
-  EXECUTE format('ALTER TABLE agg_positions ADD CONSTRAINT agg_positions_flags %s',
+  EXECUTE format('ALTER TABLE agg_positions ADD CONSTRAINT agg_positions_flags %s NOT VALID',
     replace(old_def, '''counterparty_route''::text', '''counterparty_route''::text, ''pooled_route''::text'));
 END $$;
 
@@ -71,11 +82,12 @@ BEGIN
   END LOOP;
 END $$;
 ALTER TABLE agg_pool_hours
-  ADD CONSTRAINT agg_pool_hours_buyers CHECK (buyers>=0),
-  ADD CONSTRAINT agg_pool_hours_sellers CHECK (sellers>=0);
+  ADD CONSTRAINT agg_pool_hours_buyers CHECK (buyers>=0) NOT VALID,
+  ADD CONSTRAINT agg_pool_hours_sellers CHECK (sellers>=0) NOT VALID;
 
 -- 6. The live ring keeps a pooled swap as one row without a wallet, as it
---    keeps an unattributed one.
+--    keeps an unattributed one, and with its contributors' refs, which count
+--    them as the rolling hour's active traders.
 DO $$
 DECLARE c record;
 BEGIN
@@ -87,8 +99,10 @@ BEGIN
   END LOOP;
 END $$;
 ALTER TABLE agg_live_trades
-  ADD CONSTRAINT agg_live_trades_attribution CHECK (attribution IN ('initiator','counterparty','pooled','unattributed')),
-  ADD CONSTRAINT agg_live_trades_wallet CHECK ((wallet_ref IS NULL) = (attribution IN ('pooled','unattributed')));
+  ADD COLUMN pooled_wallet_refs integer[],
+  ADD CONSTRAINT agg_live_trades_pooled_wallets CHECK ((pooled_wallet_refs IS NOT NULL) = (attribution='pooled')) NOT VALID,
+  ADD CONSTRAINT agg_live_trades_attribution CHECK (attribution IN ('initiator','counterparty','pooled','unattributed')) NOT VALID,
+  ADD CONSTRAINT agg_live_trades_wallet CHECK ((wallet_ref IS NULL) = (attribution IN ('pooled','unattributed'))) NOT VALID;
 
 -- 7. The journal's pre-images are what a walk-back restores under these
 --    constraints: a position pre-image gains the counter it lacked (zero,
@@ -102,4 +116,5 @@ COMMENT ON COLUMN agg_streams.fold_rule_since IS 'When readers started serving t
 COMMENT ON COLUMN agg_positions.pooled_swaps IS 'Swaps attributed to this position pro rata through a pooled transaction (fold rule 2); pooled_route follows it.';
 COMMENT ON COLUMN agg_positions.bought_raw IS 'Token units bought through attributed swaps; null on a position written before the totals were folded.';
 COMMENT ON COLUMN agg_positions.sold_raw IS 'Token units sold through attributed swaps; null with bought_raw.';
+COMMENT ON COLUMN agg_live_trades.pooled_wallet_refs IS 'A pooled swap''s contributors (fold rule 2); null on every other row.';
 COMMENT ON COLUMN agg_batches.pooled IS 'Of attributed, the swaps attributed pro rata to several contributors.';

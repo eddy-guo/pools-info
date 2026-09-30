@@ -267,8 +267,7 @@ export async function readLedgerWallet(
     // The wallet page's disclosure: since when pooled sells are attributed
     // to each contributor (the stream folds under rule 2 and its swap-in
     // date is recorded); null under rule 1 and before the swap-in.
-    pooledSwapsAttributedSince:
-      cut.foldRule >= 2 ? cut.foldRuleSince : null,
+    pooledSwapsAttributedSince: cut.foldRule >= 2 ? cut.foldRuleSince : null,
   });
   if (ref === undefined)
     return response(walletSummary(undefined, address), [], false, [], false);

@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 
 /*
- * The wallet page's rule-change disclosure: the date from which a sell routed
- * through a pooled swap is attributed to each contributor
+ * The wallet page's rule-change disclosure: the date on which a sell routed
+ * through a pooled swap came to be attributed to each contributor
  * (`pooledSwapsAttributedSince` on the wallet read, the ledger's own swap-in
  * date). The fixture deployment serves none, so the served state is exercised
  * by rewriting the route's own response, as wallet-trades.spec.ts does for the
@@ -41,7 +41,7 @@ test("the positions row discloses the attribution date the read serves, and noth
     timeout: 20000,
   });
   await expect(row.locator(".wallet-rule-note")).toHaveText(
-    "Pooled sells attributed from 1 Oct 2026",
+    "Pooled-sell rule changed 1 Oct 2026",
   );
   await expect(row).toContainText("Still held");
   const disclosed = await row.boundingBox();
@@ -63,7 +63,9 @@ test("the disclosure yields to the Still held figure on a phone rather than wide
   });
   await page.goto(`/wallet/${wallet}/?window=All`);
   const row = page.locator(".wallet-positions-context");
-  await expect(row.locator(".wallet-rule-note")).toContainText("Pooled sells");
+  await expect(row.locator(".wallet-rule-note")).toContainText(
+    "Pooled-sell rule",
+  );
   await expect(row).toContainText("Still held");
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
