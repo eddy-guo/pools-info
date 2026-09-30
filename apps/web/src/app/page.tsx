@@ -35,17 +35,11 @@ export default async function HomePage({
     ? admission.admit(visitor)
     : { ok: true as const };
   const stats = admitted.ok ? await readScreenerStats(window, visitor) : null;
-  const statsRetryAfter = !admitted.ok
-    ? String(admitted.retryAfterSeconds)
-    : stats?.status === 503 && stats.reason === "request_limit"
-      ? (stats.retryAfter ?? "30")
-      : null;
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: watchlistRowsScript }} />
       <ProductExplore
         initialStats={stats?.status === 200 ? stats.data : null}
-        initialStatsRetryAfter={statsRetryAfter}
         initialSearch={initial.toString()}
       />
     </>

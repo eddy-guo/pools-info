@@ -19,7 +19,7 @@ import {
   type AnalyticsPoolRow,
   type LiveWindow,
 } from "@pools/core";
-import { fetchProduct, retryAfterMilliseconds, useProduct } from "@/lib/use-product";
+import { fetchProduct, useProduct } from "@/lib/use-product";
 import {
   validateStatsResponse,
   type ScreenerStatsResponse,
@@ -275,11 +275,9 @@ const isScreenerView = (value: string): value is ScreenerView =>
   SCREENER_VIEWS.some(([key]) => key === value);
 function ScreenerStats({
   initial,
-  initialRetryAfter,
   window,
 }: {
   initial: ScreenerStatsResponse | null;
-  initialRetryAfter: string | null;
   window: LiveWindow;
 }) {
   const [answer, setAnswer] = useState({
@@ -293,17 +291,9 @@ function ScreenerStats({
     // The query store's server snapshot is empty during hydration. A saved
     // window URL must settle before deciding whether this is a new window.
     if (browserWindow !== window) return;
-    if (
-      (!initial && initialRetryAfter === null) ||
-      (answer.data && answer.window === window)
-    )
-      return;
-    const initialDelay = initial || answer.data
-      ? 0
-      : retryAfterMilliseconds(initialRetryAfter);
-    if (initialDelay === null) return;
+    if (!initial || answer.window === window) return;
     const controller = new AbortController();
-    const read = async () => {
+    void Promise.resolve().then(async () => {
       try {
         const data: unknown = await fetchProduct<ScreenerStatsResponse>(
           `stats?window=${window}`,
@@ -311,10 +301,6 @@ function ScreenerStats({
         );
         validateStatsResponse(data, window);
         if (controller.signal.aborted) return;
-        if (!initial) {
-          setAnswer({ window, data });
-          return;
-        }
         if (
           (answer.data?.activeTraders === null) !==
           (data.activeTraders === null)
@@ -328,39 +314,23 @@ function ScreenerStats({
       } catch {
         // Removing a served row after a late 404/503 would move the table.
         // Reload at the selected URL so the server omits it before first paint.
-        if (!controller.signal.aborted && initial) location.reload();
+        if (!controller.signal.aborted) location.reload();
       }
-    };
-    const timer = initial
-      ? null
-      : globalThis.setTimeout(() => void read(), initialDelay);
-    if (initial) void Promise.resolve().then(read);
-    return () => {
-      if (timer !== null) globalThis.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [
-    answer.data?.activeTraders,
-    answer.window,
-    initial,
-    initialRetryAfter,
-    window,
-  ]);
-  if (!initial && initialRetryAfter === null) return null;
-  const retryingInitial = !initial && initialRetryAfter !== null;
-  const pending = answer.window !== window || !answer.data;
+    });
+    return () => controller.abort();
+  }, [answer.data?.activeTraders, answer.window, initial, window]);
+  if (!initial) return null;
+  const pending = answer.window !== window;
   const data = pending ? null : answer.data;
   if (!pending && !data) return null;
-  const labelWindow = answer.data?.window ?? initial?.window ?? window;
+  const labelWindow = answer.data?.window ?? initial.window;
   const active = pending ? answer.data?.activeTraders : data?.activeTraders;
   return (
     <section
       className="stats-grid screener-stats"
       aria-label="Screener stats"
       aria-busy={pending}
-      data-has-active={
-        retryingInitial || (active !== null && active !== undefined)
-      }
+      data-has-active={active !== null && active !== undefined}
     >
       <div className="stat">
         <span>Volume · {labelWindow}</span>
@@ -383,8 +353,7 @@ function ScreenerStats({
           )}
         </strong>
       </div>
-      {(retryingInitial && pending) ||
-      (active !== null && active !== undefined) ? (
+      {active !== null && active !== undefined && (
         <div className="stat">
           <span title="Wallets with an attributed trade in the window">
             Traders · {labelWindow}
@@ -397,7 +366,7 @@ function ScreenerStats({
             )}
           </strong>
         </div>
-      ) : null}
+      )}
     </section>
   );
 }
@@ -448,11 +417,9 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
 
 export function ProductExplore({
   initialStats,
-  initialStatsRetryAfter,
   initialSearch,
 }: {
   initialStats: ScreenerStatsResponse | null;
-  initialStatsRetryAfter: string | null;
   initialSearch: string;
 }) {
   const now = useSyncExternalStore<number | null>(
@@ -742,11 +709,7 @@ export function ProductExplore({
           <ArrowRight aria-hidden="true" />
         </Link>
       </div>
-      <ScreenerStats
-        initial={initialStats}
-        initialRetryAfter={initialStatsRetryAfter}
-        window={window}
-      />
+      <ScreenerStats initial={initialStats} window={window} />
       <section className="launch-section" aria-label="Just launched">
         <div className="section-caption">
           <span>
