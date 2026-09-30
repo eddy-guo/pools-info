@@ -2138,6 +2138,22 @@ test("the visitor reaches the read API only under the shared secret, on every up
         false,
         "203.0.113.9",
       ),
+    () =>
+      readCardWallet(
+        "0x" + "6".repeat(40),
+        "All",
+        undefined,
+        undefined,
+        "203.0.113.9",
+      ),
+    () =>
+      readCardWallet(
+        "0x" + "6".repeat(40),
+        "All",
+        "0x" + "7".repeat(64),
+        undefined,
+        "203.0.113.9",
+      ),
   ];
   for (const read of reads) {
     sent.length = 0;
@@ -2154,9 +2170,8 @@ test("the visitor reaches the read API only under the shared secret, on every up
     assert.equal(sent[0].get("x-pools-proxy-secret"), "s".repeat(16));
     assert.equal(sent[0].get("x-pools-client-address"), "203.0.113.9");
   }
-  // A read with no visitor behind it (a share card's render) is not
-  // invented one: it presents the secret alone, so the api leaves it
-  // unattributed rather than charging this server's egress address.
+  // A read with no visitor behind it presents the secret alone, so the api
+  // leaves it unattributed rather than charging this server's egress address.
   sent.length = 0;
   await readProduct(["explore"], new URLSearchParams("limit=25")).catch(
     () => undefined,

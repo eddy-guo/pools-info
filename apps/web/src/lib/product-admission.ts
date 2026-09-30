@@ -63,8 +63,8 @@ export const admission = createAdmission();
  * contract: sent only when this deployment holds the shared secret the api
  * was configured with (`INDEXER_PROXY_SECRET`, the api's
  * `TRUSTED_PROXY_SECRET`), so the api charges that visitor's own budget
- * rather than this server's address. A read with no visitor behind it (a
- * share card's render) still presents the secret, so the api leaves it
+ * rather than this server's address. A read with no visitor behind it
+ * still presents the secret, so the api leaves it
  * unattributed and it draws on the shared ceilings alone, never on the
  * budget of this server's egress address. Without the secret nothing is
  * sent and the api's own contract decides.

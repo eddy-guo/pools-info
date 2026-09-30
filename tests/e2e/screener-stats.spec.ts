@@ -442,7 +442,7 @@ test.describe("contract-backed screener stats", () => {
     }
   });
 
-  test("an initial request limit restores stats on a new stable paint", async ({
+  test("an initial request limit fills reserved stats without another read", async ({
     page,
   }, testInfo) => {
     if (testInfo.project.name === "mobile")
@@ -475,19 +475,20 @@ test.describe("contract-backed screener stats", () => {
     limitOnce = true;
     await page.goto(origin, { waitUntil: "domcontentloaded" });
     const stats = page.locator(".explore-page .screener-stats");
-    await expect(stats).toHaveCount(0);
-    expect(statsReads).toBe(before + 1);
-    const gap = await page.evaluate(() => {
-      const heading = document.querySelector(".page-heading")!;
-      const launches = document.querySelector(".launch-section")!;
-      return (
-        launches.getBoundingClientRect().top -
-        heading.getBoundingClientRect().bottom
-      );
-    });
-    expect(gap).toBeLessThanOrEqual(25);
     await expect(stats.locator(".stat")).toHaveCount(3);
-    expect(statsReads).toBeGreaterThanOrEqual(before + 3);
+    await expect(stats).toHaveAttribute("aria-busy", "true");
+    expect(statsReads).toBe(before + 1);
+    const launchTop = await page
+      .locator(".launch-section")
+      .evaluate((node) => node.getBoundingClientRect().top);
+    await expect(stats).toHaveAttribute("aria-busy", "false");
+    await expect(stats).toContainText("123");
+    expect(statsReads).toBe(before + 2);
+    expect(
+      await page
+        .locator(".launch-section")
+        .evaluate((node) => node.getBoundingClientRect().top),
+    ).toBe(launchTop);
     expect(
       await page.evaluate(
         () =>

@@ -26,6 +26,8 @@ import {
 } from "@/lib/card-options";
 import { fontCodePoints } from "@/lib/font-coverage";
 import { tokenImageResponse } from "@/lib/token-image-server";
+import { admission, visitorAddress } from "@/lib/product-admission";
+import { ProductUnavailableError, readsUpstream } from "@/lib/product-server";
 import {
   identityTint,
   shortAddress,
@@ -499,11 +501,24 @@ export async function GET(
       (launch && !/^0x[0-9a-f]{64}$/.test(launch))
     )
       return new Response("Invalid pool scope", { status: 400 });
+    const visitor = visitorAddress(request.headers);
+    if (readsUpstream()) {
+      const admitted = admission.admit(visitor);
+      if (!admitted.ok)
+        return new Response("PnL card unavailable. Try again later.", {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+            "Retry-After": String(admitted.retryAfterSeconds),
+          },
+        });
+    }
     const { result } = await readCardWallet(
       address,
       options.window,
       poolId,
       launch,
+      visitor,
     );
     const w = result.wallet,
       exportHero = options.design === "export" ? cardExportHero(w) : null,
@@ -888,10 +903,14 @@ export async function GET(
     return new Response(await card.arrayBuffer(), {
       headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
     });
-  } catch {
+  } catch (error) {
     return new Response("PnL card unavailable. Try again later.", {
       status: 503,
-      headers: { "Cache-Control": "no-store", "Retry-After": "300" },
+      headers: {
+        "Cache-Control": "no-store",
+        "Retry-After":
+          error instanceof ProductUnavailableError ? error.retryAfter : "300",
+      },
     });
   }
 }
