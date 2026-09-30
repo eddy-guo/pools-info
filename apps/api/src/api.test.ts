@@ -43,6 +43,47 @@ test("rejects invalid parameters, duplicate parameters, cross-query and malforme
   assert.equal(searchPattern("a_%'"), "%a\\_\\%'%");
 });
 
+test("a wallet-position request names the wallet and the pool, lowercased, and takes a window and nothing else", () => {
+  const address = "0x" + "AB".repeat(20);
+  const request = parseRequest(
+    `/v1/wallets/${address}/positions/${hash("C")}?window=7d`,
+  );
+  assert.deepEqual(
+    [request.route, request.wallet, request.poolId, request.window],
+    ["position", address.toLowerCase(), hash("c"), "7d"],
+  );
+  assert.equal(
+    parseRequest(`/v1/wallets/${address}/positions/${hash("c")}`).window,
+    "All",
+  );
+  // Two windows of one position, and two positions of one wallet, never
+  // share a cache entry; a wallet page and its position never do either.
+  assert.notEqual(
+    request.cacheKey,
+    parseRequest(`/v1/wallets/${address}/positions/${hash("c")}`).cacheKey,
+  );
+  assert.notEqual(
+    request.cacheKey,
+    parseRequest(`/v1/wallets/${address}/positions/${hash("d")}?window=7d`)
+      .cacheKey,
+  );
+  assert.notEqual(
+    request.cacheKey,
+    parseRequest(`/v1/wallets/${address}?window=7d`).cacheKey,
+  );
+  for (const url of [
+    `/v1/wallets/${address}/positions/${hash("c")}?limit=1`,
+    `/v1/wallets/${address}/positions/${hash("c")}?window=2d`,
+    `/v1/wallets/${address}/positions/${hash("c")}?window=7d&window=All`,
+    `/v1/wallets/${address}/positions/0xc`,
+    `/v1/wallets/0xc/positions/${hash("c")}`,
+    `/v1/wallet/${address}/positions/${hash("c")}`,
+    `/v1/wallets/${address}/positions/${hash("c")}/`,
+    `/v1/wallets/${address}/positions`,
+  ])
+    assert.throws(() => parseRequest(url), RequestError, url);
+});
+
 test("creators requests validate their own vocabulary", () => {
   const parsed = parseRequest("/v1/creators");
   assert.equal(parsed.route, "creators");

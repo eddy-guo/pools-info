@@ -25,6 +25,15 @@ export interface Position {
   sells: number;
   flags: string[];
   realizations: { timestamp: number; wei: Amount }[];
+  /** Read API rows from the aggregate ledger only. When the open inventory
+   * cycle began (the buy that took the position from flat), unix seconds;
+   * null while flat. */
+  openedAt?: number | null;
+  /** The UTC hours of the position's first and last attributed swap, as unix
+   * seconds at the hour's start: the ledger keeps swaps per hour, so these are
+   * the honest bounds of a closed position's span. Null without a swap. */
+  firstHour?: number | null;
+  lastHour?: number | null;
 }
 export interface PricePoint {
   time: number;

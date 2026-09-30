@@ -33,8 +33,9 @@ const kaijuDeepPriceWei = "59080890343";
 const price = (sqrt: bigint, decimals = 18) =>
   ((2n ** 192n * 10n ** BigInt(decimals)) / (sqrt * sqrt)).toString();
 const change = (latest: bigint, baseline: bigint) =>
-  Number(((baseline * baseline - latest * latest) * 10000n) / (latest * latest)) /
-  100;
+  Number(
+    ((baseline * baseline - latest * latest) * 10000n) / (latest * latest),
+  ) / 100;
 const hex = (n: number) => word(n).slice(2);
 
 type Hour = {
@@ -67,7 +68,7 @@ const pools = {
     launchedAt: (H - 30) * 3600 + 100,
     decimals: 18,
     holders: 8,
-    supply: 10n ** 27n as bigint | null,
+    supply: (10n ** 27n) as bigint | null,
     hours: [
       {
         hour: H - 30,
@@ -113,7 +114,7 @@ const pools = {
     launchedAt: (H - 1) * 3600 + 10,
     decimals: 18,
     holders: 3,
-    supply: 10n ** 27n as bigint | null,
+    supply: (10n ** 27n) as bigint | null,
     hours: [flat(H - 1, 2, 2n * e18, 1000n * e30), flat(H, 1, e18, 900n * e30)],
   },
   O: {
@@ -134,7 +135,7 @@ const pools = {
     launchedAt: (H - 40) * 3600,
     decimals: 18,
     holders: 0,
-    supply: 10n ** 27n as bigint | null,
+    supply: (10n ** 27n) as bigint | null,
     hours: [] as Hour[],
   },
   S: {
@@ -143,7 +144,7 @@ const pools = {
     launchedAt: (H - 5) * 3600,
     decimals: 6,
     holders: 1,
-    supply: 10n ** 15n as bigint | null,
+    supply: (10n ** 15n) as bigint | null,
     hours: [flat(H, 1, 10n ** 15n, 2n ** 96n)],
   },
 };
@@ -169,7 +170,8 @@ test(
     for (const [name, reader] of Object.entries(readers)) {
       const api = createApi(reader, { cacheMs: 0, maxPerMinute: 100000 });
       await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
-      bases[name] = `http://127.0.0.1:${(api.address() as { port: number }).port}`;
+      bases[name] =
+        `http://127.0.0.1:${(api.address() as { port: number }).port}`;
       servers.push(api);
     }
     t.after(async () => {
@@ -238,7 +240,9 @@ test(
           pool.launchedAt,
           key === "U" ? laterLaunchBatch : launchBatch,
           "decimals" in pool ? pool.decimals : 18,
-          "supply" in pool && pool.supply !== null ? pool.supply.toString() : null,
+          "supply" in pool && pool.supply !== null
+            ? pool.supply.toString()
+            : null,
           "supply" in pool && pool.supply !== null ? cursorBlock + 500 : null,
           storedCreatorFees[key] ?? null,
         ],
@@ -484,8 +488,15 @@ test(
     // broad source, row for row; the covered pools answer from the ledger.
     const served = new Map<string, any>();
     for (const path of explorePaths) {
-      const [broad, ledger] = [await get("broad", path), await get("ledger", path)];
-      assert.equal(ledger.status, 200, `${path} ${JSON.stringify(ledger.data)}`);
+      const [broad, ledger] = [
+        await get("broad", path),
+        await get("ledger", path),
+      ];
+      assert.equal(
+        ledger.status,
+        200,
+        `${path} ${JSON.stringify(ledger.data)}`,
+      );
       served.set(path, ledger.data);
       const broadRows = new Map<string, AnalyticsPoolRow>(
         broad.data.items.map((row: AnalyticsPoolRow) => [row.id, row]),
@@ -497,14 +508,17 @@ test(
       if (!paged)
         assert.equal(
           ledger.data.total -
-          ledger.data.items.filter((r: AnalyticsPoolRow) => covered.has(r.id))
-            .length,
-        broad.data.total -
-          broad.data.items.filter((r: AnalyticsPoolRow) => covered.has(r.id))
-            .length,
+            ledger.data.items.filter((r: AnalyticsPoolRow) => covered.has(r.id))
+              .length,
+          broad.data.total -
+            broad.data.items.filter((r: AnalyticsPoolRow) => covered.has(r.id))
+              .length,
           path,
         );
-      assert.deepEqual(ledger.data.broadMarketCutoff, broad.data.broadMarketCutoff);
+      assert.deepEqual(
+        ledger.data.broadMarketCutoff,
+        broad.data.broadMarketCutoff,
+      );
       assert.deepEqual(
         { ...ledger.data.coverage, asOf: 0, generatedAt: "-" },
         { ...broad.data.coverage, asOf: 0, generatedAt: "-" },
@@ -535,10 +549,7 @@ test(
         "attributed_wallets_in_measured_pools",
       );
       assert.equal(stats.liquidityWei, null);
-      assert.equal(
-        stats.activeTraders,
-        stats.completeWindow ? 1 : null,
-      );
+      assert.equal(stats.activeTraders, stats.completeWindow ? 1 : null);
       if (stats.completeWindow) {
         assert.equal(
           stats.volumeWei,
@@ -596,7 +607,11 @@ test(
       p.hours
         .filter((h) => from === null || h.hour >= from)
         .reduce((sum, h) => sum + h.trades, 0);
-    const cutoff = { block: cursorBlock, hash: word(cursorBlock), asOf: cursorTime };
+    const cutoff = {
+      block: cursorBlock,
+      hash: word(cursorBlock),
+      asOf: cursorTime,
+    };
 
     // KAIJU's freshness: the ledger serves the last trade's price, 2.6196e-9
     // ETH per token, where the deep publication still serves the mid-pump
@@ -654,7 +669,10 @@ test(
       assert.equal(r.stats.volumeWei, volume(pools.K, null), window);
       assert.equal(r.stats.completeWindow, true, window);
     }
-    assert.equal(row(launchOrder("All"), pools.K.id).marketCoverage!.windowStart, pools.K.launchedAt);
+    assert.equal(
+      row(launchOrder("All"), pools.K.id).marketCoverage!.windowStart,
+      pools.K.launchedAt,
+    );
     // The live ring here holds only K's two newest trades, not the rolling
     // hour, so 1h serves no figure rather than a partial hour under its name
     // (ledger-rolling-hour.integration.test.ts serves it from a full ring).
@@ -716,11 +734,10 @@ test(
       (served.get(path).items as AnalyticsPoolRow[]).map((r) => r.id);
     const byVolume = served.get("/v1/explore?window=24h&sort=volume&limit=100");
     assert.equal(byVolume.total, 35);
-    assert.deepEqual(ids("/v1/explore?window=24h&sort=volume&limit=100").slice(0, 3), [
-      word(1),
-      pools.K.id,
-      pools.N.id,
-    ]);
+    assert.deepEqual(
+      ids("/v1/explore?window=24h&sort=volume&limit=100").slice(0, 3),
+      [word(1), pools.K.id, pools.N.id],
+    );
     assert.equal(
       served.get("/v1/explore?window=1h&sort=volume&limit=100").total,
       30,
@@ -729,17 +746,28 @@ test(
       pools.K.id,
       pools.O.id,
     ]);
-    assert.deepEqual(ids("/v1/explore?window=24h&sort=change&direction=asc&limit=100"), [
-      pools.O.id,
+    assert.deepEqual(
+      ids("/v1/explore?window=24h&sort=change&direction=asc&limit=100"),
+      [pools.O.id, pools.K.id],
+    );
+    assert.deepEqual(ids("/v1/explore?window=24h&view=gainers&limit=100"), [
       pools.K.id,
     ]);
-    assert.deepEqual(ids("/v1/explore?window=24h&view=gainers&limit=100"), [pools.K.id]);
-    assert.deepEqual(ids("/v1/explore?window=7d&view=gainers&sort=volume&limit=100"), [
-      pools.O.id,
-    ]);
-    assert.equal(served.get("/v1/explore?window=All&sort=change&limit=100").total, 0);
-    assert.equal(served.get("/v1/explore?window=24h&sort=liquidity&limit=100").total, 0);
-    const page = served.get("/v1/explore?window=24h&sort=trades&limit=7&offset=14");
+    assert.deepEqual(
+      ids("/v1/explore?window=7d&view=gainers&sort=volume&limit=100"),
+      [pools.O.id],
+    );
+    assert.equal(
+      served.get("/v1/explore?window=All&sort=change&limit=100").total,
+      0,
+    );
+    assert.equal(
+      served.get("/v1/explore?window=24h&sort=liquidity&limit=100").total,
+      0,
+    );
+    const page = served.get(
+      "/v1/explore?window=24h&sort=trades&limit=7&offset=14",
+    );
     assert.equal(page.total, 35);
     assert.deepEqual(
       page.items.map((r: AnalyticsPoolRow) => r.id),
@@ -750,7 +778,11 @@ test(
       for (const r of served.get(path).items as AnalyticsPoolRow[])
         if (covered.has(r.id)) {
           const window = new URL(path, "http://x").searchParams.get("window")!;
-          assert.deepEqual(r, row(launchOrder(window), r.id), `${path} ${r.id}`);
+          assert.deepEqual(
+            r,
+            row(launchOrder(window), r.id),
+            `${path} ${r.id}`,
+          );
         }
 
     // The pool page from the ledger, through the website's validator.
@@ -772,19 +804,62 @@ test(
     assert.equal((await poolPage(pools.O.id, "7d")).creatorFees, false);
     assert.equal("creatorFees" in (await poolPage(pools.Q.id, "24h")), false);
     assert.equal((await poolPage(pools.K.id, "24h")).creatorFees, true);
-    await db.query("UPDATE indexed_pools SET creator_fees=false WHERE pool_id=$1", [
-      pools.K.id,
-    ]);
+    await db.query(
+      "UPDATE indexed_pools SET creator_fees=false WHERE pool_id=$1",
+      [pools.K.id],
+    );
     assert.equal((await poolPage(pools.K.id, "24h")).creatorFees, false);
-    await db.query("UPDATE indexed_pools SET creator_fees=NULL WHERE pool_id=$1", [
-      pools.K.id,
-    ]);
+    await db.query(
+      "UPDATE indexed_pools SET creator_fees=NULL WHERE pool_id=$1",
+      [pools.K.id],
+    );
     // On the broad source the flag stays where it always was, on the
     // publication K's page then serves, and its market carries no key.
     const kBroad = await get("broad", `/v1/pools/${pools.K.id}?window=24h`);
     assert.equal(kBroad.status, 200, JSON.stringify(kBroad.data));
     assert.equal(kBroad.data.analytics.snapshot.markets[0].creatorFees, true);
     assert.equal("creatorFees" in kBroad.data.market, false);
+    assert.equal(kBroad.data.market.supplyRaw, (10n ** 27n).toString());
+    const unknown = word(807);
+    await db.query(
+      "INSERT INTO recent_streams(chain_id,stream_key,start_block) VALUES(4663,'discovery',$1)",
+      [laterLaunchBatch + 1],
+    );
+    await db.query(
+      `INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence)
+       VALUES(4663,'discovery',$1,$1,$2,$3,'test','{}')`,
+      [laterLaunchBatch + 1, word(laterLaunchBatch + 1), H * 3600 + 7200],
+    );
+    await db.query(
+      `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch)
+       VALUES(4663,$1,$2,'Recent','R',$3,$4,$5,$6,$7)`,
+      [
+        unknown,
+        address(807),
+        laterLaunchBatch + 1,
+        word(807),
+        address(98),
+        H * 3600 + 7200,
+        laterLaunchBatch + 1,
+      ],
+    );
+    for (const source of ["broad", "ledger"] as const) {
+      const fallback = await get(source, `/v1/pools/${U.id}?window=24h`);
+      assert.equal(fallback.status, 200, JSON.stringify(fallback.data));
+      assert.equal(fallback.data.market.supplyRaw, null);
+      const unindexed = await get(source, `/v1/pools/${unknown}?window=24h`);
+      assert.equal(unindexed.status, 200, JSON.stringify(unindexed.data));
+      assert.equal(unindexed.data.market.supplyRaw, null);
+    }
+    await db.query(
+      "UPDATE indexed_pools SET token_total_supply_raw=$1,token_supply_block=$2 WHERE pool_id=$3",
+      [(10n ** 27n).toString(), U.launchBlock + 1, U.id],
+    );
+    for (const source of ["broad", "ledger"] as const) {
+      const fallback = await get(source, `/v1/pools/${U.id}?window=24h`);
+      assert.equal(fallback.status, 200, JSON.stringify(fallback.data));
+      assert.equal(fallback.data.market.supplyRaw, (10n ** 27n).toString());
+    }
     for (const window of ["24h", "7d", "All"]) {
       const market = await poolPage(pools.N.id, window);
       const r = row(launchOrder(window), pools.N.id);
@@ -792,19 +867,39 @@ test(
       assert.equal(market.volumeWei, r.stats.volumeWei, window);
       assert.equal(market.trades, r.stats.trades, window);
       assert.equal(market.change, r.stats.change, window);
-      assert.equal(market.coverage.completeWindow, r.stats.completeWindow, window);
-      assert.equal(market.coverage.windowStart, r.marketCoverage!.windowStart, window);
+      assert.equal(
+        market.coverage.completeWindow,
+        r.stats.completeWindow,
+        window,
+      );
+      assert.equal(
+        market.coverage.windowStart,
+        r.marketCoverage!.windowStart,
+        window,
+      );
       assert.deepEqual(market.coverage.cutoff, cutoff);
       assert.equal(
         market.fdvWei,
         ((BigInt(price(900n * e30)) * 10n ** 27n) / e18).toString(),
         window,
       );
+      // The supply the FDV multiplies is served beside it, in raw units.
+      assert.equal(market.supplyRaw, (10n ** 27n).toString(), window);
       assert.equal(market.history.intervalSeconds, 3600);
       assert.deepEqual(
-        market.history.candles.map((c: any) => [c.time, c.open, c.close, c.volume]),
+        market.history.candles.map((c: any) => [
+          c.time,
+          c.open,
+          c.close,
+          c.volume,
+        ]),
         [
-          [(H - 1) * 3600, price(1000n * e30), price(1000n * e30), (2n * e18).toString()],
+          [
+            (H - 1) * 3600,
+            price(1000n * e30),
+            price(1000n * e30),
+            (2n * e18).toString(),
+          ],
           [H * 3600, price(1000n * e30), price(900n * e30), e18.toString()],
         ],
       );
@@ -827,7 +922,9 @@ test(
     // K's page market, read directly (its fixture snapshot is not a renderable
     // publication), with the snapshot's verified decimals.
     const kPool = (
-      await db.query("SELECT * FROM indexed_pools WHERE pool_id=$1", [pools.K.id])
+      await db.query("SELECT * FROM indexed_pools WHERE pool_id=$1", [
+        pools.K.id,
+      ])
     ).rows[0];
     const verified = {
       decimals: 18,
@@ -835,9 +932,15 @@ test(
     };
     const q = (sql: string, values?: unknown[]) => db.query(sql, values);
     const k = await readObservedMarket(q, kPool, "24h", verified, "ledger");
-    assertObservedMarket(JSON.parse(JSON.stringify(k)), pools.K.id, kPool.token, "24h");
+    assertObservedMarket(
+      JSON.parse(JSON.stringify(k)),
+      pools.K.id,
+      kPool.token,
+      "24h",
+    );
     assert.equal(k.priceWei, kaijuLastPriceWei);
     assert.equal(k.fdvWei, (BigInt(kaijuLastPriceWei) * 10n ** 9n).toString());
+    assert.equal(k.supplyRaw, (10n ** 27n).toString());
     // A 24h label always spans the ledger's own last 24 hours, never the
     // minutes a stale capture held after launch.
     assert.deepEqual(k.coverage.cutoff, cutoff);
@@ -893,7 +996,13 @@ test(
       },
     ]);
     assert.deepEqual(
-      k.observations.map((o) => [o.block, o.logIndex, o.side, o.ethWei, o.tokenRaw]),
+      k.observations.map((o) => [
+        o.block,
+        o.logIndex,
+        o.side,
+        o.ethWei,
+        o.tokenRaw,
+      ]),
       [
         [cursorBlock, 4, "sell", "1000", "2000"],
         [cursorBlock - 20, 1, "buy", "1000", "2000"],
@@ -915,7 +1024,8 @@ test(
     assert.equal(conflicted.trades, k.trades);
     // The broad source reads K's deep stream as it always has.
     assert.equal(
-      (await readObservedMarket(q, kPool, "24h", verified)).coverage.cutoff!.block,
+      (await readObservedMarket(q, kPool, "24h", verified)).coverage.cutoff!
+        .block,
       deepBlock,
     );
 
@@ -945,7 +1055,10 @@ test(
     // its cursor, fails closed on the ledger source only.
     const failsClosed = async (poke: string, values: unknown[]) => {
       await db.query(poke, values);
-      for (const path of [launchOrder("24h"), `/v1/pools/${pools.N.id}?window=24h`]) {
+      for (const path of [
+        launchOrder("24h"),
+        `/v1/pools/${pools.N.id}?window=24h`,
+      ]) {
         const ledger = await get("ledger", path);
         assert.equal(ledger.status, 503, path);
         assert.deepEqual(ledger.data, { error: "market_evidence_invalid" });
@@ -955,8 +1068,12 @@ test(
     await failsClosed("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [
       hex(cursorBlock + 1),
     ]);
-    await db.query("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [hex(cursorBlock)]);
-    await failsClosed("UPDATE agg_streams SET cursor_timestamp=$1", [H * 3600 - 1]);
+    await db.query("UPDATE agg_streams SET cursor_hash=decode($1,'hex')", [
+      hex(cursorBlock),
+    ]);
+    await failsClosed("UPDATE agg_streams SET cursor_timestamp=$1", [
+      H * 3600 - 1,
+    ]);
     await db.query("UPDATE agg_streams SET cursor_timestamp=$1", [cursorTime]);
     assert.equal((await get("ledger", launchOrder("24h"))).status, 200);
 
@@ -1074,6 +1191,10 @@ async function readProjectedExploreRows(
 ) {
   const { readProjectedExplore } = await import("./projected-explore");
   return (
-    await readProjectedExplore(query, { window, sort: "launch", limit: 100 }, "ledger")
+    await readProjectedExplore(
+      query,
+      { window, sort: "launch", limit: 100 },
+      "ledger",
+    )
   ).items;
 }

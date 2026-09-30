@@ -42,6 +42,7 @@ export type Route =
   | "leaderboard"
   | "creators"
   | "profile"
+  | "position"
   | "search"
   | "feed"
   | "following"
@@ -97,6 +98,11 @@ export function parseRequest(input: string): ReadRequest {
     url.pathname,
   );
   const profile = /^\/v1\/wallets?\/(0x[\da-f]{40})$/i.exec(url.pathname);
+  // One wallet-position by the pool page's own id, for the position card.
+  const position =
+    /^\/v1\/wallets\/(0x[\da-f]{40})\/positions\/(0x[\da-f]{64})$/i.exec(
+      url.pathname,
+    );
   if (url.pathname === "/health") route = "health";
   else if (url.pathname === "/ready") route = "ready";
   else if (url.pathname === "/v1/status") route = "status";
@@ -122,6 +128,10 @@ export function parseRequest(input: string): ReadRequest {
   } else if (profile) {
     route = "profile";
     wallet = profile[1].toLowerCase();
+  } else if (position) {
+    route = "position";
+    wallet = position[1].toLowerCase();
+    poolId = position[2].toLowerCase();
   } else if (pool) {
     route = "pool";
     poolId = pool[1].toLowerCase();
@@ -157,7 +167,9 @@ export function parseRequest(input: string): ReadRequest {
               ? ["window", "minTrades", "metric", "offset", "limit"]
               : route === "creators"
                 ? ["window", "sort", "direction", "offset", "limit"]
-                : route === "profile" || route === "pool"
+                : route === "profile" ||
+                    route === "pool" ||
+                    route === "position"
                   ? ["window"]
                   : route === "search"
                     ? ["q", "group"]
@@ -212,7 +224,7 @@ export function parseRequest(input: string): ReadRequest {
     ["1h", "6h", "24h", "7d", "30d", "All"] as const,
     route === "leaderboard"
       ? "7d"
-      : route === "profile" || route === "creators"
+      : route === "profile" || route === "creators" || route === "position"
         ? "All"
         : "24h",
   );

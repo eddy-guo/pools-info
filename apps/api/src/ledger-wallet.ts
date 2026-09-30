@@ -14,7 +14,7 @@ import {
   ledgerRealizedRanksSql,
   summaryColumns,
 } from "./ledger-leaderboard";
-import { ledgerCut } from "./ledger-market";
+import { ledgerCut, type LedgerCut } from "./ledger-market";
 
 /** The wallet page from the aggregate ledger (`MARKET_SOURCE=ledger`,
  * docs/LEDGER-MARKET-SERVING.md "The wallet page"): the header and the
@@ -36,32 +36,105 @@ import { ledgerCut } from "./ledger-market";
  * cost (zero under the fold's invariant) whatever the pool's price; a held
  * one is unmarked, null, while the pool's decimals are unknown or it has no
  * price state, and an excluded position's finances are never served. */
-const markSql = `CASE WHEN NOT p.supported THEN NULL WHEN p.quantity_raw=0 THEN -p.cost_wei
+export const markSql = `CASE WHEN NOT p.supported THEN NULL WHEN p.quantity_raw=0 THEN -p.cost_wei
   WHEN i.decimals IS NOT NULL AND s.sqrt_price_x96>0
   THEN trunc(p.quantity_raw*6277101735386680763835789423207666416102355444464034512896::numeric/(s.sqrt_price_x96*s.sqrt_price_x96))-p.cost_wei END`;
+/** The row the wallet page serves per position and the single-position read
+ * (`ledger-position.ts`) serves for one pool: the identity from
+ * `indexed_pools i`, the fold's state, flags and open cycle from
+ * `agg_positions p`, the window's realized, net and volume and the hours it
+ * traded in from the hour rows `f` (`windowFlowColumns`; a position with no
+ * hour in the window has no flow in it and reads as zero) and the mark from
+ * the price state `s`. Both reads select these columns from
+ * `positionSources`, so the two answers agree field for field. */
+export const positionColumns = `p.pool_ref,i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
+      p.quantity_raw::text AS quantity_raw,p.cost_wei::text AS cost_wei,p.realized_wei::text AS realized_wei,
+      p.invested_wei::text AS invested_wei,p.proceeds_wei::text AS proceeds_wei,p.buys,p.sells,
+      p.cycle_opened_at::text AS cycle_opened_at,f.first_hour,f.last_hour,
+      coalesce(f.realized,0)::text AS window_realized,coalesce(f.net,0)::text AS net,coalesce(f.volume,0)::text AS volume,
+      ${markSql} AS mark`;
+export const positionSources = `agg_positions p JOIN indexed_pools i USING (pool_ref)
+    LEFT JOIN agg_pool_state s ON s.chain_id=p.chain_id AND s.pool_ref=p.pool_ref`;
+/** One pass over a wallet's hour rows: the window's flow, realized, net
+ * (proceeds less spent) and volume over the hours from the window's first
+ * hour ($2), beside the first and last hour the position traded in at all,
+ * the honest bounds of its span, since the ledger keeps swaps per hour and no
+ * first swap time. The window bound sits in the aggregates rather than the
+ * scan on purpose: a `hour>=$2` predicate under the scan steered the planner
+ * onto migration 026's pool-first index, 1,490 index searches and 9k buffers
+ * for a 358-position wallet, where one primary-key range reads 414. */
+export const windowFlowColumns = `sum(realized_wei) FILTER (WHERE hour>=$2) AS realized,
+      sum(proceeds_wei) FILTER (WHERE hour>=$2)-sum(spent_wei) FILTER (WHERE hour>=$2) AS net,
+      sum(volume_wei) FILTER (WHERE hour>=$2) AS volume,min(hour) AS first_hour,max(hour) AS last_hour`;
 /** The wallet's positions ($1 wallet_ref) with the window's own realized, net
  * and volume per pool summed from its hour rows from the window's first hour
  * ($2, the refresh's own start, so the per-position figures sum to the
- * summary's), each position's mark, and the wallet's unrealized over every
- * supported position beside each row: the sum of their marks, or null while
- * any is unmarked, over the whole set rather than the 500 served. */
+ * summary's) and the hours it traded in, each position's mark, and the
+ * wallet's unrealized over every supported position beside each row: the sum
+ * of their marks, or null while any is unmarked, over the whole set rather
+ * than the 500 served. */
 const positionsSql = `WITH marked AS (
-    SELECT p.pool_ref,i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
-      p.quantity_raw::text AS quantity_raw,p.cost_wei::text AS cost_wei,p.realized_wei::text AS realized_wei,
-      p.invested_wei::text AS invested_wei,p.proceeds_wei::text AS proceeds_wei,p.buys,p.sells,
-      coalesce(f.realized,0)::text AS window_realized,coalesce(f.net,0)::text AS net,coalesce(f.volume,0)::text AS volume,
-      ${markSql} AS mark
-    FROM agg_positions p JOIN indexed_pools i USING (pool_ref)
-    LEFT JOIN agg_pool_state s ON s.chain_id=p.chain_id AND s.pool_ref=p.pool_ref
+    SELECT ${positionColumns}
+    FROM ${positionSources}
     LEFT JOIN (
-      SELECT pool_ref,sum(realized_wei) AS realized,sum(proceeds_wei)-sum(spent_wei) AS net,sum(volume_wei) AS volume
-      FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND hour>=$2 GROUP BY pool_ref
+      SELECT pool_ref,${windowFlowColumns}
+      FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 GROUP BY pool_ref
     ) f ON f.pool_ref=p.pool_ref
     WHERE p.chain_id=4663 AND p.wallet_ref=$1
   )
   SELECT m.*,mark::text AS unrealized,
     (SELECT CASE WHEN count(*)=0 OR bool_or(mark IS NULL) THEN NULL ELSE sum(mark)::text END FROM marked WHERE supported) AS wallet_unrealized
   FROM marked m ORDER BY m.pool_id LIMIT 501`;
+/** A served position row (`positionColumns` with `mark::text AS unrealized`)
+ * as the wallet page publishes it, with the read-time counterparty flags for
+ * its pool appended to the fold's: `asOf` and `throughBlock` are the ledger
+ * cut on every position, `decimals` is the catalog's, null when unread and
+ * never defaulted, and an excluded position serves its counts and volume and
+ * null for every finance and for `position`. A supported position's block
+ * carries its times beside the fold's state: `openedAt`, when its open cycle
+ * began (null while flat), and `firstHour` and `lastHour`, the hours of its
+ * first and last swap at the hour's start. */
+export function walletPosition(
+  p: Record<string, any>,
+  address: string,
+  cut: LedgerCut,
+  counterparty: readonly string[] = [],
+): AnalyticsWalletPosition {
+  return {
+    poolId: p.pool_id,
+    token: p.token,
+    symbol: p.symbol,
+    decimals: p.decimals === null ? null : Number(p.decimals),
+    launchTx: p.launch_tx,
+    asOf: cut.asOf,
+    throughBlock: cut.block,
+    supported: p.supported,
+    flags: [...p.flags, ...counterparty],
+    realizedWei: p.supported ? p.window_realized : null,
+    netWei: p.supported ? p.net : null,
+    unrealizedWei: p.unrealized,
+    volumeWei: p.volume,
+    position: p.supported
+      ? {
+          poolId: p.pool_id,
+          trader: address as `0x${string}`,
+          quantity: p.quantity_raw,
+          costWei: p.cost_wei,
+          realizedWei: p.realized_wei,
+          investedWei: p.invested_wei,
+          proceedsWei: p.proceeds_wei,
+          buys: p.buys,
+          sells: p.sells,
+          flags: [],
+          realizations: [],
+          openedAt:
+            p.cycle_opened_at === null ? null : Number(p.cycle_opened_at),
+          firstHour: p.first_hour === null ? null : Number(p.first_hour) * 3600,
+          lastHour: p.last_hour === null ? null : Number(p.last_hour) * 3600,
+        }
+      : null,
+  };
+}
 /** The wallet's cumulative realized over the window ($1 wallet_ref, hours
  * from $2, the refresh's own start, through $3, the refresh's hour), one
  * point per hour with a sale on a supported position, summed across pools:
@@ -98,7 +171,7 @@ const positionStatsSql = `SELECT count(*) FILTER (WHERE supported AND buys+sells
  * append-only positive-evidence registry. The registry is optional until the
  * attended provenance activation. No row means no classification, and these
  * advisory flags never affect support, basis or a financial figure. */
-async function counterpartyFlags(query: ReadQuery, address: string) {
+export async function counterpartyFlags(query: ReadQuery, address: string) {
   const ready = await query(
     `SELECT to_regclass('agg_transfer_provenance') IS NOT NULL AS provenance,
       to_regclass('agg_transfer_counterparty_registry') IS NOT NULL AS registry`,
@@ -246,36 +319,11 @@ export async function readLedgerWallet(
   }
   return response(
     wallet,
-    positions.slice(0, 500).map((p) => ({
-      poolId: p.pool_id,
-      token: p.token,
-      symbol: p.symbol,
-      decimals: p.decimals === null ? null : Number(p.decimals),
-      launchTx: p.launch_tx,
-      asOf: cut.asOf,
-      throughBlock: cut.block,
-      supported: p.supported,
-      flags: [...p.flags, ...(attributed.get(Number(p.pool_ref)) ?? [])],
-      realizedWei: p.supported ? p.window_realized : null,
-      netWei: p.supported ? p.net : null,
-      unrealizedWei: p.unrealized,
-      volumeWei: p.volume,
-      position: p.supported
-        ? {
-            poolId: p.pool_id,
-            trader: address as `0x${string}`,
-            quantity: p.quantity_raw,
-            costWei: p.cost_wei,
-            realizedWei: p.realized_wei,
-            investedWei: p.invested_wei,
-            proceedsWei: p.proceeds_wei,
-            buys: p.buys,
-            sells: p.sells,
-            flags: [],
-            realizations: [],
-          }
-        : null,
-    })),
+    positions
+      .slice(0, 500)
+      .map((p) =>
+        walletPosition(p, address, cut, attributed.get(Number(p.pool_ref))),
+      ),
     positions.length > 500,
     curve,
     Number(curveRows[0]?.total ?? 0) > curveRows.length,

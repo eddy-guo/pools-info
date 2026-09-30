@@ -211,3 +211,61 @@ export interface AnalyticsWalletResponse {
   /** Per-position realization lists are omitted by the SQL aggregate reader. */
   positionRealizationsIncluded?: boolean;
 }
+/** The pool's latest price state, the basis of a position's `unrealizedWei`
+ * (`GET /v1/wallets/:address/positions/:poolId`). */
+export interface WalletPositionMark {
+  /** The pool's latest folded sqrtPriceX96 at the ledger cut, exact. */
+  sqrtPriceX96: string;
+  /** Wei per whole token at the ledger cut; null while the token's decimals
+   * are unknown or conflict with verified units. The pool page may serve a
+   * newer deep publication. */
+  priceWei: string | null;
+  /** The swap that set the state. */
+  block: number;
+  timestamp: number;
+  txHash: string;
+  /** What the held units fetch at that price, `unrealizedWei + costWei`
+   * ("0" for a flat position); null for an excluded or unmarked position. */
+  valueWei: string | null;
+}
+/** A supported position's inventory cycles over its whole history. */
+export interface WalletPositionCycles {
+  /** Unix seconds the open cycle began (the buy that took the position from
+   * flat); null while flat. */
+  openedAt: number | null;
+  /** How long the open cycle has been held at the position's cut, bounded at
+   * zero when block timestamps run backward; null while flat. */
+  openHoldSeconds: number | null;
+  /** Cycles closed by a sale. */
+  closures: number;
+  /** The closed cycles' summed hold, so the average is `holdSeconds / closures`. */
+  holdSeconds: number;
+}
+/** One wallet-position from the aggregate ledger, the position PnL card's
+ * read (`docs/LEDGER-MARKET-SERVING.md`, "A single position"). */
+export interface WalletPositionResponse {
+  coverage: AnalyticsCoverage;
+  window: LiveWindow;
+  /** The wallet, lowercased. */
+  wallet: string;
+  /** The catalog row the card names the pool by. */
+  pool: CatalogPool;
+  /** The wallet page's row for this pool, field for field. */
+  position: AnalyticsWalletPosition;
+  /** Null when the pool has no swap folded. */
+  mark: WalletPositionMark | null;
+  /** Realized over disposed cost in percent, the board's ROI; null while
+   * nothing has been disposed or the position is excluded. */
+  roi: number | null;
+  /** Realized plus the mark over invested, in percent; null while the position
+   * is unmarked or excluded or nothing was invested. */
+  totalRoi: number | null;
+  /** The average entry price of the held units, wei per whole token: their
+   * average-cost basis `costWei` over `quantity`. Null while flat, excluded or
+   * the decimals are unknown or conflict with verified units. The ledger keeps
+   * no totals of token units bought or sold, so no lifetime entry or exit
+   * average exists. */
+  avgEntryPriceWei: string | null;
+  /** Null for an excluded position, whose inventory is not served. */
+  cycles: WalletPositionCycles | null;
+}

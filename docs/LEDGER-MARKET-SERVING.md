@@ -106,7 +106,11 @@ is at its row bound, 1h serves no volume, trade count or change and its
   `10^decimals`, null until the supply has been read. The supply is written by
   `pnpm supply:read run`, a Multicall3 read of `totalSupply()` over the public
   RPC with the block it was read at (`token_supply_block`); see
-  `docs/LEDGER-CUTOVER.md`.
+  `docs/LEDGER-CUTOVER.md`. The supply itself is served beside it as
+  `market.supplyRaw` on every pool market response (raw token units, null
+  when the pool is unindexed or its supply has not been read), so a holding's
+  share of supply is `quantity / supplyRaw` when supply is nonzero, rather
+  than a lossy `fdvWei / priceWei`.
 - **Creator fee** (`market.creatorFees`, pool page only, optional): whether
   the deployment that launched the pool takes creator fees, from
   `indexed_pools.creator_fees` (migration 021, written by the launch lane at
@@ -363,7 +367,13 @@ response is the accounting reader's, field for field; what its values mean:
   the window's own figures per pool, summed from `agg_wallet_hours` from the
   refresh's own first hour so they sum to the summary's; `position` is the
   fold's lifetime state (`quantity`, `costWei`, lifetime `realizedWei`,
-  `investedWei`, `proceedsWei`, `buys`, `sells`); `asOf` and `throughBlock`
+  `investedWei`, `proceedsWei`, `buys`, `sells`) with its times: `openedAt`,
+  when its open inventory cycle began (`cycle_opened_at`, unix seconds; null
+  while flat), and `firstHour` and `lastHour`, the UTC hours of its first and
+  last attributed swap as unix seconds at the hour's start, from the same
+  pass over its hour rows as the window's sums, the honest bounds of a closed
+  position's span, since the ledger keeps swaps per hour and no first swap
+  time; `asOf` and `throughBlock`
   are the ledger cut on every position (there is no per-pool capture cutoff
   any more); `decimals` is `indexed_pools.decimals`, null when unread, never
   defaulted. An excluded position (`supported` false, an excluding flag among
@@ -405,7 +415,12 @@ Cost: one unique-index probe for the `wallet_ref`, one primary-key probe on
 stats when the window has no row), and for the positions one
 `agg_positions_wallet` range with one `indexed_pools` and one
 `agg_pool_state` probe per position plus one `agg_wallet_hours` primary-key
-range grouped per pool; the busiest ranked wallet on the 17 Sep copy has
+range grouped per pool, the window's sums filtered inside the aggregates
+rather than under the scan (a `hour>=$2` predicate there steered the planner
+onto migration 026's pool-first index and a filtered nested loop: 11,698
+buffers and 20 ms against 3,077 and 3 ms for a 358-position wallet on the
+production-shape copy, measured when the hour span joined the row on 29 Sep);
+the busiest ranked wallet on the 17 Sep copy has
 3,070 hour rows and 23 positions, the widest a few thousand positions, which
 the 500 cap bounds on the wire but not in the mark's sum. The curve is one
 more `agg_positions_wallet` range (the supported positions) with one
@@ -415,6 +430,96 @@ busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
 `min(hour)` over the same ranges on All. Warm on the production-shape copy
 (Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
 current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
+
+### A single position
+
+`GET /v1/wallets/:address/positions/:poolId?window=`
+(`apps/api/src/ledger-position.ts`, `WalletPositionResponse` in
+`packages/core/src/analytics-types.ts`) is the read behind the position PnL
+card: one wallet-position, named by the wallet and the pool page's own
+32-byte pool id (a wallet holds at most one position per pool; the plural
+`wallets` form only, no singular alias), default window `All`. `position` is
+the wallet page's row for that pool: the same `positionColumns`
+over the same sources, the same cut and the same window start, mapped by the
+same `walletPosition` in `ledger-wallet.ts`, so a consumer of the page reuses
+its type, and `ledger-position.integration.test.ts` pins the two equal on
+every window, under a units conflict and in a pool with unknown decimals
+too: the mark in wei (`markSql`) does not depend on the decimals, so only
+the figures per whole token are withheld without trusted units. Beside it
+are the card's additional figures, null where the ledger cannot vouch for
+them:
+
+- **`pool`** is the catalog row (`CatalogPool`), the identity a card names the
+  token by.
+- **`mark`** is the price state behind `unrealizedWei` at the ledger cut:
+  `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, null while
+  the token's decimals are unknown, exceed 36, or a verified snapshot inside
+  the ledger cut disagrees with indexed decimals), the swap that set it
+  (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
+  fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
+  null for an excluded or unmarked one). Null when the pool has no swap
+  folded. A newer deep publication can make the pool page's current price
+  differ from this ledger-cut price.
+- **`roi`** is the ledger's ROI as the board and the wallet header define it:
+  lifetime realized over lifetime disposed cost (`investedWei - costWei` on a
+  supported position, since an outflow excludes), in percent to four decimals
+  truncated toward zero in integer arithmetic (`walletSummary`'s rule), null
+  while nothing has been disposed. **`totalRoi`** is realized plus the mark
+  over invested, the open position's whole return, null while unmarked; on a
+  flat position the two are equal, since invested is then disposed cost.
+- **`avgEntryPriceWei`** is the average entry price of the held units, wei
+  per whole token: their average-cost basis (`costWei` times ten to the
+  `decimals` over `quantity`, truncated), the price a card sets against
+  `mark.priceWei`. Null while flat, excluded or the decimals are unknown or
+  conflict with a verified snapshot or exceed 36. The fold keeps no count of raw
+  token units bought or sold (only the held quantity, and no row per swap), so a
+  lifetime average entry price and an average exit price cannot be derived
+  and are not served; serving them would need a writer change, not a read.
+- **`cycles`** is the position's inventory cycles over its whole history,
+  never windowed: `openedAt`, when the open cycle began (`cycle_opened_at`,
+  exact seconds; null while flat) and `openHoldSeconds`, how long it has
+  been held at the cut (bounded at zero when block timestamps run backward),
+  and from its hour rows the `closures`, summed
+  `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds`
+  over `closures`, the header's `avgHold` per position). Null for an excluded
+  position, whose inventory is not served.
+  The nested `position.position` retains the wallet page's `openedAt`,
+  `firstHour` and `lastHour`. The latter two bound a closed position's span at
+  UTC-hour precision; there is no separate activity object or exact first-buy
+  timestamp.
+
+An excluded position answers `supported: false` with its flags, null finances
+and no `position`, as the page does, and `mark.valueWei`, `roi`, `totalRoi`
+and `cycles` null. A pool the catalog lacks answers 404 `pool_not_indexed` as
+the pool route does; a wallet the ledger never attributed a swap or transfer
+to 404 `wallet_not_found`; a wallet that never held or traded the pool's
+token 404 `position_not_found`. A ledger that has folded nothing, or a
+deployment on the broad source, answers 503 `position_coverage_unavailable`
+rather than the frozen accounting tables; a window without a refresh row 503
+`position_refresh_pending`, as the page's `wallet_refresh_pending`; a catalog
+whose recent and indexed rows disagree on a pool's identity 503
+`catalog_identity_conflict`, as the pool route answers. Caching
+is the page's: `Cache-Control: no-store`, coalesced and cached in process for
+five seconds.
+
+Cost: the cut, the catalog identity check the pool route runs (a join of
+`recent_pools` to `indexed_pools`, 0.04 ms warm on the copy, whose
+`recent_pools` is empty), one catalog probe by pool id, one unique-index probe for the
+`wallet_ref`, the window's refresh row, then one statement over one
+`agg_positions` primary-key probe with its `indexed_pools` and
+`agg_pool_state` probes and one `agg_wallet_hours` primary-key range (the
+window's flow, the hours traded in and the lifetime closures in one pass),
+then the coverage's two counts and the counterparty legs. On the production-shape copy (Postgres 18, 2.18M
+positions, 3.06M hour rows, migrated through 026) the position statement
+reads 14 to 15 buffers and runs in 0.04 to 0.06 ms warm, 1 to 2.5 ms on
+first touch (8 to 10 buffers read from disk); the busiest wallet-pool pair
+(879 hour rows) reads 702 buffers, 0.5 ms warm and 22 to 30 ms on first
+touch. The route answers in 14 to 15 ms warm end to end, of which the coverage
+envelope's two counts (the catalog's 3,952 buffers, about 9 to 14 ms, and
+`agg_pool_state`'s 1,559, about 6 ms) are the bulk, the same envelope every
+ledger read pays; a first read after a process start is 25 to 140 ms with
+the pool's connection. Nothing here needs an index beyond the primary keys
+migration 017 laid down.
 
 ## The creators aggregate
 

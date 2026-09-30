@@ -14,6 +14,11 @@ export interface ObservedMarket {
    * supply. Served only with the aggregate ledger's market, null there until
    * the supply has been read; absent on the broad and raw paths. */
   fdvWei?: string | null;
+  /** The token's measured total supply in raw units from
+   * `indexed_pools.token_total_supply_raw` (migration 019). A holding's share
+   * of supply is `quantity / supplyRaw`. Null when the pool is unindexed or
+   * its supply has not been read. */
+  supplyRaw?: string | null;
   /** Whether the pool's launching deployment takes creator fees. It is a
    * property of that deployment rather than of the pool, so it comes from the
    * pinned registry in `packages/chain/src/deployments.ts`, stored per pool
@@ -51,9 +56,7 @@ export interface ObservedMarket {
       | (MarketBoundary & {
           decimals: number;
           source:
-            | "broad_token_units"
-            | "verified_deep_snapshot"
-            | "aggregate_ledger";
+            "broad_token_units" | "verified_deep_snapshot" | "aggregate_ledger";
         })
       | null;
     unitsConflict: boolean;
@@ -110,6 +113,7 @@ export function assertObservedMarket(
     !(v.priceWei === null || uint(v.priceWei)) ||
     !(v.fdvWei === undefined || v.fdvWei === null || uint(v.fdvWei)) ||
     (v.fdvWei != null && v.priceWei === null) ||
+    !(v.supplyRaw === undefined || v.supplyRaw === null || uint(v.supplyRaw)) ||
     !(v.creatorFees === undefined || typeof v.creatorFees === "boolean") ||
     !(v.volumeWei === null || uint(v.volumeWei)) ||
     !(v.trades === null || integer(v.trades)) ||

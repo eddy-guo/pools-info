@@ -28,6 +28,7 @@ import {
   ledgerFreshnessDefaults,
   readLedgerFreshness,
 } from "./ledger-freshness";
+import { readLedgerPosition } from "./ledger-position";
 import type { RegistryToken } from "./token-registry";
 import {
   encodeCursor,
@@ -201,6 +202,7 @@ export async function readData(
     // release ahead of it stays unready and the previous release keeps
     // serving until the column exists.
     await query("SELECT creator_fees FROM indexed_pools WHERE false");
+    await query("SELECT token_total_supply_raw FROM indexed_pools WHERE false");
     // The launch type (migration 024) is named by the same CTE.
     await query("SELECT launch_type FROM indexed_pools WHERE false");
     if (marketSource === "ledger") {
@@ -219,9 +221,7 @@ export async function readData(
       // 025), which the tip loop's start applies.
       await query("SELECT 1 FROM agg_trader_windows WHERE false");
       await query("SELECT 1 FROM wallet_code_observations WHERE false");
-      await query(
-        "SELECT token_total_supply_raw,token_supply_block FROM indexed_pools WHERE false",
-      );
+      await query("SELECT token_supply_block FROM indexed_pools WHERE false");
     }
     await accountingCoverage(query);
     return { ready: true };
@@ -242,6 +242,17 @@ export async function readData(
     if (marketSource !== "ledger")
       throw new RequestError(503, "stats_coverage_unavailable");
     return readLedgerStats(query, request.window);
+  }
+  if (request.route === "position") {
+    // A ledger read only: no frozen accounting table stands in for it.
+    if (marketSource !== "ledger")
+      throw new RequestError(503, "position_coverage_unavailable");
+    return readLedgerPosition(
+      query,
+      request.wallet!,
+      request.poolId!,
+      request.window,
+    );
   }
   if (request.route === "leaderboard")
     return (
@@ -411,7 +422,10 @@ export async function readData(
   if (request.route === "pool") {
     await assertCatalogIdentity(query);
     const result = await query(
-      `${catalogCte} SELECT ${poolColumns}, ${coverageColumns} FROM catalog p
+      `${catalogCte} SELECT ${poolColumns}, ${coverageColumns},
+        (SELECT token_total_supply_raw::text FROM indexed_pools i
+          WHERE i.chain_id=p.chain_id AND i.pool_id=p.pool_id) AS supply_raw
+      FROM catalog p
       LEFT JOIN indexer_streams s ON s.chain_id=p.chain_id AND s.pool_id=p.pool_id AND s.kind='pool'
       WHERE p.chain_id=4663 AND p.pool_id=$1`,
       [request.poolId],
@@ -444,6 +458,10 @@ export async function readData(
         : null,
       marketSource,
     );
+    const poolMarket = {
+      ...market,
+      supplyRaw: result.rows[0].supply_raw ?? null,
+    };
     return {
       ...base,
       pool: poolItem(result.rows[0]),
@@ -462,13 +480,13 @@ export async function readData(
       // a fee, which is a claim about someone's money.
       market: servedByLedger(market)
         ? withCreatorFees(
-            market,
+            poolMarket,
             creatorFeeFlag(
               result.rows[0].creator_fees,
               analytics?.snapshot.markets[0]?.creatorFees,
             ),
           )
-        : market,
+        : poolMarket,
       latestRecordedSwap: latest.rows.length ? eventItem(latest.rows[0]) : null,
     };
   }
