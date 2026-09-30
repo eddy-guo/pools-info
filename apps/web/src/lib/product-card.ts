@@ -26,18 +26,21 @@ async function readCardWalletUncached(
   window: LiveWindow,
   poolId?: string,
   launchTx?: string,
+  visitor: string | null = null,
 ): Promise<CardWallet> {
   if (!poolId)
     return {
       result: await readProduct<AnalyticsWalletResponse>(
         ["wallets", address],
         new URLSearchParams({ window }),
+        visitor,
       ),
       poolSymbol: null,
     };
   const saved = await readProduct<{ analytics: AnalyticsPoolDetail | null }>(
     ["pools", poolId],
     new URLSearchParams({ window }),
+    visitor,
   );
   const publication = saved.analytics,
     market = publication?.snapshot.markets[0];
@@ -74,6 +77,7 @@ export function readCardWallet(
   window: LiveWindow,
   poolId?: string,
   launchTx?: string,
+  visitor: string | null = null,
 ): Promise<CardWallet> {
   const key = [address, window, poolId ?? "", launchTx ?? ""].join(":"),
     now = Date.now(),
@@ -81,7 +85,7 @@ export function readCardWallet(
   if (held && held.expires > now) return held.read;
   for (const [k, entry] of reads)
     if (entry.expires <= now || reads.size >= cardReadEntries) reads.delete(k);
-  const read = readCardWalletUncached(address, window, poolId, launchTx);
+  const read = readCardWalletUncached(address, window, poolId, launchTx, visitor);
   reads.set(key, { expires: now + cardReadLifetimeMs, read });
   read.catch(() => {
     if (reads.get(key)?.read === read) reads.delete(key);

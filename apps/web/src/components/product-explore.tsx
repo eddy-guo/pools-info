@@ -293,14 +293,12 @@ function ScreenerStats({
     // The query store's server snapshot is empty during hydration. A saved
     // window URL must settle before deciding whether this is a new window.
     if (browserWindow !== window) return;
-    // A route absent at first paint has no row or reserved gap. A subsequent
-    // deployment becomes visible on reload, when the server can size it first.
     if (
       (!initial && initialRetryAfter === null) ||
-      (initial && answer.window === window)
+      (answer.data && answer.window === window)
     )
       return;
-    const initialDelay = initial
+    const initialDelay = initial || answer.data
       ? 0
       : retryAfterMilliseconds(initialRetryAfter);
     if (initialDelay === null) return;
@@ -314,7 +312,7 @@ function ScreenerStats({
         validateStatsResponse(data, window);
         if (controller.signal.aborted) return;
         if (!initial) {
-          location.reload();
+          setAnswer({ window, data });
           return;
         }
         if (
@@ -348,18 +346,21 @@ function ScreenerStats({
     initialRetryAfter,
     window,
   ]);
-  if (!initial) return null;
-  const pending = answer.window !== window;
+  if (!initial && initialRetryAfter === null) return null;
+  const retryingInitial = !initial && initialRetryAfter !== null;
+  const pending = answer.window !== window || !answer.data;
   const data = pending ? null : answer.data;
   if (!pending && !data) return null;
-  const labelWindow = answer.data?.window ?? initial.window;
+  const labelWindow = answer.data?.window ?? initial?.window ?? window;
   const active = pending ? answer.data?.activeTraders : data?.activeTraders;
   return (
     <section
       className="stats-grid screener-stats"
       aria-label="Screener stats"
       aria-busy={pending}
-      data-has-active={active !== null && active !== undefined}
+      data-has-active={
+        retryingInitial || (active !== null && active !== undefined)
+      }
     >
       <div className="stat">
         <span>Volume · {labelWindow}</span>
@@ -382,7 +383,8 @@ function ScreenerStats({
           )}
         </strong>
       </div>
-      {active !== null && active !== undefined && (
+      {(retryingInitial && pending) ||
+      (active !== null && active !== undefined) ? (
         <div className="stat">
           <span title="Wallets with an attributed trade in the window">
             Traders · {labelWindow}
@@ -395,7 +397,7 @@ function ScreenerStats({
             )}
           </strong>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

@@ -262,7 +262,7 @@ test("busy database and explorer refusals leave the client's tokens available", 
           { read: hold, async close() {} },
           {
             now: () => 0,
-            maxPerMinute: 1000,
+            maxPerMinute: limit + 3,
             history,
             ingress: ingressSettings({
               TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
@@ -283,6 +283,7 @@ test("busy database and explorer refusals leave the client's tokens available", 
       );
       while (started < limit)
         await new Promise((resolve) => setImmediate(resolve));
+      const coalesced = as(1, "203.0.113.3");
       try {
         for (let i = 0; i < (kind === "database" ? 6 : 2); i++) {
           const busy = await as(limit + i + 1, "203.0.113.1");
@@ -293,7 +294,9 @@ test("busy database and explorer refusals leave the client's tokens available", 
         releases.forEach((release) => release());
         await Promise.all(held);
       }
+      assert.equal((await coalesced).status, 200);
       assert.equal((await as(limit + 9, "203.0.113.1")).status, 200);
+      assert.equal((await as(limit + 10, "203.0.113.2")).status, 200);
     });
   }
 });

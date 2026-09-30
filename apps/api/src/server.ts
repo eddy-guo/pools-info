@@ -179,6 +179,12 @@ export function createApi(
             hit.expires > now() &&
             hit.version === version) ||
           pending.has(request.cacheKey);
+        if (
+          request.route !== "eth-price" &&
+          !served &&
+          (explorerRead ? activeExplorer >= 8 : active >= 16)
+        )
+          throw new RequestError(503, "busy", { retryAfter: 5 });
         const cost =
           ingressPolicy.cost[served ? "cached" : routeCostClass(request.route)];
         const client = clientIdentity(req, ingress.identity);
@@ -222,10 +228,8 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (explorerRead ? activeExplorer >= 8 : active >= 16) {
-          if (charged !== null) clients.refund(charged.client, charged.cost);
+        if (request.route === "ready" && active >= 16)
           throw new RequestError(503, "busy", { retryAfter: 5 });
-        }
         if (explorerRead) activeExplorer++;
         else active++;
         result = (async () => {
