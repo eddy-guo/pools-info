@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { BlockList, isIP } from "node:net";
+import { ipv6ClientKey } from "@pools/core";
 import type { Route } from "./request";
 
 /**
@@ -29,7 +30,7 @@ export const ingressPolicy = Object.freeze({
   /** Tokens added to a client's bucket per minute. */
   clientTokensPerMinute: 60,
   /** Tokens available to a client at once. */
-  clientTokenBurst: 120,
+  clientTokenBurst: 150,
   /** Distinct clients tracked at once; the least recently seen goes first. */
   maxClients: 10_000,
   /** `/ready` answers per minute, independent of every visitor budget. */
@@ -190,26 +191,7 @@ export function normalizeAddress(
  * address's /64, since one machine commonly holds a whole /64. */
 export function clientKey(address: string): string {
   if (isIP(address) !== 6) return address;
-  return `${expandIPv6(address).slice(0, 4).join(":")}::/64`;
-}
-function expandIPv6(address: string): string[] {
-  let text = address;
-  const tail = /:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
-  if (tail) {
-    const [a, b, c, d] = tail[1].split(".").map(Number);
-    text =
-      text.slice(0, -tail[1].length) +
-      `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
-  }
-  const [head, rest] = text.split("::");
-  const left = head ? head.split(":") : [];
-  const right = rest ? rest.split(":") : [];
-  const missing = 8 - left.length - right.length;
-  return [
-    ...left,
-    ...Array(rest === undefined ? 0 : missing).fill("0"),
-    ...right,
-  ].map((group) => group.replace(/^0+(?=.)/, "") || "0");
+  return ipv6ClientKey(address);
 }
 function forwardedEntries(headers: IncomingHttpHeaders): string[] {
   const raw = headers["x-forwarded-for"];

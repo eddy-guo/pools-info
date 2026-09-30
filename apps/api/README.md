@@ -216,7 +216,7 @@ budget that refused; a refused request does no work and spends nothing. In
 order, a JSON request meets:
 
 - `client_budget`: the caller's own token bucket, when the contract below can
-  name the caller. Its capacity is `CLIENT_TOKEN_BURST` (default 120,
+  name the caller. Its capacity is `CLIENT_TOKEN_BURST` (default 150,
   at least the refill), and `CLIENT_TOKENS_PER_MINUTE` refills it
   continuously (default 60, minimum 10). At startup, valid settings that
   exceed the shared JSON ceiling are clamped so burst plus one minute of
@@ -229,9 +229,9 @@ order, a JSON request meets:
   profile) and 8 for a paid explorer page (wallet history, following).
   `Retry-After` is the seconds until the refill covers the cost. Ordinary
   browsing (the screener, three pool pages and a wallet page inside a
-  minute, measured through the website) spends about a third of the
-  default burst. At most 10,000 clients are tracked at once; the least recently
-  seen is dropped first, and a dropped client that returns starts full. HEAD
+  minute, measured through the website) spends under a third of the
+  default burst. At most 10,000 clients are tracked at once; the least
+  recently seen is dropped first, and a dropped client that returns starts full. HEAD
   costs what GET costs, since it does the same read. A request the shared
   ceiling then refuses is refunded to its client.
 - `shared_budget`: the process's 240 requests/minute ceilings, one for the
@@ -276,9 +276,10 @@ capacity instead of folding every visitor into one budget:
 - `CLIENT_IDENTITY=peer`: the connection's own address is the client, for an
   api reached directly with no proxy in front.
 
-IPv6 clients are charged by their /64. The startup log line names the
-configured sources (`clientIdentity`); identities are never logged, stored
-or answered back.
+IPv6 clients are charged by their /64 at both the api and the website's
+admission line; the website forwards the full address. The startup log line
+names the configured sources (`clientIdentity`); identities are never logged,
+stored or answered back.
 
 ## Published analytics and product endpoints
 

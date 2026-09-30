@@ -57,6 +57,29 @@ test("one visitor's spent line refuses that visitor alone, with the wait to clea
   assert.equal(admissionPolicy.requestsPerMinute, 120);
 });
 
+test("IPv6 visitors share a /64 admission bucket while retaining full upstream identity", () => {
+  const admission = createAdmission(
+    { requestsPerMinute: 2, maxVisitors: 100 },
+    () => 0,
+  );
+  assert.deepEqual(admission.admit("2001:db8:1:2::1"), { ok: true });
+  assert.deepEqual(admission.admit("2001:0DB8:1:2::2"), { ok: true });
+  assert.deepEqual(admission.admit("2001:db8:1:2::3"), {
+    ok: false,
+    retryAfterSeconds: 30,
+  });
+  assert.deepEqual(admission.admit("2001:db8:1:3::1"), { ok: true });
+  assert.deepEqual(
+    upstreamIdentity("2001:db8:1:2::3", {
+      INDEXER_PROXY_SECRET: "s".repeat(16),
+    }),
+    {
+      "X-Pools-Proxy-Secret": "s".repeat(16),
+      "X-Pools-Client-Address": "2001:db8:1:2::3",
+    },
+  );
+});
+
 test("the read API learns the visitor only under the shared secret", () => {
   assert.deepEqual(upstreamIdentity("203.0.113.9", {}), {});
   assert.deepEqual(
