@@ -166,7 +166,10 @@ export function createApi(
       let charged: { client: string; cost: number } | null = null;
       if (request.route === "ready") {
         const wait = probeBudget();
-        if (wait !== null) refuse("probe_budget", wait);
+        if (wait !== null) {
+          const sharedWait = readBudget();
+          if (sharedWait !== null) refuse("shared_budget", sharedWait);
+        }
       } else if (request.route === "pool-image") {
         const wait = imageBudget();
         if (wait !== null) refuse("image_budget", wait);

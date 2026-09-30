@@ -676,7 +676,7 @@ test("readiness keeps its own probe allowance; a probe flood spends no visitor b
   );
   for (let i = 0; i < 60; i++)
     assert.equal((await probe()).status, 200, `probe ${i + 1}`);
-  await refusal(await probe(), "probe_budget", "60");
+  await refusal(await probe(), "shared_budget", "60");
   assert.equal((await fetch(url + "/health")).status, 200);
   // The probing client's own budget is untouched by its 61 probes.
   now = 60000;
@@ -690,6 +690,17 @@ test("readiness keeps its own probe allowance; a probe flood spends no visitor b
       i < 3 ? 200 : 429,
       `request ${i + 1}`,
     );
+});
+
+test("readiness falls back to the shared JSON ceiling after its probe allowance", async (t) => {
+  const url = await listen(
+    t,
+    createApi(stubReader(), { now: () => 0, maxPerMinute: 2 }),
+  );
+  for (let i = 0; i < 62; i++)
+    assert.equal((await fetch(url + "/ready")).status, 200, `probe ${i + 1}`);
+  await refusal(await fetch(url + "/ready"), "shared_budget", "60");
+  await refusal(await fetch(url + "/v1/status"), "shared_budget", "60");
 });
 
 test("a request costs its client by the work it starts: cached, light, heavy or paid", async (t) => {

@@ -38,6 +38,7 @@ test("one visitor's spent line refuses that visitor alone, with the wait to clea
   const admission = createAdmission(
     { requestsPerMinute: 30, maxVisitors: 100 },
     () => now,
+    { INDEXER_PROXY_SECRET: "s".repeat(16) },
   );
   for (let i = 0; i < 30; i++)
     assert.deepEqual(
@@ -61,6 +62,7 @@ test("IPv6 visitors share a /64 admission bucket while retaining full upstream i
   const admission = createAdmission(
     { requestsPerMinute: 2, maxVisitors: 100 },
     () => 0,
+    { INDEXER_PROXY_SECRET: "s".repeat(16) },
   );
   assert.deepEqual(admission.admit("2001:db8:1:2::1"), { ok: true });
   assert.deepEqual(admission.admit("2001:0DB8:1:2::2"), { ok: true });
@@ -78,6 +80,24 @@ test("IPv6 visitors share a /64 admission bucket while retaining full upstream i
       "X-Pools-Client-Address": "2001:db8:1:2::3",
     },
   );
+});
+
+test("site admission is inactive until the proxy secret is configured", () => {
+  const env: Record<string, string | undefined> = {};
+  const admission = createAdmission(
+    { requestsPerMinute: 2, maxVisitors: 100 },
+    () => 0,
+    env,
+  );
+  for (let i = 0; i < 3; i++)
+    assert.deepEqual(admission.admit("203.0.113.9"), { ok: true });
+  env.INDEXER_PROXY_SECRET = "s".repeat(16);
+  assert.deepEqual(admission.admit("203.0.113.9"), { ok: true });
+  assert.deepEqual(admission.admit("203.0.113.9"), { ok: true });
+  assert.deepEqual(admission.admit("203.0.113.9"), {
+    ok: false,
+    retryAfterSeconds: 30,
+  });
 });
 
 test("the read API learns the visitor only under the shared secret", () => {

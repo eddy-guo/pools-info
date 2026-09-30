@@ -246,11 +246,11 @@ The in-flight bound is 16 distinct database reads or 8 explorer reads. The
 readiness route also uses the database bound, independently of visitor tokens.
 
 Icons keep their own `image_budget` of 1,200 requests/minute and are never
-charged to a client. `/ready` draws on its own `probe_budget` of 60 answers a
-minute in place of any visitor budget, so a health monitor is never starved by
-visitor traffic and a probe flood spends no visitor's budget; `/health` is
-outside these budgets and remains unlimited. `/v1/prices/eth-usd` is charged
-like any JSON read.
+charged to a client. `/ready` draws on its own allowance of 60 answers a
+minute in place of any visitor budget; after that it uses the shared JSON
+ceiling and answers `shared_budget` only when that ceiling is spent too.
+Probes spend no visitor tokens; `/health` is outside these budgets and remains
+unlimited. `/v1/prices/eth-usd` is charged like any JSON read.
 
 Who the caller is comes from an explicit contract, never from a header any
 caller could set on direct traffic; a request the contract cannot attribute
@@ -281,12 +281,20 @@ capacity instead of folding every visitor into one budget:
 - `CLIENT_IDENTITY=peer`: the connection's own address is the client, for an
   api reached directly with no proxy in front.
 
+#### Turning on per-visitor limits
+
+Set `TRUSTED_PROXY_SECRET` on the api and the same value as
+`INDEXER_PROXY_SECRET` on the website. The website setting also switches on
+its admission line. Optionally set `TRUSTED_PROXY_ADDRESSES` for trusted edge
+peers or `CLIENT_IDENTITY=peer` for a directly reached api. With none of these
+identity settings set, every limit behaves as before this change.
+
 IPv6 clients are charged by their /64 at both the api and the website's
 admission line; the website forwards the full address. The startup log line
 names the configured sources (`clientIdentity`); identity keys remain only in
 bounded process memory and are never logged or answered back.
 
-When configured to read the API, the website gives each visitor a 120-read
+When `INDEXER_PROXY_SECRET` is set, the website gives each visitor a 120-read
 burst, refilled at 120 reads per minute, before forwarding product,
 market, feed, card and server-rendered stats reads. Its bucket is per website
 process and groups IPv6 visitors by /64. Refused product reads answer 503 with

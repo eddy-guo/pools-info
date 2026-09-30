@@ -39,6 +39,7 @@ export type Admission = { ok: true } | { ok: false; retryAfterSeconds: number };
 export function createAdmission(
   policy: { requestsPerMinute: number; maxVisitors: number } = admissionPolicy,
   now: () => number = Date.now,
+  env: Record<string, string | undefined> = process.env,
 ) {
   const buckets: TokenBuckets = createTokenBuckets(
     {
@@ -52,7 +53,7 @@ export function createAdmission(
     /** A visitor the platform did not name draws on the read API's shared
      * ceilings alone, as every unattributed request does there. */
     admit(visitor: string | null): Admission {
-      if (visitor === null) return { ok: true };
+      if (!env.INDEXER_PROXY_SECRET || visitor === null) return { ok: true };
       const key = isIP(visitor) === 6 ? ipv6ClientKey(visitor) : visitor;
       const answer = buckets.take(key, 1);
       return answer.ok
