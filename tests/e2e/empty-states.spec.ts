@@ -3,8 +3,8 @@ import { test, expect, type Page } from "@playwright/test";
 // The audit measured the screener's "No pools match these filters" block at
 // y=2460 (desktop) and y=6169 (mobile): it rendered after the reserved table
 // area instead of inside it, so the user saw a blank panel. These checks pin
-// the message to the top of that area at both viewports, and pin the reserved
-// geometry so the panel never collapses under it.
+// the message to the top of that area at both viewports, and pin the short
+// slot an empty answer keeps in place of the first page it reserved.
 const wallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 const viewports = {
   desktop: { width: 1440, height: 1000 },
@@ -17,15 +17,15 @@ function surface(testInfo: { project: { name: string } }) {
         viewport: viewports.desktop,
         rows: ".explore-page .desktop-pools",
         maxTop: 1000,
-        /* The reserved first page: 25 rows at 62px under the 34px header. */
-        reservedHeight: 25 * 62 + 34,
+        /* The empty answer's slot: 3 rows at 62px under the 34px header. */
+        reservedHeight: 3 * 62 + 34,
       } as const)
     : ({
         viewport: viewports.mobile,
         rows: ".explore-page .mobile-pools",
         maxTop: 1500,
-        /* The reserved first page: 25 cards at 104px. */
-        reservedHeight: 25 * 104,
+        /* The empty answer's slot: 3 cards at 104px. */
+        reservedHeight: 3 * 104,
       } as const);
 }
 
@@ -88,7 +88,7 @@ test("the screener's empty state reads inside the panel, under the toolbar", asy
   ).toBeLessThan(reserved.height / 2);
   expect(
     reserved.height,
-    "the reserved table area keeps its first page's height rather than collapsing",
+    "the empty answer keeps a short slot for its message, not the first page",
   ).toBe(reservedHeight);
   expect(
     await bufferedShiftSum(page),
@@ -126,7 +126,7 @@ test("the wallet's empty positions use the same designed empty state", async ({
     const reserved = page.locator(
       '.wallet-page .mobile-position[data-row="reserved"]',
     );
-    await expect(reserved).toHaveCount(25);
+    await expect(reserved).toHaveCount(3);
     await expect(reserved.first()).toBeHidden();
   }
 

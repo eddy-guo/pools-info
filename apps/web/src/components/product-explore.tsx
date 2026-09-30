@@ -46,11 +46,12 @@ import { PoolImage } from "./pool-image";
 import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
 import {
   EXPLORE_ROWS_CAP,
-  reservedRowCount,
+  answeredRowCount,
   SHOW_MORE_STEP,
   ShowMore,
 } from "./product-common";
 import { countLabel } from "@/lib/plural";
+import { useBelowListKey, useListRelease } from "@/lib/list-release";
 const subscribeClock = (notify: () => void) => {
   const id = setInterval(notify, 30000);
   return () => clearInterval(id);
@@ -379,8 +380,12 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
     `leaderboard?limit=5&window=${window}&minTrades=10`,
   );
   const failed = !!leaders.error && !leaders.data;
+  /* Stacked under the list on a phone, the rail moves up when the list
+     releases rows it reserved; its section remounts there instead, keeping
+     this read (lib/list-release.ts). */
+  const releaseKey = useBelowListKey();
   return (
-    <section className="panel explore-leaders">
+    <section className="panel explore-leaders" key={releaseKey}>
       <div className="panel-heading">
         <h2>Top traders · {window}</h2>
       </div>
@@ -638,7 +643,8 @@ export function ProductExplore({
           };
           const left = metric(a);
           const right = metric(b);
-          if (left === null) return right === null ? a.id.localeCompare(b.id) : 1;
+          if (left === null)
+            return right === null ? a.id.localeCompare(b.id) : 1;
           if (right === null) return -1;
           return (
             (left > right ? 1 : left < right ? -1 : 0) *
@@ -670,9 +676,16 @@ export function ProductExplore({
      skeletons under the ones on show, and a row past the list's end is left
      blank rather than shimmering for nothing. */
   const shownRows = Array.from(
-    { length: reservedRowCount(shown, failed) },
+    /* Sized by the answer on show (a previous query's, while this one's is
+       pending, so a query change resizes the list once, when it lands) and
+       not by what is left of it after an unstar, so a removal leaves its
+       slot until the next navigation. */
+    {
+      length: answeredRowCount(shown, displayList?.total ?? null),
+    },
     (_, index) => rows?.[index],
   );
+  useListRelease(shownRows.length, shown);
   const skeletonAt = (index: number) =>
     !failed && (!displayList || (loading && index < displayList.total));
   /* Show more keeps the reader where they are and lands them on the first
@@ -912,15 +925,16 @@ export function ProductExplore({
                 {error}
               </p>
             )}
-            {/* The reserved row geometry stays put when a filter matches
-                nothing; the empty state overlays the top of that area so the
-                message reads directly under the toolbar instead of below a
-                screen and a half of blank rows. A failed first read is
-                different: `shownRows` above is already length zero, so this
-                region collapses on its own and the failed state below
-                renders right under the toolbar with nothing reserved past
-                it. */}
-            <div className="table-region" data-empty={empty} data-failed={failed}>
+            {/* A filter that matches fewer rows than the page keeps only the
+                rows it fills, and one that matches nothing keeps a short slot
+                the empty state overlays, directly under the toolbar. A failed
+                first read keeps every reserved row, blank, and the failed
+                state overlays the top of them the same way. */}
+            <div
+              className="table-region"
+              data-empty={empty || failed}
+              data-failed={failed}
+            >
               <div
                 className="table-scroll desktop-pools"
                 aria-busy={loading}

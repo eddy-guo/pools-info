@@ -474,8 +474,8 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     }
     return;
   }
-  // The panel reserves its default 25-row shape; only the first five carry
-  // this fixture's data, the rest render as empty reserved rows.
+  // The panel reserves its default 25-row shape until the board lands, then
+  // keeps only the five rows this fixture's board fills.
   const rowsLocator = panel.locator('tbody tr[data-row="resolved"]');
   await expect(rowsLocator).toHaveCount(5);
 

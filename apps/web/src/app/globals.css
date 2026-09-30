@@ -5090,14 +5090,11 @@ button.icon-button:disabled {
   min-width: 0;
   flex: 1;
 }
-/* A view that resolves to no rows keeps its reserved table geometry, so nothing
-   below the panel moves; the empty state overlays the top of that area, under
-   the header row, instead of rendering a screen and a half further down. A
-   failed first read is different: its rows never reserved in the first
-   place (the row array is already length zero), so the region has nothing
-   to overlay - its UnavailableState renders in normal flow instead, right
-   where the collapsed region left off, or the overlay would paint on top of
-   (and behind, in stacking order) whatever follows the now-empty region. */
+/* A view that resolves to no rows keeps a short slot of blank rows
+   (`answeredRowCount`), and a failed first read keeps every row it reserved,
+   so nothing below the panel moves; the empty or failed state overlays the
+   top of that area, under the header row, instead of rendering a screen and
+   a half further down. */
 .table-region {
   position: relative;
 }
@@ -5109,6 +5106,7 @@ button.icon-button:disabled {
 .table-region[data-empty="true"] .mobile-pool,
 .table-region[data-empty="true"] .mobile-launch,
 .table-region[data-empty="true"] .mobile-position,
+.table-region[data-empty="true"] .mobile-creator,
 .table-region[data-empty="true"] .mobile-wallet-row {
   visibility: hidden;
 }
@@ -5180,7 +5178,7 @@ button.icon-button:disabled {
 .explore-page .table-region {
   container: pool-list / inline-size;
 }
-.explore-page[data-watchlist="true"] .table-region:not([data-failed="true"]) {
+.explore-page[data-watchlist="true"] .table-region {
   height: calc(34px + var(--watchlist-reserved-rows, 25) * 62px);
   overflow: hidden;
 }
@@ -5736,11 +5734,12 @@ button.icon-button:disabled {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* Positions and launches never fail on their own (the whole page does), so
-   this reservation stays unconditional for them; the Trades tab reads from a
+/* Positions and launches never fail on their own (the whole page does); a
+   wallet's positions answer shorter than the reservation releases it with
+   the rows it does not fill (answeredRowCount). The Trades tab reads from a
    separate, independently-failing endpoint and sets data-failed to collapse
-   it, per the same reservedRowCount contract PR #143 gave the other lists. */
-.wallet-list-region:not([data-failed="true"]) {
+   it, per the reservedRowCount contract PR #143 gave it. */
+.wallet-list-region:not([data-failed="true"]):not([data-released="true"]) {
   min-height: calc(25 * 62px + 44px);
 }
 .wallet-list-region .data-table tbody tr {
@@ -6343,11 +6342,11 @@ a.wallet-top-pool:hover {
 .creators-page .page-heading p {
   max-width: 560px;
 }
-/* A failed first read carries no rows (the board's `shown` array collapses
-   to zero) and drops this reservation, so its compact UnavailableState sits
-   right under the heading instead of a screen below a blank, still-reserved
-   board. */
-.creators-page .table-scroll:not([data-failed="true"]) {
+/* The board's first-paint reservation, held while the first answer is
+   pending and when it fails (its UnavailableState overlays the top of it);
+   an answer shorter than the reservation releases it with the rows it does
+   not fill. */
+.creators-page .table-region:not([data-released="true"]) .table-scroll {
   min-height: calc(25 * 62px + 44px);
 }
 /* Column widths follow the export's grid, which keeps the creator column at its
@@ -6408,7 +6407,7 @@ a.wallet-top-pool:hover {
   .mobile-creators {
     display: block;
   }
-  .mobile-creators:not([data-failed="true"]) {
+  .creators-page .table-region:not([data-released="true"]) .mobile-creators {
     min-height: calc(25 * 104px);
   }
 }
@@ -6799,7 +6798,7 @@ a.wallet-top-pool:hover {
     height: 104px;
     overflow: auto;
   }
-  .explore-page[data-watchlist="true"] .table-region:not([data-failed="true"]) {
+  .explore-page[data-watchlist="true"] .table-region {
     height: calc(var(--watchlist-reserved-rows, 25) * 104px);
   }
   /* The stacked heading, as the export stacks it: a two-row title (name and

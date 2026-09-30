@@ -39,7 +39,13 @@ import { ComingSoonRow } from "./feature-preview";
 import { FollowButton } from "./following";
 import { useMyWallet } from "./my-wallet";
 import { PoolImage } from "./pool-image";
-import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
+import {
+  answeredRowCount,
+  reservedRowCount,
+  SHOW_MORE_STEP,
+  ShowMore,
+} from "./product-common";
+import { useListRelease } from "@/lib/list-release";
 import { useQuery } from "./state";
 import { PnlCardModal } from "./pnl-card-modal";
 import {
@@ -143,11 +149,14 @@ export function ProductWallet({ address }: { address: string }) {
     Number.isInteger(rawShown) && rawShown > 0
       ? Math.min(rawShown, POSITIONS_CAP)
       : SHOW_MORE_STEP;
+  const positionsTotal = data ? data.positions.length : null;
+  /* A wallet with fewer positions than that keeps only the rows they fill,
+     or a short slot for its empty state. */
   const positionRows = Array.from(
-    { length: shown },
+    { length: answeredRowCount(shown, positionsTotal) },
     (_, index) => data?.positions[index],
   );
-  const positionsTotal = data ? data.positions.length : null;
+  useListRelease(positionRows.length, shown);
   const focusAt = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const showMore = useCallback(() => {
@@ -405,6 +414,7 @@ export function ProductWallet({ address }: { address: string }) {
                         className="table-scroll wallet-list-region"
                         aria-busy={stale}
                         data-stale-rows={stale}
+                        data-released={positionRows.length < shown}
                       >
                         <table className="data-table wallet-positions-table">
                           {/* Fixed pixel widths, not percentages: a fractional

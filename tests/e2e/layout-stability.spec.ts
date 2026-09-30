@@ -50,6 +50,27 @@ const routes = [
     url: `/creators/${creatorAddress}/`,
     sentinel: ".live-section",
   },
+  /* A failed creators read keeps the rows it reserved and overlays its
+     failed state on them: the foot and the footer under the board stay
+     where they painted (0.1106 at 1440 when the reservation collapsed). */
+  {
+    name: "creators-failed",
+    url: "/creators/",
+    sentinel: ".creators-panel",
+  },
+  /* Answers shorter than the reservation release the rows they do not fill;
+     the list above the cut holds still and the nodes under it remount at
+     their new place rather than shift into view. */
+  {
+    name: "screener-no-match",
+    url: "/?q=zzzzzzzzzz",
+    sentinel: ".explore-page .workspace-grid",
+  },
+  {
+    name: "creator-unknown",
+    url: `/creators/0x${"1".repeat(40)}/`,
+    sentinel: ".live-section",
+  },
   {
     name: "on-demand-pool",
     url: `/pool/${savedPool.id}/`,
@@ -102,7 +123,11 @@ for (const entry of routes) {
     });
     const manyLaunches = creatorLaunches(60, 3);
     await page.route("**/api/product/**", async (route) => {
-      if (entry.name === "unknown-pool") {
+      if (
+        entry.name === "unknown-pool" ||
+        (entry.name === "creators-failed" &&
+          new URL(route.request().url()).pathname.includes("/creators"))
+      ) {
         await gate;
         responses.push(route.request().url());
         return route.fulfill({
