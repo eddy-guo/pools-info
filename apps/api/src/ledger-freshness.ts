@@ -32,7 +32,7 @@ export interface LedgerFreshness {
   headTimestamp: number | null;
   lagBlocks: number | null;
   lagSeconds: number | null;
-  /** The last commit that moved the stream: a folded batch or a mode change. */
+  /** The last committed cursor advance. */
   indexedAt: string;
   /** The collector's last head observation, at the start of every cycle. */
   checkedAt: string | null;

@@ -28,6 +28,7 @@ import {
   readLedgerStream,
   registerLedgerTransferCounterparties,
   releaseLedgerWriter,
+  setLedgerMode,
   walkBackLedger,
   type Client,
   type LedgerBatch,
@@ -1451,6 +1452,31 @@ test("the tip loop's head observation needs the writer lock and keeps block and 
     checked: true,
   });
   await assert.rejects(observeLedgerHead(db, -1, 0), /ledger_invalid_head/);
+});
+
+test("mode handover preserves the stale cursor timestamp", async (t) => {
+  const db = await setup(t);
+  await writer(db);
+  await applyLedgerBatch(db, batch(base, base + 9, []));
+  await db.query(
+    "UPDATE agg_streams SET updated_at=clock_timestamp()-interval '11 minutes' WHERE chain_id=4663 AND stream_key=$1",
+    [ledgerStream.key],
+  );
+  const read = async () =>
+    (
+      await db.query(
+        "SELECT mode,cursor_block::int AS cursor,updated_at,extract(epoch FROM clock_timestamp()-updated_at)::int AS age FROM agg_streams WHERE chain_id=4663 AND stream_key=$1",
+        [ledgerStream.key],
+      )
+    ).rows[0];
+  const before = await read();
+  assert.deepEqual([before.mode, before.cursor], ["pass", base + 9]);
+  assert.ok(before.age > 600);
+  await setLedgerMode(db, "tip");
+  const after = await read();
+  assert.deepEqual([after.mode, after.cursor], ["tip", base + 9]);
+  assert.equal(after.updated_at.getTime(), before.updated_at.getTime());
+  assert.ok(after.age > 600);
 });
 
 test("a launch's total supply is stored with the block it was read at, and a later reading replaces an earlier one, never the reverse", async (t) => {
