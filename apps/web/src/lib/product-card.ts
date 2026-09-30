@@ -1,93 +1,63 @@
 import {
-  buildAnalyticsModel,
   ethFigure,
   figureText,
   formatPercent,
-  walletAnalytics,
+  formatTokenAmount,
+  since,
   WALLET_ROI_DIGITS,
   type EthFigure,
   type AnalyticsWalletPosition,
   type AnalyticsWalletResponse,
   type AnalyticsWalletSummary,
-  type AnalyticsPoolDetail,
+  type ObservedMarket,
   type LiveWindow,
+  type WalletPositionResponse,
 } from "@pools/core";
 import { readProduct } from "./product-server";
 import type { Delivered } from "./use-product";
 
 export interface CardWallet {
   result: Delivered<AnalyticsWalletResponse>;
-  /** The pool a scoped card is limited to; null on the wallet's global card. */
-  poolSymbol: string | null;
-}
-
-async function readCardWalletUncached(
-  address: string,
-  window: LiveWindow,
-  poolId?: string,
-  launchTx?: string,
-): Promise<CardWallet> {
-  if (!poolId)
-    return {
-      result: await readProduct<AnalyticsWalletResponse>(
-        ["wallets", address],
-        new URLSearchParams({ window }),
-      ),
-      poolSymbol: null,
-    };
-  const saved = await readProduct<{ analytics: AnalyticsPoolDetail | null }>(
-    ["pools", poolId],
-    new URLSearchParams({ window }),
-  );
-  const publication = saved.analytics,
-    market = publication?.snapshot.markets[0];
-  if (
-    !publication ||
-    !market ||
-    market.id.toLowerCase() !== poolId ||
-    (launchTx && market.launchTx.toLowerCase() !== launchTx)
-  )
-    throw Error("Requested pool capture unavailable");
-  const result = walletAnalytics(
-    buildAnalyticsModel([market], [publication]),
-    address,
-    window,
-  );
-  return {
-    result: { ...result, delivery: saved.delivery },
-    poolSymbol: market.symbol,
-  };
 }
 
 /** How long one wallet read serves the modal's customize toggles before it is read again. */
 export const cardReadLifetimeMs = 30_000;
 const cardReadEntries = 64;
-const reads = new Map<string, { expires: number; read: Promise<CardWallet> }>();
 /**
- * The card's wallet read, shared by every render of the same wallet and window
- * for a short while: the modal re-requests the image on every preset or toggle
- * change, and those renders should not each pay for a fresh index read. A
- * failed read is forgotten at once so the next request tries again.
+ * One read shared by every render that asks for the same key for a short
+ * while: the modal re-requests the image on every preset or toggle change,
+ * and those renders should not each pay for a fresh index read. A failed read
+ * is forgotten at once so the next request tries again.
  */
-export function readCardWallet(
-  address: string,
-  window: LiveWindow,
-  poolId?: string,
-  launchTx?: string,
-): Promise<CardWallet> {
-  const key = [address, window, poolId ?? "", launchTx ?? ""].join(":"),
-    now = Date.now(),
+function cachedRead<T>(
+  reads: Map<string, { expires: number; read: Promise<T> }>,
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  const now = Date.now(),
     held = reads.get(key);
   if (held && held.expires > now) return held.read;
   for (const [k, entry] of reads)
     if (entry.expires <= now || reads.size >= cardReadEntries) reads.delete(k);
-  const read = readCardWalletUncached(address, window, poolId, launchTx);
+  const read = load();
   reads.set(key, { expires: now + cardReadLifetimeMs, read });
   read.catch(() => {
     if (reads.get(key)?.read === read) reads.delete(key);
   });
   return read;
 }
+const reads = new Map<string, { expires: number; read: Promise<CardWallet> }>();
+/** The card's wallet read, shared by every render of the same wallet and window. */
+export const readCardWallet = (
+  address: string,
+  window: LiveWindow,
+): Promise<CardWallet> =>
+  cachedRead(reads, `${address}:${window}`, () =>
+    readProduct<AnalyticsWalletResponse>(
+      ["wallets", address],
+      new URLSearchParams({ window }),
+    ).then((result) => ({ result })),
+  );
 
 /** The position the card names: the largest realized PnL in the window, then the most traded. */
 export function cardTopPosition(
@@ -125,10 +95,11 @@ export const cardEthFigure = (wei: string, signed = false): CardEth => ({
   sign: signed && BigInt(wei) > 0n ? "+" : "",
   figure: ethFigure(wei),
 });
-export const cardEth = (wei: string, signed = false) => {
-  const { sign, figure } = cardEthFigure(wei, signed);
-  return `${sign}${figureText(figure)} ETH`;
-};
+/** A {@link CardEth} as one run of text, the subscript form in subscript digits. */
+export const cardEthText = ({ sign, figure }: CardEth) =>
+  `${sign}${figureText(figure)} ETH`;
+export const cardEth = (wei: string, signed = false) =>
+  cardEthText(cardEthFigure(wei, signed));
 export interface CardStat {
   label: string;
   value: string;
@@ -354,5 +325,271 @@ export function cardCurve(
   return {
     points: curve.map((p, i) => [((p.time - t0) / span) * width, y(values[i])]),
     zeroY: min <= 0 && max >= 0 ? y(0) : null,
+  };
+}
+
+/**
+ * What a position card is drawn from: the single-position read's own shape
+ * (`WalletPositionResponse`, `GET /v1/wallets/:address/positions/:poolId`),
+ * whose `position` is the wallet page's row for the pool, field for field.
+ * {@link readCardPosition} fills it from the wallet read, which serves that
+ * row but neither per-token price, so `mark` and `avgEntryPriceWei` are null
+ * there and their cells stay blank: a price is never worked back out of the
+ * row's other figures.
+ */
+export type PositionCardSource = Pick<
+  WalletPositionResponse,
+  "position" | "mark" | "avgEntryPriceWei"
+>;
+/** The pool a position card names, from its catalog row. */
+export interface CardPool {
+  poolId: string;
+  token: string;
+  name: string;
+  symbol: string;
+  launchType?: "instant" | "crowd";
+  launch: { transactionHash: string };
+}
+/** The pool read as it arrives: the read API nests the catalog row under
+ * `pool`, the committed dataset serves it flat and with no market. */
+type CardPoolResponse = CardPool & {
+  pool?: CardPool;
+  market?: ObservedMarket | null;
+};
+export interface CardPosition {
+  source: PositionCardSource;
+  pool: CardPool;
+  /** The pool's served hourly price history, oldest first; empty where none is served. */
+  candles: { time: number; close: string }[];
+  /** The wallet's rank on the All board; null while unranked. */
+  rank: number | null;
+}
+const poolReads = new Map<
+  string,
+  { expires: number; read: Promise<Delivered<CardPoolResponse>> }
+>();
+/** The pool read behind a position card, held as long as the wallet read. */
+const readCardPool = (poolId: string) =>
+  cachedRead(poolReads, poolId, () =>
+    readProduct<CardPoolResponse>(
+      ["pools", poolId],
+      new URLSearchParams({ window: "All" }),
+    ),
+  );
+
+/**
+ * A position card's source and the pool it belongs to, or null when the
+ * wallet holds no supported position in that pool or `launch` names another
+ * launch: an excluded position gets no card, never a number. This is the one
+ * function to change when the card moves to the single-position read, which
+ * serves the two prices the wallet read does not; until then the card shares
+ * the portfolio card's All read of the wallet.
+ */
+export async function readCardPosition(
+  address: string,
+  poolId: string,
+  launch?: string,
+): Promise<CardPosition | null> {
+  const { result } = await readCardWallet(address, "All");
+  const row = result.positions.find((p) => p.poolId.toLowerCase() === poolId);
+  // The wallet read carries the first 500 positions in pool order; past them
+  // a pool it does not list is unknown, not absent.
+  if (!row && result.positionsTruncated)
+    throw Error("Position past the wallet read's page");
+  if (
+    !row?.supported ||
+    !row.position ||
+    (launch && row.launchTx.toLowerCase() !== launch)
+  )
+    return null;
+  const response = await readCardPool(poolId),
+    pool = response.pool ?? response;
+  // Both reads name the pool's launch: a disagreement is the catalog's to
+  // settle, not a card to draw.
+  if (
+    pool.token.toLowerCase() !== row.token.toLowerCase() ||
+    pool.launch.transactionHash.toLowerCase() !== row.launchTx.toLowerCase()
+  )
+    throw Error("Pool identity disagrees with the position");
+  return {
+    source: { position: row, mark: null, avgEntryPriceWei: null },
+    pool,
+    candles: response.market?.history.candles ?? [],
+    rank: result.wallet.rank,
+  };
+}
+
+/** A percent to four decimals, truncated toward zero in integer arithmetic as
+ * the read API computes every ROI; null over a zero denominator. */
+const percentOf = (numerator: bigint, denominator: bigint) =>
+  denominator > 0n
+    ? Number((numerator * 1_000_000n) / denominator) / 10_000
+    : null;
+
+/** Everything a position card prints, each figure null where its field is not served. */
+export interface PositionCardFigures {
+  /** Units still held: the card's OPEN state, else CLOSED. */
+  open: boolean;
+  /**
+   * The headline: the realized ROI once any cost has been disposed of, over
+   * that disposed cost as the board computes a wallet's; before the first
+   * sale, the held units' unrealized PnL in ETH, in the neutral colour.
+   */
+  hero: {
+    label: "Realized ROI" | "Unrealized PnL";
+    value: string | null;
+    eth: CardEth | null;
+    tone: CardStat["tone"];
+  };
+  /** The lifetime realized amount, printed beside an ROI headline only. */
+  realized: CardEth | null;
+  /** Units held in whole tokens, the wallet page's Holding figure. */
+  holding: string | null;
+  unrealized: CardEth | null;
+  /** The unrealized PnL over the held units' cost. */
+  unrealizedRoi: string | null;
+  invested: CardEth;
+  proceeds: CardEth;
+  /** ETH out over ETH in: exact for a closed position, which sold every unit it bought. */
+  multiple: string | null;
+  /** ETH in and out as percentages of the larger, for the in/out bars. */
+  bars: { invested: number; proceeds: number };
+  buys: number;
+  sells: number;
+  /** The held units' average entry and the ledger's mark, wei per whole token. */
+  entry: CardEth | null;
+  mark: CardEth | null;
+  /** How long the open cycle has been held at the ledger's cut. */
+  held: string | null;
+}
+
+export function positionCardFigures(
+  source: PositionCardSource,
+): PositionCardFigures | null {
+  const row = source.position,
+    p = row.position;
+  if (!row.supported || !p) return null;
+  const invested = BigInt(p.investedWei),
+    proceeds = BigInt(p.proceedsWei),
+    open = BigInt(p.quantity) > 0n,
+    // invested = cost held + cost disposed of, for a supported position.
+    roi =
+      p.realizedWei === null
+        ? null
+        : percentOf(BigInt(p.realizedWei), invested - BigInt(p.costWei)),
+    unrealizedRoi =
+      row.unrealizedWei === null
+        ? null
+        : percentOf(BigInt(row.unrealizedWei), BigInt(p.costWei)),
+    shownRoi = roi === null ? null : Number(roi.toFixed(2)),
+    largest = invested > proceeds ? invested : proceeds,
+    share = (wei: bigint) =>
+      largest === 0n ? 0 : Number((wei * 10_000n) / largest) / 100;
+  return {
+    open,
+    hero:
+      roi === null || shownRoi === null
+        ? {
+            label: "Unrealized PnL",
+            value:
+              row.unrealizedWei === null
+                ? null
+                : cardEth(row.unrealizedWei, true),
+            eth:
+              row.unrealizedWei === null
+                ? null
+                : cardEthFigure(row.unrealizedWei, true),
+            tone: "text",
+          }
+        : {
+            label: "Realized ROI",
+            value: formatPercent(roi),
+            eth: null,
+            tone: shownRoi > 0 ? "up" : shownRoi < 0 ? "down" : "text",
+          },
+    realized:
+      roi === null || p.realizedWei === null
+        ? null
+        : cardEthFigure(p.realizedWei, true),
+    holding:
+      row.decimals === null
+        ? null
+        : formatTokenAmount(p.quantity, row.decimals),
+    unrealized:
+      row.unrealizedWei === null
+        ? null
+        : cardEthFigure(row.unrealizedWei, true),
+    unrealizedRoi: unrealizedRoi === null ? null : formatPercent(unrealizedRoi),
+    invested: cardEthFigure(p.investedWei),
+    proceeds: cardEthFigure(p.proceedsWei),
+    multiple:
+      open || invested === 0n
+        ? null
+        : `${(Number((proceeds * 10_000n) / invested) / 10_000).toFixed(2)}x`,
+    bars: { invested: share(invested), proceeds: share(proceeds) },
+    buys: p.buys,
+    sells: p.sells,
+    entry:
+      open && source.avgEntryPriceWei !== null
+        ? cardEthFigure(source.avgEntryPriceWei)
+        : null,
+    mark:
+      open && source.mark?.priceWei != null
+        ? cardEthFigure(source.mark.priceWei)
+        : null,
+    held: open && p.openedAt != null ? since(p.openedAt, row.asOf) : null,
+  };
+}
+
+/**
+ * The OPEN card's price chart as geometry: the pool's served candles, at most
+ * 240 of them picked evenly with both ends kept (the PNG's size budget), on a
+ * scale that also holds the entry and mark levels when they are served. Only
+ * the coordinates are floats; the prices are compared as the exact integers
+ * they are. Fewer than two candles is no chart, never a drawn line.
+ */
+export function positionCardChart(
+  candles: { time: number; close: string }[],
+  entryWei: string | null,
+  markWei: string | null,
+  width: number,
+  height: number,
+): {
+  points: [number, number][];
+  entryY: number | null;
+  markY: number | null;
+} | null {
+  if (candles.length < 2) return null;
+  const sampled =
+    candles.length <= 240
+      ? candles
+      : Array.from(
+          { length: 240 },
+          (_, i) => candles[Math.round((i * (candles.length - 1)) / 239)],
+        );
+  const values = sampled.map((c) => BigInt(c.close));
+  const levels = [
+    ...values,
+    ...(entryWei === null ? [] : [BigInt(entryWei)]),
+    ...(markWei === null ? [] : [BigInt(markWei)]),
+  ];
+  let min = levels.reduce((a, b) => (a < b ? a : b)),
+    max = levels.reduce((a, b) => (a > b ? a : b));
+  if (min === max) {
+    min -= 1n;
+    max += 1n;
+  }
+  const y = (v: bigint) =>
+    height -
+    (Number(((v - min) * 1_000_000n) / (max - min)) / 1_000_000) * height;
+  const start = sampled[0].time,
+    span = Math.max(1, sampled[sampled.length - 1].time - start);
+  return {
+    points: sampled.map((c, i) => [
+      ((c.time - start) / span) * width,
+      y(values[i]),
+    ]),
+    entryY: entryWei === null ? null : y(BigInt(entryWei)),
+    markY: markWei === null ? null : y(BigInt(markWei)),
   };
 }

@@ -1,10 +1,12 @@
 import { ImageResponse } from "next/og";
+import type { ReactElement } from "react";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import {
   cardCurve,
   cardEthFigure,
+  cardEthText,
   cardExportHero,
   cardExportHeroSize,
   cardExportTrio,
@@ -14,8 +16,13 @@ import {
   cardSymbol,
   cardTopPosition,
   cardTradeCount,
+  positionCardChart,
+  positionCardFigures,
+  readCardPosition,
   readCardWallet,
   type CardEth,
+  type CardPosition,
+  type PositionCardFigures,
   type CardExportTrio,
   type CardStat,
 } from "@/lib/product-card";
@@ -24,6 +31,8 @@ import {
   cardWindowLabel,
   parseCardOptions,
 } from "@/lib/card-options";
+import { countLabel } from "@/lib/plural";
+import { tokenInitials } from "@/lib/token-identity";
 import { fontCodePoints } from "@/lib/font-coverage";
 import { tokenImageResponse } from "@/lib/token-image-server";
 import {
@@ -139,11 +148,14 @@ function CardFigure({
   size,
   color,
   letterSpacing = 0,
+  unit,
 }: {
   eth: CardEth;
   size: number;
   color: string;
   letterSpacing?: number;
+  /** Sets the unit apart, smaller and quieter, beside an amount a label names. */
+  unit?: { size: number; color: string };
 }) {
   const text = {
     fontSize: size,
@@ -155,15 +167,33 @@ function CardFigure({
     // otherwise wrap its unit onto a second line and push the card apart.
     whiteSpace: "nowrap",
   } as const;
-  if (eth.figure.form === "plain")
-    return <span style={text}>{`${eth.sign}${eth.figure.text} ETH`}</span>;
-  return (
-    <span style={{ display: "flex", alignItems: "flex-end" }}>
-      <span style={text}>{`${eth.sign}${eth.figure.sign}0.0`}</span>
-      <span style={{ ...text, fontSize: Math.round(size * 0.55) }}>
-        {String(eth.figure.zeros)}
+  const suffix = unit ? "" : " ETH";
+  const figure =
+    eth.figure.form === "plain" ? (
+      <span style={text}>{`${eth.sign}${eth.figure.text}${suffix}`}</span>
+    ) : (
+      <span style={{ display: "flex", alignItems: "flex-end" }}>
+        <span style={text}>{`${eth.sign}${eth.figure.sign}0.0`}</span>
+        <span style={{ ...text, fontSize: Math.round(size * 0.55) }}>
+          {String(eth.figure.zeros)}
+        </span>
+        <span style={text}>{`${eth.figure.digits}${suffix}`}</span>
       </span>
-      <span style={text}>{`${eth.figure.digits} ETH`}</span>
+    );
+  if (!unit) return figure;
+  return (
+    <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+      {figure}
+      <span
+        style={{
+          fontSize: unit.size,
+          lineHeight: 1,
+          color: unit.color,
+          whiteSpace: "nowrap",
+        }}
+      >
+        ETH
+      </span>
     </span>
   );
 }
@@ -217,11 +247,15 @@ function Monogram({
   size,
   radius,
   anonymous = false,
+  label,
 }: {
   address: string;
   size: number;
   radius: number;
   anonymous?: boolean;
+  /** The tile's letters where they are not the address's own: a token's
+   * symbol initials, or null for the site's letterless wallet tile. */
+  label?: string | null;
 }) {
   if (anonymous) {
     const icon = Math.round(size * 0.46);
@@ -275,7 +309,7 @@ function Monogram({
         flexShrink: 0,
       }}
     >
-      {cardInitials(address)}
+      {label === undefined ? cardInitials(address) : label}
     </div>
   );
 }
@@ -481,6 +515,650 @@ function ExportCard({
   );
 }
 
+/** The right-hand column, and the OPEN card's chart inside it: the end dot
+ * and its halo sit within the column's edge. */
+const positionColumn = 470,
+  positionChart = { width: 458, height: 232 };
+
+/**
+ * The position card: one wallet's history in one token, from the ledger's
+ * lifetime state, never a window. OPEN draws the pool's price with the held
+ * units' entry and mark levels where they are served; CLOSED, or OPEN on a
+ * pool with no price history served, draws ETH in against ETH out. A figure
+ * the read does not serve leaves its cell out.
+ */
+function PositionCard({
+  address,
+  anonymous,
+  preset,
+  position,
+  figures: f,
+  image,
+  drawable,
+}: {
+  address: string;
+  anonymous: boolean;
+  preset: string;
+  position: CardPosition;
+  figures: PositionCardFigures;
+  image: string | null;
+  drawable: (codePoint: number) => boolean;
+}) {
+  const row = position.source.position,
+    color = tone(f.hero.tone),
+    symbol = cardSymbol(row.symbol, drawable),
+    name = cardSymbol(position.pool.name, drawable),
+    label = {
+      fontFamily: mono,
+      fontSize: 15,
+      letterSpacing: 2,
+      color: visualTheme.muted,
+    } as const,
+    chart = f.open
+      ? positionCardChart(
+          position.candles,
+          position.source.avgEntryPriceWei,
+          position.source.mark?.priceWei ?? null,
+          positionChart.width,
+          positionChart.height,
+        )
+      : null,
+    path =
+      chart?.points
+        .map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`)
+        .join(" ") ?? "",
+    end = chart?.points[chart.points.length - 1],
+    endY = chart?.markY ?? end?.[1],
+    holding = [
+      f.holding === null
+        ? null
+        : `Still holding ${f.holding}${symbol ? ` ${symbol}` : ""}`,
+      f.hero.label === "Unrealized PnL"
+        ? f.unrealizedRoi && `${f.unrealizedRoi} unrealized`
+        : f.unrealized &&
+          `${cardEthText(f.unrealized)} unrealized${f.unrealizedRoi ? ` (${f.unrealizedRoi})` : ""}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    strip: (
+      { label: string; eth: CardEth } | { label: string; value: string }
+    )[] = [
+      { label: "ETH IN", eth: f.invested },
+      { label: "ETH OUT", eth: f.proceeds },
+      {
+        label: "TRADES",
+        value: `${countLabel(f.buys, "buy")} · ${countLabel(f.sells, "sell")}`,
+      },
+      ...(f.held === null ? [] : [{ label: "HELD", value: f.held }]),
+    ],
+    // A hold is a few glyphs, so beside it the trade counts take its room.
+    stripShare = (label: string) =>
+      strip.length < 4
+        ? 1
+        : label === "HELD"
+          ? 0.6
+          : label === "TRADES"
+            ? 1.4
+            : 1,
+    // Each figure takes the strip's size or less: the renderer never shrinks
+    // a long count ("1,234 buys · 5,678 sells") to fit its cell on its own.
+    stripSize = (label: string, text: string) =>
+      cardExportHeroSize(
+        text,
+        (1070 * stripShare(label)) / strip.length - 64,
+        strip.length > 3 ? 26 : 30,
+      );
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        padding: "44px 64px 40px",
+        color: visualTheme.text,
+        fontFamily: "Geist",
+        backgroundColor: visualTheme.panelInset,
+        backgroundImage: `radial-gradient(circle at 0% 0%, ${alpha(preset, 0.3)} 0%, ${alpha(preset, 0)} 52%), radial-gradient(circle at 100% 100%, ${alpha(preset, 0.12)} 0%, ${alpha(preset, 0)} 42%)`,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          height: 36,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Mark size={30} color={preset} />
+          <div
+            style={{
+              display: "flex",
+              fontSize: 30,
+              fontWeight: 600,
+              letterSpacing: -1,
+            }}
+          >
+            pools
+            <span style={{ color: visualTheme.muted, fontWeight: 400 }}>
+              info
+            </span>
+            <span style={{ color: preset }}>.</span>
+          </div>
+        </div>
+        <span
+          style={{
+            ...label,
+            fontSize: 18,
+            color: f.open ? preset : visualTheme.text3,
+            border: `1px solid ${f.open ? alpha(preset, 0.5) : visualTheme.lineRaised}`,
+            background: f.open ? alpha(preset, 0.07) : "transparent",
+            borderRadius: 9,
+            padding: "6px 14px",
+          }}
+        >
+          {`POSITION · ${f.open ? "OPEN" : "CLOSED"}`}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          justifyContent: "space-between",
+          marginTop: 24,
+          marginBottom: 26,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            width: 580,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              height: 52,
+            }}
+          >
+            {image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={image}
+                alt=""
+                width={52}
+                height={52}
+                style={{ borderRadius: 26, objectFit: "cover", flexShrink: 0 }}
+              />
+            ) : (
+              <Monogram
+                address={row.token}
+                size={52}
+                radius={26}
+                label={tokenInitials(symbol)}
+              />
+            )}
+            {symbol !== null && (
+              <span
+                style={{
+                  ...symbolLine,
+                  maxWidth: 300,
+                  fontSize: 34,
+                  fontWeight: 600,
+                  letterSpacing: -0.5,
+                }}
+              >
+                {symbol}
+              </span>
+            )}
+            {name !== null && name !== symbol && (
+              <span
+                style={{
+                  ...symbolLine,
+                  maxWidth: 190,
+                  fontSize: 20,
+                  color: visualTheme.muted,
+                }}
+              >
+                {name}
+              </span>
+            )}
+            {position.pool.launchType && (
+              <span
+                style={{
+                  ...label,
+                  fontSize: 13,
+                  letterSpacing: 2,
+                  color: visualTheme.text2,
+                  border: `1px solid ${visualTheme.lineRaised}`,
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  flexShrink: 0,
+                }}
+              >
+                {position.pool.launchType.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={label}>{f.hero.label.toUpperCase()}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                height: 112,
+                marginTop: 10,
+              }}
+            >
+              {f.hero.eth ? (
+                <CardFigure
+                  eth={f.hero.eth}
+                  size={cardExportHeroSize(f.hero.value ?? "", 570, 84)}
+                  color={color}
+                  letterSpacing={-3}
+                />
+              ) : (
+                f.hero.value !== null && (
+                  <span
+                    style={{
+                      fontSize: f.hero.value.length > 9 ? 84 : 104,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      letterSpacing: -4,
+                      color,
+                    }}
+                  >
+                    {f.hero.value}
+                  </span>
+                )
+              )}
+            </div>
+            {f.realized && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 8,
+                  height: 38,
+                }}
+              >
+                <CardFigure eth={f.realized} size={30} color={color} />
+                <span
+                  style={{
+                    fontSize: 30,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    color,
+                  }}
+                >
+                  realized
+                </span>
+              </div>
+            )}
+            {f.open && holding && (
+              <span
+                style={{
+                  ...symbolLine,
+                  fontSize: 20,
+                  lineHeight: 1,
+                  color: visualTheme.text3,
+                  marginTop: 14,
+                }}
+              >
+                {holding}
+              </span>
+            )}
+          </div>
+        </div>
+        {/* The price chart where the pool serves one; else, and on a closed
+            position, ETH in against ETH out. */}
+        {chart && end && endY !== undefined ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: positionColumn,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                height: 28,
+              }}
+            >
+              <span style={label}>POOL PRICE</span>
+              {f.mark && (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={label}>MARK</span>
+                  <CardFigure
+                    eth={f.mark}
+                    size={19}
+                    color={visualTheme.text}
+                    unit={{ size: 15, color: visualTheme.text3 }}
+                  />
+                </div>
+              )}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                position: "relative",
+                marginTop: 18,
+                width: positionColumn,
+                height: positionChart.height,
+              }}
+            >
+              <svg
+                width={positionChart.width + 24}
+                height={positionChart.height + 24}
+                viewBox={`-12 -12 ${positionChart.width + 24} ${positionChart.height + 24}`}
+                style={{ position: "absolute", left: -12, top: -12 }}
+              >
+                <defs>
+                  <linearGradient
+                    id="position-fill"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0" stopColor={color} stopOpacity="0.22" />
+                    <stop offset="1" stopColor={color} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                {[0.25, 0.5, 0.75].map((y) => (
+                  <line
+                    key={y}
+                    x1="0"
+                    x2={positionChart.width}
+                    y1={positionChart.height * y}
+                    y2={positionChart.height * y}
+                    stroke={visualTheme.lineRaised}
+                    strokeWidth="1"
+                    strokeDasharray="2 6"
+                  />
+                ))}
+                {[
+                  <path
+                    key="area"
+                    d={`${path} L${end[0].toFixed(1)} ${positionChart.height} L0 ${positionChart.height} Z`}
+                    fill="url(#position-fill)"
+                  />,
+                  chart.entryY !== null && (
+                    <line
+                      key="entry"
+                      x1="0"
+                      x2={positionChart.width}
+                      y1={chart.entryY}
+                      y2={chart.entryY}
+                      stroke={visualTheme.muted}
+                      strokeWidth="1.5"
+                      strokeDasharray="6 6"
+                    />
+                  ),
+                  <path
+                    key="line"
+                    d={path}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2.5"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />,
+                  <circle
+                    key="halo"
+                    cx={end[0]}
+                    cy={endY}
+                    r="11"
+                    fill={color}
+                    fillOpacity="0.25"
+                  />,
+                  <circle
+                    key="end"
+                    cx={end[0]}
+                    cy={endY}
+                    r="6"
+                    fill={color}
+                    stroke={visualTheme.panelInset}
+                    strokeWidth="2.5"
+                  />,
+                ]}
+              </svg>
+              {f.entry && chart.entryY !== null && (
+                <div
+                  style={{
+                    display: "flex",
+                    position: "absolute",
+                    right: 0,
+                    top: Math.max(
+                      0,
+                      Math.min(chart.entryY, positionChart.height) - 36,
+                    ),
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "4px 8px",
+                    background: alpha(visualTheme.panelInset, 0.85),
+                  }}
+                >
+                  <span style={label}>ENTRY</span>
+                  <CardFigure
+                    eth={f.entry}
+                    size={19}
+                    color={visualTheme.text}
+                    unit={{ size: 15, color: visualTheme.text3 }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              width: positionColumn,
+              paddingTop: 48,
+            }}
+          >
+            {[
+              {
+                label: "ETH IN",
+                eth: f.invested,
+                share: f.bars.invested,
+                fill: visualTheme.lineBright,
+              },
+              {
+                label: "ETH OUT",
+                eth: f.proceeds,
+                share: f.bars.proceeds,
+                fill: color,
+              },
+            ].map((bar) => (
+              <div
+                key={bar.label}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  marginBottom: 39,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-end",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span style={label}>{bar.label}</span>
+                  <CardFigure
+                    eth={bar.eth}
+                    size={26}
+                    color={visualTheme.text}
+                    unit={{ size: 18, color: visualTheme.text3 }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    height: 20,
+                    borderRadius: 10,
+                    background: alpha(visualTheme.surface4, 0.85),
+                    border: `1px solid ${visualTheme.lineRaised}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      width: `${bar.share}%`,
+                      minWidth: bar.share > 0 ? 18 : 0,
+                      height: "100%",
+                      borderRadius: 10,
+                      background: bar.fill,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+            {f.multiple && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 14,
+                }}
+              >
+                <span style={label}>OUT / IN</span>
+                <span
+                  style={{
+                    fontSize: 36,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    color,
+                  }}
+                >
+                  {f.multiple}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          height: 92,
+          flexShrink: 0,
+          padding: "18px 0",
+          background: alpha(visualTheme.surface4, 0.85),
+          border: `1px solid ${visualTheme.lineRaised}`,
+          borderRadius: 18,
+        }}
+      >
+        {strip.map((cell, i) => (
+          <div
+            key={cell.label}
+            style={{
+              display: "flex",
+              flex: stripShare(cell.label),
+              flexDirection: "column",
+              justifyContent: "space-between",
+              padding: "0 32px",
+              borderLeft: `1px solid ${i ? visualTheme.lineRaised : "transparent"}`,
+            }}
+          >
+            <span style={label}>{cell.label}</span>
+            {"eth" in cell ? (
+              <CardFigure
+                eth={cell.eth}
+                size={stripSize(cell.label, cardEthText(cell.eth))}
+                color={visualTheme.text}
+              />
+            ) : (
+              <span
+                style={{
+                  fontSize: stripSize(cell.label, cell.value),
+                  fontWeight: 600,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {cell.value}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 22,
+          height: 26,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Monogram
+            address={address}
+            size={26}
+            radius={7}
+            anonymous={anonymous}
+            label={null}
+          />
+          <span style={{ fontSize: 20, color: visualTheme.text3 }}>
+            {anonymous ? "Anonymous" : shortAddress(address)}
+          </span>
+          {!anonymous && position.rank !== null && (
+            <span
+              style={{
+                ...label,
+                fontSize: 12,
+                color: preset,
+                background: alpha(preset, 0.1),
+                borderRadius: 6,
+                padding: "6px 9px",
+              }}
+            >
+              {`RANK ${rankFormat.format(position.rank)}`}
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+          <Mark size={17} color={preset} />
+          <span style={{ fontSize: 19, color: visualTheme.text3 }}>
+            {anonymous
+              ? "poolsinfo.com"
+              : `poolsinfo.com/wallet/${shortAddress(address)}`}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A card at the 1200x630 every share target unfurls, as the renderer writes it. */
+async function renderCard(card: ReactElement) {
+  const image = new ImageResponse(card, {
+    width: 1200,
+    height: 630,
+    fonts: await fonts,
+  });
+  return image.arrayBuffer();
+}
+const pngResponse = (png: ArrayBuffer | Uint8Array<ArrayBuffer>) =>
+  new Response(png, {
+    headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
+  });
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ filename: string }> },
@@ -495,16 +1173,42 @@ export async function GET(
     const poolId = q.get("pool")?.toLowerCase(),
       launch = q.get("launch")?.toLowerCase();
     if (
-      (poolId && !/^0x[0-9a-f]{64}$/.test(poolId)) ||
-      (launch && !/^0x[0-9a-f]{64}$/.test(launch))
+      (poolId !== undefined && !/^0x[0-9a-f]{64}$/.test(poolId)) ||
+      (launch !== undefined && !/^0x[0-9a-f]{64}$/.test(launch))
     )
       return new Response("Invalid pool scope", { status: 400 });
-    const { result } = await readCardWallet(
-      address,
-      options.window,
-      poolId,
-      launch,
-    );
+    if (poolId !== undefined) {
+      const position = await readCardPosition(address, poolId, launch),
+        figures = position && positionCardFigures(position.source);
+      if (!position || !figures)
+        return new Response(
+          "No supported position for this wallet in this pool",
+          { status: 404, headers: { "Cache-Control": "no-store" } },
+        );
+      const png = await renderCard(
+        <PositionCard
+          address={address}
+          anonymous={options.anonymous}
+          preset={cardPresets[options.preset].color}
+          position={position}
+          figures={figures}
+          image={await tokenImage(poolId)}
+          drawable={await symbolDrawable}
+        />,
+      );
+      // The renderer writes RGBA and the card is opaque: as RGB at the
+      // strongest compression the same pixels take a sixth less, which holds
+      // a price chart inside the card's size budget.
+      return pngResponse(
+        new Uint8Array(
+          await sharp(Buffer.from(png))
+            .flatten({ background: visualTheme.panelInset })
+            .png({ compressionLevel: 9 })
+            .toBuffer(),
+        ),
+      );
+    }
+    const { result } = await readCardWallet(address, options.window);
     const w = result.wallet,
       exportHero = options.design === "export" ? cardExportHero(w) : null,
       hero = options.design === "export" ? exportHero : cardHero(w);
@@ -539,7 +1243,7 @@ export async function GET(
       : "";
     const start = curve?.points[0],
       end = curve?.points[curve.points.length - 1];
-    const card = new ImageResponse(
+    const card = await renderCard(
       exportHero ? (
         <ExportCard
           address={address}
@@ -878,16 +1582,8 @@ export async function GET(
           </div>
         </div>
       ),
-      {
-        width: 1200,
-        height: 630,
-        fonts: await fonts,
-        headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
-      },
     );
-    return new Response(await card.arrayBuffer(), {
-      headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
-    });
+    return pngResponse(card);
   } catch {
     return new Response("PnL card unavailable. Try again later.", {
       status: 503,

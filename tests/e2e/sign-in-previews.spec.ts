@@ -100,42 +100,21 @@ test("the legacy per-pool traders URL lands on the ordinary leaderboard", async 
   await expectNoRemovedCopy(page);
 });
 
-test("the per-pool wallet view keeps Copy trade and drops its preview panels", async ({
+test("the per-pool wallet URL opens the wallet page, keeping Copy trade without preview panels", async ({
   page,
-}, testInfo) => {
+}) => {
+  // The per-pool wallet view is gone too: the link opens the wallet page,
+  // whose Open Graph image is the position card.
   await page.goto(walletHref(topWallet, market));
-  await expect(
-    page.getByRole("combobox", { name: "Audit pool" }),
-  ).toBeVisible();
+  await expect(page.locator(".wallet-stats")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Audit pool" })).toHaveCount(
+    0,
+  );
   await expect(page.getByRole("heading", { name: "Alerts" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Copy trading" })).toHaveCount(
     0,
   );
-  const text = await page.locator("main").innerText();
-  for (const copy of ["Edit profile", "PREVIEW", "Set up copy trading"])
-    expect(text, copy).not.toContain(copy);
-
-  const actions = page.locator(".page-heading .button");
-  await expect(actions).toHaveText([
-    "Explorer ↗",
-    "Share PnL card",
-    "Copy trade",
-  ]);
-  await expect(
-    page.locator(".page-heading .button:not(.secondary)"),
-  ).toHaveText(["Copy trade"]);
-  if (testInfo.project.name === "mobile") {
-    // Two equal actions, then the odd last one across the whole row: no hole.
-    const [explorer, share, copy] = await actions.evaluateAll((nodes) =>
-      nodes.map((node) => node.getBoundingClientRect().toJSON()),
-    );
-    expect(share.y).toBe(explorer.y);
-    expect(share.width).toBe(explorer.width);
-    expect(copy.y).toBeGreaterThan(explorer.y);
-    expect(copy.x).toBe(explorer.x);
-    expect(copy.x + copy.width).toBe(share.x + share.width);
-  }
-
+  await expectNoRemovedCopy(page);
   await page.getByRole("button", { name: "Copy trade", exact: true }).click();
   const preview = page.getByRole("dialog", { name: "Copy trading" });
   await expect(preview).toBeVisible();

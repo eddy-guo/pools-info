@@ -103,94 +103,11 @@
   flex-wrap: wrap;
   margin: 12px 0;
 }
-.tabs {
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  gap: 4px;
-  padding: 0 12px;
-  flex-wrap: wrap;
-}
-.tabs button {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding: 13px 14px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.tabs button[aria-selected="true"] {
-  border-color: var(--ac);
-  color: var(--text);
-}
-.tabs button:not([aria-selected="true"]):not(:disabled):hover {
-  background: var(--control-secondary-hover-bg);
-  color: var(--color-text-2);
-}
-.tabs button:not(:disabled):active {
-  background: var(--control-ghost-active-bg);
-  color: var(--text);
-}
 .launches {
   margin-top: 14px;
 }
 .launches :global(.data-table) td {
   font-size: 12px;
-}
-.cardModal {
-  width: min(900px, calc(100% - 32px));
-  max-height: 90dvh;
-  padding: 0;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid #26262e;
-  border-radius: 16px;
-}
-.cardModal::backdrop {
-  background: #000a;
-  backdrop-filter: blur(7px);
-}
-.cardTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
-}
-.cardTop h2 {
-  font-size: 14px;
-  margin: 0;
-}
-.cardTop small {
-  display: block;
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 400;
-  margin-top: 4px;
-}
-.cardPreview {
-  margin: 20px;
-  aspect-ratio: 1200/630;
-  border: 1px solid #26262e;
-  border-radius: 12px;
-  overflow: hidden;
-  background: #0b0b0e;
-}
-.cardPreview img {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-.cardActions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 0 20px 20px;
-}
-.cardError {
-  padding: 30px;
-  color: var(--muted);
-  line-height: 1.6;
 }
 /* The dialog is its own surface, sized between the panel and panel-raised
    tokens rather than reusing either: the export keeps it visually distinct
@@ -377,23 +294,8 @@
     gap: 7px;
   }
   .breadcrumb a,
-  .page:global(.pool-page) .breadcrumb a,
-  .tabs button {
+  .page:global(.pool-page) .breadcrumb a {
     min-height: 44px;
-  }
-  .cardTop {
-    padding: 14px;
-  }
-  .cardPreview {
-    margin: 12px;
-  }
-  .cardActions {
-    padding: 0 12px 14px;
-  }
-  .cardActions > * {
-    flex: 1;
-    text-align: center;
-    justify-content: center;
   }
 }
 .page :global([hidden]) {

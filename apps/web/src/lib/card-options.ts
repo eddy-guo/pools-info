@@ -76,7 +76,13 @@ export function parseCardOptions(params: URLSearchParams): CardOptions {
   };
 }
 
-/** The card's query, defaults omitted so the plain window link stays the canonical one. */
+/**
+ * The card's query, defaults omitted so the plain window link stays the
+ * canonical one. A `scope` names a position card, which is one history in
+ * one pool rather than a window and has one design, so it carries only the
+ * options that change its image: a parameter it ignores would render one
+ * image under two URLs.
+ */
 export function cardQuery(
   options: CardOptions,
   scope?: { pool: string; launch: string },
@@ -85,10 +91,10 @@ export function cardQuery(
   if (scope) {
     params.set("pool", scope.pool);
     params.set("launch", scope.launch);
-  }
-  params.set("window", options.window);
+  } else params.set("window", options.window);
   if (options.preset !== defaultCardPreset) params.set("theme", options.preset);
   if (options.anonymous) params.set("anon", "1");
+  if (scope) return params;
   if (options.notional && cardDesigns[options.design].notional)
     params.set("notional", "1");
   if (options.design !== defaultCardDesign)
