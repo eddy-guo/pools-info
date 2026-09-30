@@ -399,12 +399,10 @@ pause wins up to the remaining six-hour budget, every pause is logged
 total), the cycle after a pause tries again from the same cursor, and a
 successful cycle resets the series. Only about six hours of consecutive
 pausing spend the budget (`ledger_tip_throttle_exhausted`), and the loop then
-exits 1 so the service restarts, never 0: an exit Railway counts as a success
-leaves the site frozen with no restart and no notification (the 29 Sep 2026
-resilience review). A rejected token exits 77, a page over HyperSync's own
-caps 76, and a ledger that refuses to change (a walk-back its journal cannot
-serve, a conflicting batch, no ledger) 78; the service's supervisor turns
-those three into a clean exit that Railway's `ON_FAILURE` policy does not
+exits 1 so the service restarts. A rejected token exits 77, a page over
+HyperSync's own caps 76, and a ledger that refuses to change (a walk-back its
+journal cannot serve, a conflicting batch, no ledger) 78; the service's
+supervisor turns those three into a clean exit that Railway's `ON_FAILURE` policy does not
 restart. Any other failed cycle is retried after 2, 4, 8, 16, 32 and then 60
 seconds, and sixty failed cycles in a row (about an hour of paced attempts)
 exit 1 for a restart from the cursor, so an upstream outage costs one restart
@@ -516,10 +514,10 @@ count of a quiet and a small tip cycle, PR 35's reorg replay on the journal:
 walked back to exactly the checkpoint's ledger and recollected to a fresh
 build of the fork, a stop after every request of a cycle resuming to the
 same ledger and windows with both streams in lockstep, a stop between the two
-commits, the throttle stop, backoff, the refusal of a database without a
-ledger), `packages/db/src/ledger-windows.test.ts` (the build, top-100 ranks
-with the address tie-break, incremental refreshes equal to a rebuild as
-batches land, hours leave and positions are excluded, the interval, walk-back,
+commits, throttle pauses and exhaustion, backoff, the refusal of a database
+without a ledger), `packages/db/src/ledger-windows.test.ts` (the build,
+top-100 ranks with the address tie-break, incremental refreshes equal to a
+rebuild as batches land, hours leave and positions are excluded, the interval, walk-back,
 unknown flash counts), `packages/db/src/ledger.test.ts` (the ring's bound,
 the journal guard, hold times persisted and walked back) and
 `packages/core/src/ledger.test.ts` (the hold-time fold, and the flash share

@@ -43,8 +43,8 @@ import { errorDetails } from "./errors";
  * from the ledger's start block in large ranges, spending at most
  * `budgetMs` of each cycle so the main stream keeps its pace; once level it
  * follows the main cursor every cycle, about four requests. It shares the
- * loop's HyperSync client, pacer and token, so a throttle or a rejected token
- * stops the loop exactly as the main lane's would; any other failure is the
+ * loop's HyperSync client, pacer and token, so a throttle pauses the loop and
+ * a rejected token stops it as in the main lane; any other failure is the
  * crowd lane's alone and the main stream carries on. */
 export const ledgerCrowdDefaults = Object.freeze({
   rangeBlocks: crowdPassPolicy.rangeBlocks,
