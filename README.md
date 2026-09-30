@@ -32,7 +32,7 @@ The read API includes eligible pools.xyz Crowd auction launches alongside Instan
 
 PnL uses integer average cost, carrying earlier purchases into later windows. Only reconciled positions with supported transaction attribution contribute to profit. Unsupported routes, unexplained transfers and unknown basis are excluded and counted, not assigned zero profit. Values are ETH-denominated and before gas. These are supported-position totals over processed pools, not complete wallet returns. A leaderboard ranks the available qualifying wallets; it does not fabricate 100 rows.
 
-Wallet profiles and trader rows disclose the number of positions excluded for pooled or otherwise unattributed swaps when that count is nonzero. The count covers the ledger's unattributed-swap flag, which can also arise from pooled buys or multiple swaps in one transaction; it is not a count of pooled sells alone. See [ledger board rules](docs/LEDGER-MARKET-SERVING.md#the-trader-leaderboard).
+Wallet profiles and trader rows label positions excluded by the ledger's unattributed-swap flag when the count is nonzero. It is not a pooled-sell-only count; see [ledger board rules](docs/LEDGER-MARKET-SERVING.md#the-trader-leaderboard).
 
 Holders require birth-contiguous Transfer history and matching supply. Liquidity remains unavailable until pool-specific reserves are verified; the shared PoolManager balance is not pool liquidity. The read model has explicit corpus limits and fails clearly rather than silently ranking a truncated sample. Full indexed materialized wallet tables and continuous live streaming remain future extensions.
 

@@ -265,24 +265,24 @@ changes:
   `supportedTradeCount` those on supported positions; `last` the wallet's
   last activity across its positions (the same in every window).
   `supportedPositionCount` and `excludedPositionCount` are the row's counts,
-  summed at its refresh; `excludedByFlag` (29 Sep 2026) breaks the excluded
+  summed at its refresh; `excludedByFlag` breaks the excluded
   count down by excluding flag (`zero_cost_inflow`, `unattributed_outflow`,
   `unknown_basis`, `unattributed_swap_activity`, the keys
   `ledgerExcludingFlags` lists), counted from the trader's `agg_positions`
   as the row is served, excluding positions in pools the wallet launched
   itself, just as the board's figures and position totals do. A position
-  carrying several flags counts under each, a flag no position carries is 0. The counts can run past the row's total by the positions excluded
-  since its refresh (about a minute).
+  carrying several flags counts under each, and a flag no position carries
+  is 0. The counts can sum past the row's total because of multiple flags or
+  positions excluded since its refresh (about a minute).
   It is null on the accounting fallback, which classifies no exclusion by
   ledger flag. The website discloses the `unattributed_swap_activity` count
   on the row and on the wallet header as "N positions excluded (pooled or
   unattributed swap)": a sell pooled with other wallets' tokens through a
   batch contract can give a position that flag, but a pooled buy and a
   transaction with several swaps of one pool are left unattributed the same
-  way, so the label names the
-  flag's whole meaning rather than a sale. `unrealizedWei` is null on
-  every row: it needs a price per position and is the wallet page's
-  figure. `asOf` and `oldestAsOf`, on the coverage and on
+  way, so the label names the flag's whole meaning rather than a sale.
+  `unrealizedWei` is null on every row: it needs a price per position and is
+  the wallet page's figure. `asOf` and `oldestAsOf`, on the coverage and on
   every row, are the cursor the window's rows were summed to
   (`agg_window_refreshes.through_timestamp`, at most a refresh interval behind
   the ledger cursor), and `completeWindow` is true, since the ledger folds
@@ -369,8 +369,8 @@ response is the accounting reader's, field for field; what its values mean:
   its lifetime position counts and last activity. A wallet the ledger has
   never attributed a swap or transfer to is the empty profile the accounting
   reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
-  window's refresh cursor, `completeWindow` true. `excludedByFlag` is the
-  same per-flag breakdown as on the board row (above), but counts all of
+  window's refresh cursor, `completeWindow` true. `excludedByFlag` has the
+  same keys and counting rule as on the board row (above), but counts all of
   the wallet's positions, including its own launches, as the page is
   served. The window row and the no-window position stats use this same
   wallet-wide scope, so the header can disclose positions excluded for an
@@ -457,8 +457,9 @@ busiest wallet on All (823 sale hours from 3,031 hour rows), plus one
 position stats): on the 27 Sep backup (Postgres 18.6) it costs the 7d #1
 trader (459 supported positions, 53 excluded) 1.0k shared buffers and
 0.4 ms, and the widest wallet, `0x…dead` with 64,625 excluded positions,
-12.9k buffers and 23 ms, the page answering in 50 and 240 ms warm. Warm on the production-shape copy
-(Postgres 18): 15 to 45 ms end to end for a top-100 wallet, 150 ms cold. The
+12.9k buffers and 23 ms, the page answering in 50 and 240 ms warm.
+Earlier measurements on the production-shape copy (Postgres 18) were 15 to
+45 ms end to end for a top-100 wallet, 150 ms cold. The
 current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
 
 ### A single position
