@@ -191,8 +191,9 @@ changes:
   can move when other wallets are excluded. An observed contract leaves the
   ledger board: the api's census reads the code of each wallet the board
   could show that the ledger never saw send a
-  swap (every attributed swap of every position it holds went to it as the
-  counterparty; a contract never sends a transaction), and one whose code is
+  swap (every attributed swap of every position it holds was either
+  counterparty-attributed or its share of a pooled sell; a contract never
+  sends a transaction), and one whose code is
   not an EIP-7702 delegation designator (`0xef0100` and a 20-byte delegate)
   is a contract. A delegated wallet is still an externally owned one, however
   its gas is paid: All #67 of 27 Sep (#32 once the launchers left),

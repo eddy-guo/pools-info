@@ -307,7 +307,12 @@ export async function runLedgerTipCycle(
   // A cursor above the archive height (a lagging HyperSync node) cannot be
   // read back yet; wait until the archive passes it.
   if (saved.cursor <= height) {
-    const reconciled = await reconcileLedgerPass(db, client, log, options.foldRule);
+    const reconciled = await reconcileLedgerPass(
+      db,
+      client,
+      log,
+      options.foldRule,
+    );
     options.onMainCommitted?.(reconciled.ledger.cursor);
     options.signal?.throwIfAborted();
     const result = await runLedgerRange(db, client, {
