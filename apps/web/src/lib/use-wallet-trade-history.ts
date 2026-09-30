@@ -39,7 +39,10 @@ function historyUrl(address: string, cursor: string | null) {
 
 type PageResult =
   | { ok: true; data: WalletTradeHistoryResponse }
-  | { ok: false; error: string; retryAfterMs: number | null };
+  | { ok: false; error: string; retryAfterMs: number | null }
+  /** The read API no longer honours this cursor (issued before a deploy,
+      or a day old): the list starts again from its first page. */
+  | { ok: false; invalidCursor: true };
 
 async function fetchPage(
   address: string,
@@ -54,6 +57,11 @@ async function fetchPage(
     });
   } catch {
     return { ok: false, error: DATA_UNAVAILABLE, retryAfterMs: null };
+  }
+  if (cursor && response.status === 400) {
+    const body: unknown = await response.json().catch(() => null);
+    if ((body as { error?: unknown } | null)?.error === "invalid_cursor")
+      return { ok: false, invalidCursor: true };
   }
   if (!response.ok)
     return {
@@ -137,7 +145,10 @@ export function useWalletTradeHistory(
     }
   }, []);
 
-  const runInitial = useCallback(() => {
+  /** Read the list from its first page. `keepReserved` restarts it under the
+      row slots already on screen (a cursor the read API refused), so the
+      restart fills slots rather than taking any back. */
+  const runInitial = useCallback((keepReserved = false) => {
     initialController.current?.abort();
     const controller = new AbortController();
     initialController.current = controller;
@@ -147,7 +158,7 @@ export function useWalletTradeHistory(
     setMoreFailed(false);
     setHeld([]);
     setShown(REVEAL_STEP);
-    setReserved(REVEAL_STEP);
+    if (!keepReserved) setReserved(REVEAL_STEP);
     setCanRetry(true);
     cursorRef.current = null;
     setNextCursor(null);
@@ -159,7 +170,7 @@ export function useWalletTradeHistory(
         if (!result.ok) {
           setLoading(false);
           setFailed(true);
-          if (result.retryAfterMs && result.retryAfterMs > 0) {
+          if ("retryAfterMs" in result && result.retryAfterMs && result.retryAfterMs > 0) {
             setCanRetry(false);
             retryTimer.current = setTimeout(
               () => setCanRetry(true),
@@ -229,6 +240,14 @@ export function useWalletTradeHistory(
         if (controller.signal.aborted) return;
         if (!result.ok) {
           setLoadingMore(false);
+          if ("invalidCursor" in result) {
+            /* The cursor is dropped, never retried: the list reads again
+               from its first page under the slots it already holds. */
+            cursorRef.current = null;
+            setNextCursor(null);
+            runInitial(true);
+            return;
+          }
           setMoreFailed(true);
           return;
         }
@@ -253,7 +272,7 @@ export function useWalletTradeHistory(
         return;
       }
     })();
-  }, [address, held.length, shown, loadingMore]);
+  }, [address, held.length, shown, loadingMore, runInitial]);
 
   const retry = useCallback(() => runInitial(), [runInitial]);
 

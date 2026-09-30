@@ -23,6 +23,7 @@ import {
   useUnavailable,
 } from "./ui";
 import { plural } from "@/lib/plural";
+import { fetchPastRequestLimit } from "@/lib/request-limit";
 export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
@@ -165,14 +166,18 @@ export function useMarket(id?: string, launch?: string | null) {
       if (controller.signal.aborted) return;
       setRequest({ id, pending: true, error: "" });
       try {
-        const response = await fetch(
-          `/api/markets/${id}/?launch=${launch}${refreshCount ? "&refresh=1" : ""}`,
-          {
-            signal: AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(105000),
-            ]),
-          },
+        const response = await fetchPastRequestLimit(
+          () =>
+            fetch(
+              `/api/markets/${id}/?launch=${launch}${refreshCount ? "&refresh=1" : ""}`,
+              {
+                signal: AbortSignal.any([
+                  controller.signal,
+                  AbortSignal.timeout(105000),
+                ]),
+              },
+            ),
+          controller.signal,
         );
         if (!response.ok) throw Error("Pool unavailable");
         const next: ChainSnapshot = await response.json();

@@ -4736,6 +4736,51 @@ button.icon-button:disabled {
 .table-region {
   position: relative;
 }
+/* A failed re-read over figures still on show (StaleUnavailable in ui.tsx):
+   the sentence floats over the top of the dimmed figures, never in flow, so
+   neither its arrival nor its going moves anything. */
+.leaderboard-panel,
+.wallet-stats {
+  position: relative;
+}
+/* The cards dim, not the grid, which also holds the sentence floating over
+   them: an opacity on the grid would dim the sentence with them. */
+.wallet-stats[data-stale="true"] > .stat {
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .wallet-stats > .stat {
+    transition: opacity 150ms ease-out;
+  }
+}
+.stale-unavailable {
+  position: absolute;
+  inset: 16px 0 auto;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+.stale-unavailable > p {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  color: var(--color-text-2);
+  font-size: 13px;
+}
+.stale-unavailable > p > svg {
+  flex: none;
+  color: var(--muted);
+}
 .table-region[data-empty="true"] > .empty-state {
   position: absolute;
   inset: 44px 0 auto;
@@ -5150,10 +5195,6 @@ button.icon-button:disabled {
 .pool-page .live-six-stats .stat > small {
   min-height: 0;
   line-height: 15px;
-}
-/* A pending card's quiet mark waits under the skeleton, not on top of it. */
-.pool-page .live-six-stats .stat > strong [data-pending="true"] .unavailable {
-  color: transparent;
 }
 .explore-leader-rows {
   height: calc(5 * 62px);
@@ -6380,6 +6421,10 @@ a.wallet-top-pool:hover {
 .stat > strong [data-pending] {
   display: inline-block;
   min-width: 5ch;
+}
+/* A pending card's quiet mark waits under the skeleton, not on top of it. */
+.stat > strong [data-pending="true"] .unavailable {
+  color: transparent;
 }
 .number,
 .price,

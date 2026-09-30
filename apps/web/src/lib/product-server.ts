@@ -289,6 +289,15 @@ export class ProductUnavailableError extends Error {
     super("Live data is unavailable.");
   }
 }
+/** The read API no longer honours a history cursor the page holds (issued
+ * before a deploy, for another wallet, or expired): the page drops it and
+ * starts that list again from its first page, so this crosses the proxy as
+ * the api's own `400 invalid_cursor` rather than as an outage. */
+export class InvalidHistoryCursorError extends Error {
+  constructor() {
+    super("invalid_cursor");
+  }
+}
 /** Only valid HTTP Retry-After values cross the public proxy boundary. */
 function validRetryAfter(value: string | null) {
   if (value === null) return null;
@@ -446,6 +455,10 @@ export async function readWalletTradeHistory(
     throw new ProductUnavailableError();
   }
   if (response.status === 404) throw Error("Outside available coverage");
+  if (response.status === 400) {
+    const body = await response.json().catch(() => null);
+    if (body?.error === "invalid_cursor") throw new InvalidHistoryCursorError();
+  }
   if (!response.ok) {
     const seconds = Number(response.headers.get("retry-after"));
     throw new ProductUnavailableError(

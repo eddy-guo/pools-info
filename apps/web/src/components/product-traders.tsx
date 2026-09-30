@@ -26,6 +26,7 @@ import {
   AddressChip,
   Avatar,
   Change,
+  StaleUnavailable,
   UnavailableState,
   WinLossBar,
   WinLossRecord,
@@ -93,6 +94,9 @@ type LeaderboardState = {
       (`coverage.asOf`), the page's freshness cut; the read names no block. */
   asOf: number | null;
   error?: string;
+  /** The rows held belong to the previous window or metric: this key's own
+      first read failed, and they stay on show, dimmed, until a retry. */
+  stale?: boolean;
 };
 
 /**
@@ -121,7 +125,10 @@ function useLeaderboard(
     asOf: null,
   });
   useEffect(() => {
-    const isReset = state.key !== key || state.attempt !== attempt;
+    /* Rows held from another key are never grown: a Show more over them
+       reads this key from its top instead. */
+    const isReset =
+      state.key !== key || state.attempt !== attempt || !!state.stale;
     if (!isReset && shown <= state.loadedShown) return;
     const baseItems = isReset ? [] : state.items;
     const baseLoaded = isReset ? 0 : state.loadedShown;
@@ -165,6 +172,7 @@ function useLeaderboard(
           attempt,
           loading: false,
           error: error instanceof Error ? error.message : DATA_UNAVAILABLE,
+          stale: s.stale || (isReset && s.items.length > 0),
         }));
       }
     })();
@@ -642,6 +650,11 @@ export function ProductTraders() {
   /* The header's freshness stamp follows the ranked board's read on both
      views (it runs regardless of the tab); a failed board reports nothing. */
   useReportCut("leaderboard", null, failed ? null : state.asOf);
+  /* A window or metric change whose read failed keeps the last board on show,
+     dimmed under the shared sentence, rather than inserting a line above it;
+     a Show more that failed says so in the foot it was asked from. */
+  const staleFailed = forKey && !!state.error && !!state.stale && !failed;
+  const moreFailed = forKey && !!state.error && !state.stale && !failed;
   // Optimistic until settled, so the podium band never pops in after first
   // paint; a settled total under 3 wallets is the one case it disappears.
   const showPodium = !failed && (total === null || total >= PODIUM_SIZE);
@@ -776,17 +789,10 @@ export function ProductTraders() {
                 Updating saved rankings
               </span>
             )}
-            {/* Rows already on show keep their place and this line reports
-                what did not arrive; a first read that failed has no rows and
-                speaks through the unavailable state below instead. */}
-            {state.error && !failed && (
-              <p role="alert" className="panel-footnote">
-                {state.error}
-              </p>
-            )}
+            {staleFailed && <StaleUnavailable onRetry={state.refresh} />}
             <>
               {showPodium && (
-                <div className="live-podium">
+                <div className="live-podium" data-stale-rows={staleFailed}>
                   {Array.from(
                     { length: PODIUM_SIZE },
                     (_, index) => items[index],
@@ -805,6 +811,7 @@ export function ProductTraders() {
               <div
                 className="table-scroll desktop-traders"
                 data-failed={failed}
+                data-stale-rows={staleFailed}
               >
                 <table className="data-table">
                   <thead>
@@ -844,7 +851,11 @@ export function ProductTraders() {
                   </tbody>
                 </table>
               </div>
-              <div className="mobile-traders" data-failed={failed}>
+              <div
+                className="mobile-traders"
+                data-failed={failed}
+                data-stale-rows={staleFailed}
+              >
                 {Array.from(
                   { length: listCount },
                   (_, i) => listOffset + i,
@@ -875,15 +886,11 @@ export function ProductTraders() {
               cap={CAP}
               loading={state.loading}
               onMore={handleMore}
+              note={moreFailed ? state.error : undefined}
             />
           </>
         ) : (
           <>
-            {following.error && !followingFailed && (
-              <p role="alert" className="panel-footnote">
-                {following.error}
-              </p>
-            )}
             {followingFailed && (
               <UnavailableState
                 subject="Following"

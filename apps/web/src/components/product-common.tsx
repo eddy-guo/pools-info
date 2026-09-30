@@ -91,6 +91,7 @@ export function ShowMore({
   cap,
   loading,
   onMore,
+  note,
 }: {
   shown: number;
   total: number | null;
@@ -98,6 +99,9 @@ export function ShowMore({
   cap?: number;
   loading: boolean;
   onMore: () => void;
+  /** A Show more whose read failed: the count's own slot says so, in the
+      foot the reader asked from, and the button stays to ask again. */
+  note?: string;
 }) {
   const known = total !== null;
   const ceiling = known
@@ -109,7 +113,9 @@ export function ShowMore({
   const releaseKey = useBelowListKey();
   return (
     <div className="pagination" key={releaseKey}>
-      <span className="pagination-count">{showMoreCount(shown, total)}</span>
+      <span className="pagination-count" role={note ? "alert" : undefined}>
+        {note ?? showMoreCount(shown, total)}
+      </span>
       {remaining > 0 && (
         <button
           type="button"
