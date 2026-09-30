@@ -127,21 +127,17 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   // The header's 54px identity tile and the address/last-trade meta line,
   // shown only because this wallet's read carries a last-trade timestamp.
   await expect(page.locator(".page-heading .avatar")).toHaveClass(/large/);
-  await expect(page.locator(".wallet-meta")).toContainText(topWallet);
   await expect(page.locator(".wallet-last-meta")).toHaveText(
     /^last (<1m|\d+[mhd]) ago$/,
   );
-  // The address shows the form its row can hold whole: the full 42
-  // characters on the desktop, the head-and-tail short form every other
-  // surface uses on a phone, where the full string was cut mid-way. Either
-  // way the copy control carries the whole address.
+  // The export's head-and-tail short address at every width: the full 42
+  // characters were cut at their tail beside the actions at 1024px, and
+  // mid-way on a phone. The copy control carries the whole address.
   const shownAddress = page
     .locator(".wallet-meta .address-label .mono")
     .filter({ visible: true });
   await expect(shownAddress).toHaveCount(1);
-  await expect(shownAddress).toHaveText(
-    testInfo.project.name === "mobile" ? shortAddress(topWallet) : topWallet,
-  );
+  await expect(shownAddress).toHaveText(shortAddress(topWallet));
   expect(
     await shownAddress.evaluate((node) => node.scrollWidth <= node.clientWidth),
     "the address is shown whole, never clipped",
@@ -267,13 +263,13 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   }
 });
 
-for (const width of [1440, 1280, 1200, 390]) {
+for (const width of [1440, 1280, 1200, 1024, 390, 320]) {
   test(`wallet summary geometry is stable at ${width}px`, async ({
     page,
     isMobile,
   }) => {
-    test.skip(isMobile, "one desktop project measures the four exact widths");
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+    test.skip(isMobile, "one desktop project measures the six exact widths");
+    await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
     await page.addInitScript(() => {
       const state = { cls: 0 };
       Object.assign(window, { walletStatShifts: state });
@@ -306,6 +302,10 @@ for (const width of [1440, 1280, 1200, 390]) {
             // its exact wei values here pins the visible precision and ETH unit.
             realizedWei: "138362590302263003435",
             volumeWei: "302162590302263003435",
+            // The production record whose "56W · 404L" ran past the Win rate
+            // card at 390px and 320px.
+            wins: 56,
+            losses: 404,
           },
         },
       });
@@ -359,7 +359,7 @@ for (const width of [1440, 1280, 1200, 390]) {
       (top) => cards.filter((card) => card.top === top).length,
     );
     expect(rowCounts, "every stat row is complete").toEqual(
-      width === 390 ? [3, 2] : [5],
+      width < 768 ? [2, 2, 1] : [5],
     );
     expect(
       cards.map((card) => card.clipped),
@@ -379,8 +379,35 @@ for (const width of [1440, 1280, 1200, 390]) {
       })),
     );
     expect(cards.map((card) => card.fontSize)).toEqual(
-      statLabels.map(() => (width === 390 ? "17px" : "19px")),
+      statLabels.map(() =>
+        width < 400 ? "16px" : width < 768 ? "17px" : "19px",
+      ),
     );
+    const tabs = await page
+      .locator(".wallet-activity > .table-tabs")
+      .evaluate((node) => ({
+        overflow: node.scrollWidth - node.clientWidth,
+        right: node.getBoundingClientRect().right,
+        panel: node.parentElement!.getBoundingClientRect().right,
+      }));
+    expect(tabs.overflow, "the tab strip never scrolls sideways").toBe(0);
+    expect(tabs.right).toBeLessThanOrEqual(tabs.panel);
+    // The header shows the head-and-tail short address at every width, so
+    // it is never cut at its tail beside the actions.
+    await expect(
+      page.locator(".wallet-meta .address-label > .mono"),
+    ).toHaveText(shortAddress(topWallet));
+    if (width >= 768) {
+      const rows = await page
+        .locator(".page-heading .button")
+        .evaluateAll((nodes) =>
+          nodes.map((node) => Math.round(node.getBoundingClientRect().y)),
+        );
+      expect(
+        [...new Set(rows)].map((y) => rows.filter((row) => row === y).length),
+        "no action is left alone on a row",
+      ).toEqual(width < 1100 ? [2, 2] : [4]);
+    }
 
     const resolved = {
       grid: await grid.boundingBox(),

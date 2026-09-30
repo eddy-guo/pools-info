@@ -231,7 +231,7 @@ export function ProductWallet({ address }: { address: string }) {
                 : ""}
             </p>
             <div className="wallet-meta">
-              <AddressLabel address={address} full />
+              <AddressLabel address={address} />
               {/* The read carries only a last-trade timestamp today; a date
                   it does not send (first trade) leaves its segment out
                   rather than showing a placeholder. The slot itself stays in
@@ -254,7 +254,7 @@ export function ProductWallet({ address }: { address: string }) {
             </div>
           </div>
         </div>
-        <div className={styles.actions}>
+        <div className={`${styles.actions} wallet-actions`}>
           <a
             className="button secondary"
             href={`${explorer}/address/${address}`}

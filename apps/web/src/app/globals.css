@@ -4942,27 +4942,18 @@ button.icon-button:disabled {
   text-overflow: ellipsis;
 }
 @container site (max-width: 767px) {
-  /* Three compact summary cards followed by two wider financial cards: every
-     row is complete at 390px, while the record under Win rate keeps the same
-     bar-and-count treatment as the traders board. */
+  /* The export's phone summary: two cards per row and the odd last one
+     across the whole row, so every value and the record under Win rate keep
+     their full width down to 320px. */
   .wallet-page .wallet-stats {
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 6px;
   }
   .wallet-page .wallet-stats .stat {
     padding: 13px 12px;
   }
-  .wallet-page .wallet-stats .stat:nth-child(1) {
-    grid-column: span 5;
-  }
-  .wallet-page .wallet-stats .stat:nth-child(2) {
-    grid-column: span 3;
-  }
-  .wallet-page .wallet-stats .stat:nth-child(3) {
-    grid-column: span 4;
-  }
-  .wallet-page .wallet-stats .stat:nth-child(n + 4) {
-    grid-column: span 6;
+  .wallet-page .wallet-stats .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .wallet-page .wallet-stats .stat > strong {
     font-size: 17px;
@@ -4972,6 +4963,17 @@ button.icon-button:disabled {
   }
   .wallet-page .wallet-stats .wl-bar {
     width: 40px;
+  }
+}
+@container site (max-width: 399px) {
+  .wallet-page .wallet-stats .stat > strong {
+    font-size: 16px;
+  }
+  /* Beside the heading the rank badge fitted or wrapped depending on its
+     text, so RANK PENDING resolving to UNRANKED moved everything below by
+     a line; under 400px it always takes the line under the heading. */
+  .wallet-page .page-heading h1 {
+    flex-basis: 100%;
   }
 }
 .wallet-list-region .data-table,
@@ -5689,6 +5691,33 @@ button.icon-button:disabled {
 .wallet-page .live-section > .table-tabs button[aria-selected="true"] {
   background: var(--control-ghost-active-bg);
   color: var(--text);
+}
+/* Three tabs and their count slots fit a 320px phone once the padding
+   tightens; the strip never becomes a sideways scroll box. */
+@container site (max-width: 399px) {
+  .wallet-page .live-section > .table-tabs {
+    overflow-x: visible;
+    padding: 1px 6px;
+  }
+  .wallet-page .live-section > .table-tabs button {
+    flex: 1 1 auto;
+    padding: 0 6px;
+  }
+  .wallet-page .live-section > .table-tabs .tab-count {
+    margin-left: 0;
+  }
+}
+/* Between the phone layout and 1100px the identity and four actions share
+   one row only if the actions stack as a 2x2 grid; wrapped as a flex row
+   they left Copy trade alone on a second line. */
+@container site (min-width: 768px) and (max-width: 1099px) {
+  .wallet-page .wallet-actions {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+  }
+  .wallet-page .wallet-actions > * {
+    justify-content: center;
+  }
 }
 .wallet-positions-caption {
   min-height: 32px;
@@ -6715,6 +6744,18 @@ a.wallet-top-pool:hover {
     margin: 7px 0 4px;
   }
 }
+/* Under 400px a half-width card cannot hold a volume figure: the export
+   stacks the cards full width, one per row, so no figure is ellipsised. */
+@media (max-width: 399px) {
+  .explore-page .screener-stats {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 200px;
+  }
+  .explore-page .screener-stats[data-has-active="true"] {
+    grid-template-rows: 104px 86px 86px;
+    min-height: 316px;
+  }
+}
 .data-table .number {
   display: inline-block;
   min-width: 12ch;
@@ -6999,8 +7040,15 @@ a.wallet-top-pool:hover {
     grid-area: 1 / 1;
     gap: 10px;
   }
+  /* A sentence too long for a 320px phone wraps onto a second line inside
+     the row's fixed height rather than ending in an ellipsis. */
   .my-rank-summary {
     grid-area: 2 / 1 / 3 / 3;
+    white-space: normal;
+    line-height: 17px;
+  }
+  .my-rank-summary .number {
+    white-space: nowrap;
   }
   .my-rank-link {
     grid-area: 1 / 2;
