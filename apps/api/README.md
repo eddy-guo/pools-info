@@ -195,14 +195,15 @@ order, a JSON request meets:
 - `client_budget`: the caller's own token bucket, when the contract below can
   name the caller. It holds `CLIENT_TOKENS_PER_MINUTE` tokens (default 120,
   minimum 10) as both burst and refill, refilled continuously, and each
-  request costs by the work it starts: 1 for a fresh cache hit or a coalesced
-  in-flight read, 2 for a bounded database read (status, pools, a pool page,
-  trades, live trades, the feed, wallet activity, stats, the leaderboard, a
-  trade share, the ETH price), 4 for a catalog-wide or whole-wallet read
-  (explore, creators, search, a wallet profile) and 8 for a paid explorer
-  page (wallet history, following). `Retry-After` is the seconds until the
-  refill covers the cost. Ordinary browsing (the screener, a few pool pages
-  and a wallet page inside a minute) spends well under a third of the
+  request costs by the work it starts: 1 for a fresh cache hit, a coalesced
+  in-flight read or the ETH price (one in-process entry), 2 for a bounded
+  database read (status, pools, a pool page, trades, live trades, the feed,
+  wallet activity, stats, the leaderboard, a trade share), 4 for a
+  catalog-wide or whole-wallet read (explore, creators, search, a wallet
+  profile) and 8 for a paid explorer page (wallet history, following).
+  `Retry-After` is the seconds until the refill covers the cost. Ordinary
+  browsing (the screener, three pool pages and a wallet page inside a
+  minute, measured through the website) spends about a third of the
   default. At most 10,000 clients are tracked at once; the least recently
   seen is dropped first, and a dropped client that returns starts full. HEAD
   costs what GET costs, since it does the same read. A request the shared

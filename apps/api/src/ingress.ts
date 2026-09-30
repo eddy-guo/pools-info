@@ -38,9 +38,13 @@ export const ingressPolicy = Object.freeze({
 });
 export type CostClass = keyof typeof ingressPolicy.cost;
 
-/** The class a route's own work falls in; `cached` is decided per request. */
+/** The class a route's own work falls in; `cached` is otherwise decided per
+ * request. The ETH price is always an in-process read: its service holds one
+ * entry and refreshes it at most once a minute whoever asks. */
 export function routeCostClass(route: Route): CostClass {
   switch (route) {
+    case "eth-price":
+      return "cached";
     case "history":
     case "following":
       return "paid";
