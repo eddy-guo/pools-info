@@ -16,11 +16,9 @@
   font-weight: 600;
 }
 .section h2 span,
-.section > p,
 .activity > p {
   color: var(--muted, #8b8b96);
 }
-.section > p,
 .activity > p {
   font-size: 13px;
   margin: 8px 0 16px;

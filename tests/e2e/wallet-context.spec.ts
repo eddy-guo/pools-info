@@ -597,7 +597,7 @@ test("a wallet without supported history reads plainly", async ({ page }) => {
         .filter({ has: page.getByText(label, { exact: true }) })
         .locator(".unavailable"),
       "a stat card's unknown value is the quiet mark",
-    ).toHaveText("\u2013");
+    ).toHaveText("\u2013Unavailable");
   const unindexed = "This wallet's trading has not been indexed yet.";
   await expect(main.locator(".chart-empty-note")).toHaveText(unindexed);
   await expect(

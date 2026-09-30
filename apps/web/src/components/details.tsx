@@ -25,7 +25,6 @@ import {
   WindowTabs,
   useSelectedMarket,
   useWindow,
-  utc,
   explorer,
 } from "./live-ui";
 function PoolWalletView({ address }: { address: string }) {
@@ -99,11 +98,6 @@ function PoolWalletView({ address }: { address: string }) {
               <span className={styles.mode}>PUBLIC WALLET</span>
             </div>
             <AddressLabel address={address} full />
-            <div className={styles.meta}>
-              {m?.last
-                ? `Last covered trade ${utc(m.last)}`
-                : "Public on-chain activity"}
-            </div>
           </div>
         </div>
         <div className={styles.actions}>
@@ -134,10 +128,6 @@ function PoolWalletView({ address }: { address: string }) {
           </button>
         </div>
       </div>
-      <p className="page-intro-note">
-        Any address, no account. Performance covers the selected audited pool,
-        not wallet-wide returns.
-      </p>
       <section className="panel">
         <div className="live-controls">
           <PoolPicker />
@@ -147,23 +137,18 @@ function PoolWalletView({ address }: { address: string }) {
           <AuditAction market={market} />
         ) : (
           <p className="panel-footnote">
-            {loading
-              ? "Loading linked pool…"
-              : error || "Pool outside coverage"}
+            {loading ? "Loading linked pool…" : error || "Pool unavailable"}
           </p>
         )}
       </section>
       <div className="stats-grid live-eight-stats">
-        <Stat label="Realized PnL" note="Selected window · before gas">
+        <Stat label="Realized PnL">
           <Eth wei={m?.realizedWei} signed />
         </Stat>
-        <Stat
-          label="Unrealized PnL"
-          note="Inventory at audit cutoff · spot mark"
-        >
+        <Stat label="Unrealized PnL">
           <Eth wei={m?.unrealizedWei} signed />
         </Stat>
-        <Stat label="Realized ROI" note="Profit / disposed cost basis">
+        <Stat label="Realized ROI">
           <span
             className={
               m?.roi == null
@@ -178,16 +163,14 @@ function PoolWalletView({ address }: { address: string }) {
             {pct(m?.roi)}
           </span>
         </Stat>
-        <Stat label="Win rate" note="Closed inventory cycles">
-          {pct(m?.winRate)}
-        </Stat>
+        <Stat label="Win rate">{pct(m?.winRate)}</Stat>
         <Stat label="Observed swaps">
           {m ? m.trades.length : <Unavailable />}
         </Stat>
         <Stat label="Observed volume">
           <Eth wei={m?.volumeWei} />
         </Stat>
-        <Stat label="Avg closed hold" note="First buy to closing sell">
+        <Stat label="Avg closed hold">
           {m?.avgHold === null || m?.avgHold === undefined ? (
             <Unavailable />
           ) : (
@@ -202,30 +185,13 @@ function PoolWalletView({ address }: { address: string }) {
       {!a ? (
         <div className="panel empty-state">
           <h2>Audit this pool to load the wallet’s data</h2>
-          <p>
-            No PnL is assumed before receipts, transfers and inventory are
-            checked.
-          </p>
         </div>
       ) : !m ? (
         <div className="panel empty-state">
           <h2>No attributed swaps for this address in this pool</h2>
-          <p>
-            This is not a zero balance or a statement about activity elsewhere
-            on the chain.
-          </p>
         </div>
       ) : (
         <>
-          {!m.complete && (
-            <div className="coverage-notice">
-              <strong>Incomplete accounting: PnL is unavailable.</strong>
-              <p>
-                {m.row.flags.join(", ")}. Raw observed swaps remain visible for
-                inspection.
-              </p>
-            </div>
-          )}
           <div className="workspace-grid">
             <div>
               <section className="panel">
@@ -241,9 +207,7 @@ function PoolWalletView({ address }: { address: string }) {
                     profit
                   />
                 ) : (
-                  <div className="empty-state">
-                    Cannot chart profit with unknown basis.
-                  </div>
+                  <div className="empty-state">Chart unavailable.</div>
                 )}
               </section>
               {activityTabs}
@@ -298,16 +262,9 @@ function PoolWalletView({ address }: { address: string }) {
                   </div>
                 ) : (
                   <p className="panel-footnote">
-                    {m.complete
-                      ? "No open inventory in this audited pool."
-                      : "Position value is withheld because cost or inventory is incomplete."}
+                    {m.complete ? "No open position." : "Position unavailable."}
                   </p>
                 )}
-                <p className="panel-footnote">
-                  Marked at the audit’s latest observed pool price, through{" "}
-                  {utc(a.toTimestamp)}. Spot value is not guaranteed exit
-                  proceeds.
-                </p>
               </section>
               <section className="panel live-section" hidden={tab !== "Trades"}>
                 <div className="panel-heading">
@@ -336,7 +293,7 @@ function PoolWalletView({ address }: { address: string }) {
                   <div>
                     <dt>Crowd entries</dt>
                     <dd>
-                      <Unavailable reason="Auction coverage is not collected" />
+                      <Unavailable />
                     </dd>
                   </div>
                   <div>
@@ -350,21 +307,11 @@ function PoolWalletView({ address }: { address: string }) {
                     </dd>
                   </div>
                 </dl>
-                <p className="panel-footnote">
-                  Early share is the fraction of this wallet’s supported buy
-                  quantity acquired in the first five blocks after launch.
-                  Same-block activity alone does not establish bundling.
-                </p>
               </section>
               <section className="panel">
                 <div className="panel-heading">
                   <h2>PnL share card</h2>
                 </div>
-                <p className="panel-footnote">
-                  1200 × 630 PNG. Includes this pool, window, audit cutoff and
-                  before-gas qualification. The server calculates card values
-                  from RPC audit data.
-                </p>
                 <div className="live-share-actions">
                   <button
                     className="button"

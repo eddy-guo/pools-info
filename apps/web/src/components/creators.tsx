@@ -45,9 +45,8 @@ const CAP = 100;
     never moves its start when the digits change, so this needs no
     shift-avoidance keying. */
 function StillTrading({ r }: { r: CreatorRow }) {
-  if (!r.measured) return <Unavailable reason="No measured launch" />;
-  if (r.measured < r.launches)
-    return <Unavailable reason="Not every launch measured" />;
+  if (!r.measured) return <Unavailable />;
+  if (r.measured < r.launches) return <Unavailable />;
   const pct = Math.round((r.traded / r.measured) * 100);
   return (
     <span className="still-trading">
@@ -470,7 +469,7 @@ function CreatorDirectory() {
  */
 function launchActivity(p: AnalyticsPoolRow) {
   return p.stats.trades === null ? (
-    <Unavailable reason="No measured activity" />
+    <Unavailable />
   ) : p.stats.trades > 0 ? (
     "Active"
   ) : (
@@ -790,7 +789,7 @@ export function WalletLaunches({ address }: { address: string }) {
                           {active ? "Active" : "No swap observed"}
                         </span>
                       ) : (
-                        <Unavailable reason="Activity has not been collected" />
+                        <Unavailable />
                       )}
                     </td>
                     <td>
@@ -800,7 +799,7 @@ export function WalletLaunches({ address }: { address: string }) {
                       {bought ? (
                         <span className="badge lavender">BOUGHT OWN</span>
                       ) : (
-                        <Unavailable reason="No supported own purchase established" />
+                        <Unavailable />
                       )}
                     </td>
                   </tr>

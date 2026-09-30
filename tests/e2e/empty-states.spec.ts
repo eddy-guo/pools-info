@@ -260,7 +260,7 @@ test("a wallet the accounting has never observed reads as not indexed, not as ze
   );
   // The unmeasured figures carry the quiet mark the five honest tiles use.
   for (const label of ["Win rate", "Trades", "Volume"]) {
-    await expect(tile(page, label)).toHaveText("\u2013");
+    await expect(tile(page, label)).toHaveText("\u2013Unavailable");
     await expect(tile(page, label).locator(".unavailable")).toHaveCount(1);
   }
   await expect(page.locator(".wallet-stats .wl-record")).toHaveCount(0);
@@ -437,7 +437,7 @@ test("a served wallet whose curve is not sent says so, with an uncounted Trades 
   );
   await expect(
     page.locator(".wallet-page .chart-readout .unavailable"),
-  ).toHaveText("\u2013");
+  ).toHaveText("\u2013Unavailable");
   await expect(page.locator(".wallet-page")).not.toContainText(
     "No realized PnL",
   );

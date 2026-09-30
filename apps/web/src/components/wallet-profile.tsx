@@ -73,9 +73,6 @@ function SetWalletDialog({
         <button type="submit" className="button">
           Use this wallet
         </button>
-        <p className="wallet-set-note">
-          Saved only in this browser. No connection is made.
-        </p>
       </form>
     </dialog>
   );

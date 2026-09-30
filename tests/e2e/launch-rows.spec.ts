@@ -205,11 +205,8 @@ test("a measured row whose read carries no price leaves the price cell empty, de
   const price = first.locator(".price");
   await expect(price).toHaveCount(1);
   await expect(price).toHaveClass(/unavailable/);
-  await expect(price).toHaveText("");
-  await expect(price).toHaveAttribute(
-    "aria-label",
-    "Unavailable: No observed swap price",
-  );
+  await expect(price.locator(".sr-only")).toHaveText("Unavailable");
+  await expect(price).not.toHaveAttribute("title");
   await expect(first).toContainText("ETH");
   await expect(first).toContainText(/\d trades?/);
 });
