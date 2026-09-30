@@ -18,6 +18,7 @@ import {
   releaseLedgerWriter,
 } from "../../../packages/db/src/index";
 import {
+  addr,
   base,
   batch,
   blockOf,
@@ -175,6 +176,11 @@ test(
       // W2 in R: 10 tokens for 1 ETH in hour 1000, inside 7d and out of
       // 24h; R's decimals are unknown, so the holding cannot be marked.
       .trade(blockOf(1000, 0), W[2], "buy", E, 10n, pools.R)
+      // W3 in R: 10 tokens for 1 ETH in hour 990, sold for 1.2 ETH in hour
+      // 995, before W2's buy sets R's price: a flat position in a pool whose
+      // decimals are unknown.
+      .trade(blockOf(990, 0), W[3], "buy", E, 10n, pools.R)
+      .trade(blockOf(995, 0), W[3], "sell", 12n * tenth, 10n, pools.R)
       // W6 sells 7 Q it never bought in hour 1074: the position is excluded
       // (unknown_basis), its 0.9 ETH of proceeds is volume only.
       .trade(blockOf(1074, 1), W[6], "sell", 9n * tenth, 7n, pools.Q);
@@ -208,6 +214,31 @@ test(
       404,
     );
     assert.equal((await position("ledger", W[1], pools.R.id)).status, 404);
+    // A catalog whose recent and indexed rows name a pool differently fails
+    // closed, as the pool route does.
+    await db.query(
+      "INSERT INTO recent_streams(chain_id,stream_key,start_block) VALUES(4663,'discovery',0)",
+    );
+    await db.query(
+      "INSERT INTO recent_batches(chain_id,stream_key,from_block,to_block,block_hash,to_timestamp,content_hash,evidence) VALUES(4663,'discovery',10,19,$1,100,'test','{}')",
+      [hash(19)],
+    );
+    await db.query(
+      `INSERT INTO recent_pools(chain_id,pool_id,token,name,symbol,launch_block,launch_tx,launch_sender,launched_at,source_batch)
+       SELECT chain_id,pool_id,$2,name,symbol,launch_block,launch_tx,launch_sender,launched_at,19
+       FROM indexed_pools WHERE pool_id=$1`,
+      [pools.Q.id, addr(0x999)],
+    );
+    assert.deepEqual(
+      await position("ledger", W[1], pools.P.id).then(({ status, data }) => ({
+        status,
+        data,
+      })),
+      { status: 503, data: { error: "catalog_identity_conflict" } },
+    );
+    await db.query(
+      "DELETE FROM recent_streams WHERE chain_id=4663 AND stream_key='discovery'",
+    );
 
     // W1 in P, closed: the response's fields, the wallet page's row for the
     // pool, the mark of a flat position, the ledger's ROI on the 1 ETH
@@ -440,6 +471,17 @@ test(
       holdSeconds: 0,
     });
 
+    // W3 in R, flat in a pool with unknown decimals: the page's zero mark,
+    // which needs no price, so the value and the total return are served,
+    // while nothing is priced per whole token.
+    const r3 = await read(W[3], pools.R.id, "All");
+    assert.equal(r3.position.unrealizedWei, "0");
+    assert.deepEqual(r3.mark, { ...r2.mark, valueWei: "0" });
+    assert.deepEqual(
+      [r3.roi, r3.totalRoi, r3.avgEntryPriceWei],
+      [20, 20, null],
+    );
+
     // W6 in Q, excluded: the flag and the volume, null for every finance and
     // for the fold's state, as the page serves it; the pool's price state is
     // the pool's and stays, but the excluded position's value, returns and
@@ -473,6 +515,7 @@ test(
       [W[1], pools.P.id],
       [W[1], pools.Q.id],
       [W[2], pools.R.id],
+      [W[3], pools.R.id],
       [W[6], pools.Q.id],
     ] as const)
       for (const window of ["1h", "6h", "24h", "7d", "30d", "All"])
@@ -500,15 +543,21 @@ test(
         },
       ],
     );
+    // A verified snapshot inside the cut that disagrees with the indexed
+    // decimals withholds only the figures per whole token: the wei mark does
+    // not depend on the decimals, so the row stays the page's, and the value
+    // and the total return follow it.
     const conflicted = await read(W[1], pools.Q.id, "All");
-    assert.deepEqual(conflicted.mark, {
-      ...q1.mark,
-      priceWei: null,
-      valueWei: null,
-    });
-    assert.equal(conflicted.position.unrealizedWei, null);
-    assert.equal(conflicted.totalRoi, null);
-    assert.equal(conflicted.avgEntryPriceWei, null);
+    assert.deepEqual(conflicted.position, q1.position);
+    assert.deepEqual(
+      conflicted.position,
+      await pageRow(W[1], pools.Q.id, "All"),
+    );
+    assert.deepEqual(conflicted.mark, { ...q1.mark, priceWei: null });
+    assert.deepEqual(
+      [conflicted.roi, conflicted.totalRoi, conflicted.avgEntryPriceWei],
+      [null, 44.1151, null],
+    );
     await db.query(
       "DELETE FROM analytics_pool_snapshots WHERE chain_id=4663 AND pool_id=$1",
       [pools.Q.id],

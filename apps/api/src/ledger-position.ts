@@ -1,8 +1,16 @@
 import type { LiveWindow, WalletPositionResponse } from "@pools/core";
-import { catalogCte, type ReadQuery } from "./catalog-read";
+import {
+  assertCatalogIdentity,
+  catalogCte,
+  type ReadQuery,
+} from "./catalog-read";
 import { catalogPool } from "./explore-read";
 import { ledgerCoverage, ledgerWindowRefresh } from "./ledger-leaderboard";
-import { ledgerCut, ledgerPriceSql, ledgerUnitsConflict } from "./ledger-market";
+import {
+  ledgerCut,
+  ledgerPriceSql,
+  ledgerUnitsConflict,
+} from "./ledger-market";
 import {
   counterpartyFlags,
   positionColumns,
@@ -43,7 +51,7 @@ export const positionSql = `WITH marked AS (
       FROM agg_wallet_hours WHERE chain_id=4663 AND wallet_ref=$1 AND pool_ref=$3
     ) f ON true
     WHERE p.chain_id=4663 AND p.wallet_ref=$1 AND p.pool_ref=$3
-  ) SELECT m.*,CASE WHEN $4::boolean THEN NULL ELSE mark::text END AS unrealized FROM marked m`;
+  ) SELECT m.*,mark::text AS unrealized FROM marked m`;
 
 /** A percent to four decimals, truncated toward zero in integer arithmetic as
  * `walletSummary` computes the board's ROI; null over a zero denominator,
@@ -57,6 +65,8 @@ const percent = (numerator: bigint, denominator: bigint) =>
  * pool the catalog lacks (as the pool route answers), `wallet_not_found` for
  * a wallet the ledger has never attributed a swap or transfer to, and
  * `position_not_found` when the wallet never held or traded this pool's token.
+ * A catalog whose recent and indexed rows disagree on a pool's identity
+ * answers 503 `catalog_identity_conflict`, as the pool route does.
  * A deployment whose ledger has folded nothing answers 503
  * `position_coverage_unavailable` rather than the frozen accounting tables,
  * and a window the tip loop has not refreshed since the ledger's last
@@ -70,6 +80,7 @@ export async function readLedgerPosition(
 ): Promise<WalletPositionResponse> {
   const cut = await ledgerCut(query);
   if (!cut) throw new RequestError(503, "position_coverage_unavailable");
+  await assertCatalogIdentity(query);
   // The pool by the id the pool page uses, with the ledger's surrogate key.
   const pool = (
     await query(
@@ -109,6 +120,8 @@ export async function readLedgerPosition(
     Math.max(cut.startBlock, Number(pool.launch_block)),
     cut.block,
   );
+  // The wei mark does not depend on the decimals, so it stays the wallet
+  // page's; only the figures per whole token are withheld without trusted units.
   const priceUnavailable = unitsConflict || decimals === null || decimals > 36;
   const refresh = await ledgerWindowRefresh(
     query,
@@ -117,7 +130,7 @@ export async function readLedgerPosition(
     "position_refresh_pending",
   );
   const row = (
-    await query(positionSql, [ref, refresh.windowStart, pool.pool_ref, priceUnavailable])
+    await query(positionSql, [ref, refresh.windowStart, pool.pool_ref])
   ).rows[0];
   if (!row) throw new RequestError(404, "position_not_found");
   const coverage = await ledgerCoverage(query, refresh.asOf);
@@ -138,7 +151,10 @@ export async function readLedgerPosition(
   // bought or sold, which the ledger does not keep, so none is served.
   const held = position.position;
   const avgEntryPriceWei =
-    held && held.quantity !== "0" && position.decimals !== null && !priceUnavailable
+    held &&
+    held.quantity !== "0" &&
+    position.decimals !== null &&
+    !priceUnavailable
       ? (
           (BigInt(held.costWei) * 10n ** BigInt(position.decimals)) /
           BigInt(held.quantity)

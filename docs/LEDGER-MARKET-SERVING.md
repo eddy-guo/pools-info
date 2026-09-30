@@ -438,12 +438,13 @@ current production reader warm set is owned by `docs/DATABASE-WARMING.md`.
 card: one wallet-position, named by the wallet and the pool page's own
 32-byte pool id (a wallet holds at most one position per pool; the plural
 `wallets` form only, no singular alias), default window `All`. `position` is
-the wallet page's row for that pool, with a units-conflicted mark withheld:
-the same `positionColumns`
+the wallet page's row for that pool: the same `positionColumns`
 over the same sources, the same cut and the same window start, mapped by the
 same `walletPosition` in `ledger-wallet.ts`, so a consumer of the page reuses
 its type, and `ledger-position.integration.test.ts` pins the two equal on
-every window without a units conflict. Beside it, what a card needs and the ledger can vouch for, each
+every window, under a units conflict and in a pool with unknown decimals
+too: the mark in wei (`markSql`) does not depend on the decimals, so only
+the figures per whole token are withheld without trusted units. Beside it, what a card needs and the ledger can vouch for, each
 null where it cannot:
 
 - **`pool`** is the catalog row (`CatalogPool`), the identity a card names the
@@ -451,12 +452,12 @@ null where it cannot:
 - **`mark`** is the price state behind `unrealizedWei`: the pool's latest
   `sqrtPriceX96`, `priceWei` per whole token (`ledgerPriceSql`, the pool
   page's price, null while the token's decimals are unknown or a verified
-  snapshot inside the ledger cut disagrees with indexed decimals), the swap that
+  snapshot inside the ledger cut disagrees with indexed decimals, as the pool
+  page withholds its own), the swap that
   set it (`block`, `timestamp`, `txHash`) and `valueWei`, what the held units
   fetch at that price (`unrealizedWei + costWei`, `"0"` for a flat position,
-  null for an excluded, unmarked or units-conflicted one). Null when the pool
-  has no swap folded. On a units conflict, `position.unrealizedWei` and
-  `totalRoi` are also null.
+  null for an excluded or unmarked one). Null when the pool has no swap
+  folded.
 - **`roi`** is the ledger's ROI as the board and the wallet header define it:
   lifetime realized over lifetime disposed cost (`investedWei - costWei` on a
   supported position, since an outflow excludes), in percent to four decimals
@@ -480,10 +481,10 @@ null where it cannot:
   `holdSeconds` (the closed cycles' hold time; the average is `holdSeconds`
   over `closures`, the header's `avgHold` per position). Null for an excluded
   position, whose inventory is not served.
-The nested `position.position` retains the wallet page's `openedAt`,
-`firstHour` and `lastHour`. The latter two bound a closed position's span at
-UTC-hour precision; there is no separate activity object or exact first-buy
-timestamp.
+  The nested `position.position` retains the wallet page's `openedAt`,
+  `firstHour` and `lastHour`. The latter two bound a closed position's span at
+  UTC-hour precision; there is no separate activity object or exact first-buy
+  timestamp.
 
 An excluded position answers `supported: false` with its flags, null finances
 and no `position`, as the page does, and `mark.valueWei`, `roi`, `totalRoi`
@@ -493,11 +494,15 @@ to 404 `wallet_not_found`; a wallet that never held or traded the pool's
 token 404 `position_not_found`. A ledger that has folded nothing, or a
 deployment on the broad source, answers 503 `position_coverage_unavailable`
 rather than the frozen accounting tables; a window without a refresh row 503
-`position_refresh_pending`, as the page's `wallet_refresh_pending`. Caching
+`position_refresh_pending`, as the page's `wallet_refresh_pending`; a catalog
+whose recent and indexed rows disagree on a pool's identity 503
+`catalog_identity_conflict`, as the pool route answers. Caching
 is the page's: `Cache-Control: no-store`, coalesced and cached in process for
 five seconds.
 
-Cost: the cut, one catalog probe by pool id, one unique-index probe for the
+Cost: the cut, the catalog identity check the pool route runs (a join of
+`recent_pools` to `indexed_pools`, 0.04 ms warm on the copy, whose
+`recent_pools` is empty), one catalog probe by pool id, one unique-index probe for the
 `wallet_ref`, the window's refresh row, then one statement over one
 `agg_positions` primary-key probe with its `indexed_pools` and
 `agg_pool_state` probes and one `agg_wallet_hours` primary-key range (the
