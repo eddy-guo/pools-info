@@ -140,9 +140,9 @@ outside the warmth gate, so it answers while `/ready` still refuses a warming
 reader, and outside the request budget, one read per response-cache window
 however often it is polled, so an uptime check can poll it freely; a database
 it cannot reach is the ordinary 503 `data_temporarily_unavailable`. `/ready`
-ignores freshness: it decides a deploy, and stale data still beats none. The
-freshness probe in the operator's firstmate home reads `/v1/status` and wakes
-once per episode on `stale`. On the broad source both routes carry
+ignores freshness: it decides a deploy, and stale data still beats none. An
+external monitor can read `/v1/status` to alert on `stale`; this repository
+does not configure that monitor. On the broad source both routes carry
 `ledger: null` and `/health` stays `{ok:true}`.
 
 A pool item includes `poolId`, `token`, `name`, `symbol`, `coverage`, and `launch`:

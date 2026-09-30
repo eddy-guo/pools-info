@@ -410,16 +410,15 @@ the first advance) is older than `LEDGER_STALE_MS` (600000, ten minutes),
 then 503. The handler reads memory the loop's observer hooks fill
 and never touches the database or the network, so it cannot slow a cycle;
 the server is unref'd, so it never keeps the worker alive past its exit.
-The `chain-sync` service's Railway healthcheck path is this route (set on
-the service, mirrored in `railway.chain-sync.json`). Railway polls it only
-at deploy time, until the first 200, and never continuously: the listener
+`railway.chain-sync.json` declares `/health` as the healthcheck path; the
+Railway service has no config file path set, so this declaration alone does
+not change its service-level setting. Railway polls a configured healthcheck
+only at deploy time, until the first 200, and never continuously: the listener
 therefore starts before the database work and answers 200 after validation
 while this instance still waits for the previous one's writer lock, or Railway
-would never stop the previous instance and the handover would deadlock. The
-continuous signal is the api's: `/health` and `/v1/status` judge the
-stream's `updated_at` age by the same variable (`apps/api/README.md`,
-"Ledger freshness"), and the operator's firstmate home polls `/v1/status`
-with a probe that wakes once per stale episode.
+would never stop the previous instance and the handover would deadlock. For
+the database-backed API freshness contract, see `apps/api/README.md`
+("Ledger freshness").
 
 ### Changes to phases 1 and 2, and why
 
