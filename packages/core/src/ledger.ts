@@ -378,12 +378,11 @@ type CheckedTransfer = LogSite & {
  * leaves the swap unattributed and marks every address whose balance of the
  * token moved in it; nothing of that transaction is applied. Under rule 2
  * (`rules.pooledSwaps`) a sell without a single candidate is first tried as
- * a pooled sell: two or more addresses sent the token into the swap,
- * none received it, and together exactly the swapped amount (a batch-sell
- * contract collecting many wallets' tokens and selling them in one swap);
- * each is attributed its own movement with its `pooledSwapShares` share of
- * the ETH leg, and no residual
- * movement is left. The initiator is one contributor among the others when
+ * a pooled sell: two or more addresses net sent exactly the swapped amount,
+ * none received it, the PoolManager net received that amount, and every other
+ * infrastructure address has zero net movement. Each contributor is attributed
+ * its own movement with its `pooledSwapShares` share of the ETH leg, and no
+ * residual movement is left. The initiator is one contributor when
  * it moved tokens and nothing otherwise, as under rule 1.
  * Swaps apply before residual transfers; transactions in block order, both in
  * log order. */
@@ -625,11 +624,11 @@ export function planLedgerBatch(
   return events;
 }
 
-/** Rule 2's pooled sell, or null: every address whose balance of the token
- * moved sent tokens into the swap, there are at least two, and their
- * movements sum to exactly the swapped amount. A movement against the
- * direction, a total the swap does not account for (a mint, a burn, a fee
- * taken in tokens) or a single mover leaves the swap to rule 1's outcome. */
+/** Rule 2's pooled sell, or null: at least two addresses net sent exactly the
+ * swapped amount, the PoolManager net received it, and every other
+ * infrastructure address has zero net movement. A counter-movement, residual
+ * mint, burn or token fee, or a single mover leaves the swap to rule 1's
+ * outcome. */
 function pooledContributions(
   s: CheckedSwap,
   moved: readonly string[],

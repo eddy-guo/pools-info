@@ -421,6 +421,102 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
   await releaseLedgerWriter(one);
 });
 
+test("rule 2 does not credit a pooled sell whose full token leg misses PoolManager", async (t) => {
+  const db = await setup(t, 2);
+  await writer(db);
+  const bought = batch(base, base + 9, [
+    buy(base + 2, A, E * 60n, 60n),
+    buy(base + 3, B, E * 40n, 40n),
+  ]);
+  await applyLedgerBatch(db, bought);
+
+  const diverted = pooledSell(base + 15);
+  const txHash = diverted.swaps[0].txHash;
+  diverted.transfers[2] = transfer(
+    base + 15,
+    80,
+    batchSeller,
+    ledgerRules.manager,
+    90n,
+    txHash,
+  );
+  diverted.transfers.push(
+    transfer(base + 15, 81, batchSeller, addr(0), 10n, txHash),
+  );
+  const applied = await applyLedgerBatch(
+    db,
+    batch(base + 10, base + 19, [diverted]),
+  );
+  assert.deepEqual(
+    [applied.attributed, applied.pooled, applied.unattributed],
+    [0, 0, 1],
+  );
+  assert.deepEqual(
+    (await positions(db)).map((p) => ({
+      wallet: p.wallet,
+      supported: p.supported,
+      flags: p.flags,
+      sells: p.sells,
+      proceeds: p.proceeds,
+      sold: p.sold,
+    })),
+    [A, B].map((wallet) => ({
+      wallet,
+      supported: false,
+      flags: ["unattributed_swap_activity"],
+      sells: 0,
+      proceeds: "0",
+      sold: "0",
+    })),
+  );
+  assert.deepEqual((await ring(db)).at(-1), {
+    attribution: "unattributed",
+    wallet_ref: null,
+    pooled_wallet_refs: null,
+    eth_wei: ethWei.toString(),
+    token_raw: "100",
+  });
+  await releaseLedgerWriter(db);
+});
+
+test("rule 2 keeps a pooled buy unattributed when its tokens fan out to two wallets", async (t) => {
+  const db = await setup(t, 2);
+  await writer(db);
+  const block = base + 5;
+  const txHash = hash(block * 1000 + 9);
+  const applied = await applyLedgerBatch(
+    db,
+    batch(base, base + 9, [{
+      swaps: [swap(block, 90, {
+        side: "buy",
+        eth: E * 3n,
+        tokens: 30n,
+        initiator: batchSeller,
+        txTo: batchSeller,
+        txHash,
+      })],
+      transfers: [
+        transfer(block, 10, ledgerRules.manager, batchSeller, 30n, txHash),
+        transfer(block, 11, batchSeller, A, 10n, txHash),
+        transfer(block, 12, batchSeller, B, 20n, txHash),
+      ],
+    }]),
+  );
+  assert.deepEqual(
+    [applied.attributed, applied.pooled, applied.unattributed],
+    [0, 0, 1],
+  );
+  assert.deepEqual(
+    (await positions(db)).map((p) => [p.wallet, p.supported, p.flags]),
+    [
+      [A, false, ["unattributed_swap_activity"]],
+      [B, false, ["unattributed_swap_activity"]],
+    ],
+  );
+  assert.equal((await ring(db))[0].attribution, "unattributed");
+  await releaseLedgerWriter(db);
+});
+
 test("a stream keeps the rule it was created under, the crowd stream follows the main stream's, and a rule the stream is not folded under is refused", async (t) => {
   const db = await setup(t, 2);
   // The rule is the stream's: asking for the other one is refused, asking

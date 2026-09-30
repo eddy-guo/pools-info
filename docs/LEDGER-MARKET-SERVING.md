@@ -435,9 +435,9 @@ response is the accounting reader's, field for field; what its values mean:
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
 - **`pooledSwapsAttributedSince`** is the wallet page's disclosure of the
-  rule change: the unix time since which every sell routed through a pooled
-  swap, earlier ones included (the history is re-folded), is attributed to
-  each contributor pro rata by the token it moved
+  rule change: the unix time since which eligible pooled sells, earlier ones
+  included (the history is re-folded), are attributed to each contributor
+  pro rata by the tokens they moved
   (`agg_streams.fold_rule_since`, set at the swap-in of a ledger folded
   under rule 2), or null while the served ledger folds under rule 1 or the
   swap-in date is not recorded yet. The page states the day in UTC beside
