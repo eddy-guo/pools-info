@@ -6,8 +6,11 @@ import {
   ProductUnavailableError,
   preloadedProduct,
   productUnavailableResponse,
+  readEthPrice,
   readProduct,
   readScreenerStats,
+  readsUpstream,
+  readWalletTradeHistory,
 } from "./product-server";
 import {
   cardCurve,
@@ -26,6 +29,7 @@ import {
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { fontCodePoints } from "./font-coverage";
+import { targetedMarketSnapshot } from "./chain-server";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
 import { validateStatsResponse } from "./stats-response";
@@ -1648,6 +1652,58 @@ test("product proxy preserves either valid Retry-After form for warming", async 
   }
 });
 
+test("market routes pass the read API's request limit and warming waits to the page", async (t) => {
+  withIndexer(t, "https://index.example");
+  const { GET: market } = await import("../app/api/markets/[poolId]/route");
+  const { GET: accounting } = await import(
+    "../app/api/markets/[poolId]/accounting/route"
+  );
+  const poolId = `0x${"1".repeat(64)}`;
+  const launch = `0x${"2".repeat(64)}`;
+  const routes = [market, accounting];
+  let upstream = Response.json(
+    { error: "request_limit", reason: "client_budget" },
+    { status: 429, headers: { "Retry-After": "7" } },
+  );
+  t.mock.method(globalThis, "fetch", async () => upstream.clone());
+  for (const route of routes) {
+    const request = new Request(
+      `https://site.example/api/markets/${poolId}/?launch=${launch}`,
+    );
+    const params = { params: Promise.resolve({ poolId }) };
+    const limited = await route(request, params);
+    assert.equal(limited.status, 503);
+    assert.equal(limited.headers.get("retry-after"), "7");
+    assert.deepEqual(await limited.json(), {
+      error: "data_unavailable",
+      reason: "request_limit",
+    });
+    upstream = Response.json(
+      { error: "data_temporarily_unavailable", reason: "warming" },
+      { status: 503, headers: { "Retry-After": "19" } },
+    );
+    const warming = await route(request, params);
+    assert.equal(warming.status, 503);
+    assert.equal(warming.headers.get("retry-after"), "19");
+    assert.deepEqual(await warming.json(), {
+      error: "data_unavailable",
+      reason: "warming",
+    });
+    upstream = Response.json(
+      { error: "request_limit", reason: "client_budget" },
+      { status: 429, headers: { "Retry-After": "7" } },
+    );
+  }
+  upstream = Response.json({ error: "not_found" }, { status: 404 });
+  const fallback = await accounting(
+    new Request(`https://site.example/api/markets/${poolId}/?launch=${launch}`),
+    { params: Promise.resolve({ poolId }) },
+  );
+  assert.equal(fallback.status, 503);
+  assert.equal(fallback.headers.get("retry-after"), "300");
+  assert.deepEqual(await fallback.json(), { error: "audit_unavailable" });
+});
+
 test("eth/usd price validates the upstream shape before trusting it", async (t) => {
   const { readEthPrice, EthPriceUnavailableError } =
     await import("./product-server");
@@ -1988,4 +2044,149 @@ test("stats read treats a missing route, coverage refusal, and invalid body as n
   process.env.CHAIN_REFRESH_DISABLED = "1";
   process.env.PRODUCT_FIXTURES = "1";
   assert.deepEqual(await readScreenerStats("24h"), { status: 503 });
+});
+
+test("product proxy carries the read API's request-limit refusal and its own wait to the page", async (t) => {
+  withIndexer(t, "https://index.example");
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { error: "request_limit", reason: "client_budget" },
+      { status: 429, headers: { "Retry-After": "7" } },
+    ),
+  );
+  let failure: ProductUnavailableError | undefined;
+  await assert.rejects(
+    readProduct(["explore"], new URLSearchParams("limit=25")),
+    (error: unknown) => {
+      assert.ok(error instanceof ProductUnavailableError);
+      failure = error;
+      return true;
+    },
+  );
+  // The page sees the same unavailable contract it already handles, with the
+  // api's own wait instead of the generic thirty seconds.
+  const limited = productUnavailableResponse(failure!);
+  assert.equal(limited.status, 503);
+  assert.equal(limited.headers.get("retry-after"), "7");
+  assert.deepEqual(await limited.json(), {
+    error: "data_unavailable",
+    reason: "request_limit",
+  });
+  assert.deepEqual(await readScreenerStats("24h"), {
+    status: 503,
+    retryAfter: "7",
+    reason: "request_limit",
+  });
+  const { GET } = await import("../app/api/product/[...path]/route");
+  const stats = await GET(
+    new Request("https://site.example/api/product/stats/?window=24h"),
+    { params: Promise.resolve({ path: ["stats"] }) },
+  );
+  assert.equal(stats.status, 503);
+  assert.equal(stats.headers.get("retry-after"), "7");
+  assert.deepEqual(await stats.json(), {
+    error: "data_unavailable",
+    reason: "request_limit",
+  });
+  await assert.rejects(
+    readWalletTradeHistory(
+      ["wallets", "0x" + "2".repeat(40), "history"],
+      new URLSearchParams("kind=trades"),
+    ),
+    (error: unknown) =>
+      error instanceof ProductUnavailableError &&
+      error.reason === "request_limit" &&
+      error.retryAfter === "7",
+  );
+});
+
+test("the visitor reaches the read API only under the shared secret, on every upstream read", async (t) => {
+  withIndexer(t, "https://index.example");
+  const oldSecret = process.env.INDEXER_PROXY_SECRET;
+  delete process.env.INDEXER_PROXY_SECRET;
+  t.after(() => {
+    if (oldSecret === undefined) delete process.env.INDEXER_PROXY_SECRET;
+    else process.env.INDEXER_PROXY_SECRET = oldSecret;
+  });
+  const sent: Headers[] = [];
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_input: URL | string | Request, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers));
+      throw Error("upstream unavailable");
+    },
+  );
+  const reads = [
+    () =>
+      readProduct(["explore"], new URLSearchParams("limit=25"), "203.0.113.9"),
+    () => readScreenerStats("24h", "203.0.113.9"),
+    () =>
+      readEthPrice(["prices", "eth-usd"], new URLSearchParams(), "203.0.113.9"),
+    () =>
+      readWalletTradeHistory(
+        ["wallets", "0x" + "2".repeat(40), "history"],
+        new URLSearchParams("kind=trades"),
+        "203.0.113.9",
+      ),
+    () =>
+      targetedMarketSnapshot(
+        "0x" + "3".repeat(64),
+        `0x${"4".repeat(64)}`,
+        false,
+        "203.0.113.9",
+      ),
+    () =>
+      readCardWallet(
+        "0x" + "6".repeat(40),
+        "All",
+        undefined,
+        undefined,
+        "203.0.113.9",
+      ),
+    () =>
+      readCardWallet(
+        "0x" + "6".repeat(40),
+        "All",
+        "0x" + "7".repeat(64),
+        undefined,
+        "203.0.113.9",
+      ),
+  ];
+  for (const read of reads) {
+    sent.length = 0;
+    await read().catch(() => undefined);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].get("x-pools-proxy-secret"), null);
+    assert.equal(sent[0].get("x-pools-client-address"), null);
+  }
+  process.env.INDEXER_PROXY_SECRET = "s".repeat(16);
+  for (const read of reads) {
+    sent.length = 0;
+    await read().catch(() => undefined);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].get("x-pools-proxy-secret"), "s".repeat(16));
+    assert.equal(sent[0].get("x-pools-client-address"), "203.0.113.9");
+  }
+  // A read with no visitor behind it presents the secret alone, so the api
+  // leaves it unattributed rather than charging this server's egress address.
+  sent.length = 0;
+  await readProduct(["explore"], new URLSearchParams("limit=25")).catch(
+    () => undefined,
+  );
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].get("x-pools-proxy-secret"), "s".repeat(16));
+  assert.equal(sent[0].get("x-pools-client-address"), null);
+});
+
+test("only a deployment that reads from a read API rations its product routes", (t) => {
+  withIndexer(t);
+  assert.equal(readsUpstream(), false);
+  withIndexer(t, "https://index.example");
+  assert.equal(readsUpstream(), true);
+  process.env.CHAIN_REFRESH_DISABLED = "1";
+  assert.equal(readsUpstream(), false);
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "ftp://index.example";
+  assert.equal(readsUpstream(), false);
 });

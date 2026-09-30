@@ -38,6 +38,7 @@ import initial from "../../../../data/snapshots/chain.json";
 import captured from "../../../../data/pools/index.json";
 import catalog from "../../../../data/catalog/chain.json";
 import { productRequest } from "./product-request";
+import { upstreamIdentity } from "./product-admission";
 import type { Delivered } from "./use-product";
 
 /** Every pool in the committed dataset was discovered from an Instant
@@ -275,12 +276,22 @@ function indexerOrigin() {
     throw Error("Invalid configured indexer origin");
   return origin;
 }
+/** Whether this deployment reads from a read API at all: the product routes'
+ * admission line guards that upstream and nothing else, so the fixture
+ * deployment the browser suites run is not rationed. */
+export function readsUpstream(): boolean {
+  try {
+    return indexerOrigin() !== null;
+  } catch {
+    return false;
+  }
+}
 /**
  * A product read this deployment could not serve. It is the page's honest
  * answer: the surface that asked shows its unavailable state and no figures,
  * exactly as the ETH price does, rather than any stored stand-in.
  */
-export type ProductUnavailableReason = "warming";
+export type ProductUnavailableReason = "warming" | "request_limit";
 export class ProductUnavailableError extends Error {
   constructor(
     readonly retryAfter = "30",
@@ -295,9 +306,16 @@ function validRetryAfter(value: string | null) {
   if (/^\d+$/.test(value)) return value;
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
-/** Interpret the one transient state the browser can act on. Other upstream
- * failures retain the existing generic 30-second unavailable contract. */
+/** Interpret the transient states the browser can act on: a warming database
+ * and a request budget the read API refused, each with the wait the api
+ * itself named. Other upstream failures retain the existing generic
+ * 30-second unavailable contract. */
 async function productUnavailable(response: Response) {
+  if (response.status === 429)
+    return new ProductUnavailableError(
+      validRetryAfter(response.headers.get("retry-after")) ?? "30",
+      "request_limit",
+    );
   if (response.status !== 503) return new ProductUnavailableError();
   const body = await response
     .clone()
@@ -336,8 +354,10 @@ export function productUnavailableResponse(error: ProductUnavailableError) {
  * API, coverage refusal, or invalid body means the screener has no stat cards. */
 export async function readScreenerStats(
   window: LiveWindow,
+  visitor: string | null = null,
 ): Promise<
-  { status: 200; data: ScreenerStatsResponse } | { status: 404 | 503 }
+  | { status: 200; data: ScreenerStatsResponse }
+  | { status: 404 | 503; retryAfter?: string; reason?: "request_limit" }
 > {
   const checked = productRequest(["stats"], new URLSearchParams({ window }));
   let origin: URL | null = null;
@@ -354,9 +374,22 @@ export async function readScreenerStats(
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
       redirect: "error",
+      headers: upstreamIdentity(visitor),
     });
     if (response.status === 404) return { status: 404 };
-    if (!response.ok) return { status: 503 };
+    if (response.status === 429)
+      return {
+        status: 503,
+        retryAfter:
+          validRetryAfter(response.headers.get("retry-after")) ?? "30",
+        reason: "request_limit",
+      };
+    if (!response.ok) {
+      const retryAfter = validRetryAfter(response.headers.get("retry-after"));
+      return retryAfter === null
+        ? { status: 503 }
+        : { status: 503, retryAfter };
+    }
     const data: unknown = await response.json();
     validateStatsResponse(data, window);
     return { status: 200, data };
@@ -374,6 +407,7 @@ export class EthPriceUnavailableError extends Error {
 export async function readEthPrice(
   path: string[],
   params: URLSearchParams,
+  visitor: string | null = null,
 ): Promise<EthPriceResponse> {
   productRequest(path, params);
   let origin: URL | null = null;
@@ -389,6 +423,7 @@ export async function readEthPrice(
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
       redirect: "error",
+      headers: upstreamIdentity(visitor),
     });
   } catch {
     throw new EthPriceUnavailableError(30);
@@ -424,6 +459,7 @@ export async function readEthPrice(
 export async function readWalletTradeHistory(
   path: string[],
   params: URLSearchParams,
+  visitor: string | null = null,
 ): Promise<Delivered<WalletTradeHistoryResponse>> {
   const checked = productRequest(path, params);
   let origin: URL | null = null;
@@ -441,6 +477,7 @@ export async function readWalletTradeHistory(
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
       redirect: "error",
+      headers: upstreamIdentity(visitor),
     });
   } catch {
     throw new ProductUnavailableError();
@@ -452,6 +489,7 @@ export async function readWalletTradeHistory(
       Number.isSafeInteger(seconds) && seconds > 0
         ? String(Math.min(seconds, 86400))
         : "30",
+      response.status === 429 ? "request_limit" : undefined,
     );
   }
   const data = await response.json().catch(() => null);
@@ -460,7 +498,10 @@ export async function readWalletTradeHistory(
   } catch {
     throw new ProductUnavailableError();
   }
-  return { ...(data as WalletTradeHistoryResponse), delivery: { source: "indexer" } };
+  return {
+    ...(data as WalletTradeHistoryResponse),
+    delivery: { source: "indexer" },
+  };
 }
 /**
  * One product read, from the configured read API and nowhere else.
@@ -476,6 +517,7 @@ export async function readWalletTradeHistory(
 export async function readProduct<T>(
   path: string[],
   params: URLSearchParams,
+  visitor: string | null = null,
 ): Promise<Delivered<T>> {
   const checked = productRequest(path, params);
   const base = process.env.INDEXER_API_URL;
@@ -489,6 +531,7 @@ export async function readProduct<T>(
         signal: AbortSignal.timeout(8000),
         cache: "no-store",
         redirect: "error",
+        headers: upstreamIdentity(visitor),
       });
     } catch {
       throw new ProductUnavailableError();

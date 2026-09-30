@@ -24,3 +24,6 @@ export * from "./observed-market";
 export * from "./wallet-history-types";
 export * from "./eth-price-types";
 export * from "./ledger-provenance";
+
+export * from "./token-bucket";
+export * from "./ipv6-client-key";

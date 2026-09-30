@@ -1,24 +1,36 @@
 import { createServer } from "node:http";
+import { createTokenBuckets } from "@pools/core";
 import { parseRequest, RequestError, type ReadRequest } from "./request";
 import type { Reader } from "./reader";
 import { respondTokenImage, type TokenImageService } from "./token-image-store";
 import { createWalletHistory, type WalletHistory } from "./wallet-history";
 import { createEthPriceService, type EthPriceService } from "./eth-price";
 import type { Following } from "./following-read";
+import {
+  clientIdentity,
+  ingressPolicy,
+  ingressSettings,
+  routeCostClass,
+  type IngressSettings,
+} from "./ingress";
 
-/** Small per-instance limits. We deliberately do not trust forwarded IP headers
- * or keep visitor/account records. Railway may add an edge limit separately. */
+/** Small per-instance limits. A client's budget is a transient in-memory
+ * token bucket under the key the ingress contract in `ingress.ts` names for
+ * it (kept only in bounded process memory, never logged or returned), spent
+ * before the shared ceilings; a request that contract cannot attribute draws
+ * on the shared ceilings alone. Railway may add an edge limit separately. */
 export function createApi(
   reader: Reader,
   {
     now = Date.now,
-    maxPerMinute = 240,
+    maxPerMinute = ingressPolicy.sharedJsonPerMinute as number,
     cacheMs = 5000,
     images = null as TokenImageService | null,
     maxImagesPerMinute = 1200,
     history = createWalletHistory({ client: null }) as WalletHistory,
     ethPrice = createEthPriceService() as EthPriceService,
     following = null as Following | null,
+    ingress = ingressSettings({}) as IngressSettings,
   } = {},
 ) {
   const cache = new Map<
@@ -91,6 +103,22 @@ export function createApi(
   // Icons have their own budget so a cold viewport of icons never starves
   // JSON reads, and their own in-flight bound beside the fetch slots.
   const imageBudget = limiter(maxImagesPerMinute);
+  // Readiness probes have their own small allowance: a health monitor is
+  // never starved by visitor traffic, and a probe flood spends no visitor's
+  // budget beyond the database work that allowance bounds.
+  const probeBudget = limiter(ingress.probesPerMinute);
+  // One bucket per client, refilled continuously; a refusal spends nothing.
+  const clients = createTokenBuckets(
+    {
+      capacity: ingress.clientTokenBurst,
+      refillPerSecond: ingress.clientTokensPerMinute / 60,
+      maxKeys: ingress.maxClients,
+    },
+    now,
+  );
+  function refuse(reason: string, retryAfter: number): never {
+    throw new RequestError(429, "request_limit", { reason, retryAfter });
+  }
   let active = 0,
     activeExplorer = 0,
     activeImages = 0;
@@ -125,16 +153,52 @@ export function createApi(
         request.route === "history" || request.route === "following";
       if (request.route === "ready") reader.assertReady?.();
       const version = databaseRead ? reader.assertReady?.() : undefined;
-      const retryAfter = (
-        request.route === "pool-image"
-          ? imageBudget
-          : explorerRead
-            ? explorerBudget
-            : readBudget
-      )();
-      if (retryAfter !== null) {
-        res.setHeader("Retry-After", String(retryAfter));
-        throw new RequestError(429, "request_limit");
+      // A rewound recent window must disappear on the very next poll.
+      // Explorer history keeps its own cache with stale/fresh semantics.
+      const cacheable =
+        request.route !== "ready" &&
+        request.route !== "history" &&
+        request.route !== "pool" &&
+        request.route !== "live-trades" &&
+        request.route !== "following" &&
+        request.route !== "trade-share";
+      const hit = cache.get(request.cacheKey);
+      let charged: { client: string; cost: number } | null = null;
+      if (request.route === "ready") {
+        const wait = probeBudget();
+        if (wait !== null) refuse("probe_budget", wait);
+      } else if (request.route === "pool-image") {
+        const wait = imageBudget();
+        if (wait !== null) refuse("image_budget", wait);
+      } else {
+        // The client's own budget first, priced by the work this request
+        // starts, then the shared ceiling as the backstop for everyone.
+        const served =
+          (cacheable &&
+            hit &&
+            hit.expires > now() &&
+            hit.version === version) ||
+          pending.has(request.cacheKey);
+        if (
+          request.route !== "eth-price" &&
+          !served &&
+          (explorerRead ? activeExplorer >= 8 : active >= 16)
+        )
+          throw new RequestError(503, "busy", { retryAfter: 5 });
+        const cost =
+          ingressPolicy.cost[served ? "cached" : routeCostClass(request.route)];
+        const client = clientIdentity(req, ingress.identity);
+        if (client !== null) {
+          const answer = clients.take(client, cost);
+          if (!answer.ok) refuse("client_budget", answer.retryAfterSeconds);
+          charged = { client, cost };
+        }
+        const wait = (explorerRead ? explorerBudget : readBudget)();
+        if (wait !== null) {
+          // The shared ceiling refused work this client never received.
+          if (charged !== null) clients.refund(charged.client, charged.cost);
+          refuse("shared_budget", wait);
+        }
       }
       if (request.route === "pool-image") {
         if (!images) throw new RequestError(404, "not_found");
@@ -157,16 +221,6 @@ export function createApi(
         send(200, JSON.stringify(result));
         return;
       }
-      // A rewound recent window must disappear on the very next poll.
-      // Explorer history keeps its own cache with stale/fresh semantics.
-      const cacheable =
-        request.route !== "ready" &&
-        request.route !== "history" &&
-        request.route !== "pool" &&
-        request.route !== "live-trades" &&
-        request.route !== "following" &&
-        request.route !== "trade-share";
-      const hit = cache.get(request.cacheKey);
       if (cacheable && hit && hit.expires > now() && hit.version === version) {
         res.setHeader("X-Data-Cache", "HIT");
         send(200, hit.body);
@@ -174,7 +228,7 @@ export function createApi(
       }
       let result = pending.get(request.cacheKey);
       if (!result) {
-        if (explorerRead ? activeExplorer >= 8 : active >= 16)
+        if (request.route === "ready" && active >= 16)
           throw new RequestError(503, "busy", { retryAfter: 5 });
         if (explorerRead) activeExplorer++;
         else active++;
