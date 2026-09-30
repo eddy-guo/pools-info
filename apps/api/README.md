@@ -218,7 +218,9 @@ order, a JSON request meets:
 - `client_budget`: the caller's own token bucket, when the contract below can
   name the caller. Its capacity is `CLIENT_TOKEN_BURST` (default 120,
   at least the refill), and `CLIENT_TOKENS_PER_MINUTE` refills it
-  continuously (default 60, minimum 10). Each
+  continuously (default 60, minimum 10). At startup, valid settings that
+  exceed the shared JSON ceiling are clamped so burst plus one minute of
+  refill stays below 240; one warning names any adjusted setting. Each
   request costs by the work it starts: 1 for a fresh cache hit, a coalesced
   in-flight read or the ETH price (one in-process entry), 2 for a bounded
   database read (status, pools, a pool page, trades, live trades, the feed,

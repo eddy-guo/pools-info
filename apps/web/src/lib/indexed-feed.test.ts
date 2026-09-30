@@ -91,7 +91,8 @@ test("feed route preserves valid upstream waits and falls back for invalid waits
   for (const [upstreamStatus, upstreamWait, expected] of [
     [429, "37", "37"],
     [503, "86400", "86400"],
-    [429, "86401", "15"],
+    [429, "86401", "86400"],
+    [503, "999999999999999999999999999", "86400"],
     [503, "1.5", "15"],
     [503, null, "15"],
     [500, "37", "15"],
