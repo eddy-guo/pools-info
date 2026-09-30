@@ -58,7 +58,7 @@ export function ChartRangeControl({
   disabled?: boolean;
 }) {
   return (
-    <div className="segmented" aria-label="Chart range">
+    <div className="segmented" role="group" aria-label="Chart range">
       {(Object.keys(chartRanges) as ChartRange[]).map((range) => (
         <button
           key={range}

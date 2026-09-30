@@ -3723,7 +3723,7 @@ button.icon-button:disabled {
   font-weight: 600;
   font-size: 12px;
   line-height: 16px;
-  color: var(--color-faint);
+  color: var(--color-muted);
 }
 .segmented button.selected,
 .segmented button[aria-pressed="true"] {

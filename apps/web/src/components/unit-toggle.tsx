@@ -10,7 +10,7 @@ export function UnitToggle() {
   const { unit, setUnit } = useUnit();
   const usdPerEth = useEthPrice();
   return (
-    <div className="segmented unit-toggle" aria-label="Currency unit">
+    <div className="segmented unit-toggle" role="group" aria-label="Currency unit">
       <button
         type="button"
         aria-pressed={unit === "ETH"}

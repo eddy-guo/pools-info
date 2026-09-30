@@ -604,7 +604,7 @@ export function ProductTraders() {
           Trader leaderboard<span className="title-dot">.</span>
         </h1>
         <div className="traders-controls">
-          <div className="segmented" aria-label="Trader view">
+          <div className="segmented" role="group" aria-label="Trader view">
             {(
               [
                 ["leaderboard", "Leaderboard"],
@@ -622,7 +622,7 @@ export function ProductTraders() {
               </button>
             ))}
           </div>
-          <div className="segmented" aria-label="Ranking metric">
+          <div className="segmented" role="group" aria-label="Ranking metric">
             {[
               ["realized", "Realized PnL"],
               ["net", "Net ETH"],

@@ -533,7 +533,7 @@ export function PeriodTabs({
   onChange: (value: "24h" | "7d") => void;
 }) {
   return (
-    <div className="segmented" aria-label="Time period">
+    <div className="segmented" role="group" aria-label="Time period">
       {(["24h", "7d"] as const).map((w) => (
         <button
           key={w}

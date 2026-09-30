@@ -179,7 +179,7 @@ export function TradingPreviewPanels() {
             Follow this wallet’s buys and sells, sized to your own allocation.
           </p>
           <span>Per trade</span>
-          <div className="segmented" aria-label="Copy trade size preview">
+          <div className="segmented" role="group" aria-label="Copy trade size preview">
             {["0.05 ETH", "0.1 ETH", "0.5 ETH"].map((v) => (
               <button
                 key={v}
