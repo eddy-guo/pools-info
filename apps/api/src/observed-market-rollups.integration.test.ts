@@ -54,9 +54,12 @@ test(
       const row = (
         await db.query("SELECT * FROM indexed_pools WHERE pool_id=$1", [pool])
       ).rows[0];
-      return JSON.parse(
-        JSON.stringify(await readObservedMarket(q, row, window, null)),
-      );
+      return {
+        ...JSON.parse(
+          JSON.stringify(await readObservedMarket(q, row, window, null)),
+        ),
+        supplyRaw: row.token_total_supply_raw ?? null,
+      };
     };
     const withoutRollups = async <T>(
       body: () => Promise<T>,
