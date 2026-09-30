@@ -727,10 +727,13 @@ main {
   color: var(--faint);
   font-size: 12px;
 }
-/* Reserve the count's eventual width so the first real total never re-wraps the row. */
+/* Reserve the count's eventual width so the first real total never re-wraps
+   the row, and its line while it is still empty (no count named yet), so the
+   phone foot's button does not drop a line when the count lands. */
 .pagination-count {
   display: inline-block;
   min-width: 22ch;
+  min-height: 1lh;
 }
 /* The Show more foot holds its button's row from first paint: the button
    goes once every row is on show, which a short list's first response
