@@ -486,21 +486,25 @@ test("rule 2 keeps a pooled buy unattributed when its tokens fan out to two wall
   const txHash = hash(block * 1000 + 9);
   const applied = await applyLedgerBatch(
     db,
-    batch(base, base + 9, [{
-      swaps: [swap(block, 90, {
-        side: "buy",
-        eth: E * 3n,
-        tokens: 30n,
-        initiator: batchSeller,
-        txTo: batchSeller,
-        txHash,
-      })],
-      transfers: [
-        transfer(block, 10, ledgerRules.manager, batchSeller, 30n, txHash),
-        transfer(block, 11, batchSeller, A, 10n, txHash),
-        transfer(block, 12, batchSeller, B, 20n, txHash),
-      ],
-    }]),
+    batch(base, base + 9, [
+      {
+        swaps: [
+          swap(block, 90, {
+            side: "buy",
+            eth: E * 3n,
+            tokens: 30n,
+            initiator: batchSeller,
+            txTo: batchSeller,
+            txHash,
+          }),
+        ],
+        transfers: [
+          transfer(block, 10, ledgerRules.manager, batchSeller, 30n, txHash),
+          transfer(block, 11, batchSeller, A, 10n, txHash),
+          transfer(block, 12, batchSeller, B, 20n, txHash),
+        ],
+      },
+    ]),
   );
   assert.deepEqual(
     [applied.attributed, applied.pooled, applied.unattributed],
