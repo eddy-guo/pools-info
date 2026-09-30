@@ -615,6 +615,45 @@ test("the page retries a warming product read after its Retry-After delay", asyn
   ).toBeAttached();
 });
 
+test("a request-limited product read is retried after its Retry-After delay", async ({
+  page,
+}) => {
+  // A spent request budget refills on its own, like a warming database: the
+  // page waits the refusal's own Retry-After and reads again rather than
+  // showing a busy visitor the unavailable state.
+  const clockStart = new Date("2026-09-21T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart.getTime() + 1_000);
+  let calls = 0;
+  await recordWarmingWaits(page);
+  await page.route(`**/api/product/wallets/${wallet}/**`, async (route) => {
+    calls += 1;
+    if (calls === 1) {
+      await route.fulfill({
+        status: 503,
+        json: { ...unavailable, reason: "request_limit" },
+        headers: { "retry-after": "3", "cache-control": "no-store" },
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await expect.poll(() => calls).toBe(1);
+  await warmingWaitArmed(page, [3_000], 1);
+  await page.clock.fastForward(2_999);
+  expect(calls).toBe(1);
+  await page.clock.fastForward(1);
+  await expect.poll(() => calls).toBe(2);
+  await expect(
+    page.getByRole("heading", { name: "Wallet unavailable" }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".wallet-activity [data-row='resolved']").first(),
+  ).toBeAttached();
+});
+
 test("repeated warming responses are each retried at their own Retry-After delay", async ({
   page,
 }) => {

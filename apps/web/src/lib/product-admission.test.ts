@@ -61,7 +61,7 @@ test("the read API learns the visitor only under the shared secret", () => {
   assert.deepEqual(upstreamIdentity("203.0.113.9", {}), {});
   assert.deepEqual(
     upstreamIdentity(null, { INDEXER_PROXY_SECRET: "s".repeat(16) }),
-    {},
+    { "X-Pools-Proxy-Secret": "s".repeat(16) },
   );
   assert.deepEqual(
     upstreamIdentity("203.0.113.9", { INDEXER_PROXY_SECRET: "s".repeat(16) }),

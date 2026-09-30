@@ -26,11 +26,13 @@ export async function targetedMarketSnapshot(
   poolId: string,
   launchTx: `0x${string}`,
   _refresh = false,
+  visitor: string | null = null,
 ): Promise<ChainSnapshot> {
   void _refresh;
   const result = await readProduct<{ analytics: AnalyticsPoolDetail | null }>(
     ["pools", poolId.toLowerCase()],
     new URLSearchParams(),
+    visitor,
   );
   const snapshot = result.analytics?.snapshot;
   if (
@@ -44,8 +46,14 @@ export async function auditedPoolSnapshot(
   poolId: string,
   launchTx: `0x${string}`,
   refresh = false,
+  visitor: string | null = null,
 ) {
-  const snapshot = await targetedMarketSnapshot(poolId, launchTx, refresh);
+  const snapshot = await targetedMarketSnapshot(
+    poolId,
+    launchTx,
+    refresh,
+    visitor,
+  );
   if (!snapshot.markets[0]?.accounting?.executions)
     throw Error("Saved accounting is not published yet");
   return snapshot;
