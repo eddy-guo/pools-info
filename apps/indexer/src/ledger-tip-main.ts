@@ -210,12 +210,16 @@ async function session(
       // one to three minutes on a production-shaped copy against the ten
       // minutes a batch's own statements keep.
       health?.starting("migrating");
-      const migrator = createClient(undefined, {
-        statementTimeoutMs: 3600000,
-        applicationName: "pools-ledger-tip-migrate",
-      });
+      const migrator = await connectWithBackoff(
+        () =>
+          createClient(undefined, {
+            statementTimeoutMs: 3600000,
+            applicationName: "pools-ledger-tip-migrate",
+          }),
+        { horizonMs, signal, log: emit },
+      );
+      if (migrator === null) return reconnect() ? "reconnect" : "done";
       migrator.on("error", disconnected);
-      await migrator.connect();
       try {
         await migrate(migrator);
       } finally {

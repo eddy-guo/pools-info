@@ -177,6 +177,7 @@ export async function runLedgerCrowdRange(
     multicall?: MulticallConfig;
     signal?: AbortSignal;
     log?: Log;
+    onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
   },
 ): Promise<LedgerCrowdRangeProgress | { idle: true; from: number }> {
   const started = performance.now();
@@ -192,6 +193,7 @@ export async function runLedgerCrowdRange(
       from: ledger.cursor === null ? ledger.start : ledger.cursor + 1,
     };
   options.signal?.throwIfAborted();
+  options.onRange?.({ from: range.fromBlock, to: range.toBlock, lane: "crowd" });
   const registry = await ledgerRegistry(db, range.fromBlock - 1, "crowd");
   const pending = await crowdPendingAuctions(db, range.fromBlock);
   const c: CrowdRangeCollection = await collectCrowdRange(
@@ -322,6 +324,7 @@ export async function runLedgerCrowdStep(
     signal?: AbortSignal;
     log?: Log;
     safeError: (error: unknown) => string;
+    onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
   },
 ): Promise<LedgerCrowdStep> {
   const started = performance.now();
@@ -340,7 +343,9 @@ export async function runLedgerCrowdStep(
         ...options,
         rangeBlocks: step.rangeBlocks,
       });
+      options.onRange?.(null);
     } catch (error) {
+      options.onRange?.(null);
       if (options.signal?.aborted || crowdStopsTheLoop(error)) throw error;
       step.failed = options.safeError(error);
       options.log?.({ event: "ledger_crowd_failed", error: step.failed });

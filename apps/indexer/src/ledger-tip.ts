@@ -274,7 +274,8 @@ export interface LedgerTipCycleOptions {
   signal?: AbortSignal;
   log?: Log;
   /** Called once the cycle's range is planned, before its first request. */
-  onRange?: (range: { from: number; to: number }) => void;
+  onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
+  onMainCommitted?: (cursor: number) => void;
 }
 /** One cycle: head, reconcile, at most one range, windows. Every write is a
  * committed batch or nothing, so the loop can stop at any point of it. */
@@ -306,7 +307,11 @@ export async function runLedgerTipCycle(
       signal: options.signal,
       onRange: options.onRange,
     });
-    if (!result.idle) range = result;
+    options.onRange?.(null);
+    if (!result.idle) {
+      range = result;
+      options.onMainCommitted?.(result.to);
+    }
   }
   const crowd =
     options.crowd && !options.signal?.aborted
@@ -319,6 +324,7 @@ export async function runLedgerTipCycle(
           signal: options.signal,
           log,
           safeError: ledgerTipSafeError,
+          onRange: options.onRange,
         })
       : null;
   const windows = options.signal?.aborted
@@ -561,11 +567,12 @@ export async function runLedgerTip(
   // committed cursor.
   let inFlight: { from: number; to: number } | null = null;
   let startCursor: number | null = null;
+  let committedCursor: number | null = null;
   const stopping = () =>
     log({
       event: "ledger_tip_stopping",
       reason: abortReason(options.signal),
-      cursor: summary.through ?? startCursor,
+      cursor: committedCursor ?? startCursor,
       inFlight,
       cycle: summary.cycles + 1,
     });
@@ -689,6 +696,9 @@ export async function runLedgerTip(
         log,
         onRange: (range) => {
           inFlight = range;
+        },
+        onMainCommitted: (cursor) => {
+          committedCursor = cursor;
         },
       });
     } catch (error) {

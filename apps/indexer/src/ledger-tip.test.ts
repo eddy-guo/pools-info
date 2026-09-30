@@ -1163,6 +1163,45 @@ test(
   },
 );
 
+test(
+  "a stop during the crowd lane names its range and the committed main cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    let options: ReturnType<typeof tipOptions>;
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    let stopped = false;
+    options = tipOptions(fake, log, {
+      crowdEnabled: true,
+      fetch: async (input, init) => {
+        if (!stopped && (await readLedgerStream(db)).cursor === start + 299) {
+          stopped = true;
+          options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+        }
+        return fake.fetch(input, init);
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: { from: start, to: start + 299, lane: "crowd" },
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
 test("the worker logs one stop during initial database reconnect", async (t) => {
   const child = spawn(
     process.execPath,
