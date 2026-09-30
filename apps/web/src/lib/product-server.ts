@@ -357,7 +357,7 @@ export async function readScreenerStats(
   visitor: string | null = null,
 ): Promise<
   | { status: 200; data: ScreenerStatsResponse }
-  | { status: 404 | 503; retryAfter?: string }
+  | { status: 404 | 503; retryAfter?: string; reason?: "request_limit" }
 > {
   const checked = productRequest(["stats"], new URLSearchParams({ window }));
   let origin: URL | null = null;
@@ -377,6 +377,12 @@ export async function readScreenerStats(
       headers: upstreamIdentity(visitor),
     });
     if (response.status === 404) return { status: 404 };
+    if (response.status === 429)
+      return {
+        status: 503,
+        retryAfter: validRetryAfter(response.headers.get("retry-after")) ?? "30",
+        reason: "request_limit",
+      };
     if (!response.ok) {
       const retryAfter = validRetryAfter(response.headers.get("retry-after"));
       return retryAfter === null ? { status: 503 } : { status: 503, retryAfter };

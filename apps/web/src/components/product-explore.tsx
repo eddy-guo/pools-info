@@ -19,7 +19,7 @@ import {
   type AnalyticsPoolRow,
   type LiveWindow,
 } from "@pools/core";
-import { useProduct } from "@/lib/use-product";
+import { fetchProduct, useProduct } from "@/lib/use-product";
 import {
   validateStatsResponse,
   type ScreenerStatsResponse,
@@ -297,12 +297,10 @@ function ScreenerStats({
     const controller = new AbortController();
     void Promise.resolve().then(async () => {
       try {
-        const response = await fetch(`/api/product/stats/?window=${window}`, {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        if (!response.ok) throw Error("Stats unavailable");
-        const data: unknown = await response.json();
+        const data: unknown = await fetchProduct<ScreenerStatsResponse>(
+          `stats?window=${window}`,
+          controller.signal,
+        );
         validateStatsResponse(data, window);
         if (controller.signal.aborted) return;
         if (

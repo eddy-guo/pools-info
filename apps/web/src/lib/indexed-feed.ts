@@ -31,7 +31,8 @@ export async function indexedFeed(
     const seconds = raw !== null && /^\d+$/.test(raw) ? Number(raw) : NaN;
     throw new IndexedFeedUnavailableError(
       (response.status === 429 || response.status === 503) &&
-        !Number.isNaN(seconds)
+        Number.isSafeInteger(seconds) &&
+        seconds > 0
         ? String(Math.min(seconds, 86400))
         : null,
     );

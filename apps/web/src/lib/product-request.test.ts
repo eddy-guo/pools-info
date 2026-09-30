@@ -2075,6 +2075,18 @@ test("product proxy carries the read API's request-limit refusal and its own wai
   assert.deepEqual(await readScreenerStats("24h"), {
     status: 503,
     retryAfter: "7",
+    reason: "request_limit",
+  });
+  const { GET } = await import("../app/api/product/[...path]/route");
+  const stats = await GET(
+    new Request("https://site.example/api/product/stats/?window=24h"),
+    { params: Promise.resolve({ path: ["stats"] }) },
+  );
+  assert.equal(stats.status, 503);
+  assert.equal(stats.headers.get("retry-after"), "7");
+  assert.deepEqual(await stats.json(), {
+    error: "data_unavailable",
+    reason: "request_limit",
   });
   await assert.rejects(
     readWalletTradeHistory(
