@@ -31,15 +31,21 @@ export default async function HomePage({
   // proxy's: a visitor past the admission line gets the page without its
   // stat cards and spends nothing upstream.
   const visitor = visitorAddress(await headers());
-  const stats =
-    !readsUpstream() || admission.admit(visitor).ok
-      ? await readScreenerStats(window, visitor)
+  const admitted = readsUpstream()
+    ? admission.admit(visitor)
+    : { ok: true as const };
+  const stats = admitted.ok ? await readScreenerStats(window, visitor) : null;
+  const statsRetryAfter = !admitted.ok
+    ? String(admitted.retryAfterSeconds)
+    : stats?.status === 503 && stats.reason === "request_limit"
+      ? (stats.retryAfter ?? "30")
       : null;
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: watchlistRowsScript }} />
       <ProductExplore
         initialStats={stats?.status === 200 ? stats.data : null}
+        initialStatsRetryAfter={statsRetryAfter}
         initialSearch={initial.toString()}
       />
     </>
