@@ -1239,6 +1239,54 @@ test(
 );
 
 test(
+  "a stop during post-commit counting reports the committed cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    const options = tipOptions(fake, log, { maxCycles: 1 });
+    const query = db.query.bind(db);
+    let postCommitQueries = 0;
+    db.query = (async (...args: Parameters<typeof query>) => {
+      if (
+        typeof args[0] === "string" &&
+        args[0].startsWith(
+          'SELECT "table",count(*)::int AS created FROM agg_journal',
+        )
+      ) {
+        postCommitQueries++;
+        options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+      }
+      return query(...args);
+    }) as typeof db.query;
+    let summary: Awaited<ReturnType<typeof runLedgerTip>>;
+    try {
+      summary = await runLedgerTip(db, options);
+    } finally {
+      db.query = query as typeof db.query;
+    }
+    assert.equal(postCommitQueries, 1);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: null,
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test(
   "a stop after reorg reconciliation names the rewound cursor",
   dbTest,
   async (t) => {
@@ -1449,6 +1497,26 @@ test("the service connects to the database with waits doubling to a minute, give
     null,
   );
   assert.equal(stopped.attempts(), 1);
+  const finalAttemptStop = new AbortController();
+  const finalAttemptLog: Record<string, unknown>[] = [];
+  assert.equal(
+    await connectWithBackoff(
+      () =>
+        ({
+          connect: async () => {
+            finalAttemptStop.abort();
+            throw refused();
+          },
+        }) as unknown as Client,
+      {
+        horizonMs: 0,
+        signal: finalAttemptStop.signal,
+        log: (event) => finalAttemptLog.push(event),
+      },
+    ),
+    null,
+  );
+  assert.deepEqual(finalAttemptLog, []);
 });
 
 test(

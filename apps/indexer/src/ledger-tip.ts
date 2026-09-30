@@ -309,12 +309,12 @@ export async function runLedgerTipCycle(
       multicall: options.multicall,
       signal: options.signal,
       onRange: options.onRange,
+      onCommitted: (cursor) => {
+        options.onMainCommitted?.(cursor);
+        options.onRange?.(null);
+      },
     });
-    options.onRange?.(null);
-    if (!result.idle) {
-      range = result;
-      options.onMainCommitted?.(result.to);
-    }
+    if (!result.idle) range = result;
   }
   const crowd =
     options.crowd && !options.signal?.aborted
@@ -495,6 +495,7 @@ export async function connectWithBackoff(
       await db.connect();
       return db;
     } catch (error) {
+      if (options.signal?.aborted) return null;
       const elapsedMs = Math.round(now() - started);
       const nextMs = Math.min(maxWaitMs, waitMs * 2 ** (attempt - 1));
       if (elapsedMs + nextMs > options.horizonMs) {

@@ -318,6 +318,7 @@ export interface LedgerRangeOptions {
   signal?: AbortSignal;
   /** Called once the range is planned, before its first request. */
   onRange?: (range: { from: number; to: number }) => void;
+  onCommitted?: (cursor: number) => void;
 }
 const lanePages = (lane: HyperSyncPageRecord[][]) =>
   lane.reduce((n, p) => n + p.length, 0);
@@ -447,6 +448,7 @@ export async function runLedgerRange(
     })),
   });
   const applied = await applyLedgerBatch(db, ledgerBatchOf(collection));
+  options.onCommitted?.(collection.toBlock);
   const created = applied.changed
     ? await ledgerBatchCreatedRows(db, collection.toBlock)
     : { positions: 0, wallets: 0 };
