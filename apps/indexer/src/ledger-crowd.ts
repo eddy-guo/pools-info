@@ -245,6 +245,7 @@ export async function runLedgerCrowdRange(
   const applied = await applyLedgerBatch(db, ledgerBatchOf(c), crowdKey, {
     touched: recomputeLedgerWindowWallets,
   });
+  options.onRange?.(null);
   const created = applied.changed
     ? await ledgerBatchCreatedRows(db, c.toBlock, crowdKey)
     : { positions: 0, wallets: 0 };
@@ -352,7 +353,6 @@ export async function runLedgerCrowdStep(
         ...options,
         rangeBlocks: step.rangeBlocks,
       });
-      options.onRange?.(null);
     } catch (error) {
       options.onRange?.(null);
       if (options.signal?.aborted || crowdStopsTheLoop(error)) throw error;

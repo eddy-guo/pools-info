@@ -40,6 +40,7 @@ import {
   acquireLedgerWriter,
   commitBatch,
   createClient,
+  crowdLedgerStream,
   ensureLedgerStream,
   getStream,
   ledgerLaunchStreamIdentity,
@@ -1271,6 +1272,63 @@ test(
     assert.equal(postCommitQueries, 1);
     assert.equal(summary.stopped, "aborted");
     assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: null,
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test(
+  "a stop during crowd post-commit counting clears the active range",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    const options = tipOptions(fake, log, {
+      crowdEnabled: true,
+      maxCycles: 1,
+    });
+    const query = db.query.bind(db);
+    let postCommitQueries = 0;
+    db.query = (async (...args: Parameters<typeof query>) => {
+      if (
+        typeof args[0] === "string" &&
+        args[0].startsWith(
+          'SELECT "table",count(*)::int AS created FROM agg_journal',
+        ) &&
+        Array.isArray(args[1]) &&
+        args[1][0] === crowdLedgerStream.key
+      ) {
+        postCommitQueries++;
+        options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+      }
+      return query(...args);
+    }) as typeof db.query;
+    let summary: Awaited<ReturnType<typeof runLedgerTip>>;
+    try {
+      summary = await runLedgerTip(db, options);
+    } finally {
+      db.query = query as typeof db.query;
+    }
+    assert.equal(postCommitQueries, 1);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.equal(
+      (await readLedgerStream(db, crowdLedgerStream.key)).cursor,
+      start + 299,
+    );
     assert.deepEqual(
       log.filter((e) => e.event === "ledger_tip_stopping"),
       [
