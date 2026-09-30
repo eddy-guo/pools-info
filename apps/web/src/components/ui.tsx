@@ -189,7 +189,7 @@ export function AddressLabel({
         <span className="mono">{shortAddress(address)}</span>
       )}
       <CopyButton value={address} label={`Copy ${subject}`} />
-      <ExplorerLink address={address} kind={kind} />
+      <ExplorerLink address={address} kind={kind} className="icon-button" />
     </span>
   );
 }
