@@ -414,9 +414,23 @@ for (const width of [1440, 1280, 1200, 1024, 390, 320]) {
       workspace: await workspace.boundingBox(),
       activity: await activity.boundingBox(),
     };
-    expect(resolved, "the reserved wallet regions do not move").toEqual(
-      pending,
-    );
+    expect(resolved.grid, "the stat grid does not move").toEqual(pending.grid);
+    /* The positions release the rows this wallet does not fill, so the
+       regions around them keep their place and may only grow shorter. */
+    const place = (box: { x: number; y: number; width: number } | null) => ({
+      x: box?.x,
+      y: box?.y,
+      width: box?.width,
+    });
+    for (const region of ["workspace", "activity"] as const) {
+      expect(
+        place(resolved[region]),
+        `the ${region} region does not move`,
+      ).toEqual(place(pending[region]));
+      expect(resolved[region]!.height).toBeLessThanOrEqual(
+        pending[region]!.height,
+      );
+    }
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBe(width);

@@ -7,6 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
 import {
   poolHref,
@@ -470,10 +471,12 @@ export function ProductExplore({
     setQuery(cleaned(updates));
   /* A new query reads from the top: the panel's head comes back under the
      site header while the rows swap to skeletons, and the rows on show go
-     back to the first page. */
+     back to the first page. The query commits first, so a list that had
+     released rows its last answer did not fill reserves the new page again
+     and the page is long enough to bring the head up. */
   const panelRef = useRef<HTMLElement>(null);
   const set = (updates: Record<string, string | null>) => {
-    write({ ...updates, limit: null });
+    flushSync(() => write({ ...updates, limit: null }));
     headIntoView(panelRef.current);
   };
   /* All launches is the New tab reached from the rail above the list. Changed
@@ -498,7 +501,7 @@ export function ProductExplore({
   })();
   const newTabRef = useRef<HTMLButtonElement>(null);
   const showLaunches = () => {
-    write({ ...launchesView, limit: null });
+    flushSync(() => write({ ...launchesView, limit: null }));
     newTabRef.current?.focus({ preventScroll: true });
     headIntoView(panelRef.current, true);
   };
@@ -676,13 +679,12 @@ export function ProductExplore({
      skeletons under the ones on show, and a row past the list's end is left
      blank rather than shimmering for nothing. */
   const shownRows = Array.from(
-    /* Sized by the answer on show (a previous query's, while this one's is
-       pending, so a query change resizes the list once, when it lands) and
-       not by what is left of it after an unstar, so a removal leaves its
-       slot until the next navigation. */
-    {
-      length: answeredRowCount(shown, displayList?.total ?? null),
-    },
+    /* The page the URL names while this query's answer is pending (so a
+       tab reached from above can still bring the list's head under the
+       site header), then the rows that answer fills: its own total, not
+       what is left of it after an unstar, so a removal leaves its slot
+       until the next navigation. */
+    { length: answeredRowCount(shown, readyList?.total ?? null) },
     (_, index) => rows?.[index],
   );
   useListRelease(shownRows.length, shown);

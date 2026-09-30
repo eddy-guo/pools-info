@@ -14,8 +14,23 @@ const savedPool = Object.values(captures.snapshots).find(
     !chain.markets.some((market) => market.id === snapshot.markets[0].id),
 )!.markets[0];
 const unknownPool = `0x${"f".repeat(64)}`;
-const routes = [
-  { name: "screener", url: "/", sentinel: ".explore-page .workspace-grid" },
+/* `releases`: the fixture answers fewer rows than the page this route
+   reserves, so its sentinel keeps its place and may only grow shorter as the
+   unfilled rows go. `empty`: that answer has no rows, so no formatted number
+   is left to survive. */
+const routes: {
+  name: string;
+  url: string;
+  sentinel: string;
+  releases?: boolean;
+  empty?: boolean;
+}[] = [
+  {
+    name: "screener",
+    url: "/",
+    sentinel: ".explore-page .workspace-grid",
+    releases: true,
+  },
   {
     name: "launches",
     url: "/?view=new",
@@ -33,12 +48,14 @@ const routes = [
   },
   {
     name: "wallet",
+    releases: true,
     url: `/wallet/${wallet}/?window=All`,
     sentinel: ".page .workspace-grid",
   },
   { name: "creators", url: "/creators/", sentinel: ".creators-panel" },
   {
     name: "creator-detail",
+    releases: true,
     url: `/creators/${chain.markets[0].launchSender}/`,
     sentinel: ".live-section",
   },
@@ -63,11 +80,15 @@ const routes = [
      their new place rather than shift into view. */
   {
     name: "screener-no-match",
+    releases: true,
+    empty: true,
     url: "/?q=zzzzzzzzzz",
     sentinel: ".explore-page .workspace-grid",
   },
   {
     name: "creator-unknown",
+    releases: true,
+    empty: true,
     url: `/creators/0x${"1".repeat(40)}/`,
     sentinel: ".live-section",
   },
@@ -250,7 +271,11 @@ for (const entry of routes) {
         ).toBe(true);
       /* A page of nothing but launches resolves to launch lines, so it holds
          no formatted number to compare against the pending one. */
-      if (!entry.name.includes("pool") && entry.name !== "launches")
+      if (
+        !entry.name.includes("pool") &&
+        entry.name !== "launches" &&
+        !entry.empty
+      )
         expect(
           await page.evaluate(() => {
             const saved = (
@@ -328,10 +353,20 @@ for (const entry of routes) {
         ),
         contentType: "application/json",
       });
-      expect(
-        after,
-        "sentinel retains its complete first-paint geometry",
-      ).toEqual(before);
+      if (entry.releases) {
+        expect(
+          { x: after?.x, y: after?.y, width: after?.width },
+          "sentinel keeps its first-paint place",
+        ).toEqual({ x: before?.x, y: before?.y, width: before?.width });
+        expect(
+          after!.height,
+          "sentinel only sheds the rows its answer does not fill",
+        ).toBeLessThanOrEqual(before!.height);
+      } else
+        expect(
+          after,
+          "sentinel retains its complete first-paint geometry",
+        ).toEqual(before);
       /* A runner under load can report a sub-pixel shift (observed:
          0.0001277 on this same case, on heads that never touched this page)
          without a real reflow; 0.001 is a sub-pixel of movement at 390px, so

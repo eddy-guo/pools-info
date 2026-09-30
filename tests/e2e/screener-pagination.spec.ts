@@ -358,9 +358,11 @@ test("New, Watchlist and All each read the server exactly once on their own tab,
     await route.continue();
   });
   await page.goto("/?window=24h");
-  await expect(page.locator(rows)).toHaveCount(PAGE);
   await expect(resolvedRows(page, rows).first()).toBeVisible();
+  await expect(page.locator(wrapper)).toHaveAttribute("aria-busy", "false");
   const initialShown = await resolvedRows(page, rows).count();
+  /* A settled answer keeps only the rows it fills, up to the page. */
+  await expect(page.locator(rows)).toHaveCount(Math.min(PAGE, initialShown));
   expect(reads).toEqual(["all"]);
 
   /* Two of the "All" tab's own rows, starred so the Watchlist tab has real
@@ -389,9 +391,9 @@ test("New, Watchlist and All each read the server exactly once on their own tab,
       .getByRole("button", { name: label, exact: true })
       .click();
     await expect.poll(() => reads.length).toBe(before + 1);
-    /* The row region's bounds hold at one page throughout every transition:
-       no full-table skeleton, no collapse, no growth past what the URL's
-       `limit` (reset to the default page here) reserves. */
+    /* While a tab's read is pending the row region reserves the page the
+       URL's `limit` (reset to the default page here) names: no full-table
+       skeleton, no collapse, no growth past it. */
     await expect(page.locator(rows)).toHaveCount(PAGE);
     await expect(
       page.locator(`${rows}[data-row='skeleton']`),
@@ -412,8 +414,11 @@ test("New, Watchlist and All each read the server exactly once on their own tab,
       "false",
     );
     await expect(page.locator(wrapper)).toHaveAttribute("aria-busy", "false");
-    await expect(page.locator(rows)).toHaveCount(PAGE);
     previousResolvedCount = await resolvedRows(page, rows).count();
+    await expect(
+      page.locator(rows),
+      `${label} settles to the rows its answer fills`,
+    ).toHaveCount(Math.min(PAGE, previousResolvedCount));
     expect(
       previousResolvedCount,
       `${label} resolves with its own rows`,
