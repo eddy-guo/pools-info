@@ -187,7 +187,12 @@ test("the running worker stays unhealthy while its database connection is pendin
   await once(portHolder, "close");
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)), "run"],
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)),
+      "run",
+    ],
     {
       env: {
         ...process.env,
@@ -223,16 +228,17 @@ test("the running worker stays unhealthy while its database connection is pendin
     });
     child.once("exit", () => {
       clearTimeout(timeout);
-      reject(Error(`worker exited before health listener started: ${output} ${errors}`));
+      reject(
+        Error(
+          `worker exited before health listener started: ${output} ${errors}`,
+        ),
+      );
     });
   });
   await connected;
   const response = await fetch(`http://127.0.0.1:${port}/health`);
   assert.equal(response.status, 503);
-  assert.deepEqual(
-    [(await response.json()).ok, sockets.size],
-    [false, 1],
-  );
+  assert.deepEqual([(await response.json()).ok, sockets.size], [false, 1]);
 });
 
 test("the listener answers GET and HEAD /health with the report's status, refuses other paths and methods, and reports a port it cannot bind", async (t) => {
