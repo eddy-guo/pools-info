@@ -240,10 +240,13 @@ capacity instead of folding every visitor into one budget:
 - `TRUSTED_PROXY_SECRET` (at least 16 characters): the website's product
   proxy presents it in `X-Pools-Proxy-Secret` beside the visitor's address in
   `X-Pools-Client-Address` (its `INDEXER_PROXY_SECRET`), and that visitor is
-  charged, whatever the connection or forwarded chain say. A wrong secret
-  falls back to the address rules above. This is what lets a proxy with no
-  fixed egress address, such as the website on Vercel, keep each of its
-  visitors on their own budget rather than all of them on the proxy's.
+  charged, whatever the connection or forwarded chain say. The matching
+  secret with no usable address leaves the request unattributed (the proxy's
+  reads with no visitor behind them, such as a share card's render, present
+  it alone for that reason). A wrong secret falls back to the address rules
+  above. This is what lets a proxy with no fixed egress address, such as the
+  website on Vercel, keep each of its visitors on their own budget rather
+  than all of them on the proxy's.
 - `CLIENT_IDENTITY=peer`: the connection's own address is the client, for an
   api reached directly with no proxy in front.
 
