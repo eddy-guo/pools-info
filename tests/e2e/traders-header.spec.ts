@@ -433,6 +433,21 @@ test("without a wallet the leaderboard's you row is the quiet prompt", async ({
   await expect(row, "no rank is invented").not.toContainText(/RANK|\d/);
   await expect(row.locator(".my-rank-empty")).toHaveCount(1);
   await expect(row.locator(".avatar")).toHaveCount(0);
+  // At 320px the sentence wraps inside the row's fixed height instead of
+  // ending in an ellipsis.
+  await page.setViewportSize({ width: 320, height: 800 });
+  const summary = await row.locator(".my-rank-summary").evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    const rowBox = node.parentElement!.getBoundingClientRect();
+    return {
+      clipped:
+        node.scrollWidth > node.clientWidth ||
+        node.scrollHeight > node.clientHeight,
+      inside: box.bottom <= rowBox.bottom && box.right <= rowBox.right,
+    };
+  });
+  expect(summary).toEqual({ clipped: false, inside: true });
+  expect((await row.boundingBox())!.height, "the phone row's height").toBe(84);
 });
 
 test("with a wallet marked as mine the you row reads its real rank", async ({

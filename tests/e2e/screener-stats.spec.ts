@@ -198,9 +198,11 @@ test.describe("contract-backed screener stats", () => {
           ).screenerStatsMeasurement.cls,
       ),
     ).toBe(0);
+    // Page coordinates: the window buttons sit below a phone's first screen
+    // under the stacked cards, so clicking one scrolls.
     const launchTop = await page
       .locator(".launch-section")
-      .evaluate((node) => node.getBoundingClientRect().top);
+      .evaluate((node) => node.getBoundingClientRect().top + scrollY);
     await page.evaluate(() => {
       (
         window as typeof window & { screenerStatsMeasurement: { cls: number } }
@@ -218,7 +220,7 @@ test.describe("contract-backed screener stats", () => {
     expect(
       await page
         .locator(".launch-section")
-        .evaluate((node) => node.getBoundingClientRect().top),
+        .evaluate((node) => node.getBoundingClientRect().top + scrollY),
     ).toBe(launchTop);
     await page.evaluate(
       () =>
@@ -407,6 +409,24 @@ test.describe("contract-backed screener stats", () => {
             height <= fontSize * 1.6 && overflow <= 1,
         ),
       ).toBe(true);
+      // A half-width card ellipsised the volume at 320px; under 400px the
+      // cards stack full width, as the export draws them, and every figure
+      // is shown whole.
+      const cards = await stats.locator(".stat").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const value = node.querySelector("strong")!;
+          return {
+            left: Math.round(node.getBoundingClientRect().left),
+            clipped: value.scrollWidth > value.clientWidth,
+          };
+        }),
+      );
+      expect(cards.map(({ clipped }) => clipped)).toEqual([
+        false,
+        false,
+        false,
+      ]);
+      expect(new Set(cards.map(({ left }) => left)).size).toBe(1);
     }
   });
 });
