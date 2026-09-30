@@ -1,5 +1,5 @@
-import { admission, visitorAddress } from "@/lib/product-admission";
-import { productRequest } from "@/lib/product-request";
+import { admission, visitorAddress } from "../../../../lib/product-admission";
+import { productRequest } from "../../../../lib/product-request";
 import {
   EthPriceUnavailableError,
   ProductUnavailableError,
@@ -9,7 +9,7 @@ import {
   readScreenerStats,
   readsUpstream,
   readWalletTradeHistory,
-} from "@/lib/product-server";
+} from "../../../../lib/product-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 12;
@@ -51,6 +51,10 @@ export async function GET(
       return Response.json(result.data, {
         headers: { "Cache-Control": "no-store" },
       });
+    if (result.reason === "request_limit")
+      return productUnavailableResponse(
+        new ProductUnavailableError(result.retryAfter, "request_limit"),
+      );
     return Response.json(
       {
         error:
