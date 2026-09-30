@@ -1741,6 +1741,39 @@ test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves 
   assert.equal(keys.walletHours.length, 2);
 });
 
+test("rule 2 leaves a pooled sell unattributed when ten tokens go to the zero address instead of PoolManager", () => {
+  const a = addr(0x901),
+    b = addr(0x902);
+  const state = createLedgerState();
+  bought(state, 1, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const sell = pooledSell(3, E * 10n, [
+    [a, 60n],
+    [b, 40n],
+  ]);
+  const { events, application } = run(
+    sell.swaps,
+    [
+      transfer(3, 11, a, batchSeller, 60n),
+      transfer(3, 12, b, batchSeller, 40n),
+      transfer(3, 80, batchSeller, rules.manager, 90n),
+      transfer(3, 81, batchSeller, ledgerZeroAddress, 10n),
+    ],
+    state,
+    pooledRules,
+  );
+  assert.equal(events[0].kind, "unattributed_swap");
+  assert.deepEqual((events[0] as { wallets: string[] }).wallets, [a, b]);
+  assert.equal(application.sales.length, 0);
+  for (const w of [a, b]) {
+    assert.equal(position(state, w).supported, false);
+    assert.deepEqual(position(state, w).flags, ["unattributed_swap_activity"]);
+    assert.equal(position(state, w).sells, 0);
+  }
+});
+
 test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to the largest losses first and the lower address among equal ones", () => {
   // 10 wei over three equal contributors: 3 each and one wei left, which
   // the lowest address takes since every exact share lost the same third.

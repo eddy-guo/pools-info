@@ -547,9 +547,11 @@ whose movements sum exactly to the 695,318,196.60 CS sold for 6.000424 ETH.
 **The rule** (`LedgerRules.pooledSwaps`, `planLedgerBatch`). For a sell with no
 single candidate, when every address whose balance of the token moved
 in the transaction sent tokens into the swap, there are at least two
-of them, and their movements sum to exactly the swapped amount, the swap is
-a pooled swap: each contributor is attributed a swap of the tokens it moved
-and its share of the ETH leg. The share is `ethWei * tokenRaw_i / tokenRaw`
+of them, their movements sum to exactly the swapped amount, the PoolManager
+received exactly that amount and every other infrastructure address nets to
+zero, the swap is a pooled swap: each contributor is attributed a swap of the
+tokens it moved and its share of the ETH leg. The share is
+`ethWei * tokenRaw_i / tokenRaw`
 truncated, and the wei the truncations leave (fewer than there are
 contributors) go one each to the contributors whose exact share lost the
 most, the lower address first among equal losses, so the shares sum to

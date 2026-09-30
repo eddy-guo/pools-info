@@ -53,10 +53,10 @@ export interface LedgerRules {
   router: string;
   infrastructure?: readonly string[];
   /** Fold rule 2 (docs/AGGREGATE-LEDGER.md, "Pooled swaps", decided 29 Sep
-   * 2026): a swap no single address covers, whose token moved in the swap's
-   * direction for two or more addresses, none against it, and for exactly
-   * the swapped amount in all, is attributed to each of them pro rata by the
-   * token it moved (`pooledSwapShares`). Under rule 1 (unset or false) such
+   * 2026): a sell no single address covers, whose token moved from two or
+   * more contributors to the manager with no other infrastructure remainder,
+   * is attributed to each pro rata by the token it moved (`pooledSwapShares`).
+   * Under rule 1 (unset or false) such
    * a swap stays unattributed and every mover is excluded. A stream folds
    * under one rule for its whole history: the writer reads the stream's
    * rule and never a deployment's default, so the rule a ledger was built
@@ -559,7 +559,7 @@ export function planLedgerBatch(
       if (beneficiary === null) {
         const shares =
           pooled && s.side === "sell"
-            ? pooledContributions(s, moved, net, sign)
+            ? pooledContributions(s, moved, net, manager, infrastructure)
             : null;
         if (shares === null) {
           events.push(unattributed(s, moved));
@@ -634,13 +634,19 @@ function pooledContributions(
   s: CheckedSwap,
   moved: readonly string[],
   net: Map<string, bigint>,
-  sign: bigint,
+  manager: string,
+  infrastructure: ReadonlySet<string>,
 ): LedgerPooledShare[] | null {
-  if (moved.length < 2) return null;
+  if (
+    moved.length < 2 ||
+    net.get(manager) !== s.tokenRaw ||
+    [...infrastructure].some((a) => a !== manager && (net.get(a) ?? 0n) !== 0n)
+  )
+    return null;
   const contributors: { wallet: string; tokenRaw: bigint }[] = [];
   let total = 0n;
   for (const a of moved) {
-    const tokenRaw = net.get(a)! * sign;
+    const tokenRaw = -net.get(a)!;
     if (tokenRaw <= 0n) return null;
     contributors.push({ wallet: a, tokenRaw });
     total += tokenRaw;
