@@ -52,8 +52,9 @@ export function parseSavedWatchlist(value: string): string[] {
 }
 
 /** The watchlist panel's heading: "Shared watchlist · 1 pool". */
-export function watchlistHeading(shared: boolean, count: number) {
-  return `${shared ? "Shared watchlist" : "Your watchlist"} · ${countLabel(count, "pool")}`;
+export function watchlistHeading(shared: boolean, count?: number) {
+  const title = shared ? "Shared watchlist" : "Your watchlist";
+  return count === undefined ? title : `${title} · ${countLabel(count, "pool")}`;
 }
 
 export type SharedWatchlist = { ids: string[]; error: string | null };

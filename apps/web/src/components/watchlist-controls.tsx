@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   MAX_SHARED_POOLS,
   MAX_WATCHLIST_QUERY_POOLS,
@@ -16,6 +16,10 @@ type Props = {
   openPersonal: () => void;
 };
 
+const subscribeHydration = () => () => {};
+const clientHydrated = () => true;
+const serverHydrated = () => false;
+
 export function WatchlistControls({
   ids,
   shared,
@@ -23,6 +27,11 @@ export function WatchlistControls({
   save,
   openPersonal,
 }: Props) {
+  const hydrated = useSyncExternalStore(
+    subscribeHydration,
+    clientHydrated,
+    serverHydrated,
+  );
   const key = `${shared ? "shared" : "personal"}:${ids.join(",")}:${query}`;
   const [feedback, setFeedback] = useState({ key: "", message: "", link: "" });
   const current = feedback.key === key ? feedback : null;
@@ -33,7 +42,9 @@ export function WatchlistControls({
       aria-label={shared ? "Shared watchlist" : "Saved watchlist"}
     >
       <div style={{ minWidth: 0 }}>
-        <strong>{watchlistHeading(shared !== null, ids.length)}</strong>
+        <strong>
+          {watchlistHeading(shared !== null, hydrated ? ids.length : undefined)}
+        </strong>
         <small>
           {shared
             ? "Stars change only your saved list. This link does not save anything automatically."
