@@ -1654,6 +1654,58 @@ test("product proxy preserves either valid Retry-After form for warming", async 
   }
 });
 
+test("market routes pass the read API's request limit and warming waits to the page", async (t) => {
+  withIndexer(t, "https://index.example");
+  const { GET: market } = await import("../app/api/markets/[poolId]/route");
+  const { GET: accounting } = await import(
+    "../app/api/markets/[poolId]/accounting/route"
+  );
+  const poolId = `0x${"1".repeat(64)}`;
+  const launch = `0x${"2".repeat(64)}`;
+  const routes = [market, accounting];
+  let upstream = Response.json(
+    { error: "request_limit", reason: "client_budget" },
+    { status: 429, headers: { "Retry-After": "7" } },
+  );
+  t.mock.method(globalThis, "fetch", async () => upstream.clone());
+  for (const route of routes) {
+    const request = new Request(
+      `https://site.example/api/markets/${poolId}/?launch=${launch}`,
+    );
+    const params = { params: Promise.resolve({ poolId }) };
+    const limited = await route(request, params);
+    assert.equal(limited.status, 503);
+    assert.equal(limited.headers.get("retry-after"), "7");
+    assert.deepEqual(await limited.json(), {
+      error: "data_unavailable",
+      reason: "request_limit",
+    });
+    upstream = Response.json(
+      { error: "data_temporarily_unavailable", reason: "warming" },
+      { status: 503, headers: { "Retry-After": "19" } },
+    );
+    const warming = await route(request, params);
+    assert.equal(warming.status, 503);
+    assert.equal(warming.headers.get("retry-after"), "19");
+    assert.deepEqual(await warming.json(), {
+      error: "data_unavailable",
+      reason: "warming",
+    });
+    upstream = Response.json(
+      { error: "request_limit", reason: "client_budget" },
+      { status: 429, headers: { "Retry-After": "7" } },
+    );
+  }
+  upstream = Response.json({ error: "not_found" }, { status: 404 });
+  const fallback = await accounting(
+    new Request(`https://site.example/api/markets/${poolId}/?launch=${launch}`),
+    { params: Promise.resolve({ poolId }) },
+  );
+  assert.equal(fallback.status, 503);
+  assert.equal(fallback.headers.get("retry-after"), "300");
+  assert.deepEqual(await fallback.json(), { error: "audit_unavailable" });
+});
+
 test("eth/usd price validates the upstream shape before trusting it", async (t) => {
   const { readEthPrice, EthPriceUnavailableError } =
     await import("./product-server");

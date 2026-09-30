@@ -63,3 +63,46 @@ test("indexed feed rejects failed reads and mismatched or malformed evidence", a
     );
   }
 });
+
+test("feed route preserves valid upstream waits and falls back for invalid waits", async (t) => {
+  const before = process.env.INDEXER_API_URL;
+  const disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (before === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = before;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const { GET } = await import("../app/api/trades/route");
+  let status = 429;
+  let retryAfter: string | null = "37";
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { error: "request_limit" },
+      {
+        status,
+        headers: retryAfter === null ? {} : { "Retry-After": retryAfter },
+      },
+    ),
+  );
+  const request = new Request(`https://site.example/api/trades/?pools=${pool}`);
+  for (const [upstreamStatus, upstreamWait, expected] of [
+    [429, "37", "37"],
+    [503, "86400", "86400"],
+    [429, "86401", "15"],
+    [503, "1.5", "15"],
+    [503, null, "15"],
+    [500, "37", "15"],
+  ] as const) {
+    status = upstreamStatus;
+    retryAfter = upstreamWait;
+    const response = await GET(request);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("retry-after"), expected);
+    assert.deepEqual(await response.json(), {
+      error: "Recent swaps unavailable. Retain the last observed events.",
+    });
+  }
+});

@@ -1,5 +1,11 @@
 import type { RecentSwaps } from "@pools/chain";
 
+export class IndexedFeedUnavailableError extends Error {
+  constructor(readonly retryAfter: string | null = null) {
+    super("Indexed feed unavailable");
+  }
+}
+
 /** Server-only URL supplied to the route handler, never sent to the browser. */
 export async function indexedFeed(
   base: string,
@@ -20,7 +26,17 @@ export async function indexedFeed(
     redirect: "error",
     headers,
   });
-  if (!response.ok) throw Error("Indexed feed unavailable");
+  if (!response.ok) {
+    const raw = response.headers.get("retry-after");
+    const seconds = raw !== null && /^\d+$/.test(raw) ? Number(raw) : NaN;
+    throw new IndexedFeedUnavailableError(
+      (response.status === 429 || response.status === 503) &&
+        Number.isSafeInteger(seconds) &&
+        seconds <= 86400
+        ? String(seconds)
+        : null,
+    );
+  }
   const data = await response.json();
   if (
     !data ||

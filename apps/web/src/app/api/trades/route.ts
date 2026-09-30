@@ -1,9 +1,12 @@
-import { indexedFeed } from "@/lib/indexed-feed";
+import {
+  IndexedFeedUnavailableError,
+  indexedFeed,
+} from "../../../lib/indexed-feed";
 import {
   admission,
   upstreamIdentity,
   visitorAddress,
-} from "@/lib/product-admission";
+} from "../../../lib/product-admission";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 20;
@@ -49,12 +52,18 @@ export async function GET(request: Request) {
     return Response.json(data, {
       headers: { "Cache-Control": "no-store" },
     });
-  } catch {
+  } catch (error) {
     return Response.json(
       { error: "Recent swaps unavailable. Retain the last observed events." },
       {
         status: 503,
-        headers: { "Cache-Control": "no-store", "Retry-After": "15" },
+        headers: {
+          "Cache-Control": "no-store",
+          "Retry-After":
+            error instanceof IndexedFeedUnavailableError
+              ? (error.retryAfter ?? "15")
+              : "15",
+        },
       },
     );
   }

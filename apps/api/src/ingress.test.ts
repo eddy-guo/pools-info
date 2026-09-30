@@ -198,7 +198,8 @@ test("the proxy secret names the visitor only when it matches exactly", () => {
 test("settings parse their variables and refuse malformed values", () => {
   const defaults = ingressSettings({});
   assert.deepEqual(defaults, {
-    clientTokensPerMinute: 120,
+    clientTokensPerMinute: 60,
+    clientTokenBurst: 120,
     maxClients: 10000,
     probesPerMinute: 60,
     identity: { trustedProxies: null, peer: false, proxySecret: null },
@@ -206,11 +207,13 @@ test("settings parse their variables and refuse malformed values", () => {
   assert.deepEqual(identitySources(defaults.identity), []);
   const full = ingressSettings({
     CLIENT_TOKENS_PER_MINUTE: "300",
+    CLIENT_TOKEN_BURST: "300",
     TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
     CLIENT_IDENTITY: "peer",
     TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
   });
   assert.equal(full.clientTokensPerMinute, 300);
+  assert.equal(full.clientTokenBurst, 300);
   assert.deepEqual(identitySources(full.identity), [
     "proxy_secret",
     "trusted_proxies",
@@ -219,6 +222,9 @@ test("settings parse their variables and refuse malformed values", () => {
   for (const env of [
     { CLIENT_TOKENS_PER_MINUTE: "9" },
     { CLIENT_TOKENS_PER_MINUTE: "abc" },
+    { CLIENT_TOKEN_BURST: "59" },
+    { CLIENT_TOKEN_BURST: "abc" },
+    { CLIENT_TOKENS_PER_MINUTE: "121" },
     { CLIENT_IDENTITY: "forwarded" },
     { TRUSTED_PROXY_SECRET: "short" },
     { TRUSTED_PROXY_ADDRESSES: "example.com" },
