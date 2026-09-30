@@ -252,7 +252,7 @@ test("routes fall into cost classes by the work they start", () => {
     "leaderboard",
     "feed",
     "live-trades",
-    "eth-price",
   ] as const)
     assert.equal(routeCostClass(route), "light", route);
+  assert.equal(routeCostClass("eth-price"), "cached");
 });
