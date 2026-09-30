@@ -1,6 +1,11 @@
 import {
   buildAnalyticsModel,
+  ethFigure,
+  figureText,
+  formatPercent,
   walletAnalytics,
+  WALLET_ROI_DIGITS,
+  type EthFigure,
   type AnalyticsWalletPosition,
   type AnalyticsWalletResponse,
   type AnalyticsWalletSummary,
@@ -105,16 +110,33 @@ export function cardTopPosition(
   return top;
 }
 
+/**
+ * An ETH amount for the card: the site's one figure rule (`ethFigure`) with
+ * the "+" a signed slot adds, so the card prints the string the wallet page's
+ * tile prints ("+66.22 ETH" on both; the audit of 29 Sep 2026 found the card
+ * at four significant digits against the page's own rule). The renderer draws
+ * the subscript-zero form itself, so the figure travels beside its text.
+ */
+export interface CardEth {
+  sign: "" | "+";
+  figure: EthFigure;
+}
+export const cardEthFigure = (wei: string, signed = false): CardEth => ({
+  sign: signed && BigInt(wei) > 0n ? "+" : "",
+  figure: ethFigure(wei),
+});
+export const cardEth = (wei: string, signed = false) => {
+  const { sign, figure } = cardEthFigure(wei, signed);
+  return `${sign}${figureText(figure)} ETH`;
+};
 export interface CardStat {
   label: string;
   value: string;
   /** Signed values carry the up or down colour; everything else the text colour. */
   tone: "up" | "down" | "text";
+  /** The ETH figure behind `value`, for the renderer's own subscript form. */
+  eth?: CardEth;
 }
-export const cardEth = (wei: string, signed = false) => {
-  const n = Number(wei) / 1e18;
-  return `${signed && n > 0 ? "+" : ""}${new Intl.NumberFormat("en-US", { maximumSignificantDigits: 4 }).format(n)} ETH`;
-};
 const weiTone = (wei: string): CardStat["tone"] =>
   BigInt(wei) > 0n ? "up" : BigInt(wei) < 0n ? "down" : "text";
 /**
@@ -139,7 +161,12 @@ export function cardStats(
   const count = new Intl.NumberFormat("en-US");
   const candidates: (CardStat | null)[] = [
     notional
-      ? { label: "Volume", value: cardEth(wallet.volumeWei), tone: "text" }
+      ? {
+          label: "Volume",
+          value: cardEth(wallet.volumeWei),
+          tone: "text",
+          eth: cardEthFigure(wallet.volumeWei),
+        }
       : null,
     wallet.winRate === null
       ? null
@@ -169,43 +196,41 @@ export function cardStats(
   return candidates.filter((s): s is CardStat => s !== null).slice(0, 3);
 }
 
-const formatPercent = (value: number) => {
-  const shown = Number(value.toFixed(2));
-  return `${shown > 0 ? "+" : ""}${shown.toFixed(2)}%`;
-};
-
-/** The hero figure: the window's ROI, or its realized amount when no cost was disposed. */
+/** The window's ROI as the wallet page's ROI tile prints it. */
+const cardRoi = (roi: number) => formatPercent(roi, WALLET_ROI_DIGITS);
+/**
+ * The hero figure: the window's ROI as the profile's ROI tile prints it, one
+ * decimal and abbreviated from 10,000% ("+805.7%", "+15.3K%"), so the card
+ * says what the page says and a figure never runs past its column. A wallet
+ * that disposed of no cost in the window has no ROI and no card: its realized
+ * amount is zero by construction, and a white "0 ETH" headline read as a
+ * result where there was none.
+ */
 export function cardHero(
   wallet: AnalyticsWalletSummary,
 ): { value: string; tone: CardStat["tone"] } | null {
-  if (wallet.roi !== null) {
-    const shown = Number(wallet.roi.toFixed(2));
-    return {
-      value: formatPercent(shown),
-      tone: shown > 0 ? "up" : shown < 0 ? "down" : "text",
-    };
-  }
-  if (wallet.realizedWei !== null)
-    return {
-      value: cardEth(wallet.realizedWei, true),
-      tone: weiTone(wallet.realizedWei),
-    };
-  return null;
+  if (wallet.roi === null) return null;
+  const shown = Number(wallet.roi.toFixed(WALLET_ROI_DIGITS));
+  return {
+    value: cardRoi(wallet.roi),
+    tone: shown > 0 ? "up" : shown < 0 ? "down" : "text",
+  };
 }
 
 /**
  * The export design's hero: the window's realized amount in ETH, signed and
  * in the up or down colour, as the captain's export draws it. Its ROI is one
  * of the trio's stats, so the two never restate one figure; a wallet with no
- * realized amount has no export card.
+ * realized amount, or nothing disposed to realize it on, has no export card.
  */
 export function cardExportHero(
   wallet: AnalyticsWalletSummary,
-): { value: string; tone: CardStat["tone"] } | null {
-  if (wallet.realizedWei === null) return null;
+): { value: string; tone: CardStat["tone"]; eth: CardEth } | null {
+  if (wallet.realizedWei === null || wallet.roi === null) return null;
   return {
     value: cardEth(wallet.realizedWei, true),
     tone: weiTone(wallet.realizedWei),
+    eth: cardEthFigure(wallet.realizedWei, true),
   };
 }
 
@@ -229,6 +254,10 @@ const heroAdvance: Record<string, number> = {
   E: 615,
   T: 584,
   H: 719,
+  // The compact suffixes the figure rule prints from a million ETH.
+  K: 672,
+  M: 902,
+  B: 695,
 };
 /**
  * The export hero's font size: the design's 207 px, or the largest whole
@@ -256,32 +285,49 @@ export function cardExportHeroSize(
 export interface CardExportTrio {
   roi: string | null;
   record: string;
-  bestTrade: string | null;
+  /**
+   * The top position's token: its symbol as the card draws it, or null where
+   * the card's faces draw none of it and the token's monogram stands alone.
+   */
+  bestTrade: { symbol: string | null; token: string } | null;
 }
 export function cardExportTrio(
   wallet: AnalyticsWalletSummary,
-  topSymbol: string | null,
+  top: { symbol: string; token: string } | null,
+  drawable: (codePoint: number) => boolean,
 ): CardExportTrio {
   return {
-    roi: wallet.roi === null ? null : formatPercent(wallet.roi),
+    roi: wallet.roi === null ? null : cardRoi(wallet.roi),
     record: `${wallet.wins}W · ${wallet.losses}L`,
-    bestTrade: topSymbol,
+    bestTrade: top && {
+      symbol: cardSymbol(top.symbol, drawable),
+      token: top.token,
+    },
   };
 }
 
-/** The identicon the site draws for an address, as the card's SVG cells. */
-export function identiconCells(address: string): { x: number; y: number }[] {
-  const bits = address
-    .slice(2, 11)
-    .split("")
-    .map((x) => parseInt(x, 16) % 2 === 0);
-  const cells: { x: number; y: number }[] = [];
-  for (let i = 0; i < 25; i++) {
-    const x = i % 5,
-      y = Math.floor(i / 5);
-    if (bits[(y * 3 + Math.min(x, 4 - x)) % bits.length]) cells.push({ x, y });
-  }
-  return cells;
+/** The two glyphs the site's monogram tile shows for an address (`Avatar` in ui.tsx). */
+export const cardInitials = (address: string) =>
+  address.slice(2, 4).toUpperCase();
+
+/**
+ * A token symbol as the card can draw it: the glyphs its faces cover
+ * (`drawable`, from the face's own character map), whitespace collapsed. A
+ * symbol with nothing drawable left, one made of emoji alone as the catalog
+ * has, is null: the card then shows the token's monogram on its own, never
+ * emoji and never a blank line. Length is the renderer's to clamp, by the
+ * width its slot has left, since a glyph count cannot bound a width.
+ */
+export function cardSymbol(
+  symbol: string,
+  drawable: (codePoint: number) => boolean,
+): string | null {
+  const text = [...symbol]
+    .filter((glyph) => drawable(glyph.codePointAt(0)!))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || null;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   type PoolAudit,
   type Address,
   type ChainMarket,
+  type ChainSnapshot,
 } from "@pools/core";
 const wallet = "0x1111111111111111111111111111111111111111";
 const market = chain.markets[0] as ChainMarket;
@@ -215,21 +216,35 @@ test("audited leaderboard links to real wallet metrics and scoped share cards, r
     page.getByRole("heading", { name: "0x1111…1111", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("+0.5 ETH", { exact: true }).first(),
+    page.getByText("+0.50 ETH", { exact: true }).first(),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Observed trade history" }),
   ).toBeVisible();
-  await expect(page.getByText("+0.5 ETH", { exact: true }).first()).toHaveCSS(
+  await expect(page.getByText("+0.50 ETH", { exact: true }).first()).toHaveCSS(
     "color",
     "rgb(63, 214, 140)",
   );
   // The UI fixture supplies a synthetic audited wallet. Reuse a real captured
   // PNG for its image request; server-side card generation is tested separately.
-  const capturedWallet = market.accounting!.wallets[0].address;
+  // A captured wallet that only bought in this pool disposed no cost, so it
+  // has no ROI and no card (it used to headline a white "0 ETH"); the PNG is
+  // borrowed from a pool where a captured wallet sold.
+  const buyer = market.accounting!.wallets.find((w) => w.sells === 0)!;
+  expect(
+    (
+      await page.request.get(
+        `/cards/${buyer.address}.png?pool=${market.id}&launch=${market.launchTx}&window=All`,
+      )
+    ).status(),
+  ).toBe(404);
+  const sold = (w: { sells: number; realizedWei: string | null }) =>
+    w.sells > 0 && w.realizedWei !== null && BigInt(w.realizedWei) !== 0n;
+  const soldIn = chain.markets.find((m) => m.accounting?.wallets.some(sold))!;
+  const seller = soldIn.accounting!.wallets.find(sold)!;
   const png = await page.request.get(
-    `/cards/${capturedWallet}.png?pool=${market.id}&launch=${market.launchTx}&window=All`,
+    `/cards/${seller.address}.png?pool=${soldIn.id}&launch=${soldIn.launchTx}&window=All`,
   );
   expect(png.status()).toBe(200);
   await page.route(`**/cards/${wallet}.png?*`, async (route) =>
@@ -657,7 +672,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
 }) => {
   const audit = fixture();
   const snapshot = {
-    ...chain,
+    ...(chain as ChainSnapshot),
     toTimestamp: Math.max(
       chain.toTimestamp,
       ...audit.executions.map((e) => e.trade.timestamp),
@@ -733,7 +748,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
   const realized = page
     .locator(".stat")
     .filter({ has: page.getByText("Realized PnL", { exact: true }) });
-  await expect(realized).toContainText("+0.5 ETH");
+  await expect(realized).toContainText("+0.50 ETH");
   await expect(realized.locator(".positive")).toHaveCSS(
     "color",
     "rgb(63, 214, 140)",
@@ -1038,7 +1053,7 @@ test("real preloaded leaderboard opens its profitable top wallet and generates t
     "title",
     `${top.realizedWei} wei`,
   );
-  await expect(stat).toContainText("+0.01147 ETH");
+  await expect(stat).toContainText("+0.01 ETH");
   await page
     .getByRole("button", { name: "Share PnL card", exact: true })
     .click();

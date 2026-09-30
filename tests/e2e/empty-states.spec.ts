@@ -330,7 +330,7 @@ test("a measured wallet with nothing in the window keeps its zeros", async ({
     "UNRANKED",
   );
   await expect(tile(page, "Trades")).toHaveText("0");
-  await expect(tile(page, "Volume")).toHaveText("0 ETH");
+  await expect(tile(page, "Volume")).toHaveText("0.00 ETH");
   await expect(page.locator(".wallet-stats .wl-text")).toHaveText("0W · 0L");
   await expect(page.locator(".wallet-positions-context > strong")).toHaveText(
     "",

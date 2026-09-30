@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  displayEth,
+  ethFigure,
   formatMoney,
   shortAddress,
   type ChainSnapshot,
@@ -21,20 +23,21 @@ export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
   new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
   " UTC";
+/**
+ * An ETH amount under the site's one figure rule (`ethFigure` in
+ * `@pools/core`: two decimals from 0.01 ETH, compact from a million, four
+ * significant digits below and the subscript-zero form under 0.0001 ETH), so
+ * a stat tile, a table cell, the chart readout and the share card print one
+ * string for one amount.
+ */
 export function Eth({
   wei,
   signed = false,
   pending = false,
-  digits,
 }: {
   wei: string | null | undefined;
   signed?: boolean;
   pending?: boolean;
-  /**
-   * A slot that must hold the value on one line, such as a stat card, caps
-   * both the significant and the fraction digits; tables keep six significant.
-   */
-  digits?: number;
 }) {
   const known = wei !== null && wei !== undefined;
   const { children: unavailableText, ...unavailable } = useUnavailable(
@@ -58,17 +61,8 @@ export function Eth({
         <span key="value">{formatMoney(wei, "USD", usdPerEth, signed)}</span>
       </span>
     );
-  const n = Number(wei) / 1e18;
-  const format = new Intl.NumberFormat(
-    "en-US",
-    digits === undefined
-      ? { maximumSignificantDigits: 6 }
-      : {
-          maximumSignificantDigits: digits,
-          maximumFractionDigits: digits,
-          roundingPriority: "lessPrecision",
-        },
-  );
+  const n = displayEth(wei),
+    figure = ethFigure(wei);
   return (
     <span
       className={`number ${signed ? (BigInt(wei) < 0n ? "negative" : BigInt(wei) > 0n ? "positive" : "muted") : ""}`}
@@ -76,7 +70,15 @@ export function Eth({
     >
       <span key="value">
         {signed && n > 0 ? "+" : ""}
-        {format.format(n)} ETH
+        {figure.form === "plain" ? (
+          figure.text
+        ) : (
+          <>
+            {figure.sign}0.0<sub>{figure.zeros}</sub>
+            {figure.digits}
+          </>
+        )}{" "}
+        ETH
       </span>
     </span>
   );

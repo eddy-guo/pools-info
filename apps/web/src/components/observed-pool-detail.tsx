@@ -400,14 +400,14 @@ export function ObservedPoolDetail({
       </section>
       <div className="stats-grid live-six-stats">
         <Stat label="FDV" pending={pending}>
-          <Eth wei={fdv} pending={pending} digits={5} />
+          <Eth wei={fdv} pending={pending} />
         </Stat>
         <Stat
           label={`Volume ${market?.window ?? "24h"}`}
           pending={pending}
           note={trades == null ? undefined : countLabel(trades, "trade")}
         >
-          <Eth wei={volume} pending={pending} digits={5} />
+          <Eth wei={volume} pending={pending} />
         </Stat>
         <Stat label="Creator fee" pending={pending}>
           {creatorFees === true ? (

@@ -16,6 +16,9 @@ const tokenColor = (page: Page, token: string) =>
 for (const entry of [
   { roi: 274.3, text: "+274.3%", tone: "positive", token: "--color-up" },
   { roi: -12.34, text: "-12.3%", tone: "negative", token: "--color-down" },
+  // The rank-1 wallet's HOOKR position realized 15,285.6% on its disposed
+  // cost: from 10,000% the tile and the share card both abbreviate.
+  { roi: 15285.6, text: "+15.3K%", tone: "positive", token: "--color-up" },
 ]) {
   test(`wallet ROI reads ${entry.text} in the ${entry.tone} tone`, async ({
     page,

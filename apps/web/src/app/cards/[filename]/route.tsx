@@ -4,16 +4,18 @@ import { join } from "node:path";
 import sharp from "sharp";
 import {
   cardCurve,
-  cardEth,
+  cardEthFigure,
   cardExportHero,
   cardExportHeroSize,
   cardExportTrio,
   cardHero,
+  cardInitials,
   cardStats,
+  cardSymbol,
   cardTopPosition,
   cardTradeCount,
-  identiconCells,
   readCardWallet,
+  type CardEth,
   type CardExportTrio,
   type CardStat,
 } from "@/lib/product-card";
@@ -22,6 +24,7 @@ import {
   cardWindowLabel,
   parseCardOptions,
 } from "@/lib/card-options";
+import { fontCodePoints } from "@/lib/font-coverage";
 import { tokenImageResponse } from "@/lib/token-image-server";
 import {
   identityTint,
@@ -37,12 +40,13 @@ export const maxDuration = 30;
 // faces once per process (apps/web/public/fonts/SOURCE.txt).
 const face = (file: string) =>
   readFile(join(process.cwd(), "public/fonts", file));
+const semibold = face("Geist-SemiBold.ttf");
 const fonts = Promise.all([
   face("Geist-Regular.ttf"),
-  face("Geist-SemiBold.ttf"),
+  semibold,
   face("GeistMono-Medium.ttf"),
 ])
-  .then(([regular, semibold, mono]) => [
+  .then(([regular, bold, mono]) => [
     {
       name: "Geist",
       data: regular,
@@ -51,7 +55,7 @@ const fonts = Promise.all([
     },
     {
       name: "Geist",
-      data: semibold,
+      data: bold,
       weight: 600 as const,
       style: "normal" as const,
     },
@@ -67,6 +71,17 @@ const fonts = Promise.all([
     console.error("PnL card fonts unavailable", error);
     return undefined;
   });
+/**
+ * Whether the face a token symbol is drawn in (Geist SemiBold) has a glyph
+ * for a code point; printable ASCII alone when the faces could not be read,
+ * since the renderer's own fallback face draws that much.
+ */
+const symbolDrawable = semibold
+  .then((data) => {
+    const points = fontCodePoints(data);
+    return (codePoint: number) => points.has(codePoint);
+  })
+  .catch(() => (codePoint: number) => codePoint >= 0x20 && codePoint < 0x7f);
 
 const alpha = (hex: string, a: number) =>
   `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${a})`;
@@ -77,11 +92,23 @@ const tone = (t: CardStat["tone"]) =>
       ? visualTheme.down
       : visualTheme.text;
 const mono = "Geist Mono";
+/**
+ * A token symbol's line: it takes the width its row has left and ends in an
+ * ellipsis there, since the renderer never shrinks or wraps a word on its
+ * own and a symbol's glyph count says nothing about its width ("WWWWWWWWW…"
+ * is half as wide again as "BURRITOGA…").
+ */
+const symbolLine = {
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+} as const;
 
 /**
  * The token's proxied image as a PNG data URI for the renderer, or null when
  * the pool has none or it is not ready within the card's own deadline; the
- * identicon then stands in, as it does on the site.
+ * token's monogram then stands in, as it does on the site.
  */
 async function tokenImage(poolId: string): Promise<string | null> {
   try {
@@ -100,6 +127,45 @@ async function tokenImage(poolId: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * An ETH figure drawn as the site draws it: the plain string, or the
+ * subscript-zero form with the zero count set small on the baseline's lower
+ * edge, since the renderer has no `<sub>` and no font feature for one.
+ */
+function CardFigure({
+  eth,
+  size,
+  color,
+  letterSpacing = 0,
+}: {
+  eth: CardEth;
+  size: number;
+  color: string;
+  letterSpacing?: number;
+}) {
+  const text = {
+    fontSize: size,
+    fontWeight: 600,
+    lineHeight: 1,
+    letterSpacing,
+    color,
+    // One line always: a figure that ever ran past its size estimate would
+    // otherwise wrap its unit onto a second line and push the card apart.
+    whiteSpace: "nowrap",
+  } as const;
+  if (eth.figure.form === "plain")
+    return <span style={text}>{`${eth.sign}${eth.figure.text} ETH`}</span>;
+  return (
+    <span style={{ display: "flex", alignItems: "flex-end" }}>
+      <span style={text}>{`${eth.sign}${eth.figure.sign}0.0`}</span>
+      <span style={{ ...text, fontSize: Math.round(size * 0.55) }}>
+        {String(eth.figure.zeros)}
+      </span>
+      <span style={text}>{`${eth.figure.digits} ETH`}</span>
+    </span>
+  );
 }
 
 function Mark({ size, color }: { size: number; color: string }) {
@@ -140,65 +206,25 @@ function Mark({ size, color }: { size: number; color: string }) {
   );
 }
 
-function Identicon({
-  address,
-  size,
-  color,
-  radius,
-}: {
-  address: string;
-  size: number;
-  color: string;
-  radius: number;
-}) {
-  const pad = Math.round(size * 0.22);
-  return (
-    <div
-      style={{
-        display: "flex",
-        width: size,
-        height: size,
-        padding: pad,
-        borderRadius: radius,
-        background: alpha(color, 0.1),
-        border: `1px solid ${alpha(color, 0.22)}`,
-        flexShrink: 0,
-      }}
-    >
-      <svg
-        width={size - pad * 2 - 2}
-        height={size - pad * 2 - 2}
-        viewBox="0 0 5 5"
-      >
-        {identiconCells(address).map((c) => (
-          <rect
-            key={`${c.x}${c.y}`}
-            x={c.x}
-            y={c.y}
-            width="1"
-            height="1"
-            fill={color}
-          />
-        ))}
-      </svg>
-    </div>
-  );
-}
-
 /**
- * The export design's identity tile: a plain per-identity tinted box with no
- * letters and no grid, unlike the Liquid design's dotted {@link Identicon}.
+ * The site's identity tile for a wallet or a token: two glyphs from the
+ * address on the hue the address itself draws (`Avatar` in ui.tsx and the
+ * shared `identityTint`), so the card shows the tile the wallet page and its
+ * rows show, on both designs. Anonymous mode keeps the neutral person tile.
  */
 function Monogram({
   address,
   size,
-  anonymous,
+  radius,
+  anonymous = false,
 }: {
   address: string;
   size: number;
-  anonymous: boolean;
+  radius: number;
+  anonymous?: boolean;
 }) {
-  if (anonymous)
+  if (anonymous) {
+    const icon = Math.round(size * 0.46);
     return (
       <div
         style={{
@@ -207,18 +233,13 @@ function Monogram({
           justifyContent: "center",
           width: size,
           height: size,
-          borderRadius: 16,
+          borderRadius: radius,
           background: visualTheme.surface4,
           border: `1px solid ${visualTheme.lineRaised}`,
           flexShrink: 0,
         }}
       >
-        <svg
-          width={Math.round(size * 0.46)}
-          height={Math.round(size * 0.46)}
-          viewBox="0 0 24 24"
-          fill="none"
-        >
+        <svg width={icon} height={icon} viewBox="0 0 24 24" fill="none">
           <circle
             cx="12"
             cy="8"
@@ -235,19 +256,27 @@ function Monogram({
         </svg>
       </div>
     );
+  }
   const tint = identityTint(address);
   return (
     <div
       style={{
         display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: size,
         height: size,
-        borderRadius: 16,
+        borderRadius: radius,
         background: tint.background,
-        border: `2px solid ${tint.foreground}`,
+        color: tint.foreground,
+        fontSize: Math.round(size * 0.36),
+        fontWeight: 600,
+        lineHeight: 1,
         flexShrink: 0,
       }}
-    />
+    >
+      {cardInitials(address)}
+    </div>
   );
 }
 
@@ -264,7 +293,7 @@ function ExportCard({
   preset,
   window,
   rank,
-  heroValue,
+  hero,
   heroColor,
   trio,
 }: {
@@ -273,16 +302,19 @@ function ExportCard({
   preset: string;
   window: LiveWindow;
   rank: number | null;
-  heroValue: string;
+  hero: { value: string; eth: CardEth };
   heroColor: string;
   trio: CardExportTrio;
 }) {
-  const stats: { label: string; value: string | null }[] = [
+  const best = trio.bestTrade;
+  const stats: { label: string; value: string | null; tile?: string }[] = [
     { label: "ROI", value: trio.roi },
     { label: "Record", value: trio.record },
-    { label: "Best trade", value: trio.bestTrade },
+    best && best.symbol === null
+      ? { label: "Best trade", value: null, tile: best.token }
+      : { label: "Best trade", value: best?.symbol ?? null },
   ];
-  const heroSize = cardExportHeroSize(heroValue);
+  const heroSize = cardExportHeroSize(hero.value);
   return (
     <div
       style={{
@@ -349,7 +381,12 @@ function ExportCard({
       >
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-            <Monogram address={address} size={56} anonymous={anonymous} />
+            <Monogram
+              address={address}
+              size={56}
+              radius={16}
+              anonymous={anonymous}
+            />
             <span style={{ fontSize: 57, fontWeight: 500, lineHeight: 1 }}>
               {anonymous ? "Anonymous" : shortAddress(address)}
             </span>
@@ -370,25 +407,31 @@ function ExportCard({
               </span>
             )}
           </div>
-          <span
-            style={{
-              marginTop: 12,
-              fontSize: heroSize,
-              fontWeight: 600,
-              letterSpacing: -heroSize * 0.045,
-              lineHeight: 1,
-              color: heroColor,
-            }}
-          >
-            {heroValue}
-          </span>
+          <div style={{ display: "flex", marginTop: 12 }}>
+            <CardFigure
+              eth={hero.eth}
+              size={heroSize}
+              color={heroColor}
+              letterSpacing={-heroSize * 0.045}
+            />
+          </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 56 }}>
             {stats.map((s) => (
               <div
                 key={s.label}
-                style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  // ROI and Record keep their figures whole; Best trade has
+                  // the rest of the row, so a long symbol meets its ellipsis
+                  // there rather than the card's edge.
+                  ...(s.label === "Best trade"
+                    ? { flex: 1, minWidth: 0 }
+                    : { flexShrink: 0 }),
+                }}
               >
                 <span
                   style={{
@@ -400,9 +443,20 @@ function ExportCard({
                 >
                   {s.label}
                 </span>
-                <span style={{ fontSize: 57, fontWeight: 600, lineHeight: 1 }}>
-                  {s.value ?? ""}
-                </span>
+                {s.tile ? (
+                  <Monogram address={s.tile} size={57} radius={16} />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 57,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      ...symbolLine,
+                    }}
+                  >
+                    {s.value ?? ""}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -452,7 +506,8 @@ export async function GET(
       launch,
     );
     const w = result.wallet,
-      hero = options.design === "export" ? cardExportHero(w) : cardHero(w);
+      exportHero = options.design === "export" ? cardExportHero(w) : null,
+      hero = options.design === "export" ? exportHero : cardHero(w);
     if (!cardTradeCount(w) || !hero)
       return new Response("No saved PnL for this wallet", { status: 404 });
     const preset = cardPresets[options.preset].color,
@@ -461,8 +516,10 @@ export async function GET(
         top && options.design === "liquid"
           ? await tokenImage(top.poolId)
           : null,
+      drawable = await symbolDrawable,
+      symbol = top ? cardSymbol(top.symbol, drawable) : null,
       stats = cardStats(w, options.notional),
-      trio = cardExportTrio(w, top?.symbol ?? null),
+      trio = cardExportTrio(w, top, drawable),
       heroColor = tone(hero.tone),
       curveColor = tone(
         w.realizedWei === null
@@ -483,14 +540,14 @@ export async function GET(
     const start = curve?.points[0],
       end = curve?.points[curve.points.length - 1];
     const card = new ImageResponse(
-      options.design === "export" ? (
+      exportHero ? (
         <ExportCard
           address={address}
           anonymous={options.anonymous}
           preset={preset}
           window={options.window}
           rank={w.rank}
-          heroValue={hero.value}
+          hero={exportHero}
           heroColor={heroColor}
           trio={trio}
         />
@@ -539,43 +596,12 @@ export async function GET(
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                {options.anonymous ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 52,
-                      height: 52,
-                      borderRadius: 14,
-                      background: visualTheme.surface4,
-                      border: `1px solid ${visualTheme.lineRaised}`,
-                    }}
-                  >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <circle
-                        cx="12"
-                        cy="8"
-                        r="4.2"
-                        stroke={visualTheme.muted}
-                        strokeWidth="1.8"
-                      />
-                      <path
-                        d="M4.5 20.5c1.2-4 4.1-6 7.5-6s6.3 2 7.5 6"
-                        stroke={visualTheme.muted}
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                ) : (
-                  <Identicon
-                    address={address}
-                    size={52}
-                    color={preset}
-                    radius={14}
-                  />
-                )}
+                <Monogram
+                  address={address}
+                  size={52}
+                  radius={14}
+                  anonymous={options.anonymous}
+                />
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 4 }}
                 >
@@ -609,24 +635,28 @@ export async function GET(
                       style={{
                         borderRadius: 20,
                         border: `1px solid ${visualTheme.lineRaised}`,
+                        flexShrink: 0,
                       }}
                     />
                   ) : (
-                    <Identicon
-                      address={top.token}
-                      size={40}
-                      color={preset}
-                      radius={20}
-                    />
+                    <Monogram address={top.token} size={40} radius={12} />
                   )}
-                  <span
-                    style={{ fontSize: 34, fontWeight: 600, lineHeight: 1 }}
-                  >
-                    {top.symbol}
-                  </span>
+                  {symbol !== null && (
+                    <span
+                      style={{
+                        fontSize: 34,
+                        fontWeight: 600,
+                        lineHeight: 1,
+                        ...symbolLine,
+                      }}
+                    >
+                      {symbol}
+                    </span>
+                  )}
                   <span
                     style={{
                       display: "flex",
+                      flexShrink: 0,
                       padding: "6px 12px",
                       border: `1px solid ${alpha(preset, 0.5)}`,
                       borderRadius: 9,
@@ -662,16 +692,11 @@ export async function GET(
                   {hero.value}
                 </span>
                 {options.notional && w.realizedWei !== null && (
-                  <span
-                    style={{
-                      fontSize: 30,
-                      fontWeight: 600,
-                      lineHeight: 1,
-                      color: heroColor,
-                    }}
-                  >
-                    {cardEth(w.realizedWei, true)}
-                  </span>
+                  <CardFigure
+                    eth={cardEthFigure(w.realizedWei, true)}
+                    size={30}
+                    color={heroColor}
+                  />
                 )}
               </div>
             </div>
@@ -816,16 +841,20 @@ export async function GET(
                 >
                   {s.label}
                 </span>
-                <span
-                  style={{
-                    fontSize: 30,
-                    fontWeight: 600,
-                    lineHeight: 1,
-                    color: tone(s.tone),
-                  }}
-                >
-                  {s.value}
-                </span>
+                {s.eth ? (
+                  <CardFigure eth={s.eth} size={30} color={tone(s.tone)} />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: 30,
+                      fontWeight: 600,
+                      lineHeight: 1,
+                      color: tone(s.tone),
+                    }}
+                  >
+                    {s.value}
+                  </span>
+                )}
               </div>
             ))}
           </div>

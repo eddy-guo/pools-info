@@ -679,7 +679,8 @@ main {
   font-size: 12px;
   letter-spacing: 0;
 }
-.price sub {
+.price sub,
+.number sub {
   font-size: 12px;
   margin: 0 1px;
   vertical-align: sub;
