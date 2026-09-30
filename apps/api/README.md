@@ -248,8 +248,9 @@ readiness route also uses the database bound, independently of visitor tokens.
 Icons keep their own `image_budget` of 1,200 requests/minute and are never
 charged to a client. `/ready` draws on its own `probe_budget` of 60 answers a
 minute in place of any visitor budget, so a health monitor is never starved by
-visitor traffic and a probe flood spends no visitor's budget; `/health` does no
-work and is never limited. `/v1/prices/eth-usd` is charged like any JSON read.
+visitor traffic and a probe flood spends no visitor's budget; `/health` is
+outside these budgets and remains unlimited. `/v1/prices/eth-usd` is charged
+like any JSON read.
 
 Who the caller is comes from an explicit contract, never from a header any
 caller could set on direct traffic; a request the contract cannot attribute
