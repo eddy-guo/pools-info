@@ -177,7 +177,7 @@ function DesktopTraderRow({
               href={`/wallet/${w.address}/?window=${window}`}
               avatarSize="monogram"
             />
-            {/* The pooled-swap disclosure under the chip: one line inside
+            {/* The unattributed-swap disclosure under the chip: one line inside
                 the row's fixed height, ellipsised where the panel narrows,
                 the whole sentence on its title. */}
             {excludedCaption && (
@@ -342,7 +342,7 @@ function MobileTraderCard({
               )}
             </span>
           </div>
-          {/* The pooled-swap disclosure as a third line inside the card's
+          {/* The unattributed-swap disclosure as a third line inside the card's
               fixed 101px, which a card carrying it tightens its own padding
               to fit. */}
           {excludedCaption && (
@@ -451,7 +451,7 @@ function PodiumCard({
           <span data-pending={pending}>{pending ? "Pending" : " "}</span>
         )}
       </div>
-      {/* The pooled-swap disclosure under the figures it qualifies, on a
+      {/* The unattributed-swap disclosure under the figures it qualifies, on a
           line every card reserves from first paint whether the read fills
           it or not, so the three cards keep one height. */}
       <div

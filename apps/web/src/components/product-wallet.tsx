@@ -280,7 +280,7 @@ export function ProductWallet({ address }: { address: string }) {
           </button>
         </div>
       </div>
-      {/* The pooled-swap disclosure over the figures: the positions whose
+      {/* The unattributed-swap disclosure over the figures: the positions whose
           cost and proceeds reach none of them because their token moved in
           a swap the ledger could not attribute to one wallet
           (`excludedPositionsCaption`). The line is reserved from first paint
