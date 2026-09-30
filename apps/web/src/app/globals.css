@@ -47,14 +47,12 @@
   --rank-bronze: #c98a5c;
   /* Interaction roles reuse the export's lime and neutral ramps. Keep these
      semantic so every button family moves together without page-level colour
-     patches or translucent overlays that dirty the accent. The primary is a
-     lime tint carrying lime text rather than a solid lime block: the accent
-     over --color-bg at 18% rest, 24% hover and 30% pressed, precomputed so
-     the fill is opaque and identical on every surface a button sits on. */
-  --control-primary-bg: #283217;
-  --control-primary-fg: var(--color-accent);
+     patches or translucent overlays that dirty the accent. Primary controls
+     use solid lime, near-black text, and a darker lime pressed fill. */
+  --control-primary-bg: var(--color-accent);
+  --control-primary-fg: #06120D;
   --control-primary-hover-bg: #33411b;
-  --control-primary-active-bg: #3e4f1f;
+  --control-primary-active-bg: #9fce46;
   --control-secondary-bg: var(--color-panel-raised);
   --control-secondary-hover-bg: var(--color-panel-hover);
   --control-secondary-active-bg: var(--color-surface-6);
@@ -3308,7 +3306,7 @@ main {
   stroke-width: 2;
 }
 .button:not(.secondary):not(:disabled):not([aria-disabled="true"]):hover {
-  background: var(--control-primary-hover-bg);
+  filter: brightness(1.08);
 }
 .button:not(.secondary):not(:disabled):not([aria-disabled="true"]):active {
   background: var(--control-primary-active-bg);

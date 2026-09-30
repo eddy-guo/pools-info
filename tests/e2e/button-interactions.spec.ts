@@ -2,9 +2,10 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const colors = {
   accent: "rgb(187, 244, 81)",
-  primary: "rgb(40, 50, 23)",
-  primaryHover: "rgb(51, 65, 27)",
-  primaryActive: "rgb(62, 79, 31)",
+  primary: "rgb(187, 244, 81)",
+  primaryHover: "rgb(187, 244, 81)",
+  primaryActive: "rgb(159, 206, 70)",
+  primaryText: "rgb(6, 18, 13)",
   panelRaised: "rgb(16, 16, 20)",
   panelHover: "rgb(18, 18, 22)",
   surface5: "rgb(28, 28, 34)",
@@ -171,7 +172,7 @@ test("primary, secondary and ghost controls share deliberate interaction states"
     border: transparent,
     borderWidth: "1px",
     boxShadow: "none",
-    color: colors.accent,
+    color: colors.primaryText,
     filter: "none",
     fontWeight: "600",
   });
@@ -183,8 +184,8 @@ test("primary, secondary and ghost controls share deliberate interaction states"
     background: colors.primaryHover,
     border: transparent,
     boxShadow: "none",
-    color: colors.accent,
-    filter: "none",
+    color: colors.primaryText,
+    filter: "brightness(1.08)",
   });
   expectTextContrast(primaryHover);
   const primaryPressed = await pressed(page, primary);
@@ -193,8 +194,8 @@ test("primary, secondary and ghost controls share deliberate interaction states"
     background: colors.primaryActive,
     border: transparent,
     boxShadow: "none",
-    color: colors.accent,
-    filter: "none",
+    color: colors.primaryText,
+    filter: "brightness(1.08)",
   });
   expectTextContrast(primaryPressed);
   expectFocus(await focusVisible(page, primary), primaryRest);
@@ -282,7 +283,7 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
   expect(ctaRest).toMatchObject({
     background: colors.primary,
     boxShadow: "none",
-    color: colors.accent,
+    color: colors.primaryText,
     filter: "none",
     fontWeight: "600",
   });
@@ -292,6 +293,8 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
   expect(ctaHover).toMatchObject({
     background: colors.primaryHover,
     boxShadow: "none",
+    color: colors.primaryText,
+    filter: "brightness(1.08)",
   });
   expectTextContrast(ctaHover);
   const ctaPressed = await pressed(page, cta);
@@ -299,7 +302,8 @@ test("accent CTA, tabs and segmented controls keep hierarchy across states", asy
   expect(ctaPressed).toMatchObject({
     background: colors.primaryActive,
     boxShadow: "none",
-    color: colors.accent,
+    color: colors.primaryText,
+    filter: "brightness(1.08)",
   });
   expectTextContrast(ctaPressed);
   expectFocus(await focusVisible(page, cta), ctaRest);
@@ -410,7 +414,7 @@ for (const width of [1440, 390]) {
     expect(primaryActionSignature(copyFocus), "focus-visible").toEqual(
       primaryActionSignature(leaderboardFocus),
     );
-    // The shared look itself: a lime tint with lime text, no dark border or
+    // The shared look itself: solid lime with near-black text, no dark border or
     // inset ring in any state, and the global lime focus ring.
     for (const [state, background] of [
       [copyRest, colors.primary],
@@ -422,7 +426,7 @@ for (const width of [1440, 390]) {
         background,
         border: transparent,
         boxShadow: "none",
-        color: colors.accent,
+        color: colors.primaryText,
       });
       expectTextContrast(state);
     }
