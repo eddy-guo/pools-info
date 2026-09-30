@@ -47,9 +47,17 @@ export const excludedByFlagCounts = (p: string) =>
  * supported rows off the heap. A correlated scalar subquery, not a join, so
  * a page of board rows runs it once per served row off the index and the
  * planner never hashes the whole table for it. */
-export const excludedByFlagSql = (wallet: string) =>
+export const excludedByFlagSql = (
+  wallet: string,
+  scope: "wallet" | "trader",
+) =>
   `(SELECT ${excludedByFlagCounts("p")} FROM agg_positions p
-    WHERE p.chain_id=4663 AND p.wallet_ref=${wallet} AND NOT p.supported)`;
+    WHERE p.chain_id=4663 AND p.wallet_ref=${wallet} AND NOT p.supported${
+      scope === "trader"
+        ? ` AND NOT EXISTS (SELECT 1 FROM indexed_pools i JOIN agg_wallets o ON o.address=decode(substr(i.launch_sender,3),'hex')
+            WHERE i.chain_id=4663 AND i.pool_ref=p.pool_ref AND o.wallet_ref=p.wallet_ref)`
+        : ""
+    })`;
 /** Every column `walletSummary` reads, under its names, from a window row
  * `x`. Unrealized is not a board figure (it needs a price per position; the
  * wallet reader marks them), the window's cutoff is the cursor its rows were
@@ -60,11 +68,12 @@ export const excludedByFlagSql = (wallet: string) =>
  * excluded since the refresh (about a minute) besides the multi-flag ones. */
 export const summaryColumns = (
   address: string,
+  scope: "wallet" | "trader",
 ) => `'0x'||encode(${address},'hex') AS wallet,x.realized_wei::text AS realized,x.net_wei::text AS net,
   x.volume_wei::text AS volume,x.disposed_cost_wei::text AS disposed_cost,NULL::text AS unrealized,
   x.trades AS trade_count,x.supported_trades,x.wins,x.losses,x.closures,x.hold_seconds::text AS hold_seconds,
   x.best_wei::text AS best,x.last_timestamp::text AS last,x.supported_positions AS supported_count,
-  x.excluded_positions AS excluded_count,${excludedByFlagSql("x.wallet_ref")} AS excluded_by_flag,
+  x.excluded_positions AS excluded_count,${excludedByFlagSql("x.wallet_ref", scope)} AS excluded_by_flag,
   true AS complete_window`;
 /** The window's refresh row: the cursor its rows were summed to. A window
  * the tip loop has not refreshed since the ledger's last walk-back has no
@@ -166,7 +175,7 @@ export async function readLedgerLeaderboard(
              WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades, "v")}
              ORDER BY x.${column} DESC OFFSET $4 LIMIT 1
            )
-           SELECT $3::int+row_number() OVER (ORDER BY x.${column} DESC,x.address) AS rank,${summaryColumns("x.address")} FROM (
+           SELECT $3::int+row_number() OVER (ORDER BY x.${column} DESC,x.address) AS rank,${summaryColumns("x.address", "trader")} FROM (
              SELECT x.*,w.address FROM agg_trader_windows x JOIN agg_wallets w USING (wallet_ref)
              WHERE x.chain_id=4663 AND x."window"=$1 AND ${eligible(minTrades, "w")}
                AND x.${column}>=coalesce((SELECT threshold FROM cut),'-Infinity')

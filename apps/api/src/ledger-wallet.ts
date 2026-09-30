@@ -273,7 +273,7 @@ export async function readLedgerWallet(
   const row =
     (
       await query(
-        `SELECT (SELECT b.rank FROM (${ledgerRealizedRanksSql}) b WHERE b.wallet_ref=x.wallet_ref) AS rank,${summaryColumns("w.address")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
+        `SELECT (SELECT b.rank FROM (${ledgerRealizedRanksSql}) b WHERE b.wallet_ref=x.wallet_ref) AS rank,${summaryColumns("w.address", "wallet")} FROM agg_wallet_windows x JOIN agg_wallets w USING (wallet_ref)
          WHERE x.chain_id=4663 AND x."window"=$1 AND x.wallet_ref=$2`,
         [window, ref],
       )

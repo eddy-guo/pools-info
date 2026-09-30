@@ -885,12 +885,21 @@ test(
       launchTx: hash(103),
       launchSender: W[2],
     };
+    const T = {
+      ...S,
+      id: hash(0x103),
+      token: addr(0x204),
+      name: "Pool T",
+      symbol: "T",
+      launchBlock: 13,
+      launchTx: hash(104),
+    };
     await commitBatch(db, await ensureDiscovery(db, 10), {
       from: 10,
       to: 19,
       hash: hash(19),
       evidence: {},
-      pools: [pools.P, pools.Q, S],
+      pools: [pools.P, pools.Q, S, T],
     });
     await ensureLedgerStream(db, "tip");
     const reader = createReader(url, schema, { marketSource: "ledger" });
@@ -958,11 +967,23 @@ test(
         .trade(blockOf(1070, 2), W[2], "buy", E, 10n, S)
         .trade(blockOf(1070, 2), W[2], "sell", E + 5n * tenth, 10n, S);
     rows.roundTrips(blockOf(1070, 3), W[2], 5, tenth);
+    rows
+      .trade(blockOf(1070, 3), W[2], "buy", E, 10n, T)
+      .trade(blockOf(1070, 3), W[14], "buy", 5n * tenth, 5n, T)
+      .pooledSell(
+        blockOf(1070, 3),
+        [
+          [W[2], 10n],
+          [W[14], 5n],
+        ],
+        15n * tenth,
+        T,
+      );
     relayed(rows, blockOf(1070, 4), W[4], 5, 3n * tenth);
     relayed(rows, blockOf(1070, 5), W[5], 5, (25n * tenth) / 10n);
     const cursor1 = blockOf(1078, 4);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
-    assert.equal(applied.unattributed, 0);
+    assert.equal(applied.unattributed, 1);
     assert.ok(await refreshLedgerWindows(db));
 
     // Z is on no board; W2 is, on its P trades alone; W4 and W5 lead.
@@ -1030,6 +1051,10 @@ test(
       ],
       [(5n * tenth).toString(), 10, 10, 1],
     );
+    assert.deepEqual(
+      [w2.excludedPositionCount, w2.excludedByFlag],
+      [0, byFlag()],
+    );
     // The profiles keep every position, with the board's rank.
     const z = await profile(Z);
     assert.deepEqual(
@@ -1044,7 +1069,11 @@ test(
         w2Profile.tradeCount,
         w2Profile.supportedPositionCount,
       ],
-      [4, (3n * E).toString(), 20, 2],
+      [4, (3n * E).toString(), 21, 2],
+    );
+    assert.deepEqual(
+      [w2Profile.excludedPositionCount, w2Profile.excludedByFlag],
+      [1, byFlag({ unattributed_swap_activity: 1 })],
     );
     // A wallet with no launch of its own shows the same row on both.
     const w1Profile = await profile(W[1]);
