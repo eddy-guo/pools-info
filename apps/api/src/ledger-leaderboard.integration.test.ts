@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { randomUUID } from "node:crypto";
-import type {
-  AnalyticsLeaderboardResponse,
-  AnalyticsWalletSummary,
-  SearchResponse,
-  LedgerSwap,
-  LedgerTransfer,
+import {
+  ledgerExcludingFlags,
+  type AnalyticsLeaderboardResponse,
+  type AnalyticsWalletResponse,
+  type AnalyticsWalletSummary,
+  type ExcludedPositionsByFlag,
+  type SearchResponse,
+  type LedgerSwap,
+  type LedgerTransfer,
 } from "@pools/core";
 import {
   acquireLedgerWriter,
@@ -71,8 +74,10 @@ const pools = {
 };
 const wallet = (n: number) => addr(0x10000 + n);
 const W = Object.fromEntries(
-  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => [n, wallet(n)]),
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((n) => [n, wallet(n)]),
 ) as Record<number, string>;
+/** The batch-sell contract: it sells what its callers pooled in one swap. */
+const BATCH = wallet(15);
 
 /** A batch's rows: each trade is a swap and its manager transfer in its own
  * transaction, initiated by the wallet through the router. */
@@ -150,6 +155,60 @@ class Rows {
     });
     return this;
   }
+  /** A pooled sell in one transaction: each contributor sends its tokens to
+   * the batch contract, which sells the lot to the manager in one swap it
+   * initiates. No address's net movement covers the swap (the contract
+   * nets to zero), so the ledger leaves it unattributed and excludes every
+   * contributor's position with `unattributed_swap_activity`. */
+  pooledSell(
+    block: number,
+    contributors: (readonly [string, bigint])[],
+    eth: bigint,
+    pool = pools.P,
+  ) {
+    const i = this.logs.get(block) ?? 0;
+    const total = contributors.reduce((n, [, tokens]) => n + tokens, 0n);
+    this.logs.set(block, i + contributors.length + 2);
+    const site = {
+      txHash: hash(BigInt(block) * 100000n + BigInt(i)),
+      block,
+      blockHash: hash(block),
+      timestamp: ts(block),
+    };
+    contributors.forEach(([who, tokens], k) =>
+      this.transfers.push({
+        ...site,
+        logIndex: i + k,
+        token: pool.token,
+        from: who,
+        to: BATCH,
+        value: tokens.toString(),
+      }),
+    );
+    this.transfers.push({
+      ...site,
+      logIndex: i + contributors.length,
+      token: pool.token,
+      from: BATCH,
+      to: ledgerRules.manager,
+      value: total.toString(),
+    });
+    this.swaps.push({
+      ...site,
+      logIndex: i + contributors.length + 1,
+      poolId: pool.id,
+      token: pool.token,
+      initiator: BATCH,
+      txTo: BATCH,
+      side: "sell",
+      ethWei: eth.toString(),
+      tokenRaw: total.toString(),
+      sqrtPriceX96: "1000",
+      liquidity: "5",
+      tick: 1,
+    });
+    return this;
+  }
 }
 function batch(from: number, to: number, rows: Rows): LedgerBatch {
   return {
@@ -172,6 +231,17 @@ function batch(from: number, to: number, rows: Rows): LedgerBatch {
 const normalized = (body: string) =>
   body.replace(/"generatedAt":"[^"]*"/g, '"generatedAt":"-"');
 const tenth = E / 10n;
+/** The breakdown every ledger-served row carries: one count per excluding
+ * flag, zero unless named. */
+const byFlag = (
+  counts: Partial<ExcludedPositionsByFlag> = {},
+): ExcludedPositionsByFlag => ({
+  zero_cost_inflow: 0,
+  unattributed_outflow: 0,
+  unknown_basis: 0,
+  unattributed_swap_activity: 0,
+  ...counts,
+});
 
 test(
   "Postgres HTTP: MARKET_SOURCE=ledger serves the trader leaderboard from the ledger's windows, hand-checked per window, and the accounting board until the ledger has folded anything",
@@ -318,8 +388,27 @@ test(
       .move(blockOf(1073, 1), W[12], W[11], 90n);
     for (let i = 0; i < 10; i++)
       rows.trade(blockOf(1073, 2), W[11], "sell", E, 9n);
+    // W13 clears the gate on five 0.01 ETH trips in P, then buys Q and sells
+    // it together with W14 through the batch contract in one transaction: no
+    // address's net movement covers that swap, so the ledger leaves it
+    // unattributed and excludes both Q positions
+    // (unattributed_swap_activity). W13's row keeps its P figures and stands
+    // last on every board; W14, with its one buy, stands on none.
+    rows
+      .roundTrips(blockOf(1076, 0), W[13], 5, tenth / 10n)
+      .trade(blockOf(1076, 1), W[13], "buy", E, 10n, pools.Q)
+      .trade(blockOf(1076, 1), W[14], "buy", 5n * tenth, 5n, pools.Q)
+      .pooledSell(
+        blockOf(1076, 2),
+        [
+          [W[13], 10n],
+          [W[14], 5n],
+        ],
+        15n * tenth,
+        pools.Q,
+      );
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
-    assert.equal(applied.unattributed, 0);
+    assert.equal(applied.unattributed, 1);
     // A committed batch is fresh: its cursor and time, an unknown lag until
     // the collector observes a head, then the lag against that head; the
     // status route carries the same object.
@@ -383,6 +472,7 @@ test(
       [W[10], 4],
       [W[6], 5],
       [W[9], 6],
+      [W[13], 7],
     ]);
     assert.deepEqual(order(await board("window=7d&limit=100")), [
       [W[2], 1],
@@ -392,6 +482,7 @@ test(
       [W[10], 5],
       [W[6], 6],
       [W[9], 7],
+      [W[13], 8],
     ]);
     assert.deepEqual(order(await board("window=30d&limit=100")), [
       [W[3], 1],
@@ -402,6 +493,7 @@ test(
       [W[10], 6],
       [W[6], 7],
       [W[9], 8],
+      [W[13], 9],
     ]);
     const all = await board("window=All&limit=100");
     assert.deepEqual(order(all), [
@@ -414,6 +506,7 @@ test(
       [W[10], 7],
       [W[6], 8],
       [W[9], 9],
+      [W[13], 10],
     ]);
     // W11's ten sales are trades and volume, never supported trades, wins
     // or a realized figure: a zero-cost inflow excludes the position, so it
@@ -473,8 +566,8 @@ test(
       flags: ["unattributed_outflow"],
     });
     for (const [b, total] of [
-      [day, 6],
-      [all, 9],
+      [day, 7],
+      [all, 10],
     ] as const) {
       assert.equal(b.total, total);
       assert.equal(b.nextOffset, null);
@@ -533,6 +626,7 @@ test(
         supportedTradeCount: inWindow ? 11 : 12,
         supportedPositionCount: 1,
         excludedPositionCount: 0,
+        excludedByFlag: byFlag(),
         bestWei: (5n * tenth).toString(),
         avgHold: 36000 / 6,
         last: ts(blockOf(1070, 0)),
@@ -559,6 +653,7 @@ test(
       supportedTradeCount: 10,
       supportedPositionCount: 1,
       excludedPositionCount: 1,
+      excludedByFlag: byFlag({ unknown_basis: 1 }),
       bestWei: (tenth / 2n).toString(),
       avgHold: 0,
       last: ts(blockOf(1071, 1)),
@@ -582,6 +677,7 @@ test(
       supportedTradeCount: 10,
       supportedPositionCount: 1,
       excludedPositionCount: 0,
+      excludedByFlag: byFlag(),
       bestWei: tenth.toString(),
       avgHold: 0,
       last: ts(blockOf(1074, 1)),
@@ -589,6 +685,53 @@ test(
       oldestAsOf: ts(cursor1),
       completeWindow: true,
     } satisfies AnalyticsWalletSummary);
+    // W13: the P trips alone, 0.05 ETH over 5 ETH disposed at a 100 percent
+    // record; the Q buy is a trade and 1 ETH of volume on the excluded
+    // position, whose exclusion the breakdown puts on the unattributed swap
+    // and on nothing else; its last activity is the pooled sale's own
+    // transaction.
+    assert.deepEqual(item(day, W[13]), {
+      address: W[13],
+      rank: 7,
+      realizedWei: (tenth / 2n).toString(),
+      netWei: (tenth / 2n).toString(),
+      unrealizedWei: null,
+      volumeWei: ((1105n * tenth) / 10n).toString(),
+      roi: 1,
+      wins: 5,
+      losses: 0,
+      winRate: 100,
+      tradeCount: 11,
+      supportedTradeCount: 10,
+      supportedPositionCount: 1,
+      excludedPositionCount: 1,
+      excludedByFlag: byFlag({ unattributed_swap_activity: 1 }),
+      bestWei: (tenth / 10n).toString(),
+      avgHold: 0,
+      last: ts(blockOf(1076, 2)),
+      asOf: ts(cursor1),
+      oldestAsOf: ts(cursor1),
+      completeWindow: true,
+    } satisfies AnalyticsWalletSummary);
+    // The breakdown is keyed by the fold's own excluding flags, in their
+    // order, on every row.
+    for (const row of day.items)
+      assert.deepEqual(Object.keys(row.excludedByFlag!), [
+        ...ledgerExcludingFlags,
+      ]);
+    // W14's one buy leaves it under every gate; its Q position is excluded
+    // the same way, which its profile discloses.
+    const w14 = (await get("ledger", `/v1/wallets/${W[14]}?window=24h`))
+      .data as AnalyticsWalletResponse;
+    assert.deepEqual(
+      [
+        w14.wallet.rank,
+        w14.wallet.supportedPositionCount,
+        w14.wallet.excludedPositionCount,
+        w14.wallet.excludedByFlag,
+      ],
+      [null, 0, 1, byFlag({ unattributed_swap_activity: 1 })],
+    );
     assert.equal(item(all, W[4]).realizedWei, (2n * E).toString());
     assert.equal(item(all, W[3]).realizedWei, (15n * tenth).toString());
     assert.equal(item(all, W[2]).realizedWei, (12n * tenth).toString());
@@ -602,11 +745,12 @@ test(
       [W[8], 6],
       [W[10], 7],
     ]);
-    assert.equal(page.total, 9);
+    assert.equal(page.total, 10);
     assert.equal(page.nextOffset, 7);
     assert.deepEqual(await board("window=All&limit=25&offset=7").then(order), [
       [W[6], 8],
       [W[9], 9],
+      [W[13], 10],
     ]);
     for (const query of [
       "window=7d&limit=25&offset=76",
@@ -646,9 +790,10 @@ test(
           ((25n * tenth) / 10n).toString(),
         ],
         [W[9], 6, (2n * tenth).toString(), (2n * tenth).toString()],
+        [W[13], 7, (tenth / 2n).toString(), (tenth / 2n).toString()],
       ],
     );
-    assert.equal(net.total, 6);
+    assert.equal(net.total, 7);
     assert.equal(net.metric, "net");
     assert.deepEqual(
       await board("window=24h&metric=net&limit=2&offset=2").then(order),
@@ -668,8 +813,9 @@ test(
       [W[10], 5],
       [W[6], 6],
       [W[9], 7],
+      [W[13], 8],
     ]);
-    assert.equal(eight.total, 7);
+    assert.equal(eight.total, 8);
     assert.equal(eight.minTrades, 8);
     assert.equal(item(eight, W[5]).realizedWei, (4n * E).toString());
     assert.equal(item(eight, W[5]).tradeCount, 8);
@@ -697,8 +843,9 @@ test(
       [W[8], 3],
       [W[6], 4],
       [W[9], 5],
+      [W[13], 6],
     ]);
-    assert.equal(later.total, 5);
+    assert.equal(later.total, 6);
     assert.equal(later.coverage.asOf, ts(cursor2));
     assert.equal(item(later, W[1]).asOf, ts(cursor2));
     assert.deepEqual(item(later, W[1]), {
@@ -707,7 +854,7 @@ test(
       oldestAsOf: ts(cursor2),
     });
     const week = await board("window=7d&limit=100");
-    assert.equal(week.total, 7);
+    assert.equal(week.total, 8);
     assert.deepEqual(
       [item(week, W[10]).rank, item(week, W[10]).realizedWei],
       [5, (6n * tenth).toString()],
@@ -738,12 +885,21 @@ test(
       launchTx: hash(103),
       launchSender: W[2],
     };
+    const T = {
+      ...S,
+      id: hash(0x103),
+      token: addr(0x204),
+      name: "Pool T",
+      symbol: "T",
+      launchBlock: 13,
+      launchTx: hash(104),
+    };
     await commitBatch(db, await ensureDiscovery(db, 10), {
       from: 10,
       to: 19,
       hash: hash(19),
       evidence: {},
-      pools: [pools.P, pools.Q, S],
+      pools: [pools.P, pools.Q, S, T],
     });
     await ensureLedgerStream(db, "tip");
     const reader = createReader(url, schema, { marketSource: "ledger" });
@@ -811,11 +967,23 @@ test(
         .trade(blockOf(1070, 2), W[2], "buy", E, 10n, S)
         .trade(blockOf(1070, 2), W[2], "sell", E + 5n * tenth, 10n, S);
     rows.roundTrips(blockOf(1070, 3), W[2], 5, tenth);
+    rows
+      .trade(blockOf(1070, 3), W[2], "buy", E, 10n, T)
+      .trade(blockOf(1070, 3), W[14], "buy", 5n * tenth, 5n, T)
+      .pooledSell(
+        blockOf(1070, 3),
+        [
+          [W[2], 10n],
+          [W[14], 5n],
+        ],
+        15n * tenth,
+        T,
+      );
     relayed(rows, blockOf(1070, 4), W[4], 5, 3n * tenth);
     relayed(rows, blockOf(1070, 5), W[5], 5, (25n * tenth) / 10n);
     const cursor1 = blockOf(1078, 4);
     const applied = await applyLedgerBatch(db, batch(base, cursor1, rows));
-    assert.equal(applied.unattributed, 0);
+    assert.equal(applied.unattributed, 1);
     assert.ok(await refreshLedgerWindows(db));
 
     // Z is on no board; W2 is, on its P trades alone; W4 and W5 lead.
@@ -883,6 +1051,10 @@ test(
       ],
       [(5n * tenth).toString(), 10, 10, 1],
     );
+    assert.deepEqual(
+      [w2.excludedPositionCount, w2.excludedByFlag],
+      [0, byFlag()],
+    );
     // The profiles keep every position, with the board's rank.
     const z = await profile(Z);
     assert.deepEqual(
@@ -897,7 +1069,11 @@ test(
         w2Profile.tradeCount,
         w2Profile.supportedPositionCount,
       ],
-      [4, (3n * E).toString(), 20, 2],
+      [4, (3n * E).toString(), 21, 2],
+    );
+    assert.deepEqual(
+      [w2Profile.excludedPositionCount, w2Profile.excludedByFlag],
+      [1, byFlag({ unattributed_swap_activity: 1 })],
     );
     // A wallet with no launch of its own shows the same row on both.
     const w1Profile = await profile(W[1]);

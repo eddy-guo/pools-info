@@ -5061,6 +5061,29 @@ button.icon-button:disabled {
   color: inherit;
   font-weight: inherit;
 }
+/* The pooled-swap disclosure under a trader's chip (`excludedPositionsCaption`):
+   a second, quieter line inside the row's fixed 60px, on one line in the
+   auto-width Trader column, ellipsised where that column is at its floor
+   with the whole sentence on the span's title. The 30px chip, its 2px gap
+   and this 14px line are 46px, so the cell that carries a caption trades
+   its 13px vertical padding for 7px over 6px (the row's 59px content box
+   under its 1px border) and the row stays 60px: a row that grew (73px
+   measured with the padding kept) would move every row under it as the
+   read resolves and break the `--ranked-rows` reservation. */
+.leaderboard-panel .data-table td:has(> .trader-excluded-caption) {
+  padding-top: 7px;
+  padding-bottom: 6px;
+}
+.leaderboard-panel .data-table .trader-excluded-caption {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .follow-toggle {
   color: var(--color-faint);
 }
@@ -5561,6 +5584,24 @@ button.icon-button:disabled {
   white-space: nowrap;
   overflow: hidden;
   min-width: 0;
+}
+/* The wallet's pooled-swap disclosure (`excludedPositionsCaption`), one line
+   at the meta row's size between the heading and the stat cards, reserved
+   from first paint in every state (failed and error too) so the cards sit
+   in one place whether the read fills the line or leaves it blank. The
+   heading's own margin above and the cards' 12px below give it room. A
+   count past the page's width would ellipsise rather than wrap into the
+   cards. */
+.wallet-excluded-note {
+  height: 18px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wallet-meta .address-label {
   min-width: 0;
@@ -6243,6 +6284,32 @@ a.wallet-top-pool:hover {
     min-height: 44px;
     min-width: 44px;
   }
+  /* The pooled-swap disclosure (`excludedPositionsCaption`) as a third
+     line inside the ranked card's fixed 101px: a card that carries it
+     trades 6px of its top padding, 7px of its bottom and 4px of the foot's
+     gap for the 2px gap and 14px line (9 + 44 + 8 + 14.4 + 2 + 14 + 8 in
+     the 100px above its border), so the reserved rows never move. The line
+     stops short of the follow toggle in the right edge and ellipsises with
+     the sentence on its title. */
+  .ranked-traders
+    .leaderboard-panel
+    .mobile-trader:has(> .mobile-trader-excluded) {
+    padding-top: 9px;
+    padding-bottom: 8px;
+  }
+  .mobile-trader:has(> .mobile-trader-excluded) .mobile-trader-foot {
+    margin-top: 8px;
+  }
+  .mobile-trader-excluded {
+    margin-top: 2px;
+    padding-right: 48px;
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--color-text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 .leaderboard-panel .live-podium {
   display: grid;
@@ -6252,13 +6319,14 @@ a.wallet-top-pool:hover {
 }
 /* The export's podium card: a rank medallion in the trader's own identity
    hue, the address chip, the headline PnL, a neutral realized/ROI line, the
-   win/loss bar and the record - 180±4px tall at 1440. */
+   pooled-swap disclosure's reserved line, the win/loss bar and the record -
+   the export's 180px plus that line, one height at every width. */
 .trader-podium-card {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: 180px;
+  height: 192px;
   padding: 18px;
   border: 1px solid var(--color-line);
   border-radius: 14px;
@@ -6317,7 +6385,20 @@ a.wallet-top-pool:hover {
 .trader-podium-card-meta {
   font-size: 12.5px;
   color: var(--color-text-3);
-  margin-bottom: 13px;
+  margin-bottom: 2px;
+}
+/* The pooled-swap disclosure (`excludedPositionsCaption`): the desktop
+   row caption's type, ellipsised with the sentence on its title where the
+   card narrows, and blank but still 14px where there is nothing to say. */
+.trader-podium-card-excluded {
+  height: 14px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* Neutral, not up/down: the export keeps this line quiet so the headline
    PnL above stays the card's one coloured figure. */
@@ -6781,12 +6862,6 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .live-podium {
     grid-template-columns: minmax(0, 1fr);
     padding: 0 0 12px;
-  }
-  /* Taller than the 1440 card: the chip's copy/explorer icons grow to the
-     44px touch target here, which the fixed desktop height doesn't budget
-     for. */
-  .trader-podium-card {
-    height: 192px;
   }
   /* Mobile pools are cards with no header row, so the message starts flush. */
   .explore-page .table-region[data-empty="true"] > .empty-state {

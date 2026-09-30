@@ -5,6 +5,7 @@ import {
   type AnalyticsLeaderboardResponse,
   type AnalyticsWalletSummary,
   type AnalyticsWalletResponse,
+  type ExcludedPositionsByFlag,
   type LiveWindow,
 } from "@pools/core";
 import {
@@ -74,6 +75,17 @@ export const accountingCte = `WITH flows AS (
     bool_and(complete_window) AS complete_window FROM positions GROUP BY wallet
 )`;
 const int = (v: unknown) => Number(v ?? 0);
+/** The per-flag exclusion counts as `excludedByFlagCounts` builds them
+ * (`ledger-leaderboard.ts`), each an integer; only the ledger readers pass
+ * the column, the accounting rows carry none. */
+const excludedByFlag = (
+  v: Record<string, unknown>,
+): ExcludedPositionsByFlag => ({
+  zero_cost_inflow: int(v.zero_cost_inflow),
+  unattributed_outflow: int(v.unattributed_outflow),
+  unknown_basis: int(v.unknown_basis),
+  unattributed_swap_activity: int(v.unattributed_swap_activity),
+});
 const amount = (v: unknown) =>
   v === null || v === undefined ? null : String(v);
 export function walletSummary(
@@ -102,6 +114,8 @@ export function walletSummary(
     supportedTradeCount: int(r?.supported_trades),
     supportedPositionCount: int(r?.supported_count),
     excludedPositionCount: int(r?.excluded_count),
+    excludedByFlag:
+      r?.excluded_by_flag == null ? null : excludedByFlag(r.excluded_by_flag),
     bestWei: amount(r?.best),
     avgHold: int(r?.closures) ? int(r?.hold_seconds) / int(r?.closures) : null,
     last: r?.last == null ? null : int(r.last),

@@ -143,6 +143,20 @@ export interface AnalyticsWalletPosition {
   volumeWei: string;
   position: Position | null;
 }
+/** The excluded positions per excluding flag, the four flags
+ * `ledgerExcludingFlags` in `ledger.ts` lists: tokens that arrived
+ * (`zero_cost_inflow`) or left (`unattributed_outflow`) without a swap the
+ * ledger attributed, a sale past the held quantity (`unknown_basis`), and a
+ * swap the ledger could not attribute to one wallet, such as a sell pooled
+ * with other wallets' tokens through a batch contract or a buy whose tokens
+ * fanned out to many wallets (`unattributed_swap_activity`). */
+export type ExcludedPositionsByFlag = Record<
+  | "zero_cost_inflow"
+  | "unattributed_outflow"
+  | "unknown_basis"
+  | "unattributed_swap_activity",
+  number
+>;
 export interface AnalyticsWalletSummary {
   verifiedUnrealizedWei?: string | null;
   unrealizedScope?: "verified_positions_only" | "unavailable";
@@ -171,6 +185,14 @@ export interface AnalyticsWalletSummary {
   supportedTradeCount: number;
   supportedPositionCount: number;
   excludedPositionCount: number;
+  /** `excludedPositionCount` broken down by excluding flag, counted from
+   * positions in the row's scope as the read is served (the board omits
+   * own launches; the wallet profile includes them): a position carrying
+   * several flags counts under each, so the counts can sum past the total,
+   * and a flag no position carries is 0. Null where the reader does not
+   * classify exclusions by ledger flag (the accounting fallback), never a
+   * stand-in for zeros. */
+  excludedByFlag: ExcludedPositionsByFlag | null;
   bestWei: string | null;
   avgHold: number | null;
   last: number | null;

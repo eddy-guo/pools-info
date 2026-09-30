@@ -53,6 +53,7 @@ import {
 import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 import { tokenLine } from "@/lib/token-identity";
+import { excludedPositionsCaption } from "@/lib/excluded-positions";
 const tabs = [
   { id: "positions", label: "Positions" },
   { id: "trades", label: "Trades" },
@@ -128,6 +129,7 @@ export function ProductWallet({ address }: { address: string }) {
     // once data resolves, so nothing already on screen depends on it ticking.
     [renderedAt] = useState(() => Math.floor(Date.now() / 1000));
   const w = data?.wallet;
+  const excludedCaption = w ? excludedPositionsCaption(w) : null;
   const topPools = (data?.positions ?? [])
     .slice()
     .sort((a, b) => (BigInt(b.volumeWei) > BigInt(a.volumeWei) ? 1 : -1))
@@ -278,6 +280,13 @@ export function ProductWallet({ address }: { address: string }) {
           </button>
         </div>
       </div>
+      {/* The unattributed-swap disclosure over the figures: the positions whose
+          cost and proceeds reach none of them because their token moved in
+          a swap the ledger could not attribute to one wallet
+          (`excludedPositionsCaption`). The line is reserved from first paint
+          inside the heading's own 20px gap, in every state, so it moves
+          nothing whether the read fills it or leaves it blank. */}
+      <p className="wallet-excluded-note">{excludedCaption}</p>
       {loading && data && (
         <span className="sr-only" role="status">
           Updating saved wallet activity

@@ -26,6 +26,7 @@ import { reservedRowCount, SHOW_MORE_STEP, ShowMore } from "./product-common";
 import { useMyWallet } from "./my-wallet";
 import { PODIUM_SIZE, RANKED_CAP as CAP, rankedShown } from "@/lib/ranked-rows";
 import { countLabel } from "@/lib/plural";
+import { excludedPositionsCaption } from "@/lib/excluded-positions";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
     by the wallet's actual rank rather than row position so the Following
     tab's out-of-order rows never pick up a colour that isn't theirs. */
@@ -158,6 +159,7 @@ function DesktopTraderRow({
   window: LiveWindow;
   now: number;
 }) {
+  const excludedCaption = w ? excludedPositionsCaption(w) : null;
   return (
     <tr
       data-row-index={index}
@@ -169,11 +171,21 @@ function DesktopTraderRow({
       </td>
       <td data-pending={pending}>
         {w ? (
-          <AddressChip
-            address={w.address}
-            href={`/wallet/${w.address}/?window=${window}`}
-            avatarSize="monogram"
-          />
+          <>
+            <AddressChip
+              address={w.address}
+              href={`/wallet/${w.address}/?window=${window}`}
+              avatarSize="monogram"
+            />
+            {/* The unattributed-swap disclosure under the chip: one line inside
+                the row's fixed height, ellipsised where the panel narrows,
+                the whole sentence on its title. */}
+            {excludedCaption && (
+              <span className="trader-excluded-caption" title={excludedCaption}>
+                {excludedCaption}
+              </span>
+            )}
+          </>
         ) : pending ? (
           "Pending"
         ) : (
@@ -272,6 +284,7 @@ function MobileTraderCard({
   metric: Metric;
   window: LiveWindow;
 }) {
+  const excludedCaption = w ? excludedPositionsCaption(w) : null;
   return (
     <div
       className="mobile-trader"
@@ -329,6 +342,14 @@ function MobileTraderCard({
               )}
             </span>
           </div>
+          {/* The unattributed-swap disclosure as a third line inside the card's
+              fixed 101px, which a card carrying it tightens its own padding
+              to fit. */}
+          {excludedCaption && (
+            <div className="mobile-trader-excluded" title={excludedCaption}>
+              {excludedCaption}
+            </div>
+          )}
         </Fragment>
       ) : pending ? (
         <Fragment key="pending">
@@ -377,6 +398,7 @@ function PodiumCard({
   window: LiveWindow;
 }) {
   const tint = w ? identityTint(w.address) : undefined;
+  const excludedCaption = w ? excludedPositionsCaption(w) : null;
   return (
     <div className="trader-podium-card" data-row-index={rank - 1}>
       {w && <FollowRowButton address={w.address} />}
@@ -428,6 +450,15 @@ function PodiumCard({
         ) : (
           <span data-pending={pending}>{pending ? "Pending" : " "}</span>
         )}
+      </div>
+      {/* The unattributed-swap disclosure under the figures it qualifies, on a
+          line every card reserves from first paint whether the read fills
+          it or not, so the three cards keep one height. */}
+      <div
+        className="trader-podium-card-excluded"
+        title={excludedCaption ?? undefined}
+      >
+        {excludedCaption}
       </div>
       <WinLossBar wins={w?.wins ?? 0} losses={w?.losses ?? 0} />
       <div className="trader-podium-card-record">
@@ -689,7 +720,10 @@ export function ProductTraders() {
                   ))}
                 </div>
               )}
-              <div className="table-scroll desktop-traders" data-failed={failed}>
+              <div
+                className="table-scroll desktop-traders"
+                data-failed={failed}
+              >
                 <table className="data-table">
                   <thead>
                     <tr>

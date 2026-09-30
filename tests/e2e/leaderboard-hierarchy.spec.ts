@@ -189,7 +189,7 @@ for (const width of [768, 1024, 1280]) {
   });
 }
 
-test("the podium shows a rank medallion, chip, PnL, realized/ROI line, win/loss bar and record in that order, 180±4px tall", async ({
+test("the podium shows a rank medallion, chip, PnL, realized/ROI line, disclosure line, win/loss bar and record in that order, 192±4px tall", async ({
   page,
 }) => {
   await page.goto("/traders/?window=All");
@@ -209,23 +209,18 @@ test("the podium shows a rank medallion, chip, PnL, realized/ROI line, win/loss 
     "trader-podium-card-head",
     "trader-podium-card-pnl",
     "trader-podium-card-meta",
+    "trader-podium-card-excluded",
     "wl-bar",
     "trader-podium-card-record",
   ]);
 
-  // 180±4px is the export's own measurement at 1440; the phone card grows a
-  // little for the chip's 44px touch targets, so only the desktop viewport
-  // is held to that exact band.
+  // The export's own 180px at 1440 plus the pooled-swap disclosure's
+  // reserved line, one height at every width.
   const height = await first.evaluate(
     (node) => node.getBoundingClientRect().height,
   );
-  const viewport = page.viewportSize();
-  if (viewport && viewport.width >= 1440) {
-    expect(height).toBeGreaterThanOrEqual(176);
-    expect(height).toBeLessThanOrEqual(184);
-  } else {
-    expect(height).toBeGreaterThan(0);
-  }
+  expect(height).toBeGreaterThanOrEqual(188);
+  expect(height).toBeLessThanOrEqual(196);
 
   const rank = await typography(first.locator(".trader-podium-card-rank"));
   expect(rank.fontSize).toBe("13px");
