@@ -394,7 +394,7 @@ zero. The history backfill fills the rest.
 **Stops.** A throttle (four throttled attempts on one HyperSync or RPC
 request) pauses the loop rather than ending it: the first pause is a minute,
 each consecutive one doubles up to an hour, a `Retry-After` longer than the
-pause is honoured instead, every pause is logged
+pause wins up to the remaining six-hour budget, every pause is logged
 (`ledger_tip_throttle_paused`, with its source, its wait and the running
 total), the cycle after a pause tries again from the same cursor, and a
 successful cycle resets the series. Only about six hours of consecutive
@@ -416,10 +416,8 @@ and the range in flight) and the service reconnects in-process, waiting 1, 2,
 first connection and the writer lock, and every reconnection re-reads the
 cursor and reconciles both streams exactly as a fresh start does. SIGTERM and
 SIGINT are logged by the supervisor (`service_stopping`) and the loop
-(`ledger_tip_stopping`) and end the loop on a committed batch; the service's
-Railway configuration allows 100 restarts before Railway marks the deployment
-crashed, a budget those in-process waits make the last resort rather than the
-first.
+(`ledger_tip_stopping`) and end the loop on a committed batch. The in-process
+waits make Railway's existing ten-restart limit a last resort.
 
 **Health.** `run` serves `GET /health` on `PORT` (Railway's variable; 3103
 when unset) from `apps/indexer/src/ledger-tip-health.ts`: the loop's state

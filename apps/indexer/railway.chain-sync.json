@@ -16,6 +16,6 @@
     "startCommand": "node --import tsx src/ledger-tip-service.ts",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 100
+    "restartPolicyMaxRetries": 10
   }
 }

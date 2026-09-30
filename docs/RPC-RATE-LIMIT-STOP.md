@@ -35,7 +35,8 @@ public RPC, where the loop's own pacing bounds the cost of continuing, and it
 is the site's only source of fresh figures. A throttle there is a pause, never
 the reserved stop: four throttled attempts on one request pause the loop for
 a minute, doubling to an hour while the throttle continues (a longer
-`Retry-After` wins), and after about six hours of consecutive pausing the
+`Retry-After` wins up to the remaining six-hour budget), and after about six
+hours of consecutive pausing the
 worker exits 1, so `ON_FAILURE` restarts it. It never exits 75 or 0 on a
 throttle; the 29 Sep 2026 resilience review found that the clean exit left
 the site frozen with no restart and no notification. `docs/AGGREGATE-LEDGER.md`

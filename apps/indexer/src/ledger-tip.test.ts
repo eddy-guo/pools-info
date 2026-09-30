@@ -944,6 +944,7 @@ test(
       hour,
       hour,
       hour,
+      3420000,
     ]);
     assert.deepEqual(
       [
@@ -954,10 +955,8 @@ test(
         summary.throttled,
         summary.failures,
       ],
-      [0, null, 10, 18180000, 33, 0],
+      [0, null, 11, 21600000, 33, 0],
     );
-    // Eleven throttled requests of four attempts: ten pauses and the one
-    // that would have passed the budget.
     assert.equal(requests, 44);
     assert.deepEqual(
       paused(log).map((e) => [e.source, e.pause, e.waitMs, e.pausedMs]),
@@ -972,7 +971,7 @@ test(
       log
         .filter((e) => e.event === "ledger_tip_throttle_exhausted")
         .map((e) => [e.source, e.pauses, e.pausedMs, e.budgetMs]),
-      [["hypersync", 10, 18180000, 6 * hour]],
+      [["hypersync", 11, 6 * hour, 6 * hour]],
     );
     assert.ok(!log.some((e) => e.event === "ledger_tip_stopped_for_good"));
     assert.ok(!log.some((e) => e.event === "ledger_tip_cycle_failed"));
@@ -1035,6 +1034,43 @@ test(
       [["hypersync", 1, 7200000, 7200000, start + 399]],
     );
     assert.ok(!burstLog.some((e) => e.event === "ledger_tip_stopped_for_good"));
+    let longRequests = 0;
+    const longLog: Record<string, unknown>[] = [];
+    const longWaits: number[] = [];
+    const long = await runLedgerTip(
+      db,
+      tipOptions(fake, longLog, {
+        fetch: async () => {
+          longRequests++;
+          return new Response("slow down", {
+            status: 429,
+            headers: {
+              "retry-after": longRequests === 4 ? "25200" : "0",
+            },
+          });
+        },
+        wait: async (ms) => {
+          longWaits.push(ms);
+        },
+      }),
+    );
+    assert.equal(long.stopped, "throttled");
+    assert.equal(ledgerTipExitCodes[long.stopped], 1);
+    assert.deepEqual(
+      [long.pauses, long.pausedMs, longRequests],
+      [1, 6 * hour, 4],
+    );
+    assert.deepEqual(longWaits, [6 * hour]);
+    assert.deepEqual(
+      paused(longLog).map((e) => [e.waitMs, e.retryAfterMs, e.pausedMs]),
+      [[6 * hour, 7 * hour, 6 * hour]],
+    );
+    assert.deepEqual(
+      longLog
+        .filter((e) => e.event === "ledger_tip_throttle_exhausted")
+        .map((e) => [e.pauses, e.pausedMs, e.budgetMs]),
+      [[1, 6 * hour, 6 * hour]],
+    );
   },
 );
 

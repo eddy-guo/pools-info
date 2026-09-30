@@ -274,7 +274,9 @@ export interface LedgerTipCycleOptions {
   signal?: AbortSignal;
   log?: Log;
   /** Called once the cycle's range is planned, before its first request. */
-  onRange?: (range: { from: number; to: number; lane?: "crowd" } | null) => void;
+  onRange?: (
+    range: { from: number; to: number; lane?: "crowd" } | null,
+  ) => void;
   onMainCommitted?: (cursor: number | null) => void;
 }
 /** One cycle: head, reconcile, at most one range, windows. Every write is a
@@ -726,7 +728,25 @@ export async function runLedgerTip(
         );
         const budgetMs = ledgerTipDefaults.throttleBudgetMs;
         const safe = ledgerTipSafeError(error);
-        if (pausedMs + waitMs > budgetMs) {
+        const pauseMs = Math.min(waitMs, budgetMs - pausedMs);
+        pauses++;
+        pausedMs += pauseMs;
+        summary.pauses++;
+        summary.pausedMs += pauseMs;
+        log({
+          event: "ledger_tip_throttle_paused",
+          source,
+          pause: pauses,
+          waitMs: pauseMs,
+          retryAfterMs,
+          pausedMs,
+          budgetMs,
+          error: safe,
+          through: summary.through,
+        });
+        await rest(pauseMs);
+        if (options.signal?.aborted) return finish("aborted");
+        if (pausedMs >= budgetMs) {
           log({
             event: "ledger_tip_throttle_exhausted",
             source,
@@ -738,22 +758,6 @@ export async function runLedgerTip(
           });
           return finish("throttled", error);
         }
-        pauses++;
-        pausedMs += waitMs;
-        summary.pauses++;
-        summary.pausedMs += waitMs;
-        log({
-          event: "ledger_tip_throttle_paused",
-          source,
-          pause: pauses,
-          waitMs,
-          retryAfterMs,
-          pausedMs,
-          budgetMs,
-          error: safe,
-          through: summary.through,
-        });
-        await rest(waitMs);
         continue;
       }
       const stop =
