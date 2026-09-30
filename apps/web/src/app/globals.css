@@ -5047,12 +5047,13 @@ button.icon-button:disabled {
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
-/* The Trader cell gives its chip 4px of its right padding: the chip's 24px
-   copy and explorer targets need 10px more than the 16px icons did, and the
-   right-aligned PnL beside it keeps its own padding, so every column edge and
-   drop width stays where it was. */
+/* The Trader cell gives its chip 9px of its right padding: the chip's 24px
+   copy and explorer targets need 10px more than the 16px icons did, which
+   left it 0.65px to spare at 1280 on macOS and 0.44px short in CI's Linux
+   glyphs. The right-aligned PnL beside it keeps its own padding, so every
+   column edge and drop width stays where it was. */
 .leaderboard-panel .data-table td:nth-child(2) {
-  padding-right: 9px;
+  padding-right: 4px;
 }
 /* Right-aligned values fill their cell so the pending-to-value swap changes
    only the text, never the box (a resized inline-block would move its edge). */
