@@ -227,7 +227,7 @@ export const ledgerRules: LedgerRules = {
 };
 export type LedgerMode = "pass" | "tip";
 /** The attribution rule a stream's whole history is folded under (migration
- * 027): 1 leaves a pooled swap unattributed, 2 attributes it pro rata to its
+ * 027): 1 leaves a pooled sell unattributed, 2 attributes it pro rata to its
  * contributors (`LedgerRules.pooledSwaps`). Fixed when the stream is created
  * and read by the writer on every batch; a rule change is a re-fold into a
  * fresh ledger, never an update of a live stream. */

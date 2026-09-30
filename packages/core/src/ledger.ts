@@ -16,16 +16,12 @@ export type LedgerFlag =
   | "unattributed_outflow"
   | "wrapper_route"
   | "counterparty_route"
-  | "pooled_route"
   | "unknown_basis"
   | "unattributed_swap_activity";
-/** Flags a supported position may carry: they describe, they never exclude.
- * `pooled_route` marks a position with a swap attributed pro rata through a
- * pooled transaction (fold rule 2, `LedgerRules.pooledSwaps`). */
+/** Flags a supported position may carry: they describe, they never exclude. */
 export const ledgerInformationalFlags: readonly LedgerFlag[] = [
   "wrapper_route",
   "counterparty_route",
-  "pooled_route",
 ];
 /** Flags that exclude a position: its finances are never served. The ledger
  * vouches for a position it witnessed end to end, swap by swap. Tokens that
@@ -125,8 +121,8 @@ interface SwapQuote {
   tick: number;
   initiator: string;
 }
-/** One contributor's part of a pooled swap: the token it moved into (a sell)
- * or out of (a buy) the swap, and its share of the swap's ETH leg. */
+/** One contributor's part of a pooled sell: the token it moved into the swap
+ * and its share of the swap's ETH leg. */
 export interface LedgerPooledShare {
   wallet: string;
   tokenRaw: bigint;
@@ -381,12 +377,12 @@ type CheckedTransfer = LogSite & {
  * A transaction with two swaps of one pool, or without a single candidate,
  * leaves the swap unattributed and marks every address whose balance of the
  * token moved in it; nothing of that transaction is applied. Under rule 2
- * (`rules.pooledSwaps`) a swap without a single candidate is first tried as
- * a pooled swap: two or more addresses moved the token in the swap's
- * direction, none against it, and together exactly the swapped amount (a
- * batch-sell contract collecting many wallets' tokens and selling them in
- * one swap, or one buy fanned out to many); each is attributed its own
- * movement with its `pooledSwapShares` share of the ETH leg, and no residual
+ * (`rules.pooledSwaps`) a sell without a single candidate is first tried as
+ * a pooled sell: two or more addresses sent the token into the swap,
+ * none received it, and together exactly the swapped amount (a batch-sell
+ * contract collecting many wallets' tokens and selling them in one swap);
+ * each is attributed its own movement with its `pooledSwapShares` share of
+ * the ETH leg, and no residual
  * movement is left. The initiator is one contributor among the others when
  * it moved tokens and nothing otherwise, as under rule 1.
  * Swaps apply before residual transfers; transactions in block order, both in
@@ -561,7 +557,10 @@ export function planLedgerBatch(
           ? candidates[0]
           : null;
       if (beneficiary === null) {
-        const shares = pooled ? pooledContributions(s, moved, net, sign) : null;
+        const shares =
+          pooled && s.side === "sell"
+            ? pooledContributions(s, moved, net, sign)
+            : null;
         if (shares === null) {
           events.push(unattributed(s, moved));
           continue;
@@ -626,8 +625,8 @@ export function planLedgerBatch(
   return events;
 }
 
-/** Rule 2's pooled swap, or null: every address whose balance of the token
- * moved did so in the swap's direction, there are at least two, and their
+/** Rule 2's pooled sell, or null: every address whose balance of the token
+ * moved sent tokens into the swap, there are at least two, and their
  * movements sum to exactly the swapped amount. A movement against the
  * direction, a total the swap does not account for (a mint, a burn, a fee
  * taken in tokens) or a single mover leaves the swap to rule 1's outcome. */
@@ -834,7 +833,6 @@ function refreshFlags(p: LedgerPosition) {
   if (p.outflow > 0n) flags.add("unattributed_outflow");
   if (p.wrapperSwaps > 0) flags.add("wrapper_route");
   if (p.counterpartySwaps > 0) flags.add("counterparty_route");
-  if (p.pooledSwaps > 0) flags.add("pooled_route");
   p.flags = [...flags].sort();
   p.supported = !p.flags.some((f) => ledgerExcludingFlags.includes(f));
 }
@@ -1219,7 +1217,6 @@ export function ledgerIdentitiesHold(p: LedgerPosition) {
       (p.closedCycles === null || p.closedCycles === 0) &&
     (p.flashCycles ?? 0) <= (p.closedCycles ?? 0) &&
     (!p.flashCycles || p.shortestCycleSeconds! < ledgerFlashHoldSeconds) &&
-    p.pooledSwaps > 0 === p.flags.includes("pooled_route") &&
     (p.boughtRaw === null) === (p.soldRaw === null) &&
     (p.boughtRaw === null ||
       p.flags.includes("unknown_basis") ||

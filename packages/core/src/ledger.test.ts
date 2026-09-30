@@ -1683,7 +1683,7 @@ test("rule 2 attributes a pooled sell pro rata by token movement; rule 1 leaves 
   );
   for (const p of [pa, pb]) {
     assert.equal(p.supported, true);
-    assert.deepEqual(p.flags, ["pooled_route", "wrapper_route"]);
+    assert.deepEqual(p.flags, ["wrapper_route"]);
     assert.equal(p.pooledSwaps, 1);
     assert.equal(p.sells, 1);
     assert.equal(p.buys, 1);
@@ -1814,7 +1814,7 @@ test("the pro-rata shares sum to the ETH leg exactly, the truncated wei going to
   );
 });
 
-test("a pooled swap through the plan: fifty contributors, a pass-through mover, a shortfall, a counter-movement, two swaps of the pool, and a pooled buy", () => {
+test("a pooled sell through the plan: fifty contributors, a pass-through mover, a shortfall, a counter-movement, two swaps of the pool, and a pooled buy", () => {
   const holders: [string, bigint][] = Array.from({ length: 50 }, (_, i) => [
     addr(0x2000 + i),
     BigInt(10 + i),
@@ -1958,8 +1958,7 @@ test("a pooled swap through the plan: fifty contributors, a pass-through mover, 
     ["unattributed_swap", "unattributed_swap"],
   );
 
-  // A pooled buy: one swap bought for many, the tokens fanned out; each
-  // recipient's position opens at its share of the cost.
+  // A pooled buy stays unattributed when tokens fan out to many recipients.
   const fanned = createLedgerState();
   const buy = run(
     [
@@ -1979,23 +1978,17 @@ test("a pooled swap through the plan: fifty contributors, a pass-through mover, 
     fanned,
     pooledRules,
   );
-  assert.equal(buy.events[0].kind, "pooled_swap");
-  assert.deepEqual((buy.events[0] as { shares: unknown[] }).shares, [
-    { wallet: a, tokenRaw: 10n, ethWei: E + 0n },
-    { wallet: b, tokenRaw: 20n, ethWei: E * 2n + 1n },
-  ]);
-  assert.deepEqual(
-    [
-      position(fanned, a).cost,
-      position(fanned, a).quantity,
-      position(fanned, a).boughtRaw,
-    ],
-    [E, 10n, 10n],
-  );
-  assert.equal(position(fanned, b).cost, E * 2n + 1n);
+  assert.equal(buy.events[0].kind, "unattributed_swap");
+  assert.deepEqual((buy.events[0] as { wallets: string[] }).wallets, [a, b]);
+  for (const w of [a, b]) {
+    assert.equal(position(fanned, w).supported, false);
+    assert.deepEqual(position(fanned, w).flags, ["unattributed_swap_activity"]);
+    assert.equal(position(fanned, w).buys, 0);
+    assert.equal(position(fanned, w).pooledSwaps, 0);
+  }
   const buyHour = fanned.poolHours.get(`${pool}:${ledgerHour(600000)}`)!;
-  assert.deepEqual([buyHour.buys, buyHour.buyers, buyHour.sellers], [1, 2, 0]);
-  assert.equal(buy.application.liveTrades[0].attribution, "pooled");
+  assert.deepEqual([buyHour.buys, buyHour.buyers, buyHour.sellers], [1, 0, 0]);
+  assert.equal(buy.application.liveTrades[0].attribution, "unattributed");
 });
 
 test("the initiator of a pooled swap is one contributor among the others, never its beneficiary", () => {

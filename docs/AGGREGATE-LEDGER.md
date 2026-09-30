@@ -31,7 +31,7 @@ the ordinary migration runner deliberately does not activate their storage.
   in one transaction, or no single candidate, leave the swap unattributed:
   nothing of that transaction is applied and every address whose balance of
   the token moved has its position excluded with `unattributed_swap_activity`
-  (fold rule 1; rule 2, "Pooled swaps" below, attributes the pooled shape
+  (fold rule 1; rule 2, "Pooled swaps" below, attributes pooled sells
   pro rata instead).
   Transfers in transactions without a swap of the token are plain inflows and
   outflows. Swaps apply before residual transfers, transactions in block
@@ -544,9 +544,9 @@ wallets with at least one such position. The recorded transaction
 contributors (the audit's "about 50" was the explorer's first page of legs)
 whose movements sum exactly to the 695,318,196.60 CS sold for 6.000424 ETH.
 
-**The rule** (`LedgerRules.pooledSwaps`, `planLedgerBatch`). When no
-single candidate exists and every address whose balance of the token moved
-in the transaction moved it in the swap's direction, there are at least two
+**The rule** (`LedgerRules.pooledSwaps`, `planLedgerBatch`). For a sell with no
+single candidate, when every address whose balance of the token moved
+in the transaction sent tokens into the swap, there are at least two
 of them, and their movements sum to exactly the swapped amount, the swap is
 a pooled swap: each contributor is attributed a swap of the tokens it moved
 and its share of the ETH leg. The share is `ethWei * tokenRaw_i / tokenRaw`
@@ -558,22 +558,21 @@ most, the lower address first among equal losses, so the shares sum to
 contributor's whole net movement is its share; the initiator is a
 contributor when it moved tokens and nothing otherwise, as under rule 1
 (`transaction_sender` is never the beneficiary). A movement against the
-direction, a total the swap does not account for (a mint, a burn, a fee
+sell direction, a total the swap does not account for (a mint, a burn, a fee
 kept in tokens), a single mover, or two swaps of the pool in the transaction
-keep rule 1's outcome, since the rule never guesses who covers a gap. It is
-direction-symmetric: one buy fanned out to many recipients is attributed the
-same way. A pooled swap is one trade for the pool (its hour's `trades`,
-`volume` and OHLC and the pool state count it once; its hour's `sellers`
-or `buyers` count every contributor, so since migration 027 they may exceed
-`sells` or `buys`), one sale per contributor for the wallets (positions,
+keep rule 1's outcome, since the rule never guesses who covers a gap. A pooled
+buy fanned out to many recipients stays unattributed under both rules; it
+needs separate proof before the history re-fold. A pooled sell is one trade
+for the pool (its hour's `trades`, `volume` and OHLC and the pool state count
+it once; its hour's `sellers` count every contributor, so since migration 027
+they may exceed `sells`), one sale per contributor for the wallets (positions,
 hour rows, `LedgerSale`, closures), and one row in the live ring with
 `attribution = 'pooled'` and no wallet, as an unattributed swap is kept,
 whose `pooled_wallet_refs` name its contributors so that the rolling hour's
 active traders (`/v1/stats?window=1h`) count them as the whole hours'
-`agg_wallet_hours` rows do for the longer windows. A
-position counts them in `pooled_swaps` and carries the informational flag
-`pooled_route`; the api's contract census reads a pooled swap as one the
-wallet did not initiate, like a counterparty swap.
+`agg_wallet_hours` rows do for the longer windows. A position counts them in
+`pooled_swaps`; the api's contract census reads a pooled sell as one the wallet
+did not initiate, like a counterparty swap.
 
 **Versioning.** The rule a stream folds under is the stream's own,
 `agg_streams.fold_rule` (migration 027: 1 for every stream that exists when
@@ -617,7 +616,7 @@ inventory (`unknown_basis`), and the database checks it.
 
 Evidence: `packages/core/src/ledger.test.ts` (two, three and fifty
 contributors, the remainder rule, a pass-through mover, a shortfall, a
-counter-movement, two swaps of the pool, a pooled buy, the initiator as a
+counter-movement, two swaps of the pool, a pooled buy's exclusion, the initiator as a
 contributor, the unit totals), `packages/core/src/ledger-pooled-fixture.test.ts`
 (the recorded transaction under both rules, the audited wallet
 `0x0b75…f928` reconciled to the wei: 4,423,505.17 CS bought for 0.0495 ETH,

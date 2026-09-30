@@ -442,7 +442,8 @@ response is the accounting reader's, field for field; what its values mean:
   under rule 2), or null while the served ledger folds under rule 1 or the
   swap-in date is not recorded yet. The page states the day in UTC beside
   the positions list, in the fixed-height row that holds Still held, and
-  renders nothing there for null.
+  renders nothing there for null. Pooled buys remain unattributed under both
+  rules; attributing them requires separate proof before the history re-fold.
 
 Failure behaviour is the board's: a ledger with no cursor or no pool hour
 answers as with `broad`; a window without a refresh row answers 503

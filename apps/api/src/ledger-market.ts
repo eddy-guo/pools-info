@@ -37,7 +37,7 @@ export interface LedgerCut extends MarketBoundary {
   newestHour: number;
   indexedAt: string;
   /** The attribution rule the stream's history is folded under (migration
-   * 027): 2 attributes pooled swaps pro rata, 1 leaves them unattributed. */
+   * 027): 2 attributes pooled sells pro rata, 1 leaves them unattributed. */
   foldRule: 1 | 2;
   /** When readers started serving the stream under rule 2 (unix seconds),
    * set at the swap-in; null before it and under rule 1. */

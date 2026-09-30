@@ -964,10 +964,9 @@ test("the database refuses forged identities, wrong scales, other chains and an 
   await refused(
     "UPDATE agg_pool_hours SET low_sqrt_price_x96=high_sqrt_price_x96+1",
   );
-  // Since migration 027 an hour's buyers or sellers may exceed its buys or
-  // sells (a pooled swap's contributors), so only the sign is refused.
   await refused("UPDATE agg_pool_hours SET buyers=-1");
-  await refused("UPDATE agg_positions SET pooled_swaps=1");
+  await refused("UPDATE agg_pool_hours SET buyers=buys+1");
+  await refused("UPDATE agg_positions SET pooled_swaps=-1");
   await refused("UPDATE agg_positions SET flags=ARRAY['pooled_route']");
   await refused("UPDATE agg_positions SET bought_raw=1");
   await refused("UPDATE agg_positions SET bought_raw=bought_raw+1");

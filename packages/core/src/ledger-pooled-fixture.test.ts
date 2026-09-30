@@ -222,7 +222,7 @@ test("rule 2 attributes the recorded pooled sell to its 147 contributors pro rat
     },
     {
       supported: true,
-      flags: ["pooled_route", "wrapper_route"],
+      flags: ["wrapper_route"],
       buys: 1,
       sells: 1,
       pooledSwaps: 1,

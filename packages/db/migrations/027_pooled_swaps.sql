@@ -1,4 +1,4 @@
--- Fold rule 2: a pooled swap is attributed pro rata to its contributors, and
+-- Fold rule 2: a pooled sell is attributed pro rata to its contributors, and
 -- a position keeps the token units it bought and sold (docs/AGGREGATE-LEDGER.md,
 -- "Pooled swaps"; decided 29 Sep 2026). Nothing here changes a figure the
 -- live ledger serves: the rule a stream folds under is the stream's own
@@ -9,7 +9,7 @@
 -- written before, and the constraints rule 2 needs hold over rule 1's rows as
 -- they stand. Applied by the tip loop at its start under the writer lock.
 -- Every constraint on an existing table is added NOT VALID: the rows already
--- there satisfy it by construction (no pooled swap, no pooled_route flag,
+-- there satisfy it by construction (no pooled swap,
 -- null unit totals, 017's stricter hour and ring rules), and validating would
 -- scan agg_positions under the ACCESS EXCLUSIVE lock the ALTER takes, which
 -- the api's readers queue behind for the whole scan. New and updated rows
@@ -28,7 +28,7 @@ ALTER TABLE agg_batches
   ADD COLUMN pooled integer NOT NULL DEFAULT 0,
   ADD CONSTRAINT agg_batches_pooled CHECK (pooled>=0 AND pooled<=attributed) NOT VALID;
 
--- 3. Positions: the pooled swap counter with its informational flag, and
+-- 3. Positions: the pooled swap counter and
 --    the unit totals, null on a row written before this migration as
 --    migration 020's cycle counts are (a total folded from here on would
 --    read as the whole history); a position created from here on starts at
@@ -42,50 +42,27 @@ ALTER TABLE agg_positions
   ADD CONSTRAINT agg_positions_pooled_swaps CHECK (pooled_swaps>=0) NOT VALID,
   ADD CONSTRAINT agg_positions_bought_raw CHECK (bought_raw>=0 AND scale(bought_raw)=0) NOT VALID,
   ADD CONSTRAINT agg_positions_sold_raw CHECK (sold_raw>=0 AND scale(sold_raw)=0) NOT VALID,
-  ADD CONSTRAINT agg_positions_pooled_flag CHECK ((pooled_swaps>0) = ('pooled_route' = ANY(flags))) NOT VALID,
   ADD CONSTRAINT agg_positions_units CHECK (
     (bought_raw IS NULL) = (sold_raw IS NULL)
     AND (bought_raw IS NULL OR 'unknown_basis' = ANY(flags)
       OR quantity_raw = bought_raw + inflow_raw - sold_raw - outflow_raw)) NOT VALID;
 
--- 4. The XOR admits pooled_route beside the other informational flags. The
---    constraint in place is found by its definition (migration 022 named it,
---    017 did not) and rebuilt with the one flag added, so a database that
---    has not applied 022 yet keeps 017's rule and gains only the flag.
-DO $$
-DECLARE old_name text; old_def text;
-BEGIN
-  SELECT conname, pg_get_constraintdef(oid) INTO old_name, old_def FROM pg_constraint
-    WHERE conrelid='agg_positions'::regclass AND contype='c'
-      AND pg_get_constraintdef(oid) LIKE '%unattributed_swap_activity%';
-  IF old_name IS NULL THEN
-    RAISE EXCEPTION 'agg_positions flag constraint not found';
-  END IF;
-  IF old_def NOT LIKE '%''counterparty_route''::text%' OR old_def LIKE '%pooled_route%' THEN
-    RAISE EXCEPTION 'agg_positions flag constraint has an unexpected shape: %', old_def;
-  END IF;
-  EXECUTE format('ALTER TABLE agg_positions DROP CONSTRAINT %I', old_name);
-  EXECUTE format('ALTER TABLE agg_positions ADD CONSTRAINT agg_positions_flags %s NOT VALID',
-    replace(old_def, '''counterparty_route''::text', '''counterparty_route''::text, ''pooled_route''::text'));
-END $$;
-
--- 5. A pooled swap is one trade for the pool and one seller (or buyer) per
+-- 4. A pooled sell is one trade for the pool and one seller per
 --    contributor, so an hour's distinct sellers may exceed its sells.
 DO $$
 DECLARE c record;
 BEGIN
   FOR c IN SELECT conname FROM pg_constraint
     WHERE conrelid='agg_pool_hours'::regclass AND contype='c'
-      AND (pg_get_constraintdef(oid) LIKE '%buyers <= buys%' OR pg_get_constraintdef(oid) LIKE '%sellers <= sells%')
+      AND pg_get_constraintdef(oid) LIKE '%sellers <= sells%'
   LOOP
     EXECUTE format('ALTER TABLE agg_pool_hours DROP CONSTRAINT %I', c.conname);
   END LOOP;
 END $$;
 ALTER TABLE agg_pool_hours
-  ADD CONSTRAINT agg_pool_hours_buyers CHECK (buyers>=0) NOT VALID,
   ADD CONSTRAINT agg_pool_hours_sellers CHECK (sellers>=0) NOT VALID;
 
--- 6. The live ring keeps a pooled swap as one row without a wallet, as it
+-- 5. The live ring keeps a pooled swap as one row without a wallet, as it
 --    keeps an unattributed one, and with its contributors' refs, which count
 --    them as the rolling hour's active traders.
 DO $$
@@ -104,16 +81,16 @@ ALTER TABLE agg_live_trades
   ADD CONSTRAINT agg_live_trades_attribution CHECK (attribution IN ('initiator','counterparty','pooled','unattributed')) NOT VALID,
   ADD CONSTRAINT agg_live_trades_wallet CHECK ((wallet_ref IS NULL) = (attribution IN ('pooled','unattributed'))) NOT VALID;
 
--- 7. The journal's pre-images are what a walk-back restores under these
+-- 6. The journal's pre-images are what a walk-back restores under these
 --    constraints: a position pre-image gains the counter it lacked (zero,
 --    since no batch it predates folded a pooled swap); the unit totals stay
 --    absent and restore as null, unknown, which is what they are.
 UPDATE agg_journal SET before=before||'{"pooled_swaps":0}'::jsonb
   WHERE chain_id=4663 AND "table"='agg_positions' AND before IS NOT NULL AND NOT (before ? 'pooled_swaps');
 
-COMMENT ON COLUMN agg_streams.fold_rule IS 'The attribution rule the stream''s whole history is folded under: 1 leaves a pooled swap unattributed, 2 attributes it pro rata to its contributors. Fixed at creation; a rule change is a re-fold into a fresh ledger, never an update here.';
+COMMENT ON COLUMN agg_streams.fold_rule IS 'The attribution rule the stream''s whole history is folded under: 1 leaves a pooled sell unattributed, 2 attributes it pro rata to its contributors. Pooled buys stay unattributed. Fixed at creation; a rule change is a re-fold into a fresh ledger, never an update here.';
 COMMENT ON COLUMN agg_streams.fold_rule_since IS 'When readers started serving this stream under its rule (unix seconds), set at the swap-in; the wallet page discloses it. Null until then.';
-COMMENT ON COLUMN agg_positions.pooled_swaps IS 'Swaps attributed to this position pro rata through a pooled transaction (fold rule 2); pooled_route follows it.';
+COMMENT ON COLUMN agg_positions.pooled_swaps IS 'Sells attributed to this position pro rata through a pooled transaction (fold rule 2).';
 COMMENT ON COLUMN agg_positions.bought_raw IS 'Token units bought through attributed swaps; null on a position written before the totals were folded.';
 COMMENT ON COLUMN agg_positions.sold_raw IS 'Token units sold through attributed swaps; null with bought_raw.';
 COMMENT ON COLUMN agg_live_trades.pooled_wallet_refs IS 'A pooled swap''s contributors (fold rule 2); null on every other row.';

@@ -280,7 +280,7 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
     {
       wallet: A,
       supported: true,
-      flags: ["pooled_route", "wrapper_route"],
+      flags: ["wrapper_route"],
       buys: 1,
       sells: 1,
       pooled_swaps: 1,
@@ -296,7 +296,7 @@ test("a rule-2 stream folds a pooled sell pro rata through the writer, keeps it 
     {
       wallet: B,
       supported: true,
-      flags: ["pooled_route", "wrapper_route"],
+      flags: ["wrapper_route"],
       buys: 1,
       sells: 1,
       pooled_swaps: 1,
