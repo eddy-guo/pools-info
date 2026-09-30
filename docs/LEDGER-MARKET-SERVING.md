@@ -268,18 +268,18 @@ changes:
   summed at its refresh; `excludedByFlag` (29 Sep 2026) breaks the excluded
   count down by excluding flag (`zero_cost_inflow`, `unattributed_outflow`,
   `unknown_basis`, `unattributed_swap_activity`, the keys
-  `ledgerExcludingFlags` lists), counted from the wallet's `agg_positions`
-  rows as the row is served: a position carrying several flags counts under
-  each, a flag no position carries is 0, and the counts can run past the
-  row's total by the positions excluded since its refresh (about a minute).
+  `ledgerExcludingFlags` lists), counted from the trader's `agg_positions`
+  as the row is served, excluding positions in pools the wallet launched
+  itself, just as the board's figures and position totals do. A position
+  carrying several flags counts under each, a flag no position carries is 0. The counts can run past the row's total by the positions excluded
+  since its refresh (about a minute).
   It is null on the accounting fallback, which classifies no exclusion by
   ledger flag. The website discloses the `unattributed_swap_activity` count
   on the row and on the wallet header as "N positions excluded (pooled or
   unattributed swap)": a sell pooled with other wallets' tokens through a
-  batch contract is how a position usually gets that flag (52 of the 7d #1
-  trader's 53 exclusions on the 27 Sep backup, 69 of that board's 100 rows
-  with at least one), but a pooled buy and a transaction with several swaps
-  of one pool are left unattributed the same way, so the label names the
+  batch contract can give a position that flag, but a pooled buy and a
+  transaction with several swaps of one pool are left unattributed the same
+  way, so the label names the
   flag's whole meaning rather than a sale. `unrealizedWei` is null on
   every row: it needs a price per position and is the wallet page's
   figure. `asOf` and `oldestAsOf`, on the coverage and on
@@ -343,13 +343,8 @@ hour index that decided which summed wallets had left a window, 2.9 s on
 7d, is one hashed read now), and a full rebuild 27-30 s. Migration 025 fills
 the trader rows and ranks in 14 s there. `excludedByFlag` adds one
 correlated `agg_positions_wallet` range per served row, a scalar subquery
-so the planner runs it per row off the index rather than hashing the table
-(the index's included `supported` keeps the supported rows off the heap):
-on the 27 Sep backup with migrations 023-026 applied (Postgres 18.6,
-`EXPLAIN (ANALYZE, BUFFERS)`, 29 Sep 2026) the ranked statement reads
-5.5k shared buffers for the 25-row 7d board and 15.3-16.4k for 100 rows on
-7d, 30d and All in both orders, in 1.5-11 ms warm, and the reads answered
-in 13-37 ms end to end.
+so the planner can read each served wallet's positions from the index instead
+of hashing the whole table; the index includes `supported`.
 
 ## The wallet page
 
@@ -375,10 +370,11 @@ response is the accounting reader's, field for field; what its values mean:
   never attributed a swap or transfer to is the empty profile the accounting
   reader serves for an unknown wallet. `asOf` and `oldestAsOf` are the
   window's refresh cursor, `completeWindow` true. `excludedByFlag` is the
-  board row's (above): the excluded count per excluding flag, counted from
-  the wallet's positions as the page is served, beside the window row and
-  in the position stats alike, so the header can disclose the positions
-  excluded for an unattributed swap.
+  same per-flag breakdown as on the board row (above), but counts all of
+  the wallet's positions, including its own launches, as the page is
+  served. The window row and the no-window position stats use this same
+  wallet-wide scope, so the header can disclose positions excluded for an
+  unattributed swap.
 - **`wallet.unrealizedWei`** is the page's own addition to the wallet row: the
   sum of the marks of every supported position (over the whole set, not the
   500 served), or null while any of them is unmarked. A position's mark is

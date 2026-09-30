@@ -186,7 +186,8 @@ export interface AnalyticsWalletSummary {
   supportedPositionCount: number;
   excludedPositionCount: number;
   /** `excludedPositionCount` broken down by excluding flag, counted from
-   * the wallet's positions as the read is served: a position carrying
+   * positions in the row's scope as the read is served (the board omits
+   * own launches; the wallet profile includes them): a position carrying
    * several flags counts under each, so the counts can sum past the total,
    * and a flag no position carries is 0. Null where the reader does not
    * classify exclusions by ledger flag (the accounting fallback), never a

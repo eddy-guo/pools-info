@@ -42,15 +42,13 @@ export const excludedByFlagCounts = (p: string) =>
     )
     .join(",")})`;
 /** Those counts for the wallet `wallet` names (a `wallet_ref` expression),
+ * omitting own-launch positions in trader scope and including them in wallet scope,
  * read live from `agg_positions` as the row is served: one
  * `agg_positions_wallet` range whose included `supported` column keeps the
  * supported rows off the heap. A correlated scalar subquery, not a join, so
  * a page of board rows runs it once per served row off the index and the
  * planner never hashes the whole table for it. */
-export const excludedByFlagSql = (
-  wallet: string,
-  scope: "wallet" | "trader",
-) =>
+export const excludedByFlagSql = (wallet: string, scope: "wallet" | "trader") =>
   `(SELECT ${excludedByFlagCounts("p")} FROM agg_positions p
     WHERE p.chain_id=4663 AND p.wallet_ref=${wallet} AND NOT p.supported${
       scope === "trader"

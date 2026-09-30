@@ -530,6 +530,7 @@ test("share card prints the wallet page's own figures for the audited wallets", 
   const base = {
     unrealizedWei: null,
     netWei: null,
+    excludedByFlag: null,
     last: null,
     asOf: 1790695358,
     oldestAsOf: 1790695358,
