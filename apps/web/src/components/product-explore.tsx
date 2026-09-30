@@ -342,7 +342,7 @@ function ScreenerStats({
           {data?.volumeWei === null || !data ? (
             <span className="stats-empty" />
           ) : (
-            <Eth wei={data.volumeWei} digits={5} />
+            <Eth wei={data.volumeWei} />
           )}
         </strong>
         <small>{data?.volumeWei === null ? "Window incomplete" : null}</small>

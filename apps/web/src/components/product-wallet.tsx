@@ -3,9 +3,11 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import {
+  formatTokenAmount,
   shortAddress,
   poolHref,
   since,
+  WALLET_ROI_DIGITS,
   type AnalyticsWalletResponse,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
@@ -91,12 +93,10 @@ function tabCount(data: AnalyticsWalletResponse | undefined, id: string) {
     return data.launchesTruncated ? null : data.launches.length;
   return null;
 }
-/** A position's token quantity in whole tokens, or null where the read has none. */
+/** A position's token quantity in whole tokens under the site's figure rule, or null where the read has none. */
 function holding(p: AnalyticsWalletResponse["positions"][number]) {
   return p.position && p.decimals !== null
-    ? new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
-        Number(p.position.quantity) / 10 ** p.decimals,
-      )
+    ? formatTokenAmount(p.position.quantity, p.decimals)
     : null;
 }
 /** The existing Behaviour-panel figure, now presented with the positions it describes. */
@@ -293,13 +293,13 @@ export function ProductWallet({ address }: { address: string }) {
         <>
           <div className="stats-grid live-eight-stats wallet-stats">
             <Stat pending={loading && !data} label="Realized PnL">
-              <Eth pending={!data} wei={w?.realizedWei} signed digits={5} />
+              <Eth pending={!data} wei={w?.realizedWei} signed />
             </Stat>
             <Stat pending={loading && !data} label="ROI">
               {w?.roi == null ? (
                 <Unavailable />
               ) : (
-                <Change value={w.roi} digits={1} />
+                <Change value={w.roi} digits={WALLET_ROI_DIGITS} abbreviate />
               )}
             </Stat>
             <Stat
@@ -326,7 +326,6 @@ export function ProductWallet({ address }: { address: string }) {
               <Eth
                 pending={!data}
                 wei={unindexed(data) ? null : w?.volumeWei}
-                digits={5}
               />
             </Stat>
           </div>

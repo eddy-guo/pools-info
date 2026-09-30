@@ -345,6 +345,16 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
 // states hold the same height, so the panel below never moves.
 const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
+/** The figures audit's evidence shots, taken only when asked for, as
+    `ranking-explanation.spec.ts` takes its own: a plain run of the suite
+    never rewrites a committed PNG. */
+async function capture(page: import("@playwright/test").Page, name: string) {
+  if (!process.env.FIGURES_AUDIT_CAPTURE) return;
+  await page.screenshot({
+    path: `docs/evidence/figures-audit-2026-09-29/h3/${name}.png`,
+  });
+}
+
 test("Following names profile figures for an unranked launcher", async ({ page, isMobile }) => {
   const width = isMobile ? 390 : 1440;
   await page.setViewportSize({ width, height: isMobile ? 844 : 1000 });
@@ -371,10 +381,8 @@ test("Following names profile figures for an unranked launcher", async ({ page, 
   const panel = page.locator(".leaderboard-panel");
   await expect(
     panel.locator(".following-traders [data-row=resolved]").filter({ visible: true }),
-  ).toContainText("98.0468 ETH");
-  await page.screenshot({
-    path: `docs/evidence/figures-audit-2026-09-29/h3/after-following-${width}.png`,
-  });
+  ).toContainText("98.05 ETH");
+  await capture(page, `after-following-${width}`);
   await expect(page.locator(".following-figures-caption")).toHaveText(
     "Wallet profile figures, not board rankings.",
   );
@@ -396,9 +404,7 @@ test("Net ETH podium names its displayed metric", async ({ page, isMobile }) => 
   await page.setViewportSize({ width, height: isMobile ? 844 : 1000 });
   await page.goto("/traders/?metric=net");
   await expect(page.locator(".trader-podium-card").first()).toBeVisible();
-  await page.screenshot({
-    path: `docs/evidence/figures-audit-2026-09-29/h3/after-podium-${width}.png`,
-  });
+  await capture(page, `after-podium-${width}`);
   await expect(
     page.locator(".trader-podium-card").first().locator(".trader-podium-card-meta"),
   ).toContainText("Net ETH · ROI");
@@ -447,7 +453,7 @@ test("with a wallet marked as mine the you row reads its real rank", async ({
   await expect(row.locator(".my-rank-address")).toHaveText("0x4745…bce1");
   await expect(row.locator(".my-rank-chip")).toHaveText("YOU · RANK 1");
   await expect(row.locator(".my-rank-summary")).toHaveText(
-    "realized +0.0114711 ETH across 11 trades",
+    "realized +0.01 ETH across 11 trades",
   );
   await expect(row.locator(".my-rank-summary .positive")).toHaveCSS(
     "color",
@@ -660,6 +666,6 @@ test("the board prints its trade counts with thousands separators", async ({
       .nth(5),
   ).toHaveText("30,160");
   await expect(page.locator(".my-rank .my-rank-summary")).toHaveText(
-    "realized +0.0114711 ETH across 30,160 trades",
+    "realized +0.01 ETH across 30,160 trades",
   );
 });

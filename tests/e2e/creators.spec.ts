@@ -432,7 +432,7 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
       "14",
     );
     const stats = first.locator(".mobile-creator-stats");
-    await expect(stats).toContainText("Vol 412.8 ETH");
+    await expect(stats).toContainText("Vol 412.80 ETH");
     await expect(stats.locator(".still-trading-label")).toHaveText(
       "9 of 14 · 64%",
     );
@@ -445,7 +445,7 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     // A creator with launches the read has no figure for shows no bar: its
     // "4 of 4" would read as a survival rate over the 21 launches beside it.
     const partial = cards.nth(3).locator(".mobile-creator-stats");
-    await expect(partial).toContainText("Vol 266.9 ETH");
+    await expect(partial).toContainText("Vol 266.90 ETH");
     await expect(partial.locator(".still-trading")).toHaveCount(0);
     await expect(partial.locator(".unavailable")).toHaveAttribute(
       "aria-label",
@@ -656,7 +656,7 @@ test("a creator's unmeasured launches show their identity and launch time with e
     " UTC";
   if (isMobile) {
     await expect(measured.locator(".mobile-launch-top .number")).toHaveText(
-      "1 ETH",
+      "1.00 ETH",
     );
     await expect(measured.locator(".mobile-launch-stats")).toHaveText(
       `${utc(launches[0].launchedAt)} · No swap observed`,
@@ -674,7 +674,7 @@ test("a creator's unmeasured launches show their identity and launch time with e
     "Launch 10 (L10)",
     utc(launches[0].launchedAt),
     "No swap observed",
-    "1 ETH",
+    "1.00 ETH",
     "",
   ]);
   await expect(cells(unmeasured)).toHaveText([

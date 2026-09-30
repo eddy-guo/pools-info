@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { productRequest } from "./product-request";
 import {
   ProductUnavailableError,
@@ -10,16 +11,21 @@ import {
 } from "./product-server";
 import {
   cardCurve,
+  cardEth,
+  cardEthFigure,
   cardExportHero,
   cardExportHeroSize,
   cardExportTrio,
   cardHero,
+  cardInitials,
   cardStats,
+  cardSymbol,
   cardTopPosition,
   cardTradeCount,
   readCardWallet,
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
+import { fontCodePoints } from "./font-coverage";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
 import { validateStatsResponse } from "./stats-response";
@@ -33,6 +39,14 @@ import type {
   AnalyticsWalletResponse,
   CreatorsResponse,
 } from "@pools/core";
+
+/** The coverage of the face the card draws a token symbol in, as the route reads it. */
+const geistPoints = fontCodePoints(
+  readFileSync(
+    new URL("../../public/fonts/Geist-SemiBold.ttf", import.meta.url),
+  ),
+);
+const geist = (codePoint: number) => geistPoints.has(codePoint);
 
 test("public proxy permits bounded product reads and rejects arbitrary upstream paths", () => {
   assert.equal(
@@ -385,15 +399,20 @@ test("share card figures are signed, amount-free without notional and never plac
     oldestAsOf: null,
     completeWindow: true,
   };
-  assert.deepEqual(cardHero(wallet), { value: "-16.04%", tone: "down" });
+  assert.deepEqual(cardHero(wallet), { value: "-16.0%", tone: "down" });
   assert.deepEqual(cardHero({ ...wallet, roi: 0.004 }), {
-    value: "0.00%",
+    value: "0.0%",
     tone: "text",
   });
-  assert.deepEqual(cardHero({ ...wallet, roi: null }), {
-    value: "-0.02336 ETH",
-    tone: "down",
+  // A loss that rounds to zero at the tile's one decimal carries no sign and
+  // no down colour, as the page's own tile prints it.
+  assert.deepEqual(cardHero({ ...wallet, roi: -0.04 }), {
+    value: "0.0%",
+    tone: "text",
   });
+  // Nothing disposed in the window means no ROI and no card, never a white
+  // "0 ETH" headline that reads as a result.
+  assert.equal(cardHero({ ...wallet, roi: null, realizedWei: "0" }), null);
   assert.equal(cardHero({ ...wallet, roi: null, realizedWei: null }), null);
   assert.deepEqual(
     cardStats(wallet, false).map((s) => [s.label, s.value]),
@@ -406,7 +425,7 @@ test("share card figures are signed, amount-free without notional and never plac
   assert.deepEqual(
     cardStats(wallet, true).map((s) => [s.label, s.value]),
     [
-      ["Volume", "0.5144 ETH"],
+      ["Volume", "0.51 ETH"],
       ["Win rate", "37.5%"],
       ["Trades", "85"],
     ],
@@ -434,7 +453,7 @@ test("share card figures are signed, amount-free without notional and never plac
   assert.deepEqual(
     cardStats(audited, true).map((s) => [s.label, s.value]),
     [
-      ["Volume", "0.5144 ETH"],
+      ["Volume", "0.51 ETH"],
       ["Win rate", "37.5%"],
       ["Trades", "23"],
     ],
@@ -448,12 +467,13 @@ test("share card figures are signed, amount-free without notional and never plac
   // The export design's trio is fixed: Record always renders (even 0W · 0L
   // is real data), Best trade names the caller's own top position, and a
   // missing ROI leaves its slot empty rather than a placeholder.
-  assert.deepEqual(cardExportTrio(wallet, "ORBIT"), {
-    roi: "-16.04%",
+  const orbit = { symbol: "ORBIT", token: `0x${"2".repeat(40)}` };
+  assert.deepEqual(cardExportTrio(wallet, orbit, geist), {
+    roi: "-16.0%",
     record: "3W · 5L",
-    bestTrade: "ORBIT",
+    bestTrade: orbit,
   });
-  assert.deepEqual(cardExportTrio({ ...wallet, roi: null }, null), {
+  assert.deepEqual(cardExportTrio({ ...wallet, roi: null }, null, geist), {
     roi: null,
     record: "3W · 5L",
     bestTrade: null,
@@ -462,15 +482,22 @@ test("share card figures are signed, amount-free without notional and never plac
   // so no stat in the trio restates it (sweep s6 defect 14: the hero and the
   // ROI stat both read +187.32%).
   const exportHero = cardExportHero(wallet);
-  assert.deepEqual(exportHero, { value: "-0.02336 ETH", tone: "down" });
+  assert.equal(exportHero!.value, "-0.02 ETH");
+  assert.equal(exportHero!.tone, "down");
   assert.ok(
-    !Object.values(cardExportTrio(wallet, "ORBIT")).includes(exportHero!.value),
+    !Object.values(cardExportTrio(wallet, orbit, geist)).includes(
+      exportHero!.value,
+    ),
   );
-  assert.deepEqual(
-    cardExportHero({ ...wallet, realizedWei: "1046600000000000000" }),
-    { value: "+1.047 ETH", tone: "up" },
+  assert.equal(
+    cardExportHero({ ...wallet, realizedWei: "1046600000000000000" })!.value,
+    "+1.05 ETH",
   );
   assert.equal(cardExportHero({ ...wallet, realizedWei: null }), null);
+  assert.equal(
+    cardExportHero({ ...wallet, roi: null, realizedWei: "0" }),
+    null,
+  );
   // The design's 207 px hero fits the figures the export was drawn with; a
   // longer one steps down to the largest size that fits the card's width.
   assert.equal(cardExportHeroSize("+12.40 ETH"), 207);
@@ -480,6 +507,245 @@ test("share card figures are signed, amount-free without notional and never plac
     cardExportHeroSize("-0.0001234 ETH") < cardExportHeroSize("-0.02336 ETH"),
   );
   assert.ok(cardExportHeroSize("-0.0001234 ETH") >= 120);
+  // From a million ETH the figure rule's compact form carries a letter the
+  // size must count at its own width: "M" is a third wider than a digit, and
+  // at the design's 207 px "+1.23M ETH" ran 1,066 px and wrapped.
+  const million = cardExportHero({
+    ...wallet,
+    roi: 12,
+    realizedWei: "1234567800000000000000000",
+  })!.value;
+  assert.equal(million, "+1.23M ETH");
+  assert.equal(cardExportHeroSize(million), 202);
+});
+
+test("share card prints the wallet page's own figures for the audited wallets", () => {
+  // The four production wallets of the PnL card audit of 29 Sep 2026 (read
+  // API cursor 2026-09-29T15:22:38Z), with the strings their wallet page's
+  // stat tiles print under the site's one figure rule: two decimals for an
+  // ETH amount from 0.01 ETH, the ROI tile's one decimal, and the supported
+  // trade count. The card prints the same, where it printed four significant
+  // digits, a two-decimal ROI and every attributed trade before.
+  const base = {
+    unrealizedWei: null,
+    netWei: null,
+    last: null,
+    asOf: 1790695358,
+    oldestAsOf: 1790695358,
+    completeWindow: true,
+  };
+  const top = {
+    ...base,
+    address: "0x2f25b929f03fe2869e752f1910e5445f8b5778da",
+    rank: 1,
+    realizedWei: "66223734506390192560",
+    volumeWei: "97681113542028528825",
+    roi: 805.667,
+    wins: 11,
+    losses: 7,
+    winRate: 61.111111111111114,
+    tradeCount: 110,
+    supportedTradeCount: 103,
+    supportedPositionCount: 19,
+    excludedPositionCount: 4,
+    bestWei: "1403702995627095569",
+    avgHold: 220319,
+  };
+  const mid = {
+    ...base,
+    address: "0x5cef3188ab04bec8caace9818729c1c8f5553191",
+    rank: 50,
+    realizedWei: "20700661674978519804",
+    volumeWei: "55816964231731636305",
+    roi: 163.5743,
+    wins: 17,
+    losses: 57,
+    winRate: 22.972972972972975,
+    tradeCount: 207,
+    supportedTradeCount: 193,
+    supportedPositionCount: 74,
+    excludedPositionCount: 9,
+    bestWei: "3421112953478374377",
+    avgHold: 523.0945945945946,
+  };
+  const loserHour = {
+    ...base,
+    address: "0x42c38dcff3bd710d28bcf0d96985f4005dc2dd36",
+    rank: 65,
+    realizedWei: "-571052117236791305",
+    volumeWei: "508947882763208695",
+    roi: -84.9779,
+    wins: 0,
+    losses: 1,
+    winRate: 0,
+    tradeCount: 10,
+    supportedTradeCount: 10,
+    supportedPositionCount: 9,
+    excludedPositionCount: 0,
+    bestWei: "-571052117236791305",
+    avgHold: 1857,
+  };
+  const loserAll = {
+    ...loserHour,
+    rank: null,
+    realizedWei: "-2235814105062195510",
+    volumeWei: "3488185894937804490",
+    roi: -78.1206,
+    losses: 9,
+    tradeCount: 90,
+    supportedTradeCount: 90,
+    bestWei: "-15547610960837812",
+    avgHold: 847.6666666666666,
+  };
+  const oneTrade = {
+    ...loserHour,
+    address: "0x2d8bc8665d4b408c4b5e6cab2aa38066bafc2fdc",
+    rank: null,
+    realizedWei: "31149066115552184",
+    volumeWei: "151149066115552184",
+    roi: 25.9575,
+    wins: 1,
+    losses: 0,
+    winRate: 100,
+    tradeCount: 1,
+    supportedTradeCount: 1,
+    supportedPositionCount: 1,
+    bestWei: "31149066115552184",
+    avgHold: 3600,
+  };
+  assert.deepEqual(cardHero(top), { value: "+805.7%", tone: "up" });
+  assert.equal(cardExportHero(top)!.value, "+66.22 ETH");
+  assert.equal(cardExportHero(top)!.tone, "up");
+  assert.deepEqual(cardHero(mid), { value: "+163.6%", tone: "up" });
+  assert.equal(cardExportHero(mid)!.value, "+20.70 ETH");
+  assert.deepEqual(cardHero(loserHour), { value: "-85.0%", tone: "down" });
+  assert.equal(cardExportHero(loserHour)!.value, "-0.57 ETH");
+  assert.equal(cardExportHero(loserHour)!.tone, "down");
+  assert.deepEqual(cardHero(loserAll), { value: "-78.1%", tone: "down" });
+  assert.equal(cardExportHero(loserAll)!.value, "-2.24 ETH");
+  assert.deepEqual(cardHero(oneTrade), { value: "+26.0%", tone: "up" });
+  assert.equal(cardExportHero(oneTrade)!.value, "+0.03 ETH");
+  // The notional line and the Volume stat carry the same digits.
+  assert.equal(cardEth(top.realizedWei, true), "+66.22 ETH");
+  assert.equal(cardEth(top.volumeWei), "97.68 ETH");
+  assert.equal(cardEth(mid.volumeWei), "55.82 ETH");
+  assert.equal(cardEth(loserHour.volumeWei), "0.51 ETH");
+  assert.equal(cardEth(loserAll.volumeWei), "3.49 ETH");
+  // A tiny amount keeps the site's subscript-zero form on the card too: the
+  // 24h board's rank 76 wallet realized -5,731,698,824 wei, which two
+  // decimals would print as a fabricated "-0.00 ETH".
+  assert.equal(cardEth("-5731698824", true), "-0.0₈5731 ETH");
+  assert.deepEqual(
+    cardExportHero({ ...top, realizedWei: "-5731698824" })!.eth,
+    {
+      sign: "",
+      figure: { form: "subscript", sign: "-", zeros: 8, digits: "5731" },
+    },
+  );
+  assert.deepEqual(cardEthFigure(top.realizedWei, true), {
+    sign: "+",
+    figure: { form: "plain", text: "66.22" },
+  });
+  // The win rate, record and trade count read as the page's tiles: Trades
+  // is the supported count, 103 and 193 where every attributed trade was 110
+  // and 207.
+  const shown = (wallet: Parameters<typeof cardStats>[0], notional: boolean) =>
+    cardStats(wallet, notional).map((s) => [s.label, s.value]);
+  assert.deepEqual(shown(top, false), [
+    ["Win rate", "61.1%"],
+    ["Record", "11W · 7L"],
+    ["Trades", "103"],
+  ]);
+  assert.deepEqual(shown(top, true), [
+    ["Volume", "97.68 ETH"],
+    ["Win rate", "61.1%"],
+    ["Trades", "103"],
+  ]);
+  assert.deepEqual(shown(mid, false), [
+    ["Win rate", "23.0%"],
+    ["Record", "17W · 57L"],
+    ["Trades", "193"],
+  ]);
+  assert.deepEqual(shown(loserHour, false), [
+    ["Win rate", "0.0%"],
+    ["Record", "0W · 1L"],
+    ["Trades", "10"],
+  ]);
+  assert.deepEqual(shown(loserAll, false), [
+    ["Win rate", "0.0%"],
+    ["Record", "0W · 9L"],
+    ["Trades", "90"],
+  ]);
+  assert.deepEqual(shown(oneTrade, false), [
+    ["Win rate", "100.0%"],
+    ["Record", "1W · 0L"],
+    ["Trades", "1"],
+  ]);
+  const hookr = {
+    symbol: "HOOKR",
+    token: "0x18e674231a58c239dc7daedcffe15ec3a24cff5c",
+  };
+  assert.deepEqual(cardExportTrio(top, hookr, geist), {
+    roi: "+805.7%",
+    record: "11W · 7L",
+    bestTrade: hookr,
+  });
+  // Were its 20-glyph emoji token the top position, Best trade would be that
+  // token's monogram alone: the card's faces draw none of the symbol.
+  const emoji = {
+    symbol: "🤑💰💵💴💶🪙💳🧾🏦💹💱📇🗃💼📊📋🖊🔍🔎📰",
+    token: "0x1561ecadc047a1de15369e2c3af4375fbb3af9fa",
+  };
+  assert.deepEqual(cardExportTrio(top, emoji, geist).bestTrade, {
+    symbol: null,
+    token: emoji.token,
+  });
+  // From 10,000% the ROI takes the site's abbreviated form, the sign and
+  // colour kept, so a figure never runs past its column: the rank-1 wallet's
+  // HOOKR position realized 15,285.6% on its disposed cost.
+  assert.deepEqual(cardHero({ ...top, roi: 15285.6 }), {
+    value: "+15.3K%",
+    tone: "up",
+  });
+  assert.deepEqual(cardHero({ ...top, roi: -15285.6 }), {
+    value: "-15.3K%",
+    tone: "down",
+  });
+  assert.equal(cardHero({ ...top, roi: 9999.94 })!.value, "+9999.9%");
+  assert.equal(cardHero({ ...top, roi: 9999.96 })!.value, "+10K%");
+  assert.equal(
+    cardExportTrio({ ...top, roi: 1234567.8 }, null, geist).roi,
+    "+1.2M%",
+  );
+});
+
+test("share card token symbols keep what the card's face draws and never emoji", () => {
+  const symbol = (text: string) => cardSymbol(text, geist);
+  assert.equal(symbol("HOOKR"), "HOOKR");
+  // Length is left whole: the renderer clamps a symbol by the width its slot
+  // has left, which a glyph count cannot bound.
+  assert.equal(symbol("PONSWARMCOIN"), "PONSWARMCOIN");
+  // The card's faces have no emoji: a symbol the catalog really carries (the
+  // rank-1 wallet's 20-glyph emoji token) has nothing left to draw, and the
+  // card shows that token's monogram on its own.
+  assert.equal(symbol("🤑💰💵💴💶🪙💳🧾🏦💹💱📇🗃💼📊📋🖊🔍🔎📰"), null);
+  assert.equal(symbol("  "), null);
+  assert.equal(symbol("🚀MOON🚀"), "MOON");
+  assert.equal(symbol("👨‍👩‍👧  FAM"), "FAM");
+  // Exactly what the face maps: Greek and Cyrillic are drawn, the Latin
+  // Extended-B letters Geist leaves out are stripped with the emoji.
+  assert.equal(symbol("Ünïcode-Ω"), "Ünïcode-Ω");
+  assert.equal(symbol("ДОГЕ"), "ДОГЕ");
+  assert.equal(symbol("ǱOGE"), "OGE");
+  // The wallet tile's two glyphs are the site's monogram rule.
+  assert.equal(
+    cardInitials("0x2f25b929f03fe2869e752f1910e5445f8b5778da"),
+    "2F",
+  );
+  assert.equal(
+    cardInitials("0x18e674231a58c239dc7daedcffe15ec3a24cff5c"),
+    "18",
+  );
 });
 
 test("share card chart follows the wallet's own curve and names its top position", () => {

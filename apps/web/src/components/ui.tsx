@@ -12,8 +12,10 @@ import {
   Star,
 } from "lucide-react";
 import {
+  ABBREVIATE_CHANGE_FROM,
   compact,
   displayEth,
+  ethFigure,
   formatMoney,
   identityTint,
   shortAddress,
@@ -349,12 +351,18 @@ export function Money({
         <span key="value">{formatMoney(wei, "USD", usdPerEth, signed)}</span>
       </span>
     );
+  const figure = ethFigure(wei);
   return (
     <span className={`number ${colorClass} ${className}`} title={`${wei} wei`}>
       <span key="value">
         {signed && BigInt(wei) > 0n ? "+" : ""}
-        {new Intl.NumberFormat("en-US", { maximumSignificantDigits: 6 }).format(
-          displayEth(wei),
+        {figure.form === "plain" ? (
+          figure.text
+        ) : (
+          <>
+            {figure.sign}0.0<sub>{figure.zeros}</sub>
+            {figure.digits}
+          </>
         )}{" "}
         ETH
       </span>
@@ -430,11 +438,6 @@ export function Price({
     </span>
   );
 }
-/** Four integer digits ("+9999.99%") are the widest fixed figure the trader
-    leaderboard's 104px ROI column holds; from here the abbreviated form
-    takes over where a surface asks for it. */
-const ABBREVIATE_CHANGE_FROM = 10_000;
-
 export function Change({
   value,
   pending = false,
