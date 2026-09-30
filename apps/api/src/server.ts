@@ -16,14 +16,14 @@ import {
 
 /** Small per-instance limits. A client's budget is a transient in-memory
  * token bucket under the key the ingress contract in `ingress.ts` names for
- * it (never logged, stored or answered back), spent before the shared
- * ceilings; a request that contract cannot attribute draws on the shared
- * ceilings alone. Railway may add an edge limit separately. */
+ * it (kept only in bounded process memory, never logged or returned), spent
+ * before the shared ceilings; a request that contract cannot attribute draws
+ * on the shared ceilings alone. Railway may add an edge limit separately. */
 export function createApi(
   reader: Reader,
   {
     now = Date.now,
-    maxPerMinute = ingressPolicy.sharedJsonPerMinute,
+    maxPerMinute = ingressPolicy.sharedJsonPerMinute as number,
     cacheMs = 5000,
     images = null as TokenImageService | null,
     maxImagesPerMinute = 1200,

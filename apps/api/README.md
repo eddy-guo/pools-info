@@ -210,10 +210,13 @@ enabled. Browsers should use Next.js's same-origin adapter.
 
 ### Request limits and client identity
 
-Every limit is per process, in memory, and answers `429 {"error":"request_limit",
-"reason":<which>}` with a `Retry-After` in whole seconds that is exact for the
-budget that refused; a refused request does no work and spends nothing. In
-order, a JSON request meets:
+The request budgets are per process and in memory. A spent budget answers
+`429 {"error":"request_limit","reason":<which>}` with its own whole-second
+`Retry-After`. After the readiness gate, a visitor JSON read that would start
+new work meets the in-flight bound before either request budget; cache hits and
+coalesced reads can still be served while that bound is full. A busy refusal
+answers 503 with `Retry-After: 5` and spends neither budget. Then the read
+meets these budgets in order:
 
 - `client_budget`: the caller's own token bucket, when the contract below can
   name the caller. Its capacity is `CLIENT_TOKEN_BURST` (default 150,
@@ -231,15 +234,16 @@ order, a JSON request meets:
   browsing (the screener, three pool pages and a wallet page inside a
   minute, measured through the website) spends under a third of the
   default burst. At most 10,000 clients are tracked at once; the least
-  recently seen is dropped first, and a dropped client that returns starts full. HEAD
-  costs what GET costs, since it does the same read. A request the shared
+  recently seen is dropped first, and a dropped client that returns starts full.
+  HEAD costs what GET costs, since it does the same read. A request the shared
   ceiling then refuses is refunded to its client.
 - `shared_budget`: the process's 240 requests/minute ceilings, one for the
   explorer-backed reads (wallet history, following) and one for every other
   JSON route, hits included, unchanged as the backstop for everyone;
   `Retry-After` is the window's remainder.
-- `busy` (503, `Retry-After: 5`): more than 16 distinct database reads, or 8
-  explorer reads, in flight.
+
+The in-flight bound is 16 distinct database reads or 8 explorer reads. The
+readiness route also uses the database bound, independently of visitor tokens.
 
 Icons keep their own `image_budget` of 1,200 requests/minute and are never
 charged to a client. `/ready` draws on its own `probe_budget` of 60 answers a
@@ -278,8 +282,19 @@ capacity instead of folding every visitor into one budget:
 
 IPv6 clients are charged by their /64 at both the api and the website's
 admission line; the website forwards the full address. The startup log line
-names the configured sources (`clientIdentity`); identities are never logged,
-stored or answered back.
+names the configured sources (`clientIdentity`); identity keys remain only in
+bounded process memory and are never logged or answered back.
+
+When configured to read the API, the website gives each visitor a 120-read
+burst, refilled at 120 reads per minute, before forwarding product,
+market, feed, card and server-rendered stats reads. Its bucket is per website
+process and groups IPv6 visitors by /64. Refused product reads answer 503 with
+`reason:"request_limit"` and `Retry-After`; cards answer 503 with their own
+unavailable text and the same wait. The legacy feed keeps its existing error
+body and forwards the wait. The website sends the visitor's full address to
+the API only under the shared-secret contract above. Browser product reads
+retry a transient request-limit answer within their 60-second
+retry window; an unavailable first server render does not invent stat cards.
 
 ## Published analytics and product endpoints
 

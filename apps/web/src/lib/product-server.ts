@@ -380,12 +380,15 @@ export async function readScreenerStats(
     if (response.status === 429)
       return {
         status: 503,
-        retryAfter: validRetryAfter(response.headers.get("retry-after")) ?? "30",
+        retryAfter:
+          validRetryAfter(response.headers.get("retry-after")) ?? "30",
         reason: "request_limit",
       };
     if (!response.ok) {
       const retryAfter = validRetryAfter(response.headers.get("retry-after"));
-      return retryAfter === null ? { status: 503 } : { status: 503, retryAfter };
+      return retryAfter === null
+        ? { status: 503 }
+        : { status: 503, retryAfter };
     }
     const data: unknown = await response.json();
     validateStatsResponse(data, window);
@@ -495,7 +498,10 @@ export async function readWalletTradeHistory(
   } catch {
     throw new ProductUnavailableError();
   }
-  return { ...(data as WalletTradeHistoryResponse), delivery: { source: "indexer" } };
+  return {
+    ...(data as WalletTradeHistoryResponse),
+    delivery: { source: "indexer" },
+  };
 }
 /**
  * One product read, from the configured read API and nowhere else.
