@@ -17,14 +17,21 @@ export interface WorkerSpec {
 interface SupervisorRuntime {
   spawn: (worker: WorkerSpec) => ChildProcess;
   exitCode: (code: 0 | 1) => void;
-  log: (event: {
+  log: (
     event:
-      | "service_paused_rpc_rate_limit"
-      | "service_paused_broad_capacity"
-      | "service_paused_hypersync_unauthorized"
-      | "service_paused_ledger_inspection";
-    worker: WorkerSpec["name"];
-  }) => void;
+      | {
+          event:
+            | "service_paused_rpc_rate_limit"
+            | "service_paused_broad_capacity"
+            | "service_paused_hypersync_unauthorized"
+            | "service_paused_ledger_inspection";
+          worker: WorkerSpec["name"];
+        }
+      | {
+          event: "service_stopping";
+          signal: NodeJS.Signals;
+        },
+  ) => void;
 }
 
 /** Launch once. A capacity or rate-limit pause drains the unit successfully,
@@ -56,6 +63,14 @@ export function superviseWorkers(
       timer.unref();
       for (const child of [...children]) child.kill("SIGTERM");
     }
+  }
+  function stopOnSignal(signal?: NodeJS.Signals) {
+    if (!stopping && signal)
+      runtime.log({
+        event: "service_stopping",
+        signal,
+      });
+    stop(0);
   }
   for (const worker of workers) {
     if (stopping) break;
@@ -98,5 +113,5 @@ export function superviseWorkers(
       } else if (!stopping) stop(1);
     });
   }
-  return { stop: () => stop(0) };
+  return { stop: stopOnSignal };
 }

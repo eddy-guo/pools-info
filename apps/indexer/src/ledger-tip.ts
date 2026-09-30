@@ -35,11 +35,11 @@ import {
   runLedgerCrowdStep,
   type LedgerCrowdStep,
 } from "./ledger-crowd";
+import { errorDetails } from "./errors";
 import {
   BROAD_CAPACITY_EXIT_CODE,
   HYPERSYNC_UNAUTHORIZED_EXIT_CODE,
   LEDGER_INSPECTION_EXIT_CODE,
-  RPC_RATE_LIMIT_EXIT_CODE,
 } from "./supervisor";
 
 /** The aggregate ledger's tip loop (docs/AGGREGATE-LEDGER.md phase 3, design
@@ -96,8 +96,27 @@ export const ledgerTipDefaults = Object.freeze({
   /** A catching-up crowd lane gets about as long as the loop's poll wait,
    * so the main stream's lag stays under two minutes. */
   crowdBudgetMs: 60000,
-  /** Consecutive failed cycles before the loop exits for a restart. */
-  maxFailures: 5,
+  /** A failed cycle waits this long before the next, doubling up to the
+   * cap; this many failures in a row (about an hour of paced attempts) exit
+   * 1 for a restart from the cursor, so an upstream outage spends the
+   * service's restart budget once an hour rather than once a minute. */
+  failureWaitMs: 2000,
+  maxFailureWaitMs: 60000,
+  maxFailures: 60,
+  /** A throttle (four throttled attempts on one request) pauses the loop
+   * this long, doubling on each consecutive throttle up to the cap, a longer
+   * Retry-After winning; once about six hours of consecutive pausing are
+   * spent the loop exits 1 for a restart, never 0, which Railway neither
+   * restarts nor reports (docs/AGGREGATE-LEDGER.md, "Stops"). */
+  throttlePauseMs: 60000,
+  maxThrottlePauseMs: 3600000,
+  throttleBudgetMs: 21600000,
+  /** The service's own connection to the database (the first one, the
+   * writer lock, a connection lost mid-run) is retried with waits doubling
+   * to the cap for the horizon before the process exits 1 for a restart. */
+  connectWaitMs: 1000,
+  maxConnectWaitMs: 60000,
+  connectHorizonMs: 3600000,
   /** Ten minutes without a committed cycle is six missed production cycles
    * (one every 80 to 90 s); the api's `/health` degrades on the same age. */
   staleMs: 600000,
@@ -254,6 +273,11 @@ export interface LedgerTipCycleOptions {
   multicall?: MulticallConfig;
   signal?: AbortSignal;
   log?: Log;
+  /** Called once the cycle's range is planned, before its first request. */
+  onRange?: (
+    range: { from: number; to: number; lane?: "crowd" } | null,
+  ) => void;
+  onMainCommitted?: (cursor: number | null) => void;
 }
 /** One cycle: head, reconcile, at most one range, windows. Every write is a
  * committed batch or nothing, so the loop can stop at any point of it. */
@@ -274,7 +298,8 @@ export async function runLedgerTipCycle(
   // A cursor above the archive height (a lagging HyperSync node) cannot be
   // read back yet; wait until the archive passes it.
   if (saved.cursor <= height) {
-    await reconcileLedgerPass(db, client, log);
+    const reconciled = await reconcileLedgerPass(db, client, log);
+    options.onMainCommitted?.(reconciled.ledger.cursor);
     options.signal?.throwIfAborted();
     const result = await runLedgerRange(db, client, {
       rangeBlocks: options.rangeBlocks,
@@ -283,6 +308,11 @@ export async function runLedgerTipCycle(
       rpc: options.rpc,
       multicall: options.multicall,
       signal: options.signal,
+      onRange: options.onRange,
+      onCommitted: (cursor) => {
+        options.onMainCommitted?.(cursor);
+        options.onRange?.(null);
+      },
     });
     if (!result.idle) range = result;
   }
@@ -297,6 +327,7 @@ export async function runLedgerTipCycle(
           signal: options.signal,
           log,
           safeError: ledgerTipSafeError,
+          onRange: options.onRange,
         })
       : null;
   const windows = options.signal?.aborted
@@ -346,14 +377,16 @@ export type LedgerTipStop =
   | "capacity"
   | "inspection"
   | "failed";
-/** The service's exit code for each stop: 75, 76 and 77 are the indexer's
- * reserved non-restarting pauses (a sustained throttle, an indivisible page,
- * a rejected token), 78 a ledger that needs an operator's inspection, 1 a
- * failure a restart may clear. */
+/** The service's exit code for each stop: 76 and 77 are the indexer's
+ * reserved non-restarting pauses (an indivisible page, a rejected token), 78
+ * a ledger that needs an operator's inspection, and 1 a failure a restart may
+ * clear, which a throttle whose pause budget is spent is too. Never the
+ * reserved 75: the supervisor exits 0 on it, and Railway neither restarts nor
+ * reports an exit 0 (docs/AGGREGATE-LEDGER.md, "Stops"). */
 export const ledgerTipExitCodes: Record<LedgerTipStop, number> = {
   aborted: 0,
   cycles: 0,
-  throttled: RPC_RATE_LIMIT_EXIT_CODE,
+  throttled: 1,
   capacity: BROAD_CAPACITY_EXIT_CODE,
   unauthorized: HYPERSYNC_UNAUTHORIZED_EXIT_CODE,
   inspection: LEDGER_INSPECTION_EXIT_CODE,
@@ -407,6 +440,9 @@ export interface LedgerTipSummary {
   sentBytes: number;
   throttled: number;
   failures: number;
+  /** Throttle pauses taken and the time they spent. */
+  pauses: number;
+  pausedMs: number;
   elapsedMs: number;
   from: number | null;
   through: number | null;
@@ -425,10 +461,81 @@ async function abortableWait(ms: number, signal?: AbortSignal) {
     if (e?.name !== "AbortError") throw e;
   });
 }
+export interface ConnectWithBackoffOptions {
+  /** How long the attempts may go on before the last error is thrown; 0
+   * tries once. */
+  horizonMs: number;
+  waitMs?: number;
+  maxWaitMs?: number;
+  signal?: AbortSignal;
+  log?: Log;
+  wait?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  now?: () => number;
+}
+/** Connect to the database, retrying a refused or timed-out connection with
+ * waits doubling from a second to a minute for the horizon, so an outage is
+ * survived in-process rather than spent on the service's restart budget.
+ * Throws the last error once the next wait would end past the horizon, and
+ * answers null when the signal ends the wait. A client whose connection
+ * failed is discarded. */
+export async function connectWithBackoff(
+  create: () => Client,
+  options: ConnectWithBackoffOptions,
+): Promise<Client | null> {
+  const log = options.log ?? quiet;
+  const wait = options.wait ?? abortableWait;
+  const now = options.now ?? (() => performance.now());
+  const waitMs = options.waitMs ?? ledgerTipDefaults.connectWaitMs;
+  const maxWaitMs = options.maxWaitMs ?? ledgerTipDefaults.maxConnectWaitMs;
+  const started = now();
+  for (let attempt = 1; ; attempt++) {
+    if (options.signal?.aborted) return null;
+    const db = create();
+    try {
+      await db.connect();
+      return db;
+    } catch (error) {
+      if (options.signal?.aborted) return null;
+      const elapsedMs = Math.round(now() - started);
+      const nextMs = Math.min(maxWaitMs, waitMs * 2 ** (attempt - 1));
+      if (elapsedMs + nextMs > options.horizonMs) {
+        log({
+          event: "ledger_database_connect_exhausted",
+          attempts: attempt,
+          elapsedMs,
+          horizonMs: options.horizonMs,
+          ...errorDetails(error),
+        });
+        throw error;
+      }
+      log({
+        event: "ledger_database_connect_failed",
+        attempt,
+        waitMs: nextMs,
+        elapsedMs,
+        horizonMs: options.horizonMs,
+        ...errorDetails(error),
+      });
+      await wait(nextMs, options.signal);
+    }
+  }
+}
+
+const stopReasons = new Set(["SIGTERM", "SIGINT", "database_lost"]);
+/** The reason the service gave its abort, one of a fixed few; never free
+ * text. */
+function abortReason(signal?: AbortSignal) {
+  const reason = signal?.reason;
+  const message = reason instanceof Error ? reason.message : "";
+  return stopReasons.has(message) ? message : "aborted";
+}
 /** Follow the chain until a stop. The loop takes the stream over from the
- * pass (mode 'tip'); a sustained throttle, a rejected token, an indivisible
- * page or a ledger that needs inspection stops it for good, and any other
- * failure is retried with backoff up to `maxFailures` cycles in a row. */
+ * pass (mode 'tip'); a rejected token, an indivisible page or a ledger that
+ * needs inspection stops it for good; a throttle pauses it, with waits
+ * doubling from a minute to an hour (a longer Retry-After honoured) until
+ * about six hours of consecutive pausing spend the budget and it exits 1 for
+ * a restart; and any other failure is retried with backoff up to
+ * `maxFailures` cycles in a row. */
 export async function runLedgerTip(
   db: Client,
   options: LedgerTipOptions,
@@ -451,12 +558,29 @@ export async function runLedgerTip(
     sentBytes: 0,
     throttled: 0,
     failures: 0,
+    pauses: 0,
+    pausedMs: 0,
     elapsedMs: 0,
     from: null,
     through: null,
     error: null,
   };
+  // The range being collected and the cursor the loop started from, for the
+  // stop line: a stop (a signal, a lost database connection) is logged at
+  // once with what the loop was doing, and the loop then ends on its
+  // committed cursor.
+  let inFlight: { from: number; to: number } | null = null;
+  let committedCursor: number | null = null;
+  const stopping = () =>
+    log({
+      event: "ledger_tip_stopping",
+      reason: abortReason(options.signal),
+      cursor: committedCursor,
+      inFlight,
+      cycle: summary.cycles + 1,
+    });
   const finish = (stopped: LedgerTipStop, error: unknown = null) => {
+    options.signal?.removeEventListener("abort", stopping);
     summary.stopped = stopped;
     summary.error = error === null ? null : ledgerTipSafeError(error);
     summary.elapsedMs = Math.round(performance.now() - started);
@@ -464,6 +588,7 @@ export async function runLedgerTip(
     options.observer?.stopped(stopped, summary.error);
     return summary;
   };
+  options.signal?.addEventListener("abort", stopping, { once: true });
   if (
     !Number.isSafeInteger(options.rangeBlocks) ||
     options.rangeBlocks < 1 ||
@@ -507,12 +632,41 @@ export async function runLedgerTip(
   });
   let rangeBlocks = options.rangeBlocks;
   let failures = 0;
+  // Consecutive throttle pauses and the time they have spent; a successful
+  // cycle resets them.
+  let pauses = 0,
+    pausedMs = 0;
   // The crowd lane's own range size and failure backoff: a failed step
   // skips the lane for 1, 2, 4 ... cycles while the main stream carries on.
   let crowdRangeBlocks: number = ledgerCrowdDefaults.rangeBlocks;
   let crowdFailures = 0,
     crowdSkip = 0;
   const catchUp = { at: performance.now(), blocks: 0 };
+  committedCursor = stream.cursor;
+  /** The idle wait at the tip and a throttle's pause: reader warming gets
+   * the time, and the next cycle cancels it. */
+  const rest = async (ms: number) => {
+    const idle = new AbortController();
+    const abort = () => idle.abort();
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) idle.abort();
+    const warmth = options.warmth;
+    if (warmth)
+      void sleep(warmth.delayMs, undefined, { signal: idle.signal }).then(
+        () => warmth.refresh(idle.signal),
+        () => {}, // The next indexing cycle cancelled the idle timer.
+      );
+    try {
+      await wait(ms, options.signal);
+    } finally {
+      // This abort destroys an active warm connection immediately. Do not
+      // await the warm set: indexing owns the deadline, even mid-statement.
+      idle.abort();
+      options.signal?.removeEventListener("abort", abort);
+    }
+    catchUp.at = performance.now();
+    catchUp.blocks = 0;
+  };
   for (;;) {
     if (options.signal?.aborted) return finish("aborted");
     if (options.maxCycles !== undefined && summary.cycles >= options.maxCycles)
@@ -543,23 +697,78 @@ export async function runLedgerTip(
         multicall: options.multicall,
         signal: options.signal,
         log,
+        onRange: (range) => {
+          inFlight = range;
+        },
+        onMainCommitted: (cursor) => {
+          committedCursor = cursor;
+        },
       });
     } catch (error) {
+      inFlight = null;
       summary.requests += client.requests;
       summary.bytes += client.bytes;
       summary.sentBytes += client.sentBytes;
       if (options.signal?.aborted) return finish("aborted");
-      const stop =
+      if (
         error instanceof HyperSyncRateLimitExhausted ||
         error instanceof RpcRateLimitExhausted
-          ? "throttled"
-          : error instanceof HyperSyncUnauthorized
-            ? "unauthorized"
-            : error instanceof HyperSyncPageCapacity
-              ? "capacity"
-              : error instanceof Error && inspection.test(error.message)
-                ? "inspection"
-                : null;
+      ) {
+        // A pause, never a stop: the pacer bounds what continuing costs,
+        // and an exit Railway counts as a success would leave the site
+        // frozen with no restart and no notification.
+        const source =
+          error instanceof HyperSyncRateLimitExhausted ? "hypersync" : "rpc";
+        const retryAfterMs = error.retryAfterMs;
+        const waitMs = Math.max(
+          Math.min(
+            ledgerTipDefaults.maxThrottlePauseMs,
+            ledgerTipDefaults.throttlePauseMs * 2 ** pauses,
+          ),
+          retryAfterMs ?? 0,
+        );
+        const budgetMs = ledgerTipDefaults.throttleBudgetMs;
+        const safe = ledgerTipSafeError(error);
+        const pauseMs = Math.min(waitMs, budgetMs - pausedMs);
+        pauses++;
+        pausedMs += pauseMs;
+        summary.pauses++;
+        summary.pausedMs += pauseMs;
+        log({
+          event: "ledger_tip_throttle_paused",
+          source,
+          pause: pauses,
+          waitMs: pauseMs,
+          retryAfterMs,
+          pausedMs,
+          budgetMs,
+          error: safe,
+          through: summary.through,
+        });
+        await rest(pauseMs);
+        if (options.signal?.aborted) return finish("aborted");
+        if (pausedMs >= budgetMs) {
+          log({
+            event: "ledger_tip_throttle_exhausted",
+            source,
+            pauses,
+            pausedMs,
+            budgetMs,
+            error: safe,
+            through: summary.through,
+          });
+          return finish("throttled", error);
+        }
+        continue;
+      }
+      const stop =
+        error instanceof HyperSyncUnauthorized
+          ? "unauthorized"
+          : error instanceof HyperSyncPageCapacity
+            ? "capacity"
+            : error instanceof Error && inspection.test(error.message)
+              ? "inspection"
+              : null;
       if (stop) {
         log({
           event: "ledger_tip_stopped_for_good",
@@ -571,12 +780,16 @@ export async function runLedgerTip(
       }
       failures++;
       summary.failures++;
-      const waitMs = Math.min(30000, 2000 * 2 ** (failures - 1));
+      const waitMs = Math.min(
+        ledgerTipDefaults.maxFailureWaitMs,
+        ledgerTipDefaults.failureWaitMs * 2 ** (failures - 1),
+      );
       log({
         event: "ledger_tip_cycle_failed",
         failures,
         waitMs,
         error: ledgerTipSafeError(error),
+        ...errorDetails(error),
         budget: error instanceof HyperSyncBudgetExceeded,
       });
       options.observer?.failed({
@@ -588,7 +801,10 @@ export async function runLedgerTip(
       await wait(waitMs, options.signal);
       continue;
     }
+    inFlight = null;
     failures = 0;
+    pauses = 0;
+    pausedMs = 0;
     summary.cycles++;
     options.observer?.cycle(cycle);
     const c = cycle.crowd;
@@ -709,28 +925,7 @@ export async function runLedgerTip(
       return finish("cycles");
     // A crowd lane still catching up takes the poll wait for its ranges.
     const crowdBehind = !!c && !c.level && !c.failed;
-    if (cycle.atTip && !crowdBehind) {
-      const idle = new AbortController();
-      const abort = () => idle.abort();
-      options.signal?.addEventListener("abort", abort, { once: true });
-      if (options.signal?.aborted) idle.abort();
-      const warmth = options.warmth;
-      if (warmth)
-        void sleep(warmth.delayMs, undefined, { signal: idle.signal }).then(
-          () => warmth.refresh(idle.signal),
-          () => {}, // The next indexing cycle cancelled the idle timer.
-        );
-      try {
-        await wait(options.pollMs, options.signal);
-      } finally {
-        // This abort destroys an active warm connection immediately. Do not
-        // await the warm set: indexing owns the deadline, even mid-statement.
-        idle.abort();
-        options.signal?.removeEventListener("abort", abort);
-      }
-      catchUp.at = performance.now();
-      catchUp.blocks = 0;
-    }
+    if (cycle.atTip && !crowdBehind) await rest(options.pollMs);
   }
 }
 
@@ -792,7 +987,7 @@ export function ledgerTipSafeError(e: unknown): string {
   const name = e instanceof Error ? e.name : "";
   const message = e instanceof Error ? e.message : "";
   if (name === "HyperSyncRateLimitExhausted")
-    return "hypersync_rate_limit_exhausted: the tip loop stopped; inspect the Envio request rate before restarting";
+    return "hypersync_rate_limit_exhausted: four throttled attempts on one request; the tip loop pauses before it tries again";
   if (name === "HyperSyncBudgetExceeded")
     return "hypersync_cycle_budget_exceeded: one cycle reached its request cap; inspect reorg depth and paging";
   if (

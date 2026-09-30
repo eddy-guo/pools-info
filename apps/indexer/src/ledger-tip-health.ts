@@ -28,7 +28,7 @@ export interface LedgerTipHealthReport {
   staleAfterSeconds: number;
   stale: boolean;
   cycles: number;
-  /** Consecutive failed cycles; the loop exits for a restart at five. */
+  /** Consecutive failed cycles; the loop exits for a restart at sixty. */
   failures: number;
   /** The back-off before the next attempt while retrying. */
   waitMs: number | null;
@@ -124,6 +124,16 @@ export class LedgerTipHealth implements LedgerTipObserver {
     this.state = "stopped";
     this.stop = stopped;
     this.error = error;
+    this.waitMs = null;
+  }
+  /** A lost database session is followed by a new connection attempt. */
+  reconnecting() {
+    this.state = "starting";
+    this.step = "connecting";
+    this.validated = false;
+    this.stop = null;
+    this.error = null;
+    this.failures = 0;
     this.waitMs = null;
   }
   report(): LedgerTipHealthReport {

@@ -232,8 +232,9 @@ the next start rewinds (`ledger_launch_rewind`) before extending.
 is read from HyperSync; on a mismatch the newest still-canonical checkpoint
 is found and `walkBackLedger` restores the pre-images (`ledger_walk_back`),
 the tip loop's code path. Four throttled attempts on one request
-(`HyperSyncRateLimitExhausted`, or the RPC's equivalent) end the run with
-`stopped: "throttled"` and the reserved exit code 75; nothing restarts it.
+(`HyperSyncRateLimitExhausted`, or the RPC's equivalent) end the pass's run
+with `stopped: "throttled"` and the reserved exit code 75; nothing restarts
+it (the tip loop pauses instead: "Stops" under phase 3).
 Every committed range logs one `ledger_progress` line with the range's rows,
 requests, bytes and pages, the run's blocks per second, throttled retries,
 requests per million blocks and ETA, and the ledger's cumulative totals:
@@ -390,14 +391,32 @@ from then on would read as the whole history), and a window holding such an
 hour serves null. A position or hour row created from then on starts at
 zero. The history backfill fills the rest.
 
-**Stops.** A sustained throttle (four throttled attempts on one HyperSync or
-RPC request) ends the loop with exit code 75, a rejected token 77, a page
-over HyperSync's own caps 76, and a ledger that refuses to change (a walk-back
-its journal cannot serve, a conflicting batch, no ledger) 78; the service's
-supervisor turns each into a clean exit that Railway's `ON_FAILURE` policy
-does not restart. Any other failure is retried after 2, 4, 8 and 16 seconds;
-five failed cycles in a row exit 1 for a restart from the cursor. SIGTERM
-ends the loop on a committed batch.
+**Stops.** A throttle (four throttled attempts on one HyperSync or RPC
+request) pauses the loop rather than ending it: the first pause is a minute,
+each consecutive one doubles up to an hour, a `Retry-After` longer than the
+pause wins up to the remaining six-hour budget, every pause is logged
+(`ledger_tip_throttle_paused`, with its source, its wait and the running
+total), the cycle after a pause tries again from the same cursor, and a
+successful cycle resets the series. Only about six hours of consecutive
+pausing spend the budget (`ledger_tip_throttle_exhausted`), and the loop then
+exits 1 so the service restarts. A rejected token exits 77, a page over
+HyperSync's own caps 76, and a ledger that refuses to change (a walk-back its
+journal cannot serve, a conflicting batch, no ledger) 78; the service's
+supervisor turns those three into a clean exit that Railway's `ON_FAILURE` policy does not
+restart. Any other failed cycle is retried after 2, 4, 8, 16, 32 and then 60
+seconds, and sixty failed cycles in a row (about an hour of paced attempts)
+exit 1 for a restart from the cursor, so an upstream outage costs one restart
+an hour rather than one every seventy seconds. A lost database connection
+ends the loop the way a signal does (`ledger_tip_stopping`, with the reason
+and the range in flight) and the service reconnects in-process, waiting 1, 2,
+4 … 60 seconds between attempts for up to an hour
+(`ledger_database_connect_failed`) before it exits 1. The first connection
+and the migration connection use the same backoff; writer-lock acquisition
+polls once per second for at least that hour. Every reconnection re-reads the
+cursor and reconciles both streams exactly as a fresh start does. SIGTERM and
+SIGINT are logged by the supervisor (`service_stopping`) and the loop
+(`ledger_tip_stopping`) and end the loop on a committed batch. The in-process
+waits make Railway's existing ten-restart limit a last resort.
 
 **Health.** `run` serves `GET /health` on `PORT` (Railway's variable; 3103
 when unset) from `apps/indexer/src/ledger-tip-health.ts`: the loop's state
@@ -496,10 +515,10 @@ count of a quiet and a small tip cycle, PR 35's reorg replay on the journal:
 walked back to exactly the checkpoint's ledger and recollected to a fresh
 build of the fork, a stop after every request of a cycle resuming to the
 same ledger and windows with both streams in lockstep, a stop between the two
-commits, the throttle stop, backoff, the refusal of a database without a
-ledger), `packages/db/src/ledger-windows.test.ts` (the build, top-100 ranks
-with the address tie-break, incremental refreshes equal to a rebuild as
-batches land, hours leave and positions are excluded, the interval, walk-back,
+commits, throttle pauses and exhaustion, backoff, the refusal of a database
+without a ledger), `packages/db/src/ledger-windows.test.ts` (the build,
+top-100 ranks with the address tie-break, incremental refreshes equal to a
+rebuild as batches land, hours leave and positions are excluded, the interval, walk-back,
 unknown flash counts), `packages/db/src/ledger.test.ts` (the ring's bound,
 the journal guard, hold times persisted and walked back) and
 `packages/core/src/ledger.test.ts` (the hold-time fold, and the flash share

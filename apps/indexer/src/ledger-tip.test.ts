@@ -1,7 +1,7 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,7 @@ import {
   HyperSyncClient,
   HyperSyncPacer,
   Rpc,
+  RpcRateLimitExhausted,
   collectLedgerRange,
   contracts,
   decodeAggregateRequest,
@@ -39,6 +40,7 @@ import {
   acquireLedgerWriter,
   commitBatch,
   createClient,
+  crowdLedgerStream,
   ensureLedgerStream,
   getStream,
   ledgerLaunchStreamIdentity,
@@ -50,6 +52,7 @@ import {
 } from "@pools/db";
 import { reconcileLedgerPass, runLedgerPass } from "./ledger-pass";
 import {
+  connectWithBackoff,
   ledgerTipConfig,
   ledgerTipDefaults,
   ledgerTipExitCodes,
@@ -840,24 +843,80 @@ test(
 );
 
 test(
-  "a sustained throttle stops the loop for good on a committed batch: no retry cycle, exit code 75",
+  "a throttle pauses the loop instead of ending it: waits doubling from a minute to an hour that honour Retry-After, the next cycle after each pause, and exit 1 only once the pause budget is spent",
   dbTest,
   async (t) => {
     const db = await database(t);
     await writer(db);
     const { fake } = tipChain();
     await passTwoRanges(db, fake);
-    // The first cycle's nine requests pass; every later one is throttled.
+    const paused = (log: Record<string, unknown>[]) =>
+      log.filter((e) => e.event === "ledger_tip_throttle_paused");
+    // The public RPC throttles the first range's metadata read: the range is
+    // not committed, the loop pauses a minute, and the next cycle folds it.
+    let rpcThrottles = 1;
+    const rpc = () => {
+      const r = metadataRpc();
+      if (rpcThrottles > 0) {
+        rpcThrottles--;
+        r.batch = async () => {
+          throw new RpcRateLimitExhausted();
+        };
+      }
+      return r;
+    };
+    const rpcLog: Record<string, unknown>[] = [];
+    const rpcWaits: number[] = [];
+    const first = await runLedgerTip(
+      db,
+      tipOptions(fake, rpcLog, {
+        rpc,
+        maxCycles: 1,
+        wait: async (ms) => {
+          rpcWaits.push(ms);
+        },
+      }),
+    );
+    assert.deepEqual(
+      [
+        first.stopped,
+        first.cycles,
+        first.pauses,
+        first.pausedMs,
+        first.through,
+      ],
+      ["cycles", 1, 1, 60000, start + 299],
+    );
+    assert.deepEqual(rpcWaits, [60000]);
+    assert.deepEqual(
+      paused(rpcLog).map((e) => [
+        e.source,
+        e.pause,
+        e.waitMs,
+        e.retryAfterMs,
+        e.pausedMs,
+        e.through,
+        String(e.error).split(":")[0],
+      ]),
+      [["rpc", 1, 60000, null, 60000, null, "rpc_rate_limit_exhausted"]],
+    );
+    // HyperSync throttles every request from here on: the pauses double up
+    // to an hour and the loop keeps trying between them until about six
+    // hours of pausing are spent, then exits 1 for a restart, never 0.
     let requests = 0;
-    const throttledFetch: typeof globalThis.fetch = async (input, init) =>
-      ++requests > 9
+    let always = true;
+    const throttledFetch: typeof globalThis.fetch = async (input, init) => {
+      requests++;
+      return always
         ? new Response("slow down", {
             status: 429,
             headers: { "retry-after": "0" },
           })
         : fake.fetch(input, init);
+    };
     let throttled = 0;
     const log: Record<string, unknown>[] = [];
+    const waits: number[] = [];
     const summary = await runLedgerTip(
       db,
       tipOptions(fake, log, {
@@ -866,36 +925,158 @@ test(
           if (e.reason === "throttled") throttled++;
         },
         throttled: () => throttled,
+        wait: async (ms) => {
+          waits.push(ms);
+        },
       }),
     );
     assert.equal(summary.stopped, "throttled");
-    assert.equal(ledgerTipExitCodes[summary.stopped], 75);
+    assert.equal(ledgerTipExitCodes[summary.stopped], 1);
     assert.match(summary.error!, /^hypersync_rate_limit_exhausted/);
+    const hour = 3600000;
+    assert.deepEqual(waits, [
+      60000,
+      120000,
+      240000,
+      480000,
+      960000,
+      1920000,
+      hour,
+      hour,
+      hour,
+      hour,
+      3420000,
+    ]);
     assert.deepEqual(
-      [summary.cycles, summary.through, summary.throttled, summary.failures],
-      [1, start + 299, 3, 0],
+      [
+        summary.cycles,
+        summary.through,
+        summary.pauses,
+        summary.pausedMs,
+        summary.throttled,
+        summary.failures,
+      ],
+      [0, null, 11, 21600000, 33, 0],
     );
-    // One throttled request of four attempts, then nothing.
-    assert.equal(requests, 13);
+    assert.equal(requests, 44);
+    assert.deepEqual(
+      paused(log).map((e) => [e.source, e.pause, e.waitMs, e.pausedMs]),
+      waits.map((w, i) => [
+        "hypersync",
+        i + 1,
+        w,
+        waits.slice(0, i + 1).reduce((n, x) => n + x, 0),
+      ]),
+    );
+    assert.deepEqual(
+      log
+        .filter((e) => e.event === "ledger_tip_throttle_exhausted")
+        .map((e) => [e.source, e.pauses, e.pausedMs, e.budgetMs]),
+      [["hypersync", 11, 6 * hour, 6 * hour]],
+    );
+    assert.ok(!log.some((e) => e.event === "ledger_tip_stopped_for_good"));
     assert.ok(!log.some((e) => e.event === "ledger_tip_cycle_failed"));
-    assert.ok(
-      log.some(
-        (e) =>
-          e.event === "ledger_tip_stopped_for_good" &&
-          e.stopped === "throttled",
-      ),
-    );
-    const ledger = await readLedgerStream(db);
-    assert.equal(ledger.cursor, start + 299);
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
     assert.equal(
       (await getStream(db, ledgerLaunchStreamIdentity.key)).cursor,
       start + 299,
+    );
+    // One burst on the next run: the second cycle's first request draws
+    // four 429s, the last with Retry-After: 7200, which outranks the hour
+    // the first pause would wait; the cycle after the pause carries on to
+    // the tip and the successful cycle resets the pause series.
+    always = false;
+    let heights = 0,
+      burst = 0;
+    const burstFetch: typeof globalThis.fetch = async (input, init) => {
+      if (String(input).endsWith("/height") && ++heights === 2) burst = 4;
+      if (burst > 0) {
+        burst--;
+        return new Response("slow down", {
+          status: 429,
+          headers: { "retry-after": burst === 0 ? "7200" : "0" },
+        });
+      }
+      return fake.fetch(input, init);
+    };
+    const burstLog: Record<string, unknown>[] = [];
+    const burstWaits: number[] = [];
+    throttled = 0;
+    const resumed = await runLedgerTip(
+      db,
+      tipOptions(fake, burstLog, {
+        fetch: burstFetch,
+        onRetry: (e) => {
+          if (e.reason === "throttled") throttled++;
+        },
+        throttled: () => throttled,
+        waits: burstWaits,
+      }),
+    );
+    assert.deepEqual(
+      [
+        resumed.stopped,
+        resumed.through,
+        resumed.pauses,
+        resumed.pausedMs,
+        resumed.throttled,
+      ],
+      ["aborted", start + 499, 1, 7200000, 3],
+    );
+    assert.deepEqual(burstWaits, [7200000, 60000]);
+    assert.deepEqual(
+      paused(burstLog).map((e) => [
+        e.source,
+        e.pause,
+        e.waitMs,
+        e.retryAfterMs,
+        e.through,
+      ]),
+      [["hypersync", 1, 7200000, 7200000, start + 399]],
+    );
+    assert.ok(!burstLog.some((e) => e.event === "ledger_tip_stopped_for_good"));
+    let longRequests = 0;
+    const longLog: Record<string, unknown>[] = [];
+    const longWaits: number[] = [];
+    const long = await runLedgerTip(
+      db,
+      tipOptions(fake, longLog, {
+        fetch: async () => {
+          longRequests++;
+          return new Response("slow down", {
+            status: 429,
+            headers: {
+              "retry-after": longRequests === 4 ? "25200" : "0",
+            },
+          });
+        },
+        wait: async (ms) => {
+          longWaits.push(ms);
+        },
+      }),
+    );
+    assert.equal(long.stopped, "throttled");
+    assert.equal(ledgerTipExitCodes[long.stopped], 1);
+    assert.deepEqual(
+      [long.pauses, long.pausedMs, longRequests],
+      [1, 6 * hour, 4],
+    );
+    assert.deepEqual(longWaits, [6 * hour]);
+    assert.deepEqual(
+      paused(longLog).map((e) => [e.waitMs, e.retryAfterMs, e.pausedMs]),
+      [[6 * hour, 7 * hour, 6 * hour]],
+    );
+    assert.deepEqual(
+      longLog
+        .filter((e) => e.event === "ledger_tip_throttle_exhausted")
+        .map((e) => [e.pauses, e.pausedMs, e.budgetMs]),
+      [[1, 6 * hour, 6 * hour]],
     );
   },
 );
 
 test(
-  "other failures back off and give up after five cycles in a row, and a later run resumes from the cursor",
+  "other failures back off up to a minute and give up after sixty cycles in a row, an unreachable provider is named as one, and a later run resumes from the cursor",
   dbTest,
   async (t) => {
     const db = await database(t);
@@ -909,35 +1090,492 @@ test(
         : fake.fetch(input, init);
     const waits: number[] = [];
     const log: Record<string, unknown>[] = [];
+    // The capped waits reach the minute the fixture's own wait aborts on.
     const summary = await runLedgerTip(
       db,
-      tipOptions(fake, log, { fetch: flaky, waits }),
+      tipOptions(fake, log, {
+        fetch: flaky,
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      }),
     );
     assert.equal(summary.stopped, "failed");
     assert.equal(ledgerTipExitCodes[summary.stopped], 1);
-    assert.deepEqual(waits, [2000, 4000, 8000, 16000]);
-    assert.equal(summary.failures, 5);
+    assert.equal(ledgerTipDefaults.maxFailures, 60);
+    assert.deepEqual(waits, [
+      2000,
+      4000,
+      8000,
+      16000,
+      32000,
+      ...Array.from({ length: 54 }, () => 60000),
+    ]);
+    assert.equal(summary.failures, 60);
+    const failed = log.filter((e) => e.event === "ledger_tip_cycle_failed");
+    assert.equal(failed.length, 60);
+    assert.deepEqual(
+      [failed[0].error, failed[0].networkCode, failed[0].sqlState],
+      ["hypersync_request_rejected: HTTP 503", null, null],
+    );
     assert.equal((await readLedgerStream(db)).cursor, start + 199);
-    // One failure, then the provider recovers: the count resets.
-    let once = true;
-    const blip: typeof globalThis.fetch = async (input, init) => {
-      if (once && String(input).endsWith("/query")) {
-        once = false;
-        return new Response("bad request", { status: 400 });
+    // A provider that refuses the connection is a network failure, not a
+    // rejected answer: one failed cycle names it with its code, then the
+    // provider recovers and the count resets.
+    let refused = 4;
+    const unreachable: typeof globalThis.fetch = async (input, init) => {
+      if (refused > 0 && String(input).endsWith("/query")) {
+        refused--;
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(Error("connect ECONNREFUSED 127.0.0.1:1"), {
+            code: "ECONNREFUSED",
+          }),
+        });
       }
       return fake.fetch(input, init);
     };
     failing = false;
+    const resumedLog: Record<string, unknown>[] = [];
     const resumed = await runLedgerTip(
       db,
-      tipOptions(fake, [], { fetch: blip }),
+      tipOptions(fake, resumedLog, { fetch: unreachable }),
     );
     assert.deepEqual(
       [resumed.stopped, resumed.failures, resumed.through],
       ["aborted", 1, start + 499],
     );
+    assert.deepEqual(
+      resumedLog
+        .filter((e) => e.event === "ledger_tip_cycle_failed")
+        .map((e) => [e.failures, e.waitMs, e.error, e.networkCode]),
+      [
+        [
+          1,
+          2000,
+          "hypersync_unreachable: no answer from HyperSync after 4 attempts; check connectivity and the provider status",
+          "ECONNREFUSED",
+        ],
+      ],
+    );
   },
 );
+
+test(
+  "a stop signal is logged with the range in flight, and the loop ends on the committed cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    // SIGTERM arrives during the first range's collection: after the height,
+    // the head header and the cursor header, on the range's first query.
+    let requests = 0;
+    const log: Record<string, unknown>[] = [];
+    const options = tipOptions(fake, log, {
+      fetch: async (input, init) => {
+        if (++requests === 4)
+          options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+        return fake.fetch(input, init);
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    assert.deepEqual([summary.stopped, summary.through], ["aborted", null]);
+    assert.deepEqual(
+      log
+        .filter((e) => e.event === "ledger_tip_stopping")
+        .map((e) => [e.reason, e.cursor, e.inFlight, e.cycle]),
+      [["SIGTERM", start + 199, { from: start + 200, to: start + 299 }, 1]],
+    );
+    assert.equal((await readLedgerStream(db)).cursor, start + 199);
+    // A plain abort in the idle wait at the tip names no range.
+    const idleLog: Record<string, unknown>[] = [];
+    await runLedgerTip(db, tipOptions(fake, idleLog));
+    assert.deepEqual(
+      idleLog
+        .filter((e) => e.event === "ledger_tip_stopping")
+        .map((e) => [e.reason, e.cursor, e.inFlight]),
+      [["aborted", start + 499, null]],
+    );
+  },
+);
+
+test(
+  "a stop during the crowd lane names its range and the committed main cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    let options: ReturnType<typeof tipOptions>;
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    let stopped = false;
+    options = tipOptions(fake, log, {
+      crowdEnabled: true,
+      fetch: async (input, init) => {
+        if (!stopped && (await readLedgerStream(db)).cursor === start + 299) {
+          stopped = true;
+          options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+        }
+        return fake.fetch(input, init);
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: { from: start, to: start + 299, lane: "crowd" },
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test(
+  "a stop during post-commit counting reports the committed cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    const options = tipOptions(fake, log, { maxCycles: 1 });
+    const query = db.query.bind(db);
+    let postCommitQueries = 0;
+    db.query = (async (...args: Parameters<typeof query>) => {
+      if (
+        typeof args[0] === "string" &&
+        args[0].startsWith(
+          'SELECT "table",count(*)::int AS created FROM agg_journal',
+        )
+      ) {
+        postCommitQueries++;
+        options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+      }
+      return query(...args);
+    }) as typeof db.query;
+    let summary: Awaited<ReturnType<typeof runLedgerTip>>;
+    try {
+      summary = await runLedgerTip(db, options);
+    } finally {
+      db.query = query as typeof db.query;
+    }
+    assert.equal(postCommitQueries, 1);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: null,
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test(
+  "a stop during crowd post-commit counting clears the active range",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    const log: Record<string, unknown>[] = [];
+    const options = tipOptions(fake, log, {
+      crowdEnabled: true,
+      maxCycles: 1,
+    });
+    const query = db.query.bind(db);
+    let postCommitQueries = 0;
+    db.query = (async (...args: Parameters<typeof query>) => {
+      if (
+        typeof args[0] === "string" &&
+        args[0].startsWith(
+          'SELECT "table",count(*)::int AS created FROM agg_journal',
+        ) &&
+        Array.isArray(args[1]) &&
+        args[1][0] === crowdLedgerStream.key
+      ) {
+        postCommitQueries++;
+        options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+      }
+      return query(...args);
+    }) as typeof db.query;
+    let summary: Awaited<ReturnType<typeof runLedgerTip>>;
+    try {
+      summary = await runLedgerTip(db, options);
+    } finally {
+      db.query = query as typeof db.query;
+    }
+    assert.equal(postCommitQueries, 1);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.equal(
+      (await readLedgerStream(db, crowdLedgerStream.key)).cursor,
+      start + 299,
+    );
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: null,
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test(
+  "a stop after reorg reconciliation names the rewound cursor",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    await passTwoRanges(db, fake);
+    await runLedgerTip(db, tipOptions(fake, [], { maxCycles: 3 }));
+    assert.equal((await readLedgerStream(db)).cursor, start + 499);
+    fake.logs = tipChain({ forked: true }).fake.logs;
+    fake.reorgFrom = start + 350;
+    const log: Record<string, unknown>[] = [];
+    let stopped = false;
+    const options = tipOptions(fake, log, {
+      fetch: async (input, init) => {
+        if (!stopped && (await readLedgerStream(db)).cursor === start + 299) {
+          stopped = true;
+          options.controller.abort(new DOMException("SIGTERM", "AbortError"));
+        }
+        return fake.fetch(input, init);
+      },
+    });
+    const summary = await runLedgerTip(db, options);
+    assert.equal(summary.stopped, "aborted");
+    assert.equal((await readLedgerStream(db)).cursor, start + 299);
+    assert.deepEqual(
+      log.filter((e) => e.event === "ledger_tip_stopping"),
+      [
+        {
+          event: "ledger_tip_stopping",
+          reason: "SIGTERM",
+          cursor: start + 299,
+          inFlight: { from: start + 300, to: start + 399 },
+          cycle: 1,
+        },
+      ],
+    );
+  },
+);
+
+test("the worker logs one stop during initial database reconnect", async (t) => {
+  const child = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./ledger-tip-main.ts", import.meta.url)),
+      "run",
+    ],
+    {
+      env: {
+        ...process.env,
+        DATABASE_URL: "postgresql://postgres@127.0.0.1:1/pools",
+        LEDGER_TIP_ENABLED: "1",
+        ENVIO_API_TOKEN: apiToken,
+        HYPERSYNC_URL: "http://127.0.0.1:1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  t.after(() => {
+    if (child.exitCode === null) child.kill("SIGKILL");
+  });
+  const events: Record<string, unknown>[] = [];
+  let pending = "";
+  let ready: (() => void) | undefined;
+  child.stdout!.on("data", (chunk: Buffer) => {
+    pending += chunk.toString();
+    for (;;) {
+      const newline = pending.indexOf("\n");
+      if (newline < 0) break;
+      const line = pending.slice(0, newline);
+      pending = pending.slice(newline + 1);
+      const event = JSON.parse(line) as Record<string, unknown>;
+      events.push(event);
+      if (event.event === "ledger_database_connect_failed") ready?.();
+    }
+  });
+  let timeout: ReturnType<typeof setTimeout>;
+  try {
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+      once(child, "exit").then(() => {
+        throw Error("worker exited before reconnecting");
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(Error("worker did not retry the database")),
+          15000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+  const exited = once(child, "close");
+  child.kill("SIGTERM");
+  const [code, signal] = await exited;
+  assert.equal(signal, null);
+  assert.equal(code, 0);
+  assert.deepEqual(
+    events.filter((e) => e.event === "ledger_tip_stopping"),
+    [
+      {
+        event: "ledger_tip_stopping",
+        reason: "SIGTERM",
+        cursor: null,
+        inFlight: null,
+        cycle: null,
+      },
+    ],
+  );
+});
+
+test("the service connects to the database with waits doubling to a minute, gives up at the horizon with the last error, and stops on a signal", async () => {
+  const refused = () =>
+    Object.assign(Error("connect ECONNREFUSED 127.0.0.1:1"), {
+      code: "ECONNREFUSED",
+    });
+  const fixture = (failures: number) => {
+    let attempts = 0,
+      clock = 0;
+    const waits: number[] = [];
+    const log: Record<string, unknown>[] = [];
+    const create = () =>
+      ({
+        connect: async () => {
+          if (++attempts <= failures) throw refused();
+        },
+      }) as unknown as Client;
+    return {
+      create,
+      waits,
+      log,
+      attempts: () => attempts,
+      options: {
+        log: (e: Record<string, unknown>) => log.push(e),
+        wait: async (ms: number) => {
+          waits.push(ms);
+          clock += ms;
+        },
+        now: () => clock,
+      },
+    };
+  };
+  const brief = fixture(3);
+  const db = await connectWithBackoff(brief.create, {
+    ...brief.options,
+    horizonMs: ledgerTipDefaults.connectHorizonMs,
+  });
+  assert.ok(db);
+  assert.equal(brief.attempts(), 4);
+  assert.deepEqual(brief.waits, [1000, 2000, 4000]);
+  assert.deepEqual(
+    brief.log.map((e) => [e.event, e.attempt, e.waitMs, e.networkCode]),
+    [
+      ["ledger_database_connect_failed", 1, 1000, "ECONNREFUSED"],
+      ["ledger_database_connect_failed", 2, 2000, "ECONNREFUSED"],
+      ["ledger_database_connect_failed", 3, 4000, "ECONNREFUSED"],
+    ],
+  );
+  // Ten minutes of refusals: the waits cap at a minute and the attempt that
+  // would end past the horizon is not made.
+  const outage = fixture(Infinity);
+  await assert.rejects(
+    connectWithBackoff(outage.create, { ...outage.options, horizonMs: 600000 }),
+    (e: { code?: string }) => e.code === "ECONNREFUSED",
+  );
+  assert.deepEqual(outage.waits, [
+    1000,
+    2000,
+    4000,
+    8000,
+    16000,
+    32000,
+    ...Array.from({ length: 8 }, () => 60000),
+  ]);
+  assert.equal(outage.attempts(), 15);
+  assert.deepEqual(outage.log.at(-1), {
+    event: "ledger_database_connect_exhausted",
+    attempts: 15,
+    elapsedMs: 543000,
+    horizonMs: 600000,
+    errorType: "Error",
+    sqlState: null,
+    networkCode: "ECONNREFUSED",
+  });
+  // No horizon (the once and status commands): one attempt, then the error.
+  const once = fixture(Infinity);
+  await assert.rejects(
+    connectWithBackoff(once.create, { ...once.options, horizonMs: 0 }),
+  );
+  assert.deepEqual([once.attempts(), once.waits], [1, []]);
+  // A stop signal during the wait ends the attempts without a connection.
+  const stopped = fixture(Infinity);
+  const controller = new AbortController();
+  assert.equal(
+    await connectWithBackoff(stopped.create, {
+      ...stopped.options,
+      horizonMs: 600000,
+      signal: controller.signal,
+      wait: async () => {
+        controller.abort();
+      },
+    }),
+    null,
+  );
+  assert.equal(stopped.attempts(), 1);
+  const finalAttemptStop = new AbortController();
+  const finalAttemptLog: Record<string, unknown>[] = [];
+  assert.equal(
+    await connectWithBackoff(
+      () =>
+        ({
+          connect: async () => {
+            finalAttemptStop.abort();
+            throw refused();
+          },
+        }) as unknown as Client,
+      {
+        horizonMs: 0,
+        signal: finalAttemptStop.signal,
+        log: (event) => finalAttemptLog.push(event),
+      },
+    ),
+    null,
+  );
+  assert.deepEqual(finalAttemptLog, []);
+});
 
 test(
   "the loop refuses a database that holds no ledger, or one restored without its positions, without creating the stream or making a request",
@@ -1093,7 +1731,7 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
   assert.deepEqual(ledgerTipExitCodes, {
     aborted: 0,
     cycles: 0,
-    throttled: 75,
+    throttled: 1,
     capacity: 76,
     unauthorized: 77,
     inspection: 78,

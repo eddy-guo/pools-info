@@ -389,7 +389,13 @@ test("the client retries throttling and server errors with bounds and never retr
   );
   assert.equal(c.requests, 3);
   statuses.push(429, 429, 429, 429);
-  await assert.rejects(c.height(), HyperSyncRateLimitExhausted);
+  // The exhausted error carries the last answer's Retry-After for the
+  // caller's own pause.
+  await assert.rejects(
+    c.height(),
+    (e: HyperSyncRateLimitExhausted) =>
+      e instanceof HyperSyncRateLimitExhausted && e.retryAfterMs === 1,
+  );
   statuses.push(500, 500, 500, 500);
   await assert.rejects(c.height(), HyperSyncRequestRejected);
   statuses.push(401);
@@ -411,7 +417,11 @@ test("the client retries throttling and server errors with bounds and never retr
       },
     }),
   );
-  await assert.rejects(failing.height(), /failed after retries/);
+  await assert.rejects(
+    failing.height(),
+    (e: Error) =>
+      /failed after retries/.test(e.message) && e.cause instanceof TypeError,
+  );
   assert.equal(failing.requests, hypersyncPolicy.maxAttempts);
 });
 

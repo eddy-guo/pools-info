@@ -95,8 +95,9 @@ main range of every tip cycle, on the same HyperSync client, pacer and token:
   walks the crowd stream back to its newest checkpoint that is neither. The
   streams share `agg_wallets`, so a walk-back keeps a wallet it created while
   the other stream's rows name it.
-- **Failures.** A throttle or a rejected token stops the loop as the main
-  lane's would (they share the token); any other crowd failure is logged
+- **Failures.** A throttle pauses the loop and a rejected token stops it,
+  following the main lane's rules ([aggregate ledger stops](AGGREGATE-LEDGER.md#phase-3-the-tip-loop));
+  they share the token. Any other crowd failure is logged
   (`ledger_crowd_failed`), backs the lane off for 1, 2, 4 … 64 cycles, and the
   main stream carries on.
 - **Windows.** A crowd batch recomputes the leaderboard window rows of the

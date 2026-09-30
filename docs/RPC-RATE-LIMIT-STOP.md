@@ -33,3 +33,7 @@ disabled. Discovery failures back off instead of starting deep work; the
 recent and analytics processes remain independently scheduled. The startup
 `worker_rpc_configuration` event records the configured log-range size,
 minimum request interval and maximum JSON-RPC batch size without credentials.
+
+## The ledger tip loop is the exception
+
+`chain-sync` follows the [aggregate ledger's stop policy](AGGREGATE-LEDGER.md#phase-3-the-tip-loop).

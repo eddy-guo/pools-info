@@ -128,7 +128,7 @@ test("the report follows startup, cursor progress, retries, stops, and staleness
       false,
       "stopped",
       "throttled",
-      75,
+      1,
       "hypersync_rate_limit_exhausted: the tip loop stopped",
       3,
       false,
@@ -138,6 +138,29 @@ test("the report follows startup, cursor progress, retries, stops, and staleness
   assert.throws(
     () => new LedgerTipHealth({ staleMs: 0 }),
     /Invalid LEDGER_STALE_MS/,
+  );
+});
+
+test("a database session reconnect restores health after the next validated cursor and cycle", () => {
+  const health = new LedgerTipHealth({ staleMs: 10 * minute });
+  health.ready(cycle(0).cursor);
+  health.cycle(cycle(1));
+  health.stopped("aborted", null);
+  assert.equal(health.report().ok, false);
+
+  health.reconnecting();
+  let report = health.report();
+  assert.deepEqual(
+    [report.ok, report.state, report.step, report.stopped, report.exitCode],
+    [false, "starting", "connecting", null, null],
+  );
+  health.ready(cycle(1).cursor);
+  health.starting("locking");
+  health.cycle(cycle(2));
+  report = health.report();
+  assert.deepEqual(
+    [report.ok, report.state, report.step, report.cycles, report.cursor],
+    [true, "cycling", null, 2, cycle(2).cursor],
   );
 });
 

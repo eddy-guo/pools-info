@@ -529,6 +529,42 @@ test(
       (await readLedgerStream(db, crowdLedgerStream.key)).cursor,
       null,
     );
+    let refused = 0;
+    const unreachableLog: Record<string, unknown>[] = [];
+    const unreachable: typeof globalThis.fetch = async (input, init) => {
+      if (
+        typeof init?.body === "string" &&
+        init.body.includes(crowdFactory.address)
+      ) {
+        refused++;
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(Error("connect ECONNREFUSED 127.0.0.1:1"), {
+            code: "ECONNREFUSED",
+          }),
+        });
+      }
+      return fake.fetch(input, init);
+    };
+    await runLedgerTip(
+      db,
+      tipOptions(fake, unreachableLog, {
+        crowdEnabled: true,
+        fetch: unreachable,
+        maxCycles: 1,
+      }),
+    );
+    assert.equal(refused, 4);
+    assert.deepEqual(
+      unreachableLog
+        .filter((e) => e.event === "ledger_crowd_failed")
+        .map((e) => [e.error, e.networkCode]),
+      [
+        [
+          "hypersync_unreachable: no answer from HyperSync after 4 attempts; check connectivity and the provider status",
+          "ECONNREFUSED",
+        ],
+      ],
+    );
     await releaseLedgerWriter(db);
   },
 );
