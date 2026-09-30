@@ -24,6 +24,10 @@ import {
 } from "./ledger-market";
 import { readLedgerLeaderboard } from "./ledger-leaderboard";
 import { readLedgerWallet } from "./ledger-wallet";
+import {
+  ledgerFreshnessDefaults,
+  readLedgerFreshness,
+} from "./ledger-freshness";
 import type { RegistryToken } from "./token-registry";
 import {
   encodeCursor,
@@ -35,6 +39,7 @@ import {
 
 type Row = Record<string, any>; // PostgreSQL projections are mapped explicitly below.
 type Query = (sql: string, values?: unknown[]) => Promise<{ rows: Row[] }>;
+const broadHealth = { ok: true, ledger: null };
 export interface Reader {
   read(request: ReadRequest): Promise<unknown>;
   /** The verified registry's launch tokens past a pool ref, for the explorer
@@ -159,7 +164,21 @@ export async function readData(
   query: Query,
   request: ReadRequest,
   marketSource: MarketSource = "broad",
+  freshness: { staleMs: number } = ledgerFreshnessDefaults,
 ): Promise<unknown> {
+  if (request.route === "health") {
+    // Process liveness and, on the ledger source, the ledger's freshness
+    // (ledger-freshness.ts): read outside the warmth gate like /ready, so it
+    // answers while product routes warm, and never ok while the ledger has
+    // stopped moving. The other source serves no ledger, so it has nothing
+    // to measure here.
+    if (marketSource !== "ledger") return broadHealth;
+    const ledger = await readLedgerFreshness(query, freshness.staleMs);
+    if (!ledger) return { ok: false, reason: "ledger_missing", ledger: null };
+    return ledger.stale
+      ? { ok: false, reason: "ledger_stale", ledger }
+      : { ok: true, ledger };
+  }
   if (request.route === "ready") {
     // Zero-row reads check table access too, unlike SELECT 1 alone.
     await query("SELECT 1 FROM indexed_events WHERE false");
@@ -355,6 +374,11 @@ export async function readData(
       discoveryTruncated: discovery.rows.length > 100,
       poolStreams: summary.rows[0],
       indexedPools: indexedPools.rows[0],
+      // The aggregate ledger's freshness, the same object /health judges.
+      ledger:
+        marketSource === "ledger"
+          ? await readLedgerFreshness(query, freshness.staleMs)
+          : null,
     };
   }
   if (request.route === "pools") {
@@ -494,6 +518,7 @@ export function createReader(
   {
     marketSource = "broad" as MarketSource,
     warmup = false as boolean | DatabaseWarmth,
+    staleMs = ledgerFreshnessDefaults.staleMs as number,
   } = {},
 ): Reader {
   if (!url) throw Error("DATABASE_URL is required");
@@ -559,7 +584,9 @@ export function createReader(
   return {
     assertReady: (expected) => warmth?.assertReady(expected) ?? 0,
     async read(request) {
-      const product = request.route !== "ready";
+      if (request.route === "health" && marketSource !== "ledger")
+        return broadHealth;
+      const product = request.route !== "ready" && request.route !== "health";
       const version = product ? warmth?.assertReady() : undefined;
       const client = await pool.connect().catch((error) => {
         warmth?.invalidate("database_connect_failed");
@@ -575,6 +602,7 @@ export function createReader(
           (sql, values) => client.query(sql, values),
           request,
           marketSource,
+          { staleMs },
         );
         await client.query("COMMIT");
         if (product) warmth?.assertReady(version);

@@ -112,15 +112,38 @@ launch is indexed or that a wallet's history/cost basis is complete.
 
 | Endpoint                                       | Response and parameters                                                                                                                                                                                                                    |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/health`                                      | `{ok:true}`; process liveness only, no database check.                                                                                                                                                                                     |
+| `/health`                                      | `{ok,ledger}`; process liveness plus, with `MARKET_SOURCE=ledger`, the ledger's freshness ("Ledger freshness" below): 503 `ledger_stale` once the ledger has not moved for `LEDGER_STALE_MS`. No request budget, no warmth gate.           |
 | `/ready`                                       | `{ready:true}` after checking DB access to the read tables and the [warm set](../../docs/DATABASE-WARMING.md).                                                                                                                             |
-| `/v1/status`                                   | Up to 100 discovery streams with exact cutoffs, `discoveryTruncated`, and `poolStreams` summary: `streams`, `streams_started`, `earliest_cursor`, `latest_cursor`, `last_commit_at`. No live chain-head request.                           |
+| `/v1/status`                                   | Up to 100 discovery streams with exact cutoffs, `discoveryTruncated`, `poolStreams` summary: `streams`, `streams_started`, `earliest_cursor`, `latest_cursor`, `last_commit_at`; `ledger` freshness (below). No live chain-head request.   |
 | `/v1/pools?q=&limit=&cursor=`                  | `{items,nextCursor,pagination}`. Literal case-insensitive name/symbol search; a complete token address performs exact token lookup. Includes only discovered membership records.                                                           |
 | `/v1/pools/:poolId`                            | `{pool,latestRecordedSwap}`. Pool identity, token, name, symbol, launch evidence references, per-pool coverage, and latest recorded swap or null. Missing pool returns 404 `pool_not_indexed`, which does not prove nonexistence on-chain. |
 | `/v1/trades?poolId=&limit=&cursor=`            | `{items,nextCursor,pagination}` of recorded swaps, globally or scoped to one pool. Includes unsupported swap records with their original payload/exclusion reason.                                                                         |
 | `/v1/wallets/:address/activity?limit=&cursor=` | `{wallet,activityMeaning,items,nextCursor,pagination}` for a transaction initiator or token Transfer participant. Empty activity does not prove the wallet is inactive. Does not require sign-in.                                          |
 | `/v1/feed?pools=id1,id2`                       | Bounded recent swap feed for 1-8 distinct indexed pool IDs, described below.                                                                                                                                                               |
 | `/v1/pools/:poolId/image`                      | The pool's creator icon as a stored 128 px WebP, described under "Token icon store". No query parameters.                                                                                                                                  |
+
+### Ledger freshness
+
+With `MARKET_SOURCE=ledger`, `/health` and `/v1/status` carry `ledger`, the
+aggregate ledger's freshness as its stream row records it: `cursorBlock` and
+`cursorTimestamp` (the committed cursor), `headBlock` and `headTimestamp` (the
+head the collector last observed, null before its first cycle), `lagBlocks`
+and `lagSeconds` (head minus cursor, never negative), `indexedAt` (the last
+commit that moved the stream), `checkedAt` (the last head observation),
+`ageSeconds` (seconds since `indexedAt` on the database's own clock, which
+stamped it), `staleAfterSeconds` and `stale`. The ledger is stale once
+`ageSeconds` passes `LEDGER_STALE_MS` (default 600000, ten minutes, the same
+variable and default as the collector's own `/health`; bounds 60000 to
+86400000): `/health` then answers 503 `{ok:false, reason:"ledger_stale",
+ledger}`, and 503 `ledger_missing` without a ledger row at all. It is read
+outside the warmth gate, so it answers while `/ready` still refuses a warming
+reader, and outside the request budget, one read per response-cache window
+however often it is polled, so an uptime check can poll it freely; a database
+it cannot reach is the ordinary 503 `data_temporarily_unavailable`. `/ready`
+ignores freshness: it decides a deploy, and stale data still beats none. An
+external monitor can read `/v1/status` to alert on `stale`; this repository
+does not configure that monitor. On the broad source both routes carry
+`ledger: null` and `/health` stays `{ok:true}`.
 
 A pool item includes `poolId`, `token`, `name`, `symbol`, `coverage`, and `launch`:
 `block`, `transactionHash`, `transactionInitiator`, `timestamp`, `sourceStream`,

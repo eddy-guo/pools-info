@@ -60,6 +60,34 @@ export function createApi(
   }
   const readBudget = limiter(maxPerMinute);
   const explorerBudget = limiter(maxPerMinute);
+  // /health: process liveness and, on the ledger source, the ledger's
+  // freshness (reader.ts). Outside the request budget, so uptime checks never
+  // spend it, and outside the warmth gate, so it answers while product routes
+  // warm; one read per cache window however often it is polled, coalesced,
+  // with the status the reader's verdict decides (503 once the ledger has
+  // stopped moving). A read that fails takes the ordinary 503 path below.
+  let healthMemo: { expires: number; status: number; body: string } | null =
+    null;
+  let healthPending: Promise<{ status: number; body: string }> | null = null;
+  function health(request: ReadRequest) {
+    if (healthMemo && healthMemo.expires > now())
+      return Promise.resolve(healthMemo);
+    healthPending ??= (async () => {
+      try {
+        const result = (await reader.read(request)) as { ok: boolean };
+        const memo = {
+          expires: now() + cacheMs,
+          status: result.ok ? 200 : 503,
+          body: JSON.stringify(result),
+        };
+        healthMemo = memo;
+        return memo;
+      } finally {
+        healthPending = null;
+      }
+    })();
+    return healthPending;
+  }
   // Icons have their own budget so a cold viewport of icons never starves
   // JSON reads, and their own in-flight bound beside the fetch slots.
   const imageBudget = limiter(maxImagesPerMinute);
@@ -83,7 +111,8 @@ export function createApi(
       }
       request = parseRequest(req.url ?? "/");
       if (request.route === "health") {
-        send(200, '{"ok":true}');
+        const result = await health(request);
+        send(result.status, result.body);
         return;
       }
       // Default-deny every database route, including icons and newly added

@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import type { Server } from "node:http";
 import { HyperSyncPacer } from "@pools/chain";
 import { DatabaseWarmth, createWarmSet } from "@pools/api/warmup";
 import {
@@ -16,10 +17,12 @@ import {
   createLedgerTipClient,
   ledgerTipConfig,
   ledgerTipExitCodes,
+  ledgerTipIncomplete,
   ledgerTipSafeError,
   ledgerTipStatus,
   runLedgerTip,
 } from "./ledger-tip";
+import { LedgerTipHealth, serveLedgerTipHealth } from "./ledger-tip-health";
 
 // The aggregate ledger's tip loop (docs/AGGREGATE-LEDGER.md phase 3):
 //   pnpm ledger:tip status    reads the stream, the ring and the windows; writes nothing
@@ -28,12 +31,15 @@ import {
 // ledger-tip-service.ts runs `run` under the supervisor, which turns the
 // reserved stops (75 throttled, 76 capacity, 77 unauthorized, 78 inspection)
 // into a clean exit that Railway does not restart. SIGTERM ends the loop on a
-// committed batch.
+// committed batch. `run` also serves `GET /health` on PORT
+// (ledger-tip-health.ts): the last cycle, the lag and the loop's state, 503
+// once the loop has stopped or its last cycle is older than LEDGER_STALE_MS.
 const stop = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.once(signal, () => stop.abort());
 const emit = (event: Record<string, unknown>) =>
   console.log(JSON.stringify(event));
+let health: LedgerTipHealth | null = null;
 
 /** Whether the database already holds the ledger the loop extends. Asked
  * before migrating, so a loop pointed at any other database (the old
@@ -42,11 +48,13 @@ async function holdsLedger(db: Client) {
   const r = await db.query(
     "SELECT to_regclass('agg_streams') IS NOT NULL AS present",
   );
-  if (!r.rows[0].present) return false;
+  if (!r.rows[0].present) return null;
   const stream = await db.query(
     "SELECT cursor_block FROM agg_streams WHERE chain_id=4663 AND stream_key='ledger:agg:v1'",
   );
-  return stream.rows[0]?.cursor_block != null;
+  return stream.rows[0]?.cursor_block == null
+    ? null
+    : Number(stream.rows[0].cursor_block);
 }
 async function locks(db: Client) {
   // A deployment overlap: the previous instance releases on SIGTERM.
@@ -66,6 +74,14 @@ async function main() {
   if (mode !== "run" && mode !== "once" && mode !== "status")
     throw Error("Expected run, once or status");
   const config = ledgerTipConfig();
+  let healthServer: Server | null = null;
+  if (mode === "run") {
+    health = new LedgerTipHealth({ staleMs: config.staleMs });
+    healthServer = await serveLedgerTipHealth(health, {
+      port: config.healthPort,
+      log: emit,
+    });
+  }
   const db = createClient(undefined, {
     statementTimeoutMs: 600000,
     applicationName: "pools-ledger-tip",
@@ -77,14 +93,22 @@ async function main() {
   });
   await db.connect();
   try {
-    if (!(await holdsLedger(db))) {
+    const refuse = (
+      message: "ledger_tip_requires_pass" | "ledger_tip_ledger_incomplete",
+    ) => {
+      const error = Error(message);
       process.exitCode = ledgerTipExitCodes.inspection;
+      health?.stopped("inspection", ledgerTipSafeError(error));
       console.error(
         JSON.stringify({
           event: "ledger_tip_refused",
-          error: ledgerTipSafeError(Error("ledger_tip_requires_pass")),
+          error: ledgerTipSafeError(error),
         }),
       );
+    };
+    const cursor = await holdsLedger(db);
+    if (cursor === null) {
+      refuse("ledger_tip_requires_pass");
       return;
     }
     if (mode === "status") {
@@ -92,6 +116,11 @@ async function main() {
       return;
     }
     assertLedgerTipAllowed(config);
+    if (await ledgerTipIncomplete(db)) {
+      refuse("ledger_tip_ledger_incomplete");
+      return;
+    }
+    health?.ready(cursor);
     let throttled = 0;
     const pacer = new HyperSyncPacer();
     const client = () =>
@@ -121,7 +150,9 @@ async function main() {
       pollMs: config.pollMs,
       windowRefreshMs: config.windowRefreshMs,
       crowdEnabled: config.crowdEnabled,
+      staleMs: config.staleMs,
     });
+    health?.starting("locking");
     if (!(await locks(db))) {
       if (stop.signal.aborted) return;
       throw Error("Another process holds the ledger writer lock");
@@ -136,6 +167,7 @@ async function main() {
       // the driver, whose call timeout is the statement budget, and 022 takes
       // one to three minutes on a production-shaped copy against the ten
       // minutes a batch's own statements keep.
+      health?.starting("migrating");
       const migrator = createClient(undefined, {
         statementTimeoutMs: 3600000,
         applicationName: "pools-ledger-tip-migrate",
@@ -146,6 +178,7 @@ async function main() {
       } finally {
         await migrator.end();
       }
+      health?.starting("first_cycle");
       const warmth = new DatabaseWarmth(
         createWarmSet(process.env.DATABASE_URL!, "ledger", undefined, emit),
         { log: emit },
@@ -153,6 +186,7 @@ async function main() {
       try {
         const summary = await runLedgerTip(db, {
           warmth,
+          observer: health ?? undefined,
           client,
           rpc: () => createLedgerPassRpc(config, stop.signal),
           rangeBlocks: config.rangeBlocks,
@@ -176,9 +210,11 @@ async function main() {
     }
   } finally {
     await db.end();
+    healthServer?.close();
   }
 }
 main().catch((e) => {
+  health?.stopped("failed", ledgerTipSafeError(e));
   console.error(
     JSON.stringify({
       event: "ledger_tip_failed",

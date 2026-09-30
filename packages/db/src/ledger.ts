@@ -217,7 +217,7 @@ export async function setLedgerMode(
 ) {
   if (mode !== "pass" && mode !== "tip") throw Error("ledger_invalid_mode");
   await db.query(
-    "UPDATE agg_streams SET mode=$2,updated_at=clock_timestamp() WHERE chain_id=4663 AND stream_key=$1",
+    "UPDATE agg_streams SET mode=$2 WHERE chain_id=4663 AND stream_key=$1",
     [checkedKey(key), mode],
   );
 }

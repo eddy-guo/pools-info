@@ -26,6 +26,7 @@ test("warming refuses all database routes before reads/cache/budget while health
       assertReady: (v) => warmth.assertReady(v),
       read: async (r) => {
         if (r.route === "ready") return { ready: true };
+        if (r.route === "health") return { ok: true, ledger: null };
         reads++;
         return { reads };
       },
@@ -129,7 +130,8 @@ test("readiness follows a pending warm set on the fake clock", async (t) => {
   const server = createApi(
     {
       assertReady: (version) => warmth.assertReady(version),
-      read: async () => ({ ready: true }),
+      read: async (r) =>
+        r.route === "health" ? { ok: true, ledger: null } : { ready: true },
       close: async () => {},
     },
     { now: () => time },
@@ -213,6 +215,79 @@ test("slow explorer reads cannot occupy database slots or request budget", async
     releases.forEach((release) => release());
     await Promise.allSettled(held);
   }
+});
+
+test("health serves the ledger's freshness outside the warmth gate and the request budget, 503 once the ledger is stale, one read per cache window", async (t) => {
+  let now = 1_790_000_000_000;
+  let reads = 0;
+  let ageSeconds = 90;
+  const ledger = () => ({
+    cursorBlock: 75736415,
+    cursorTimestamp: 1790693005,
+    headBlock: 75736543,
+    headTimestamp: 1790693018,
+    lagBlocks: 128,
+    lagSeconds: 13,
+    indexedAt: "2026-09-29T14:43:08.068Z",
+    checkedAt: "2026-09-29T14:43:25.881Z",
+    ageSeconds,
+    staleAfterSeconds: 600,
+    stale: ageSeconds > 600,
+  });
+  const warmth = new DatabaseWarmth(async (c) => c.identity("db"));
+  const server = createApi(
+    {
+      assertReady: (v) => warmth.assertReady(v),
+      read: async (r) => {
+        assert.equal(r.route, "health");
+        reads++;
+        const fresh = ledger();
+        return fresh.stale
+          ? { ok: false, reason: "ledger_stale", ledger: fresh }
+          : { ok: true, ledger: fresh };
+      },
+      close: async () => {},
+    },
+    // Every budgeted read is refused, and the gate never opens.
+    { now: () => now, maxPerMinute: 0, cacheMs: 5000 },
+  );
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(async () => {
+    server.close();
+    await once(server, "close");
+    await warmth.close();
+  });
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  assert.equal((await fetch(base + "/v1/explore")).status, 503);
+  const fresh = await fetch(base + "/health");
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await fresh.json(), { ok: true, ledger: ledger() });
+  // Polled within the window: the memo answers, coalesced with nothing read.
+  ageSeconds = 700;
+  const [again, head] = await Promise.all([
+    fetch(base + "/health"),
+    fetch(base + "/health", { method: "HEAD" }),
+  ]);
+  assert.equal(again.status, 200);
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  assert.equal(reads, 1);
+  // The window elapses: the ledger has stopped moving, and the status says so.
+  now += 5000;
+  const stale = await fetch(base + "/health");
+  assert.equal(stale.status, 503);
+  assert.equal(stale.headers.get("retry-after"), null);
+  assert.deepEqual(await stale.json(), {
+    ok: false,
+    reason: "ledger_stale",
+    ledger: ledger(),
+  });
+  assert.equal(reads, 2);
+  assert.equal((await fetch(base + "/health")).status, 503);
+  assert.equal(reads, 2);
+  assert.equal((await fetch(base + "/v1/explore")).status, 503);
 });
 
 test("a response started before invalidation cannot be served or cached after recovery", async (t) => {
