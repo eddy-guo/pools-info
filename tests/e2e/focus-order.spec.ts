@@ -97,7 +97,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
         "Search tokens, wallets, creators",
         "ETH",
         "USD, price unavailable",
-        "Set my wallet",
+        "You: nothing saved yet",
         "Pools",
         "Traders",
         "Creators",
@@ -111,7 +111,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
         "Search tokens, wallets, creators",
         "ETH",
         "USD, price unavailable",
-        "Set my wallet",
+        "You: nothing saved yet",
       ];
   expect(names.slice(0, header.length)).toEqual(
     header.map((name) => expect.stringContaining(name)),
@@ -131,7 +131,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
     expect(card.map((stop) => stop.name)).toEqual([
       `${wallet.slice(0, 6)}…${wallet.slice(-4)}`,
       "Copy address",
-      "Open address on explorer",
+      "Open address on explorer (opens in a new tab)",
       `Follow ${wallet}`,
     ]);
     expectReadingOrder(card);

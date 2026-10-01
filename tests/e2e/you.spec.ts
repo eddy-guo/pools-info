@@ -613,17 +613,20 @@ test("following from the leaderboard confirms with a View link that lands on the
   await expect(entry(page)).toHaveAccessibleName("You: 0 watched, 1 followed");
   await toast(page).getByRole("button", { name: "Dismiss" }).click();
   await expect(toast(page)).toHaveCount(0);
-  // Unfollowing confirms too, with Undo rather than a link.
-  await page.getByRole("button", { name: `Unfollow ${address}` }).click();
+  // Unfollowing confirms too, with Undo rather than a link. The toggle keeps
+  // one name; its pressed state alone says whether the wallet is followed.
+  await expect(follow).toHaveAttribute("aria-pressed", "true");
+  await follow.click();
   await expect(toast(page)).toContainText(`Unfollowed ${short(address)}`);
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
   await expect(badge(page)).toHaveCount(0);
   await toast(page).getByRole("button", { name: "Undo" }).click();
-  await expect(
-    page.getByRole("button", { name: `Unfollow ${address}` }),
-  ).toHaveAttribute("aria-pressed", "true");
+  await expect(follow).toHaveAttribute("aria-pressed", "true");
   await expect(badge(page)).toHaveText("1");
-  await page.getByRole("button", { name: `Unfollow ${address}` }).click();
-  await page.getByRole("button", { name: `Follow ${address}` }).click();
+  await follow.click();
+  await expect(follow).toHaveAttribute("aria-pressed", "false");
+  await follow.click();
+  await expect(follow).toHaveAttribute("aria-pressed", "true");
   const link = toast(page).getByRole("link", { name: "View" });
   await expect(link).toHaveAttribute("href", "/you/#following");
   await link.click();
