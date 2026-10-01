@@ -11,6 +11,8 @@ import {
   type AnalyticsWalletResponse,
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
+import { useReportCut } from "@/lib/freshness";
+import { UpdatedStamp } from "./freshness";
 import {
   useWalletTradeHistory,
   REVEAL_STEP as TRADE_HISTORY_STEP,
@@ -124,6 +126,9 @@ export function ProductWallet({ address }: { address: string }) {
      on screen; every figure below it is replaced by the one honest line,
      never by a placeholder that goes on shimmering. */
   const failed = !!error && !data;
+  /* The header's freshness stamp: the wallet read's own cut (its window
+     refresh's chain timestamp), block unnamed; nothing once it failed. */
+  useReportCut("wallet", null, failed ? null : (data?.coverage.asOf ?? null));
   // The browser's own wallet reads as its portfolio; the server paints the
   // public framing and hydration swaps whole nodes, never text in place.
   const mine = useMyWallet().isMine(address);
@@ -621,26 +626,13 @@ export function ProductWallet({ address }: { address: string }) {
                 )}
                 {tab === "trades" && (
                   <>
-                    <div className="wallet-positions-context">
-                      <span>Updated</span>
-                      <strong data-pending={!tradeHistory.fetchedAt}>
-                        {tradeHistory.fetchedAt == null ? (
-                          "Pending"
-                        ) : (
-                          <Fragment key={tradeHistory.fetchedAt}>
-                            <time
-                              dateTime={new Date(
-                                tradeHistory.fetchedAt * 1000,
-                              ).toISOString()}
-                              title={utc(tradeHistory.fetchedAt)}
-                            >
-                              {since(tradeHistory.fetchedAt, renderedAt)}
-                            </time>{" "}
-                            ago
-                          </Fragment>
-                        )}
-                      </strong>
-                    </div>
+                    {/* The explorer page's own fetch time is a cut of its
+                        own, not the page's, so the tab keeps a stamp beside
+                        the header's. */}
+                    <UpdatedStamp
+                      at={tradeHistory.fetchedAt}
+                      failed={tradeHistory.failed}
+                    />
                     <div
                       className="table-region"
                       data-empty={

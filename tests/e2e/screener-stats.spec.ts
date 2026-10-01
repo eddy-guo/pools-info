@@ -164,10 +164,19 @@ test.describe("contract-backed screener stats", () => {
     });
     status = 200;
     body = sample();
+    // The clock held still at eight seconds past the sample's cut, so the
+    // header's stamp reads exactly.
+    await page.clock.setFixedTime(new Date((sample().asOf + 8) * 1000));
     await page.goto(origin, { waitUntil: "commit" });
     const stats = page.locator(".explore-page .screener-stats");
     await expect(stats).toBeVisible();
     await expect(stats.locator(".stat")).toHaveCount(3);
+    /* The stats read names the block it summed through, so on the screener
+       the header's freshness stamp carries it (the explore rows' cut, a
+       bare timestamp, yields to it). */
+    await expect(page.locator(".subnav-freshness")).toHaveText(
+      "block 12,345,678 · indexed 8s ago",
+    );
     await expect(stats.locator(".stat > span")).toHaveText([
       "Volume · 24h",
       "Launches · 24h",

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { type AnalyticsPoolDetail, type ObservedMarket } from "@pools/core";
 import { DATA_UNAVAILABLE, useProduct } from "@/lib/use-product";
+import { useReportCut } from "@/lib/freshness";
 import { useRememberedPoolRow } from "@/lib/pool-row-memory";
 import { useQuery } from "./state";
 import { useMarket } from "./live-ui";
@@ -66,6 +67,18 @@ export function PoolDetail({
      paint. Reading it once keeps that region's height fixed from then on. */
   const [expectChart] = useState(() => remembered?.measured !== false);
   const publication = saved.data?.analytics;
+  /* The header's freshness stamp: the served market's cutoff (the ledger's
+     or the broad stream's, block and timestamp), else the publication
+     snapshot's own cut, else nothing while the read is pending or failed. */
+  const cut =
+    saved.data?.market?.coverage.cutoff ??
+    (publication
+      ? {
+          block: publication.snapshot.toBlock,
+          asOf: publication.snapshot.toTimestamp,
+        }
+      : null);
+  useReportCut("pool", cut?.block, cut?.asOf);
   const publishedMarket = publication?.snapshot.markets.find(
     (m) => m.id === id && m.accounting?.executions,
   );

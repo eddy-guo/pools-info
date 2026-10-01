@@ -9,7 +9,7 @@ import {
 } from "@pools/core";
 import { useProduct } from "@/lib/use-product";
 import { AddressChip, EmptyState, UnavailableState } from "./ui";
-import { utc } from "./live-ui";
+import { UpdatedStamp } from "./freshness";
 import { reservedRowCount } from "./product-common";
 import {
   RowFiller,
@@ -148,32 +148,22 @@ export function FollowActivity({ feed }: { feed: FollowActivityFeed }) {
         Recent trades from wallets you follow. Informational, not advice. Trades
         are never executed here.
       </p>
-      <div className={`wallet-positions-context ${styles.context}`}>
-        <span role={error && data ? "alert" : undefined}>
-          {error && data ? (
-            <Fragment key="failed">Update failed</Fragment>
-          ) : paused ? (
-            <Fragment key="paused">Updates paused</Fragment>
-          ) : null}
-        </span>
-        <span>Updated</span>
-        <strong data-pending={generatedAt === null && !failed}>
-          {generatedAt === null ? (
-            failed ? (
-              " "
-            ) : (
-              "Pending"
-            )
-          ) : (
-            <time
-              key={generatedAt}
-              dateTime={new Date(generatedAt * 1000).toISOString()}
-            >
-              {utc(generatedAt)}
-            </time>
-          )}
-        </strong>
-      </div>
+      {/* The feed's generation time is the panel's own cut, distinct from
+          the page's, so it carries the shared per-panel stamp. */}
+      <UpdatedStamp
+        at={generatedAt}
+        failed={failed}
+        className={styles.context}
+        status={
+          <span role={error && data ? "alert" : undefined}>
+            {error && data ? (
+              <Fragment key="failed">Update failed</Fragment>
+            ) : paused ? (
+              <Fragment key="paused">Updates paused</Fragment>
+            ) : null}
+          </span>
+        }
+      />
       <div className="table-region" data-empty={loaded && !items.length}>
         <div
           className="table-scroll wallet-list-region"

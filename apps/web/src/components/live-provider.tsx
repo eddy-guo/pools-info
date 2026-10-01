@@ -106,36 +106,3 @@ export function useLive() {
   if (!state) throw Error("Missing live provider");
   return state;
 }
-export function Freshness() {
-  const { snapshot: s, status, enabled, setEnabled, refresh } = useLive();
-  if (!s.markets.length) return null;
-  const labels: Record<string, string> = {
-    checking: "Checking for updates",
-    current: "Automatic updates active",
-    delayed: "Updates delayed - showing last captured data",
-    paused: "Updates paused",
-  };
-  return (
-    <div className={`live-freshness ${status === "delayed" ? "stale" : ""}`}>
-      <div>
-        <strong role="status">{labels[status]}</strong>
-        <span>
-          Block {s.toBlock.toLocaleString("en-US")} · Captured{" "}
-          {new Date(s.generatedAt).toISOString().slice(0, 19).replace("T", " ")}{" "}
-          UTC · {s.markets.length} recent pools
-        </span>
-      </div>
-      <div>
-        <button
-          className="button secondary"
-          onClick={() => setEnabled(!enabled)}
-        >
-          {enabled ? "Pause updates" : "Resume updates"}
-        </button>
-        <button className="button secondary" onClick={refresh}>
-          Check now
-        </button>
-      </div>
-    </div>
-  );
-}
