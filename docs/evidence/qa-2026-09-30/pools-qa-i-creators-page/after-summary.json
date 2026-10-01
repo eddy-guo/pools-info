@@ -1,0 +1,22 @@
+{
+  "creators-1440": {
+    "url": "/creators/?sort=median",
+    "cls": 0,
+    "shifts": []
+  },
+  "creator-1440": {
+    "url": "/creators/0x9cc93c5c81e347d8e154cd0d12dffb5db6b09d5f/",
+    "cls": 0,
+    "shifts": []
+  },
+  "creators-390": {
+    "url": "/creators/?sort=median",
+    "cls": 0,
+    "shifts": []
+  },
+  "creator-390": {
+    "url": "/creators/0x9cc93c5c81e347d8e154cd0d12dffb5db6b09d5f/",
+    "cls": 0,
+    "shifts": []
+  }
+}

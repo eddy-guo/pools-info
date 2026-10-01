@@ -5,8 +5,8 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
    copy with a "Copied" confirmation and an explorer link, at the row's own
    height on both viewports. Traders opt into its readable 30px monogram.
    Creators uses the chip's `size="large"` variant (a 28px identity tile, the
-   short address on both the name and address lines,
-   since no name field exists anywhere in this app), so its shape and
+   short address once as the name line, since no name field exists anywhere
+   in this app, and a badge on the line beneath), so its shape and
    identity size diverges from the screener's compact chip by design, matching
    the export's row. Its phone rows keep the compact chip. */
 
@@ -105,7 +105,8 @@ function measure(page: Page, rows: string) {
       };
       return {
         height: Math.round(rowBox.height),
-        text: link.querySelector(".mono")?.textContent ?? "",
+        text:
+          link.querySelector(".address-chip-name, .mono")?.textContent ?? "",
         href: link.getAttribute("href") ?? "",
         title: link.title,
         identicon: box(chip.querySelector(".avatar")!).height,
@@ -301,7 +302,7 @@ test("the shared address chip gives only traders a readable monogram", async ({
   if (project === "desktop")
     expect(
       shapeByCell.get("creators sender"),
-      "creators' large chip carries the name and address lines, not just the address",
+      "creators' large chip carries the name line, not the compact address",
     ).not.toBe(shapeByCell.get("screener sender"));
   else
     expect(

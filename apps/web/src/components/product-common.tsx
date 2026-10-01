@@ -1,7 +1,13 @@
 "use client";
 
+import Link from "next/link";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { poolHref, type AnalyticsPoolRow } from "@pools/core";
 import { useBelowListKey } from "@/lib/list-release";
+import { rememberPoolRow } from "@/lib/pool-row-memory";
 import { showMoreCount } from "@/lib/show-more-count";
+import { tokenLabel, tokenSubSymbol } from "@/lib/token-identity";
+import { PoolImage } from "./pool-image";
 
 /**
  * Pending values occupy the same line box as resolved values, without fake
@@ -115,5 +121,69 @@ export function ShowMore({
         </button>
       )}
     </div>
+  );
+}
+
+const subscribeClock = (notify: () => void) => {
+  const id = setInterval(notify, 30000);
+  return () => clearInterval(id);
+};
+const currentSeconds = () => Math.floor(Date.now() / 1000);
+const serverSeconds = () => null;
+/** The wall clock in seconds, ticking every 30 s; null on the server and
+    through hydration, so a relative age paints only once the client knows
+    the time. */
+export function useClockSeconds() {
+  return useSyncExternalStore<number | null>(
+    subscribeClock,
+    currentSeconds,
+    serverSeconds,
+  );
+}
+/**
+ * A pool with neither a deep publication nor a broad rollup has no market
+ * evidence at all; it reads as a launch rather than as a row of N/A.
+ */
+export const launchOnly = (pool: AnalyticsPoolRow) =>
+  !pool.processed && !pool.marketCoverage;
+/** A pool's token tile: its image, its name and a subtitle (by default the
+    symbol and launch date), opening the pool's page. The screener's rows
+    and a creator's launches share it. */
+export function PoolCell({
+  pool,
+  subtitle,
+}: {
+  pool: AnalyticsPoolRow;
+  subtitle?: ReactNode;
+}) {
+  /* The read API does not publish every pool's detail; the page this row opens
+     reads back what the row already showed rather than dropping its identity. */
+  useEffect(() => rememberPoolRow(pool), [pool]);
+  return (
+    <Link className="token-cell" href={poolHref(pool)}>
+      <PoolImage
+        poolId={pool.id}
+        token={pool.token}
+        symbol={pool.symbol}
+        hasImage={!!pool.imageUrl}
+      />
+      <span>
+        <strong>{tokenLabel(pool)}</strong>
+        <small>
+          {subtitle ??
+            ([
+              tokenSubSymbol(pool),
+              launchOnly(pool)
+                ? null
+                : new Date(pool.launchedAt * 1000).toLocaleDateString("en-US", {
+                    timeZone: "UTC",
+                  }),
+            ]
+              .filter(Boolean)
+              .join(" · ") ||
+              "\u00a0")}
+        </small>
+      </span>
+    </Link>
   );
 }

@@ -7,7 +7,8 @@ import type {
 /** A creator's own page reads its launches through the explore read, one
     page of the launch order at a time; this fabricates one creator's history
     with more launches than a page, newest first, where only every
-    `measuredEvery`th launch carries a market figure. */
+    `measuredEvery`th launch carries a market figure and every fifth is a
+    crowd launch. */
 export const creatorAddress = "0x00d153da1a8a38d3903273295257e7d25cf78a57";
 
 const coverage: AnalyticsCoverage = {
@@ -34,6 +35,7 @@ export function creatorLaunches(total: number, measuredEvery: number) {
       launchSender: creatorAddress,
       launchBlock: 1_000_000 + n,
       launchedAt: 1_700_000_000 + n * 60,
+      launchType: n % 5 === 0 ? "crowd" : "instant",
       marketCoverage: null,
       processed: false,
       market: null,
@@ -54,14 +56,16 @@ export function creatorLaunches(total: number, measuredEvery: number) {
   });
 }
 
-/** The page of `launches` a creator-page explore read at `url` asks for, or
-    null when the read is not this creator's. */
+/** The page of `launches` a creator-page explore read at `url` asks for, in
+    the launch order's direction (newest first unless `direction=asc`, the
+    page's first-launch read), or null when the read is not this creator's. */
 export function creatorLaunchesPage(
   launches: AnalyticsPoolRow[],
   url: string,
 ): {
   offset: number;
   limit: number;
+  direction: "asc" | "desc";
   json: AnalyticsExploreResponse & { delivery: { source: "indexer" } };
 } | null {
   const params = new URL(url).searchParams;
@@ -72,13 +76,16 @@ export function creatorLaunchesPage(
     return null;
   const offset = Number(params.get("offset") ?? 0);
   const limit = Number(params.get("limit") ?? 25);
+  const direction = params.get("direction") === "asc" ? "asc" : "desc";
+  const ordered = direction === "asc" ? [...launches].reverse() : launches;
   return {
     offset,
     limit,
+    direction,
     json: {
       coverage,
       broadMarketCutoff: null,
-      items: launches.slice(offset, offset + limit),
+      items: ordered.slice(offset, offset + limit),
       total: launches.length,
       nextOffset: offset + limit < launches.length ? offset + limit : null,
       window: "24h",

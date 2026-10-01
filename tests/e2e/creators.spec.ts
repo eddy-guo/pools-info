@@ -376,7 +376,7 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     },
     {
       address: unmeasuredAddress,
-      launches: 3,
+      launches: 1,
       measured: 0,
       traded: 0,
       volumeWei: null,
@@ -430,6 +430,13 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     await expect(cards.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
     await expect(first.locator(".mobile-creator-launches strong")).toHaveText(
       "14",
+    );
+    await expect(first.locator(".mobile-creator-launches span")).toHaveText(
+      "launches",
+    );
+    // One launch takes the singular noun.
+    await expect(cards.nth(4).locator(".mobile-creator-launches")).toHaveText(
+      "1launch",
     );
     const stats = first.locator(".mobile-creator-stats");
     await expect(stats).toContainText("Vol 412.80 ETH");
@@ -494,16 +501,22 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   await expect(rank(2)).toHaveCSS("color", "rgb(201, 138, 92)");
   await expect(rank(3)).toHaveCSS("color", "rgb(154, 154, 164)");
 
-  // The creator cell: a 28px monogram, the short address as both the name
-  // and the mono address line beneath it (no ENS-style name source exists
-  // anywhere in this app), and the BOUGHT OWN chip only where the API says so.
+  // The creator cell: a 28px monogram and the short address once, as the
+  // name (no ENS-style name source exists anywhere in this app, and the
+  // address is not repeated under itself), with the BOUGHT OWN chip on the
+  // line beneath only where the API says so.
   const firstChip = rowsLocator.first().locator(".address-chip");
   await expect(firstChip.locator(".avatar")).toHaveCSS("width", "28px");
   await expect(firstChip.locator(".avatar")).toHaveCSS("height", "28px");
   await expect(firstChip.locator(".address-chip-name")).toHaveText(goldShort);
-  await expect(firstChip.locator(".address-chip-lines .mono")).toHaveText(
-    goldShort,
+  await expect(firstChip.locator(".address-chip-link")).toHaveText(
+    `${goldShort}BOUGHT OWN`,
   );
+  await expect(
+    rowsLocator.nth(1).locator(".address-chip-link"),
+    "a row with no badge prints the address once and nothing under it",
+  ).toHaveText(shortAddress(silverAddress));
+  await expect(rowsLocator.nth(1).locator(".address-chip-meta")).toHaveCount(0);
   await expect(firstChip.locator(".address-chip-name")).toHaveCSS(
     "font-size",
     "14px",
@@ -517,6 +530,13 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     "font-size",
     "10px",
   );
+  // The export's chip: the up colour on its own outline, no fill.
+  const chipBadge = rowsLocator.first().getByText("BOUGHT OWN");
+  await expect(chipBadge).toHaveCSS("color", "rgb(63, 214, 140)");
+  await expect(chipBadge).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  expect(
+    await chipBadge.evaluate((node) => getComputedStyle(node).borderTopColor),
+  ).toMatch(/^(rgba\(63, 214, 140|color\(srgb 0\.24\d* 0\.83\d* 0\.54\d*)/);
   await expect(rowsLocator.nth(1).getByText("BOUGHT OWN")).toHaveCount(0);
 
   // Launches right-aligned at 14/400.
@@ -596,82 +616,157 @@ async function serveCreatorLaunches(
   await page.route("**/api/product/explore/?**", async (route) => {
     const read = creatorLaunchesPage(launches, route.request().url());
     if (!read) return route.continue();
-    reads.push({ offset: read.offset, limit: read.limit });
+    // The list's own pages; the first-launch tile's one-row read of the
+    // other end is not one of them.
+    if (read.direction === "desc")
+      reads.push({ offset: read.offset, limit: read.limit });
     await route.fulfill({ json: read.json });
   });
 }
 
-test("a creator's unmeasured launches show their identity and launch time with empty figures, under the launch count", async ({
+const launchDate = (seconds: number) =>
+  new Date(seconds * 1000).toISOString().slice(0, 10);
+
+test("a creator's page carries the export's breadcrumb, served stat tiles and launch columns, with empty figures for an unmeasured launch", async ({
   page,
   isMobile,
 }) => {
   const launches = creatorLaunches(10, 4);
+  // One measured launch with a swap in the window, for the Active status.
+  launches[4].stats.trades = 3;
   await serveCreatorLaunches(page, launches);
   await page.goto(`/creators/${creatorAddress}/`);
+  const short = shortAddress(creatorAddress);
+
+  const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
+  await expect(crumbs).toHaveText(`Creators/${short}`);
+  await expect(crumbs.getByRole("link", { name: "Creators" })).toHaveAttribute(
+    "href",
+    "/creators/",
+  );
+  await expect(page.locator(".page-heading h1")).toHaveText(short);
+  await expect(
+    page.getByRole("link", { name: "Trading activity" }),
+  ).toHaveAttribute("href", `/wallet/${creatorAddress}/?window=All`);
+
+  // Only the tiles the reads serve: the launch count and the launch order's
+  // two ends. None of the export's per-creator aggregates is estimated.
+  const tiles = page.locator(".creator-stats .stat");
+  await expect(tiles).toHaveCount(3);
+  await expect(tiles.locator("> span")).toHaveText([
+    "Launches",
+    "First launch",
+    "Latest launch",
+  ]);
+  await expect(tiles.nth(0).locator("strong")).toHaveText("10");
+  await expect(tiles.nth(1).locator("strong")).toHaveText(/^\d+d ago$/);
+  await expect(tiles.nth(1).locator("small")).toHaveText(
+    launchDate(launches[9].launchedAt),
+  );
+  await expect(tiles.nth(2).locator("strong")).toHaveText(/^\d+d ago$/);
+  await expect(tiles.nth(2).locator("small")).toHaveText(
+    launchDate(launches[0].launchedAt),
+  );
+
   const panel = page.locator(".creator-launches");
   const rows = panel.locator(
     isMobile
-      ? '.mobile-launch[data-row="resolved"]'
+      ? '.mobile-pool[data-row="resolved"]'
       : 'tbody tr[data-row="resolved"]',
   );
   await expect(rows).toHaveCount(10);
   // The page reserves its default 25-row shape from the URL until the read
   // lands, then keeps only this creator's ten rows: no blank rows past them.
   await expect(
-    panel.locator(isMobile ? ".mobile-launch" : "tbody tr"),
+    panel.locator(isMobile ? ".mobile-pool" : "tbody tr"),
   ).toHaveCount(10);
   await expect(panel.locator(".pagination-count")).toHaveText(
     "Showing 10 of 10",
   );
   await expect(panel.getByRole("button", { name: /^Show/ })).toHaveCount(0);
-  // The badge is the count the read names, never a coverage claim.
-  await expect(panel.locator(".panel-heading .badge")).toHaveText("10");
-  await expect(panel).not.toContainText("covered");
-  // No launch waits on a pass that will not come: an unmeasured launch keeps
-  // its identity and launch time and leaves its figure cells empty.
-  await expect(panel).not.toContainText("Processing");
-  await expect(panel).not.toContainText("N/A");
+  for (const copy of [
+    "covered",
+    "Processing",
+    "N/A",
+    "No swap observed",
+    "Creator fees",
+    "UTC",
+  ])
+    await expect(page.locator("main"), copy).not.toContainText(copy);
+
+  // The token is the screener's own tile: name, then symbol and age.
   const measured = rows.first();
   const unmeasured = rows.nth(1);
-  await expect(measured.locator("a").first()).toHaveText("Launch 10 (L10)");
-  await expect(unmeasured.locator("a").first()).toHaveText("Launch 9 (L9)");
-  const utc = (seconds: number) =>
-    new Date(seconds * 1000).toISOString().slice(0, 19).replace("T", " ") +
-    " UTC";
+  await expect(measured.locator(".token-cell strong")).toHaveText("Launch 10");
+  await expect(measured.locator(".token-cell small")).toHaveText(
+    /^L10 · \d+d old$/,
+  );
+  await expect(measured.locator(".token-cell")).toHaveAttribute(
+    "href",
+    poolHref(launches[0]),
+  );
+  await expect(
+    measured.locator(".token-cell .avatar, .token-cell img"),
+  ).toHaveCount(1);
   if (isMobile) {
-    await expect(measured.locator(".mobile-launch-top .number")).toHaveText(
-      "1.00 ETH",
+    await expect(measured.locator(".mobile-pool-price .change")).toHaveText(
+      "+1.50%",
     );
-    await expect(measured.locator(".mobile-launch-stats")).toHaveText(
-      `${utc(launches[0].launchedAt)} · No swap observed`,
+    await expect(measured.locator(".mobile-pool-stats")).toHaveText(
+      "Crowd · Vol 1.00 ETHDormant",
     );
-    await expect(unmeasured.locator(".mobile-launch-top .number")).toHaveText(
-      "Unavailable",
+    await expect(unmeasured.locator(".mobile-pool-price")).toHaveText(
+      "UnavailableUnavailable",
     );
-    await expect(unmeasured.locator(".mobile-launch-stats")).toHaveText(
-      utc(launches[1].launchedAt),
+    await expect(unmeasured.locator(".mobile-pool-stats")).toHaveText(
+      "InstantUnavailable",
     );
+    for (const card of await rows.all())
+      expect((await card.boundingBox())!.height).toBe(104);
     return;
   }
+  await expect(panel.locator("thead th")).toHaveText([
+    "Token",
+    "Mode",
+    "Price",
+    "24h",
+    "24h volume",
+    "Status",
+  ]);
   const cells = (row: Locator) => row.locator("td");
   await expect(cells(measured)).toHaveText([
-    "Launch 10 (L10)",
-    utc(launches[0].launchedAt),
-    "No swap observed",
+    /^Launch 10L10 · \d+d old$/,
+    "Crowd",
+    /\d/,
+    "+1.50%",
     "1.00 ETH",
-    "Unavailable",
+    "Dormant",
   ]);
   await expect(cells(unmeasured)).toHaveText([
-    "Launch 9 (L9)",
-    utc(launches[1].launchedAt),
+    /^Launch 9L9 · \d+d old$/,
+    "Instant",
+    "Unavailable",
     "Unavailable",
     "Unavailable",
     "Unavailable",
   ]);
   await expect(
-    cells(unmeasured).nth(2).locator(".unavailable"),
-    "the empty activity cell still has an accessible status",
-  ).toContainText("Unavailable");
+    cells(unmeasured).nth(5).locator(".unavailable .sr-only"),
+    "the empty status cell still has an accessible status",
+  ).toHaveText("Unavailable");
+  // A launch with a swap in the window reads Active, in the up colour.
+  await expect(cells(rows.nth(4)).nth(5)).toHaveText("Active");
+  await expect(cells(rows.nth(4)).nth(5).locator("span")).toHaveCSS(
+    "color",
+    "rgb(63, 214, 140)",
+  );
+  for (const column of [2, 3, 4, 5])
+    await expect(panel.locator("thead th").nth(column)).toHaveCSS(
+      "text-align",
+      "right",
+    );
+  for (const row of await rows.all())
+    expect((await row.boundingBox())!.height).toBe(62);
 });
 
 test("a creator's launches take the shared 25-row Show more, never the whole history at once", async ({
@@ -683,10 +778,10 @@ test("a creator's launches take the shared 25-row Show more, never the whole his
   await serveCreatorLaunches(page, launches, reads);
   await page.goto(`/creators/${creatorAddress}/`);
   const panel = page.locator(".creator-launches");
-  const rows = panel.locator(isMobile ? ".mobile-launch" : "tbody tr");
+  const rows = panel.locator(isMobile ? ".mobile-pool" : "tbody tr");
   const resolved = panel.locator(
     isMobile
-      ? '.mobile-launch[data-row="resolved"]'
+      ? '.mobile-pool[data-row="resolved"]'
       : 'tbody tr[data-row="resolved"]',
   );
   const footer = panel.locator(".pagination");
@@ -695,15 +790,17 @@ test("a creator's launches take the shared 25-row Show more, never the whole his
 
   await expect(resolved).toHaveCount(25);
   await expect(rows).toHaveCount(25);
-  await expect(panel.locator(".panel-heading .badge")).toHaveText("60");
+  await expect(page.locator(".creator-stats .stat").first()).toContainText(
+    "60",
+  );
   await expect(count).toHaveText("Showing 25 of 60");
   await expect(showMore).toHaveText("Show 25 more");
   expect(reads, "one read of the first page").toEqual([
     { offset: 0, limit: 25 },
   ]);
   // Newest first, as the explore launch order serves them.
-  await expect(resolved.first().locator("a").first()).toHaveText(
-    "Launch 60 (L60)",
+  await expect(resolved.first().locator(".token-cell strong")).toHaveText(
+    "Launch 60",
   );
 
   await showMore.click();

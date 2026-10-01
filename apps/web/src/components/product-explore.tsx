@@ -1,12 +1,6 @@
 "use client";
 import Link from "next/link";
-import {
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
 import {
@@ -27,7 +21,6 @@ import {
 } from "@/lib/stats-response";
 import { useExploreRows } from "@/lib/use-explore-rows";
 import { useReportCut } from "@/lib/freshness";
-import { rememberPoolRow } from "@/lib/pool-row-memory";
 import { tokenLabel, tokenSubSymbol } from "@/lib/token-identity";
 import {
   MAX_WATCHLIST_QUERY_POOLS,
@@ -49,25 +42,16 @@ import { Eth, WindowTabs, useWindow, utc } from "./live-ui";
 import {
   EXPLORE_ROWS_CAP,
   answeredRowCount,
+  launchOnly,
+  PoolCell,
   SHOW_MORE_STEP,
   ShowMore,
+  useClockSeconds,
 } from "./product-common";
 import { countLabel } from "@/lib/plural";
 import { useBelowListKey, useListRelease } from "@/lib/list-release";
-const subscribeClock = (notify: () => void) => {
-  const id = setInterval(notify, 30000);
-  return () => clearInterval(id);
-};
-const currentSeconds = () => Math.floor(Date.now() / 1000);
-const serverSeconds = () => null;
 /** The launches tab: the API sorts this view by launch time on its own. */
 const LAUNCH_VIEW = "new";
-/**
- * A pool with neither a deep publication nor a broad rollup has no market
- * evidence at all; it reads as a launch rather than as a row of N/A.
- */
-const launchOnly = (pool: AnalyticsPoolRow) =>
-  !pool.processed && !pool.marketCoverage;
 /** How far under the sticky site header a panel's head lands. */
 const HEAD_GAP = 12;
 /**
@@ -152,44 +136,6 @@ function RowSubtitle({
         {!full && <span aria-hidden="true">{"\u00a0"}</span>}
       </span>
     </CrowdLine>
-  );
-}
-function PoolCell({
-  pool,
-  subtitle,
-}: {
-  pool: AnalyticsPoolRow;
-  subtitle?: ReactNode;
-}) {
-  /* The read API does not publish every pool's detail; the page this row opens
-     reads back what the row already showed rather than dropping its identity. */
-  useEffect(() => rememberPoolRow(pool), [pool]);
-  return (
-    <Link className="token-cell" href={poolHref(pool)}>
-      <PoolImage
-        poolId={pool.id}
-        token={pool.token}
-        symbol={pool.symbol}
-        hasImage={!!pool.imageUrl}
-      />
-      <span>
-        <strong>{tokenLabel(pool)}</strong>
-        <small>
-          {subtitle ??
-            ([
-              tokenSubSymbol(pool),
-              launchOnly(pool)
-                ? null
-                : new Date(pool.launchedAt * 1000).toLocaleDateString("en-US", {
-                    timeZone: "UTC",
-                  }),
-            ]
-              .filter(Boolean)
-              .join(" · ") ||
-              "\u00a0")}
-        </small>
-      </span>
-    </Link>
   );
 }
 function LaunchLine({
@@ -435,11 +381,7 @@ export function ProductExplore({
   initialStats: ScreenerStatsResponse | null;
   initialSearch: string;
 }) {
-  const now = useSyncExternalStore<number | null>(
-    subscribeClock,
-    currentSeconds,
-    serverSeconds,
-  );
+  const now = useClockSeconds();
   const launches = useProduct<AnalyticsExploreResponse>(
     "explore?sort=launch&direction=desc&limit=6&window=24h",
   );
@@ -604,12 +546,13 @@ export function ProductExplore({
     readQuery.set("sort", "launch");
     readQuery.set("direction", "desc");
   }
-  const { list, stale, loading, settled, error, refresh, asOf } = useExploreRows(
-    readQuery.toString(),
-    view === "watchlist"
-      ? Math.max(1, Math.min(queryWatched.length, MAX_WATCHLIST_QUERY_POOLS))
-      : shown,
-  );
+  const { list, stale, loading, settled, error, refresh, asOf } =
+    useExploreRows(
+      readQuery.toString(),
+      view === "watchlist"
+        ? Math.max(1, Math.min(queryWatched.length, MAX_WATCHLIST_QUERY_POOLS))
+        : shown,
+    );
   /* The rows' own cut names no block; it feeds the stamp only where the
      stats read is not served (a fixture deployment). */
   useReportCut("explore", null, asOf);
