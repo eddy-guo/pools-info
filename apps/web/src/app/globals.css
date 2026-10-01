@@ -1045,11 +1045,6 @@ main {
   overflow-wrap: anywhere;
   white-space: normal;
 }
-/* A full address carries its short form too, for a box that cannot hold the
-   whole string; only such a box shows it. */
-.address-label > .address-short {
-  display: none;
-}
 /* 24px targets (WCAG 2.5.8) around the 14px glyphs; the negative block
    margin keeps them out of an 18px meta line's height. */
 .address-label .icon-button {
@@ -2852,10 +2847,21 @@ main {
   color: var(--color-text-3);
   font-size: 12px;
 }
+/* The export keeps its label at every desktop width, ellipsised where the
+   box narrows; the legacy rule above that hid it under 1250px does not
+   apply to the header's trigger. */
 .header-actions .search-trigger > span {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Disabled only until hydration wires it up: it paints as it will look,
+   label included, instead of a dimmed empty box. */
+.header-actions .search-trigger:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .header-actions .search-trigger kbd {
   margin-left: auto;
@@ -4053,7 +4059,7 @@ button.icon-button:disabled {
     padding: 0 9px;
   }
   .header-actions .search-trigger {
-    max-width: 210px;
+    max-width: 300px;
   }
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 260px;
@@ -4914,14 +4920,6 @@ button.icon-button:disabled {
   width: 150px;
   font-weight: 400;
 }
-.explore-toolbar .icon-button {
-  height: var(--ctl-min);
-  width: var(--ctl-min);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 9px;
-  background: var(--color-panel-raised);
-  color: var(--color-text-3);
-}
 .explore-toolbar .segmented button {
   font-size: 12px;
   font-weight: 600;
@@ -5158,6 +5156,14 @@ button.icon-button:disabled {
   height: 95px;
   overflow: hidden;
 }
+/* The export's compact tiles: a fixed ~180px track filled from the left,
+   rather than three cards stretched to a third of the page each. Phones keep
+   the two-column grid. */
+@container site (min-width: 768px) {
+  .pool-page .live-six-stats {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
 .pool-page .live-six-stats .stat > span {
   display: block;
   line-height: 16px;
@@ -5181,6 +5187,13 @@ button.icon-button:disabled {
   height: 62px;
   color: var(--text);
   font-size: 13px;
+}
+/* The export's bare rank in its own muted slot before the trader. */
+.explore-leader-rows .leader-rank {
+  display: inline-block;
+  min-width: 22px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
 }
 .explore-leader-rows > .leader-link:hover {
   color: var(--text);
@@ -5251,19 +5264,6 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* The 42-character address does not fit a phone's page heading (the wallet's
-   one-line meta row clipped it mid-string; the creator's wrapped one
-   character onto a second line): the head-and-tail short form every other
-   surface uses stands in, and the full address stays on the copy control
-   beside it. */
-@container site (max-width: 767px) {
-  .page-heading .address-label > .address-full {
-    display: none;
-  }
-  .page-heading .address-label > .address-short {
-    display: inline;
-  }
 }
 .wallet-meta .icon-button {
   min-height: 24px;
@@ -5711,13 +5711,20 @@ button.icon-button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Buy/sell is not a PnL signal - it never borrows the app's positive/negative
-   colours, which belong to actual realized/unrealized figures elsewhere on
-   this page. Both sides read in the same neutral ink; the word itself is the
-   only distinction. */
+/* The export's side label: uppercase, semibold, BUY in the up colour and
+   SELL in the down colour. The word stays the distinction for a reader who
+   cannot tell the two hues apart. */
 .wallet-trade-side {
-  color: var(--color-text-2);
-  text-transform: capitalize;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wallet-trade-side[data-side="buy"] {
+  color: var(--color-up);
+}
+.wallet-trade-side[data-side="sell"] {
+  color: var(--color-down);
 }
 .wallet-top-pools {
   height: calc(5 * 62px);

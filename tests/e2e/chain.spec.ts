@@ -132,47 +132,6 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   ).toBe(true);
   expect(errors).toEqual([]);
 });
-test("saved product refresh retains data during failures and recovers without browser RPC", async ({
-  page,
-}) => {
-  const response = preloadedProduct(
-    "explore",
-    new URLSearchParams("q=" + market.token),
-  ) as AnalyticsExploreResponse;
-  let calls = 0;
-  await page.route("**/api/product/explore/?**", async (route) => {
-    const params = new URL(route.request().url()).searchParams;
-    if (!params.get("q")) return route.continue();
-    calls++;
-    if (calls === 2)
-      return route.fulfill({
-        status: 503,
-        json: { error: "Saved index unavailable" },
-      });
-    return route.fulfill({
-      json: { ...response, delivery: { source: "indexer", notice: null } },
-    });
-  });
-  await page.goto(`/?q=${market.token}`);
-  const row = page
-    .locator(".desktop-pools, .mobile-pools")
-    .getByText(market.name, { exact: true })
-    .filter({ visible: true });
-  await expect(row).toBeVisible();
-  await page
-    .locator("main")
-    .getByRole("button", { name: "Refresh saved data" })
-    .click();
-  await expect(page.locator("main").getByRole("alert")).toBeVisible();
-  await expect(row).toBeVisible();
-  await page
-    .locator("main")
-    .getByRole("button", { name: "Refresh saved data" })
-    .click();
-  await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
-  await expect(row).toBeVisible();
-  expect(calls).toBe(3);
-});
 test("creator routes, arbitrary wallet lookup and typed global search remain usable", async ({
   page,
 }) => {

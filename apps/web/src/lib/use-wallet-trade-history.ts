@@ -8,7 +8,7 @@ import {
 } from "./wallet-trade-history-response";
 
 /**
- * The rows revealed per "Load more" click, and the desktop/mobile row area's
+ * The rows revealed per "Show more" click, and the desktop/mobile row area's
  * fixed reservation while the first page is pending. Every other growable
  * list in the app sizes its reservation against a known `total`; this one
  * never learns one (a response reads exactly one 50-transfer explorer page,
@@ -22,7 +22,7 @@ export const REVEAL_STEP = 25;
     with real trades still behind it (docs/WALLET-TRADE-HISTORY.md): the first
     load chains through empty pages on its own, up to this many beyond the
     first, rather than showing a wall of blank reserved rows over an
-    unexplained "Load more" for what is really still loading. Bounded so a
+    unexplained "Show more" for what is really still loading. Bounded so a
     wallet with no trades in the registry at all still settles in one page
     load's worth of explorer credits, not an unbounded chain. */
 const MAX_EMPTY_CONTINUATIONS = 3;

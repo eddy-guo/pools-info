@@ -62,11 +62,12 @@ test("a supported position row opens its own card; an excluded row has no action
   await shareButton(page, "SEYMOUR").click();
   const dialog = page.getByRole("dialog", { name: "Share PnL card" });
   await expect(dialog).toBeVisible();
-  await expect(
-    dialog.getByRole("group", { name: "Card" }).getByRole("button", {
-      name: "Position",
-    }),
-  ).toHaveAttribute("aria-pressed", "true");
+  const positionKind = dialog
+    .getByRole("group", { name: "Card" })
+    .getByRole("button", { name: "Position" });
+  await expect(positionKind).toHaveAttribute("aria-pressed", "true");
+  // The dialog opens on its first control, not on the close button.
+  await expect(positionKind).toBeFocused();
   const picker = dialog.getByRole("combobox", { name: "Preview · Position" });
   await expect(picker).toHaveValue(seymour.poolId);
   const scoped = `/cards/${wallet}.png?pool=${seymour.poolId}&launch=${seymour.launchTx}`;
@@ -148,6 +149,9 @@ test("a supported position row opens its own card; an excluded row has no action
   await expect(
     dialog.getByRole("button", { name: "Portfolio", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    dialog.getByRole("button", { name: "Portfolio", exact: true }),
+  ).toBeFocused();
   await expect(dialog.getByRole("img")).toHaveAttribute(
     "src",
     `/cards/${wallet}.png?window=All&anon=1`,

@@ -40,6 +40,7 @@ import {
   rankedShown,
 } from "@/lib/ranked-rows";
 import { countLabel } from "@/lib/plural";
+import { holdDuration } from "@/lib/hold-duration";
 import { excludedPositionsCaption } from "@/lib/excluded-positions";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
     by the wallet's actual rank rather than row position so the Following
@@ -214,7 +215,7 @@ function DesktopTraderRow({
       data-row={w ? "resolved" : "reserved"}
     >
       <td data-pending={pending} className={rankTierClass(w?.rank)}>
-        {w ? <>#{w.rank}</> : pending ? "Pending" : " "}
+        {w ? <>{w.rank}</> : pending ? "Pending" : " "}
       </td>
       <td data-pending={pending}>
         {w ? (
@@ -349,7 +350,7 @@ function MobileTraderCard({
           <div className="mobile-trader-heading">
             <div className="mobile-trader-identity">
               <span className={`rank-number ${rankTierClass(w.rank) ?? ""}`}>
-                #{w.rank}
+                {w.rank}
               </span>
               <AddressChip
                 address={w.address}
@@ -382,11 +383,7 @@ function MobileTraderCard({
             </span>
             <span className="mobile-trader-foot-stat">
               Hold{" "}
-              {w.avgHold == null ? (
-                <Unavailable />
-              ) : (
-                `${Math.round(w.avgHold)}s`
-              )}
+              {w.avgHold == null ? <Unavailable /> : holdDuration(w.avgHold)}
             </span>
           </div>
           {/* The unattributed-swap disclosure as a third line inside the card's

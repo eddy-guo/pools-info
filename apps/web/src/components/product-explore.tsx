@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { ArrowRight, RefreshCw, Search, Star } from "lucide-react";
+import { ArrowRight, Search, Star } from "lucide-react";
 import {
   poolHref,
   shortAddress,
@@ -229,7 +229,8 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
             href={`/wallet/${trader.address}/?window=${window}`}
           >
             <span>
-              #{trader.rank} {shortAddress(trader.address)}
+              <span className="leader-rank">{trader.rank}</span>
+              {shortAddress(trader.address)}
             </span>
             <Eth wei={trader.realizedWei} signed />
           </Link>
@@ -706,15 +707,6 @@ export function ProductExplore({
                     }}
                   />
                 </label>
-                <button
-                  className="icon-button"
-                  title="Refresh saved data"
-                  aria-label="Refresh saved data"
-                  onClick={refresh}
-                  disabled={loading}
-                >
-                  <RefreshCw size={12} />
-                </button>
                 <WindowTabs
                   value={window}
                   onChange={(value) => {

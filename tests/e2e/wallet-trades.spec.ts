@@ -63,7 +63,7 @@ const resolvedRows = (page: Page) =>
     )
     .filter({ visible: true });
 
-test("a populated page renders exact quantities, neutral sides and no ETH figure", async ({
+test("a populated page renders exact quantities, coloured sides and no ETH figure", async ({
   page,
 }, testInfo) => {
   await page.route(historyPath, (route: Route) =>
@@ -102,9 +102,15 @@ test("a populated page renders exact quantities, neutral sides and no ETH figure
   );
   await expect(first.locator(".wallet-trade-side")).toHaveText("Buy");
   await expect(rows.nth(1).locator(".wallet-trade-side")).toHaveText("Sell");
-  // Side never borrows the app's signed PnL colour classes.
-  for (const side of await region.locator(".wallet-trade-side").all())
-    await expect(side).not.toHaveClass(/positive|negative/);
+  // The export's coloured side: BUY in the up colour, SELL in the down one.
+  await expect(first.locator(".wallet-trade-side")).toHaveCSS(
+    "color",
+    "rgb(63, 214, 140)",
+  );
+  await expect(rows.nth(1).locator(".wallet-trade-side")).toHaveCSS(
+    "color",
+    "rgb(255, 97, 105)",
+  );
   await expect(region).not.toContainText("ETH");
   const txLink = first.getByRole("link", { name: /0x1111…1111/ });
   await expect(txLink).toHaveAttribute(
@@ -203,11 +209,11 @@ test("Load more keys off nextCursor, never a fixed row count", async ({
   await expect(rows).toHaveCount(25);
   expect(calls).toBe(1);
   // The remaining 5 of the 30 already on hand: revealed without a new fetch.
-  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await page.getByRole("button", { name: "Show 25 more" }).click();
   await expect(rows).toHaveCount(30);
   expect(calls).toBe(1);
   // The buffer is exhausted; nextCursor is non-null, so another click fetches.
-  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await page.getByRole("button", { name: "Show 25 more" }).click();
   await expect(rows).toHaveCount(35);
   expect(calls).toBe(2);
   // nextCursor is now null and every row on hand is shown: no further control.
@@ -265,7 +271,7 @@ test("a Load more whose cursor the read API refuses restarts at page one, in pla
       0;
   });
 
-  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await page.getByRole("button", { name: "Show 25 more" }).click();
   await expect.poll(() => cursors).toEqual([null, "v1cursor", null]);
   await expect(rows).toHaveCount(25);
   await expect(page.locator("main [role=alert]")).toHaveCount(0);
@@ -280,7 +286,7 @@ test("a Load more whose cursor the read API refuses restarts at page one, in pla
 
   /* The refused cursor is gone for good: the next Load more reads on from
      the fresh one. */
-  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await page.getByRole("button", { name: "Show 25 more" }).click();
   await expect(rows).toHaveCount(30);
   expect(cursors).toEqual([null, "v1cursor", null, "v2page2"]);
 });
@@ -417,7 +423,7 @@ for (const [width, height] of [
     const rows = resolvedRows(page);
     await expect(rows).toHaveCount(25, { timeout: 20000 });
     await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
-    const loadMore = page.getByRole("button", { name: "Load 25 more" });
+    const loadMore = page.getByRole("button", { name: "Show 25 more" });
     await loadMore.scrollIntoViewIfNeeded();
     await loadMore.click();
     await expect(loadMore).toBeDisabled();
