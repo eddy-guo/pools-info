@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { settledRoute, settleRoutes } from "../support/settled-route";
+
+// The last leaderboard read can still be in flight when the test ends.
+test.afterEach(({ page }) => settleRoutes(page));
 
 test("Top traders follows every screener window without moving its rail", async ({
   page,
@@ -16,7 +20,7 @@ test("Top traders follows every screener window without moving its rail", async 
   });
 
   const requests: string[] = [];
-  await page.route("**/api/product/leaderboard/**", async (route) => {
+  await settledRoute(page, "**/api/product/leaderboard/**", async (route) => {
     const window = new URL(route.request().url()).searchParams.get("window");
     requests.push(window ?? "missing");
     const response = await route.fetch();
@@ -28,9 +32,17 @@ test("Top traders follows every screener window without moving its rail", async 
   const rows = rail.locator(".explore-leader-rows > a");
   const tabs = page.locator('.explore-toolbar [aria-label="Time window"]');
   await expect(rows).toHaveCount(5);
-  const originalHeight = await rail.evaluate(
-    (node) => node.getBoundingClientRect().height,
-  );
+  /* The rail remounts when the list above it releases rows
+     (lib/list-release.ts), and a locator resolves its node and measures it in
+     separate round trips, so a remount between them reads a detached node's
+     0; one evaluate finds and measures whichever rail is mounted. */
+  const railHeight = () =>
+    page.evaluate(
+      () =>
+        document.querySelector(".explore-leaders")!.getBoundingClientRect()
+          .height,
+    );
+  const originalHeight = await railHeight();
   await page.evaluate(() => {
     (window as typeof window & { railWindowShifts: { score: number } })
       .railWindowShifts.score = 0;
@@ -51,9 +63,7 @@ test("Top traders follows every screener window without moving its rail", async 
       "href",
       new RegExp(`\\?window=${railWindow}$`),
     );
-    expect(
-      await rail.evaluate((node) => node.getBoundingClientRect().height),
-    ).toBe(originalHeight);
+    expect(await railHeight()).toBe(originalHeight);
   }
   const cls = await page.evaluate(
     () =>

@@ -1,4 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { settledRoute, settleRoutes } from "../support/settled-route";
+
+// The reads rewritten below start from the real response, and the page can
+// close while one is still in flight.
+test.afterEach(({ page }) => settleRoutes(page));
 
 // Copy the captain removed from the leaderboard header; it must not come back.
 const removedCopy = [
@@ -313,7 +318,7 @@ test("the trader leaderboard never requests past its 100-row cap, even when more
   page,
 }) => {
   const seenCeilings: number[] = [];
-  await page.route("**/api/product/leaderboard/**", async (route) => {
+  await settledRoute(page, "**/api/product/leaderboard/**", async (route) => {
     const response = await route.fetch();
     const json = await response.json();
     const url = new URL(route.request().url());
@@ -368,7 +373,7 @@ test("Following names profile figures for an unranked launcher", async ({ page, 
   await page.addInitScript((address) => {
     localStorage.setItem("poolsinfo.following.v1", JSON.stringify([address]));
   }, topWallet);
-  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+  await settledRoute(page, `**/api/product/wallets/${topWallet}**`, async (route) => {
     const response = await route.fetch();
     const json = await response.json();
     await route.fulfill({
@@ -558,7 +563,7 @@ for (const width of [1440, 1280, 1024, narrowestDesktop]) {
     isMobile,
   }) => {
     test.skip(isMobile, "the phone rows have no columns to overrun");
-    await page.route("**/api/product/leaderboard/**", async (route) => {
+    await settledRoute(page, "**/api/product/leaderboard/**", async (route) => {
       const response = await route.fetch();
       const json = await response.json();
       // Ranks 1-3 sit in the podium, so the flat list's first two rows are
@@ -655,7 +660,7 @@ test("the board prints its trade counts with thousands separators", async ({
 }) => {
   test.skip(isMobile, "the phone cards print no trade count");
   const busy = { rankingTradeCount: 30160, supportedTradeCount: 30160 };
-  await page.route("**/api/product/leaderboard/**", async (route) => {
+  await settledRoute(page, "**/api/product/leaderboard/**", async (route) => {
     const response = await route.fetch();
     const json = await response.json();
     const items = (json.items as Record<string, unknown>[]).map(
@@ -664,7 +669,7 @@ test("the board prints its trade counts with thousands separators", async ({
     );
     await route.fulfill({ response, json: { ...json, items } });
   });
-  await page.route(`**/api/product/wallets/${topWallet}**`, async (route) => {
+  await settledRoute(page, `**/api/product/wallets/${topWallet}**`, async (route) => {
     const response = await route.fetch();
     const json = await response.json();
     await route.fulfill({
