@@ -317,7 +317,7 @@ test("the flat list starts at rank 4 when the podium shows, with a bar and relat
   const desktop = page.locator(".desktop-traders");
   if (await desktop.isVisible()) {
     const firstRow = desktop.locator("tbody tr[data-row=resolved]").first();
-    await expect(firstRow.locator("td").first()).toHaveText("#4");
+    await expect(firstRow.locator("td").first()).toHaveText("4");
     const wl = firstRow.locator("td").nth(4);
     await expect(wl.locator(".wl-bar")).toHaveCount(1);
     await expect(wl).toHaveText(/^\d+W · \d+L$/);
@@ -329,6 +329,6 @@ test("the flat list starts at rank 4 when the podium shows, with a bar and relat
     const firstCard = page.locator(".mobile-trader").first();
     await expect(
       firstCard.locator(".mobile-trader-identity .rank-number"),
-    ).toHaveText("#4");
+    ).toHaveText("4");
   }
 });

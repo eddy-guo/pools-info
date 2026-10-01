@@ -229,7 +229,8 @@ function TopTradersRail({ window }: { window: LiveWindow }) {
             href={`/wallet/${trader.address}/?window=${window}`}
           >
             <span>
-              #{trader.rank} {shortAddress(trader.address)}
+              <span className="leader-rank">{trader.rank}</span>
+              {shortAddress(trader.address)}
             </span>
             <Eth wei={trader.realizedWei} signed />
           </Link>

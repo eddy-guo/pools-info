@@ -5182,6 +5182,13 @@ button.icon-button:disabled {
   color: var(--text);
   font-size: 13px;
 }
+/* The export's bare rank in its own muted slot before the trader. */
+.explore-leader-rows .leader-rank {
+  display: inline-block;
+  min-width: 22px;
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
 .explore-leader-rows > .leader-link:hover {
   color: var(--text);
   background: var(--panel-hover);

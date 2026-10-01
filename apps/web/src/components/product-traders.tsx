@@ -214,7 +214,7 @@ function DesktopTraderRow({
       data-row={w ? "resolved" : "reserved"}
     >
       <td data-pending={pending} className={rankTierClass(w?.rank)}>
-        {w ? <>#{w.rank}</> : pending ? "Pending" : " "}
+        {w ? <>{w.rank}</> : pending ? "Pending" : " "}
       </td>
       <td data-pending={pending}>
         {w ? (
@@ -349,7 +349,7 @@ function MobileTraderCard({
           <div className="mobile-trader-heading">
             <div className="mobile-trader-identity">
               <span className={`rank-number ${rankTierClass(w.rank) ?? ""}`}>
-                #{w.rank}
+                {w.rank}
               </span>
               <AddressChip
                 address={w.address}
