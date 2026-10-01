@@ -5156,6 +5156,14 @@ button.icon-button:disabled {
   height: 95px;
   overflow: hidden;
 }
+/* The export's compact tiles: a fixed ~180px track filled from the left,
+   rather than three cards stretched to a third of the page each. Phones keep
+   the two-column grid. */
+@container site (min-width: 768px) {
+  .pool-page .live-six-stats {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
 .pool-page .live-six-stats .stat > span {
   display: block;
   line-height: 16px;
