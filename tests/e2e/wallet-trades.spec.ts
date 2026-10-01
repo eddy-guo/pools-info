@@ -63,7 +63,7 @@ const resolvedRows = (page: Page) =>
     )
     .filter({ visible: true });
 
-test("a populated page renders exact quantities, neutral sides and no ETH figure", async ({
+test("a populated page renders exact quantities, coloured sides and no ETH figure", async ({
   page,
 }, testInfo) => {
   await page.route(historyPath, (route: Route) =>
