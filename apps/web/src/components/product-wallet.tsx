@@ -485,7 +485,17 @@ export function ProductWallet({ address }: { address: string }) {
                                       {holding(p) === null ? (
                                         <Unavailable />
                                       ) : (
-                                        `${holding(p)} ${p.symbol}`
+                                        <span className="wallet-holding">
+                                          <span className="wallet-holding-quantity">
+                                            {holding(p)}
+                                          </span>
+                                          {/* Not rendered between flex items;
+                                            kept so the cell reads and copies
+                                            as "quantity symbol". */}{" "}
+                                          <span title={p.symbol}>
+                                            {p.symbol}
+                                          </span>
+                                        </span>
                                       )}
                                     </>
                                   ) : (
