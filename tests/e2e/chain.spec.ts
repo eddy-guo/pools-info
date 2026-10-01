@@ -3,6 +3,10 @@ import chain from "../../data/snapshots/chain.json";
 import catalog from "../../data/catalog/chain.json";
 import captured from "../../data/pools/index.json";
 import { preloadedProduct } from "../../apps/web/src/lib/product-server";
+import {
+  positionCardFigures,
+  type CardEth,
+} from "../../apps/web/src/lib/product-card";
 import { methodologyCopy } from "../support/pool-copy";
 import type {
   AnalyticsExploreResponse,
@@ -165,95 +169,6 @@ test("saved product refresh retains data during failures and recovers without br
   await expect(page.locator("main").getByRole("alert")).toHaveCount(0);
   await expect(row).toBeVisible();
   expect(calls).toBe(3);
-});
-test("an audited pool's wallet view shows real wallet metrics and scoped share cards, retaining the audit on failure", async ({
-  page,
-}) => {
-  let calls = 0;
-  await page.route(`**/api/markets/${market.id}/accounting/**`, async (r) => {
-    calls++;
-    await r.fulfill(
-      calls === 1
-        ? { json: fixture() }
-        : { status: 503, json: { error: "unavailable" } },
-    );
-  });
-  await page.goto(walletHref(wallet, market));
-  await expect(
-    page.getByRole("combobox", { name: "Audit pool" }),
-  ).toBeVisible();
-  await expect(page.getByRole("option", { name: /^MONKI ·/ })).toHaveCount(1);
-  await page
-    .getByRole("button", { name: /^(Audit traders|Refresh audit)$/ })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Refresh audit", exact: true }),
-  ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "Refresh audit", exact: true })
-    .click();
-  await expect(
-    page.getByText(/The previous audit remains visible/),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "0x1111…1111", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText("+0.50 ETH", { exact: true }).first(),
-  ).toBeVisible();
-  await page.getByRole("tab", { name: "Trades", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Observed trade history" }),
-  ).toBeVisible();
-  await expect(page.getByText("+0.50 ETH", { exact: true }).first()).toHaveCSS(
-    "color",
-    "rgb(63, 214, 140)",
-  );
-  // The UI fixture supplies a synthetic audited wallet. Reuse a real captured
-  // PNG for its image request; server-side card generation is tested separately.
-  // A captured wallet that only bought in this pool disposed no cost, so it
-  // has no ROI and no card (it used to headline a white "0 ETH"); the PNG is
-  // borrowed from a pool where a captured wallet sold.
-  const buyer = market.accounting!.wallets.find((w) => w.sells === 0)!;
-  expect(
-    (
-      await page.request.get(
-        `/cards/${buyer.address}.png?pool=${market.id}&launch=${market.launchTx}&window=All`,
-      )
-    ).status(),
-  ).toBe(404);
-  const sold = (w: { sells: number; realizedWei: string | null }) =>
-    w.sells > 0 && w.realizedWei !== null && BigInt(w.realizedWei) !== 0n;
-  const soldIn = chain.markets.find((m) => m.accounting?.wallets.some(sold))!;
-  const seller = soldIn.accounting!.wallets.find(sold)!;
-  const png = await page.request.get(
-    `/cards/${seller.address}.png?pool=${soldIn.id}&launch=${soldIn.launchTx}&window=All`,
-  );
-  expect(png.status()).toBe(200);
-  await page.route(`**/cards/${wallet}.png?*`, async (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "image/png",
-      body: await png.body(),
-    }),
-  );
-  await page
-    .getByRole("button", { name: "Generate share card", exact: true })
-    .click();
-  const share = page.getByRole("dialog", { name: "Share card" });
-  await expect(share).toBeVisible();
-  await expect(share.getByRole("img")).toBeVisible();
-  await expect(
-    share.getByRole("link", { name: "Download PNG" }),
-  ).toHaveAttribute(
-    "href",
-    new RegExp(`/cards/${wallet}.png\\?pool=${market.id}`),
-  );
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
 });
 test("creator routes, arbitrary wallet lookup and typed global search remain usable", async ({
   page,
@@ -533,7 +448,7 @@ test("existing device watchlists survive the design key migration and can stay e
   ).toHaveCount(0);
 });
 
-test("a captured losing wallet shows independently signed PnL and real creator coverage", async ({
+test("a captured losing wallet shows independently signed PnL and its own launches", async ({
   page,
 }) => {
   const pool = chain.markets.find((p) =>
@@ -556,19 +471,26 @@ test("a captured losing wallet shows independently signed PnL and real creator c
   await expect(
     page
       .locator(".stat")
-      .filter({ has: page.getByText("Realized ROI", { exact: true }) })
+      .filter({ has: page.getByText("ROI", { exact: true }) })
       .locator(".negative"),
   ).toHaveCSS("color", "rgb(255, 97, 105)");
-  await page.getByRole("tab", { name: "Launches", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: /Launches.*covered/ }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Grouped by launch transaction sender/),
-  ).toBeVisible();
+  // The launches are the wallet read's own, counted on their tab.
+  const launched = (
+    preloadedProduct(
+      `wallets/${losing.address.toLowerCase()}`,
+      new URLSearchParams("window=All"),
+    ) as AnalyticsWalletResponse
+  ).launches;
+  const launches = page.getByRole("tab", { name: /^Launches/ });
+  await expect(launches).toHaveText(`Launches${launched.length}`);
+  await launches.click();
+  await expect(launches).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".wallet-launches-table tbody tr")).toHaveCount(
+    launched.length,
+  );
   await page.getByRole("tab", { name: "Trades", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Observed trade history" }),
+    page.getByRole("heading", { name: "Trade history unavailable" }),
   ).toBeVisible();
   expect(
     await page.evaluate(
@@ -1140,4 +1062,194 @@ test("an empty saved analytics publication shows processing instead of the Unix 
   await expect(page.locator(".network-context")).toHaveText(
     "v4 · Robinhood Chain",
   );
+});
+
+/** Every wallet the committed chain snapshot accounts for, with its All read. */
+function snapshotWallets() {
+  return [
+    ...new Set(
+      chain.markets.flatMap(
+        (m) => m.accounting?.wallets.map((w) => w.address) ?? [],
+      ),
+    ),
+  ].map(
+    (address) =>
+      preloadedProduct(
+        `wallets/${address}`,
+        new URLSearchParams("window=All"),
+      ) as AnalyticsWalletResponse,
+  );
+}
+
+test("position card route serves only a supported position, for its own launch", async ({
+  request,
+}) => {
+  // Each answer is a full render, several of them, on a loaded runner.
+  test.setTimeout(60_000);
+  const wallets = snapshotWallets();
+  const find = (
+    match: (p: AnalyticsWalletResponse["positions"][number]) => boolean,
+  ) =>
+    wallets.flatMap((w) =>
+      w.positions.filter(match).map((p) => ({ address: w.wallet.address, p })),
+    )[0];
+  const closed = find(
+    (p) => !!p.position && p.supported && p.position.quantity === "0",
+  )!;
+  const url = `/cards/${closed.address}.png?pool=${closed.p.poolId}`;
+  const response = await request.get(url);
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toBe("image/png");
+  const png = await response.body();
+  expect(png.readUInt32BE(16)).toBe(1200);
+  expect(png.readUInt32BE(20)).toBe(630);
+  expect(png.length).toBeLessThan(120_000);
+  // A position is one history, not a window, and has one design yet: the
+  // options it ignores never change its image. Its own launch is accepted.
+  expect(
+    await (
+      await request.get(
+        `${url}&window=1h&design=export&notional=1&launch=${closed.p.launchTx}`,
+      )
+    ).body(),
+  ).toEqual(png);
+  const open = find(
+    (p) => !!p.position && p.supported && p.position.quantity !== "0",
+  )!;
+  expect(
+    (
+      await request.get(`/cards/${open.address}.png?pool=${open.p.poolId}`)
+    ).status(),
+  ).toBe(200);
+  for (const refused of [
+    `${url}&launch=0x${"f".repeat(64)}`,
+    `/cards/${closed.address}.png?pool=0x${"f".repeat(64)}`,
+    (({ address, p }) => `/cards/${address}.png?pool=${p.poolId}`)(
+      find((p) => !p.supported)!,
+    ),
+  ]) {
+    const answer = await request.get(refused);
+    expect(answer.status(), refused).toBe(404);
+    expect(await answer.text()).toBe(
+      "No supported position for this wallet in this pool",
+    );
+  }
+  expect(
+    (await request.get(`/cards/${closed.address}.png?pool=`)).status(),
+  ).toBe(400);
+});
+
+test("position card figures are the wallet page's own for every position on it", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === "mobile",
+    "the desktop table holds every figure in its own cell",
+  );
+  const wallets = snapshotWallets(),
+    open = (p: AnalyticsWalletResponse["positions"][number]) =>
+      !!p.position && p.supported && p.position.quantity !== "0";
+  const checked = [
+    // Open and closed positions on one wallet, and an open one with a sale.
+    wallets.find(
+      (w) =>
+        w.positions.some(open) &&
+        w.positions.some((p) => p.supported && !open(p)),
+    )!,
+    wallets.find((w) =>
+      w.positions.some((p) => open(p) && p.position!.sells > 0),
+    )!,
+  ];
+  // The page draws a subscript zero count as <sub>, which reads as its digits.
+  const pageText = (eth: CardEth) =>
+    `${eth.sign}${
+      eth.figure.form === "plain"
+        ? eth.figure.text
+        : `${eth.figure.sign}0.0${eth.figure.zeros}${eth.figure.digits}`
+    } ETH`;
+  let figures = 0;
+  for (const wallet of checked) {
+    await page.goto(`/wallet/${wallet.wallet.address}/`);
+    for (const p of wallet.positions.filter((p) => p.supported)) {
+      const card = positionCardFigures({
+        position: p,
+        mark: null,
+        avgEntryPriceWei: null,
+      })!;
+      const cells = page
+        .locator(".wallet-positions-table tbody tr[data-row='resolved']")
+        .filter({ has: page.locator(`a[href*="${p.poolId}"]`) })
+        .locator("td");
+      await expect(cells.nth(1)).toHaveText(`${card.holding} ${p.symbol}`);
+      await expect(cells.nth(4)).toHaveText(pageText(card.unrealized!));
+      figures += 2;
+      if (card.realized) {
+        await expect(cells.nth(3)).toHaveText(pageText(card.realized));
+        figures++;
+      }
+      if (card.hero.eth) {
+        await expect(cells.nth(4)).toHaveText(pageText(card.hero.eth));
+        figures++;
+      }
+    }
+  }
+  expect(figures).toBeGreaterThan(10);
+});
+
+test("a scoped wallet link opens the wallet page, with no layout shift", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({
+    width: testInfo.project.name === "mobile" ? 390 : 1440,
+    height: 1000,
+  });
+  await page.addInitScript(() => {
+    const state = window as typeof window & { scopedCls: number };
+    state.scopedCls = 0;
+    new PerformanceObserver((list) => {
+      for (const item of list.getEntries()) {
+        const entry = item as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!entry.hadRecentInput) state.scopedCls += entry.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+  const wallet = snapshotWallets().find((w) =>
+    w.positions.some((p) => p.supported),
+  )!;
+  const position = wallet.positions.find((p) => p.supported)!;
+  await page.goto(
+    `/wallet/${wallet.wallet.address}/?pool=${position.poolId}&launch=${position.launchTx}`,
+  );
+  await expect(
+    page
+      .locator(".wallet-stats .stat")
+      .filter({ has: page.getByText("Trades", { exact: true }) })
+      .locator("strong"),
+  ).toHaveText(String(wallet.wallet.supportedTradeCount));
+  await expect(
+    page.getByRole("button", { name: "Share PnL card", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Audit pool" })).toHaveCount(
+    0,
+  );
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  // Under 0.001 is the layout suite's own allowance for measurement noise.
+  expect(
+    await page.evaluate(
+      () => (window as typeof window & { scopedCls: number }).scopedCls,
+    ),
+  ).toBeLessThan(0.001);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
 });

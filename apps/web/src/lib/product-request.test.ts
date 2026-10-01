@@ -22,7 +22,11 @@ import {
   cardSymbol,
   cardTopPosition,
   cardTradeCount,
-  readCardWallet,
+  cardEthText,
+  positionCardChart,
+  positionCardFigures,
+  readCardPosition,
+  type PositionCardSource,
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
 import { fontCodePoints } from "./font-coverage";
@@ -33,11 +37,16 @@ import {
   validateExploreResponse,
   validateWalletLaunches,
 } from "./explore-response";
-import type {
-  AnalyticsExploreResponse,
-  AnalyticsLeaderboardResponse,
-  AnalyticsWalletResponse,
-  CreatorsResponse,
+import {
+  displayEth,
+  ethFigure,
+  figureText,
+  formatTokenAmount,
+  type AnalyticsExploreResponse,
+  type AnalyticsLeaderboardResponse,
+  type AnalyticsWalletPosition,
+  type AnalyticsWalletResponse,
+  type CreatorsResponse,
 } from "@pools/core";
 
 /** The coverage of the face the card draws a token symbol in, as the route reads it. */
@@ -315,6 +324,154 @@ test("leaderboard proxy accepts the API default and forwards a selected window",
     "https://index.example/v1/leaderboard?window=All",
   ]);
 });
+
+/**
+ * The three positions the 29 Sep 2026 audit drew its mockups from, as the
+ * production wallet read served them (ledger cut 1790695358, 15:22:38Z):
+ * HOOKR open on the rank-1 wallet, BCTC closed at a gain on the rank-50 one
+ * and POTATCHI closed at a loss on an unranked one.
+ */
+const auditedRow = (
+  row: Omit<
+    AnalyticsWalletPosition,
+    | "asOf"
+    | "throughBlock"
+    | "supported"
+    | "flags"
+    | "decimals"
+    | "netWei"
+    | "volumeWei"
+    | "position"
+  > & {
+    position: Omit<
+      NonNullable<AnalyticsWalletPosition["position"]>,
+      "poolId" | "realizedWei" | "flags" | "realizations"
+    >;
+  },
+): AnalyticsWalletPosition => ({
+  ...row,
+  decimals: 18,
+  asOf: 1790695358,
+  // Not recorded by the audit, and never read by the card.
+  throughBlock: 0,
+  supported: true,
+  flags: [],
+  netWei: (
+    BigInt(row.position.proceedsWei) - BigInt(row.position.investedWei)
+  ).toString(),
+  volumeWei: (
+    BigInt(row.position.proceedsWei) + BigInt(row.position.investedWei)
+  ).toString(),
+  position: {
+    ...row.position,
+    poolId: row.poolId as `0x${string}`,
+    realizedWei: row.realizedWei,
+    flags: [],
+    realizations: [],
+  },
+});
+const audited = {
+  HOOKR: auditedRow({
+    poolId:
+      "0x590dcb6a87828bf688b48089a62239b693378f1fb64d2286e6a399ed8c005fdf",
+    token: "0x18e674231a58c239dc7daedcffe15ec3a24cff5c",
+    symbol: "HOOKR",
+    launchTx:
+      "0x53167870d0e235e0c1e1ced0ba2f32ed405a7a24335921b3c086e455cdc1ff95",
+    realizedWei: "62476404844532343345",
+    unrealizedWei: "36243833792632040664",
+    position: {
+      trader: "0x2f25b929f03fe2869e752f1910e5445f8b5778da",
+      quantity: "8274943690407648622739002",
+      costWei: "4046272975482997289",
+      investedWei: "4455000000000000000",
+      proceedsWei: "62885131869049346056",
+      buys: 5,
+      sells: 55,
+      openedAt: 1785992576,
+      firstHour: 1785992400,
+      lastHour: 1789538400,
+    },
+  }),
+  BCTC: auditedRow({
+    poolId:
+      "0xd25d59ecc06b6b6dd3aeff8d69ca9d6cdd1c3e8bd88bb4a2974bdb3ce75aee7b",
+    token: "0x3df4bd4daf0a988ed3a876c51b048e176d2dbaaf",
+    symbol: "BCTC",
+    launchTx:
+      "0xca4200e0614603824d37977ddea961ddd6a7ff3d307fbf64b55004c0e7b3de93",
+    realizedWei: "11377738260148251460",
+    unrealizedWei: "0",
+    position: {
+      trader: "0x5cef3188ab04bec8caace9818729c1c8f5553191",
+      quantity: "0",
+      costWei: "0",
+      investedWei: "990000000000000000",
+      proceedsWei: "12367738260148251460",
+      buys: 1,
+      sells: 4,
+      openedAt: null,
+      firstHour: 1788991200,
+      lastHour: 1788994800,
+    },
+  }),
+  POTATCHI: auditedRow({
+    poolId:
+      "0xfc7cd3b5dc34e54b1a2dce9041044555ea5c646a10a800e79bba71376ff5a936",
+    token: "0xed954b9545ceee1b88b264546110f8c5d64cf7dd",
+    symbol: "POTATCHI",
+    launchTx:
+      "0xc189d87e34f992ac2683003b1a9eb887c4337add7133a7ddf8e3bcde3b4307ee",
+    realizedWei: "-678496036781504580",
+    unrealizedWei: "0",
+    position: {
+      trader: "0x42c38dcff3bd710d28bcf0d96985f4005dc2dd36",
+      quantity: "0",
+      costWei: "0",
+      investedWei: "814000000000000000",
+      proceedsWei: "135503963218495420",
+      buys: 21,
+      sells: 1,
+      openedAt: null,
+      firstHour: 1790686800,
+      lastHour: 1790690400,
+    },
+  }),
+};
+/** A position as the wallet read serves it to the card: no per-token price. */
+const fromWallet = (position: AnalyticsWalletPosition): PositionCardSource => ({
+  position,
+  mark: null,
+  avgEntryPriceWei: null,
+});
+const text = (
+  eth: { sign: "" | "+"; figure: ReturnType<typeof ethFigure> } | null,
+) => eth && cardEthText(eth);
+
+/** Every wallet the committed dataset's chain snapshot accounts for. */
+const datasetWallets = () => [
+  ...new Set(
+    (
+      JSON.parse(
+        readFileSync(
+          new URL("../../../../data/snapshots/chain.json", import.meta.url),
+          "utf8",
+        ),
+      ) as {
+        markets: { accounting?: { wallets: { address: string }[] } | null }[];
+      }
+    ).markets.flatMap((m) => m.accounting?.wallets.map((w) => w.address) ?? []),
+  ),
+];
+const datasetPositions = () =>
+  datasetWallets().flatMap((address) =>
+    (
+      preloadedProduct(
+        `wallets/${address}`,
+        new URLSearchParams("window=All"),
+      ) as AnalyticsWalletResponse
+    ).positions.map((row) => ({ address, row })),
+  );
 
 test("share card options round-trip through the query the modal and the route share", () => {
   assert.deepEqual(parseCardOptions(new URLSearchParams("")), {
@@ -802,7 +959,7 @@ test("share card chart follows the wallet's own curve and names its top position
   assert.equal(cardTopPosition([]), null);
 });
 
-test("an explicitly scoped share card cannot silently switch to global wallet PnL", async (t) => {
+test("a position card reads only a supported position of the named pool and launch", async (t) => {
   const previous = process.env.CHAIN_REFRESH_DISABLED,
     fixtures = process.env.PRODUCT_FIXTURES;
   process.env.CHAIN_REFRESH_DISABLED = "1";
@@ -822,25 +979,114 @@ test("an explicitly scoped share card cannot silently switch to global wallet Pn
     new URLSearchParams("window=All"),
   )) as AnalyticsWalletResponse;
   const position = wallet.positions.find((p) => p.supported)!;
-  const card = await readCardWallet(
+  const card = await readCardPosition(
     wallet.wallet.address,
-    "All",
     position.poolId,
     position.launchTx,
   );
-  assert.equal(card.poolSymbol, position.symbol);
-  assert.equal(card.result.positions.length, 1);
-  assert.equal(card.result.wallet.realizedWei, position.realizedWei);
-  assert.equal(card.result.wallet.asOf, position.asOf);
-  await assert.rejects(
-    readCardWallet(
+  assert.ok(card);
+  // The wallet page's own row, and no price the wallet read does not serve.
+  assert.deepEqual(card.source, {
+    position,
+    mark: null,
+    avgEntryPriceWei: null,
+  });
+  assert.equal(card.pool.poolId, position.poolId);
+  assert.equal(card.rank, wallet.wallet.rank);
+  assert.deepEqual(
+    await readCardPosition(wallet.wallet.address, position.poolId),
+    card,
+  );
+  assert.equal(
+    await readCardPosition(
       wallet.wallet.address,
-      "All",
       position.poolId,
       `0x${"f".repeat(64)}`,
     ),
-    /capture unavailable/,
+    null,
   );
+  assert.equal(
+    await readCardPosition(wallet.wallet.address, `0x${"f".repeat(64)}`),
+    null,
+  );
+  // An excluded position has no card, whatever the wallet's other rows say.
+  const excluded = datasetPositions().find(({ row }) => !row.supported)!;
+  assert.ok(excluded);
+  assert.equal(
+    await readCardPosition(excluded.address, excluded.row.poolId),
+    null,
+  );
+});
+
+test("a position card refuses what the wallet read cannot vouch for", async (t) => {
+  const origin = process.env.INDEXER_API_URL,
+    disabled = process.env.CHAIN_REFRESH_DISABLED;
+  process.env.INDEXER_API_URL = "https://index.example";
+  delete process.env.CHAIN_REFRESH_DISABLED;
+  t.after(() => {
+    if (origin === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = origin;
+    if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
+    else process.env.CHAIN_REFRESH_DISABLED = disabled;
+  });
+  const row = audited.BCTC,
+    other = audited.POTATCHI;
+  const walletBody = (
+    address: string,
+    positions: AnalyticsWalletPosition[],
+  ) => ({
+    coverage: {},
+    window: "All",
+    wallet: { address, rank: 50 },
+    positions,
+    trades: [],
+    curve: [],
+    launches: [],
+  });
+  const pool = (of: AnalyticsWalletPosition, launch: string) => ({
+    pool: {
+      poolId: of.poolId,
+      token: of.token,
+      name: of.symbol,
+      symbol: of.symbol,
+      launchType: "instant",
+      launch: { block: 1, timestamp: 1, transactionHash: launch },
+    },
+    analytics: null,
+  });
+  let served: Record<string, unknown> = {};
+  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
+    const path = new URL(String(input)).pathname.replace("/v1/", "");
+    const body = served[path];
+    return body === undefined
+      ? Response.json({ error: "not_found" }, { status: 404 })
+      : Response.json(body);
+  });
+  // Past the wallet read's 500 positions a missing pool is unknown: no card
+  // claims it is absent, and the route answers unavailable rather than 404.
+  const deep = `0x${"4".repeat(40)}`;
+  served = {
+    [`wallets/${deep}`]: {
+      ...walletBody(deep, []),
+      positionsTruncated: true,
+    },
+  };
+  await assert.rejects(readCardPosition(deep, row.poolId));
+  // Two reads that disagree on the pool's launch draw no card either.
+  const split = `0x${"5".repeat(40)}`;
+  served = {
+    [`wallets/${split}`]: walletBody(split, [other]),
+    [`pools/${other.poolId}`]: pool(other, `0x${"6".repeat(64)}`),
+  };
+  await assert.rejects(readCardPosition(split, other.poolId));
+  const agreed = `0x${"7".repeat(40)}`;
+  served = {
+    [`wallets/${agreed}`]: walletBody(agreed, [row]),
+    [`pools/${row.poolId}`]: pool(row, row.launchTx),
+  };
+  const card = await readCardPosition(agreed, row.poolId, row.launchTx);
+  assert.equal(card?.pool.name, "BCTC");
+  assert.deepEqual(card?.candles, []);
 });
 
 test("following proxy bounds and canonicalizes explicit wallet selections", () => {
@@ -1921,9 +2167,7 @@ test("stats validator accepts the production All response with no window start",
   };
   validateStatsResponse(all, "All");
   assert.throws(() => validateStatsResponse(all, "24h"));
-  assert.throws(() =>
-    validateStatsResponse({ ...all, windowStart: 0 }, "All"),
-  );
+  assert.throws(() => validateStatsResponse({ ...all, windowStart: 0 }, "All"));
   assert.throws(() =>
     validateStatsResponse({ ...sample(), windowStart: null }, "24h"),
   );
@@ -1990,4 +2234,235 @@ test("stats read treats a missing route, coverage refusal, and invalid body as n
   process.env.CHAIN_REFRESH_DISABLED = "1";
   process.env.PRODUCT_FIXTURES = "1";
   assert.deepEqual(await readScreenerStats("24h"), { status: 503 });
+});
+
+test("position card figures reproduce the audited HOOKR, BCTC and POTATCHI positions", () => {
+  const hookr = positionCardFigures(fromWallet(audited.HOOKR))!;
+  assert.equal(hookr.open, true);
+  // 62.476 ETH realized on 0.409 ETH of disposed cost.
+  assert.deepEqual(hookr.hero, {
+    label: "Realized ROI",
+    value: "+15.3K%",
+    eth: null,
+    tone: "up",
+  });
+  assert.equal(text(hookr.realized), "+62.48 ETH");
+  assert.equal(hookr.holding, "8.27M");
+  assert.equal(text(hookr.unrealized), "+36.24 ETH");
+  assert.equal(hookr.unrealizedRoi, "+895.73%");
+  assert.equal(text(hookr.invested), "4.46 ETH");
+  assert.equal(text(hookr.proceeds), "62.89 ETH");
+  assert.equal(hookr.multiple, null);
+  assert.equal(hookr.buys, 5);
+  assert.equal(hookr.sells, 55);
+  // Opened 6 Aug 2026 04:22:56Z, 54 days before the cut.
+  assert.equal(hookr.held, "54d");
+  // The wallet read serves neither price: the cells stay blank.
+  assert.equal(hookr.entry, null);
+  assert.equal(hookr.mark, null);
+
+  const bctc = positionCardFigures(fromWallet(audited.BCTC))!;
+  assert.equal(bctc.open, false);
+  // 1149.2664...%: two decimals as the site's Change rounds them.
+  assert.equal(bctc.hero.value, "+1149.27%");
+  assert.equal(bctc.hero.tone, "up");
+  assert.equal(text(bctc.realized), "+11.38 ETH");
+  assert.equal(text(bctc.invested), "0.99 ETH");
+  assert.equal(text(bctc.proceeds), "12.37 ETH");
+  assert.equal(bctc.multiple, "12.49x");
+  assert.deepEqual(bctc.bars, { invested: 8, proceeds: 100 });
+  assert.equal(bctc.holding, "0.00");
+  // A closed position's hour bounds are not its hold: no cell.
+  assert.equal(bctc.held, null);
+
+  const potatchi = positionCardFigures(fromWallet(audited.POTATCHI))!;
+  assert.equal(potatchi.open, false);
+  assert.equal(potatchi.hero.value, "-83.35%");
+  assert.equal(potatchi.hero.tone, "down");
+  assert.equal(text(potatchi.realized), "-0.68 ETH");
+  assert.equal(text(potatchi.invested), "0.81 ETH");
+  assert.equal(text(potatchi.proceeds), "0.14 ETH");
+  assert.equal(potatchi.multiple, "0.17x");
+  assert.deepEqual(potatchi.bars, { invested: 100, proceeds: 16.64 });
+  assert.equal(potatchi.buys, 21);
+  assert.equal(potatchi.sells, 1);
+});
+
+test("position card prints every amount as the wallet page prints the same position", () => {
+  // The positions table's cells: `Eth` in live-ui.tsx for the amounts, and
+  // `holding` in product-wallet.tsx for the units, on the All window.
+  const page = (wei: string | null, signed = false) =>
+    wei === null
+      ? null
+      : `${signed && displayEth(wei) > 0 ? "+" : ""}${figureText(ethFigure(wei))} ETH`;
+  const rows = [
+    ...datasetPositions().map(({ row }) => row),
+    ...Object.values(audited),
+  ];
+  let open = 0,
+    closed = 0,
+    excluded = 0;
+  for (const row of rows) {
+    const card = positionCardFigures(fromWallet(row));
+    if (!row.supported || !row.position) {
+      assert.equal(card, null);
+      excluded++;
+      continue;
+    }
+    assert.ok(card);
+    if (card.open) open++;
+    else closed++;
+    // The page's Realized column is the window's sum, here the whole history.
+    if (card.realized)
+      assert.equal(text(card.realized), page(row.realizedWei, true));
+    assert.equal(text(card.unrealized), page(row.unrealizedWei, true));
+    assert.equal(
+      card.holding,
+      row.decimals === null
+        ? null
+        : formatTokenAmount(row.position.quantity, row.decimals),
+    );
+    if (card.hero.label === "Unrealized PnL")
+      assert.equal(card.hero.value, page(row.unrealizedWei, true));
+  }
+  assert.ok(
+    open && closed && excluded,
+    `${open} open, ${closed} closed and ${excluded} excluded positions`,
+  );
+});
+
+test("position card leaves every figure its source does not serve blank", () => {
+  const row = audited.HOOKR;
+  assert.equal(
+    positionCardFigures(fromWallet({ ...row, supported: false })),
+    null,
+  );
+  assert.equal(
+    positionCardFigures(fromWallet({ ...row, position: null })),
+    null,
+  );
+  const unmarked = positionCardFigures(
+    fromWallet({ ...row, decimals: null, unrealizedWei: null }),
+  )!;
+  assert.equal(unmarked.holding, null);
+  assert.equal(unmarked.unrealized, null);
+  assert.equal(unmarked.unrealizedRoi, null);
+  assert.equal(unmarked.hero.value, "+15.3K%");
+  // Before the first sale the headline is the unrealized PnL, neutral, and
+  // blank when that is not served either.
+  const bought = {
+    ...row,
+    realizedWei: "0",
+    position: {
+      ...row.position!,
+      investedWei: row.position!.costWei,
+      realizedWei: "0",
+      proceedsWei: "0",
+      sells: 0,
+    },
+  };
+  const holding = positionCardFigures(fromWallet(bought))!;
+  assert.deepEqual(holding.hero, {
+    label: "Unrealized PnL",
+    value: "+36.24 ETH",
+    eth: cardEthFigure(row.unrealizedWei!, true),
+    tone: "text",
+  });
+  assert.equal(holding.realized, null);
+  assert.equal(
+    positionCardFigures(fromWallet({ ...bought, unrealizedWei: null }))!.hero
+      .value,
+    null,
+  );
+  // An open cycle's start that is not served gives no hold.
+  assert.equal(
+    positionCardFigures(
+      fromWallet({ ...row, position: { ...row.position!, openedAt: null } }),
+    )!.held,
+    null,
+  );
+  // The single-position read's prices print exactly as served; its mark on a
+  // closed position is the pool's, not the position's, and is left out.
+  const priced = positionCardFigures({
+    position: row,
+    avgEntryPriceWei: "488980000000",
+    mark: {
+      sqrtPriceX96: "1",
+      priceWei: "4868000000000",
+      block: 1,
+      timestamp: 1,
+      txHash: `0x${"1".repeat(64)}`,
+      valueWei: "40290106768115037953",
+    },
+  })!;
+  assert.equal(text(priced.entry), "0.0₆4889 ETH");
+  assert.equal(text(priced.mark), "0.0₅4868 ETH");
+  const closedMark = positionCardFigures({
+    position: audited.BCTC,
+    avgEntryPriceWei: null,
+    mark: {
+      sqrtPriceX96: "1",
+      priceWei: "4868000000000",
+      block: 1,
+      timestamp: 1,
+      txHash: `0x${"1".repeat(64)}`,
+      valueWei: "0",
+    },
+  })!;
+  assert.equal(closedMark.mark, null);
+});
+
+test("position card chart keeps real candles, both ends and only served levels", () => {
+  assert.equal(positionCardChart([], null, null, 458, 244), null);
+  assert.equal(
+    positionCardChart([{ time: 0, close: "1" }], null, null, 458, 244),
+    null,
+  );
+  // Prices past 2^53 wei are compared as integers, never as floats.
+  const candles = Array.from({ length: 1000 }, (_, i) => ({
+    time: 3600 * i,
+    close: String(10n ** 60n + BigInt(i)),
+  }));
+  const chart = positionCardChart(candles, null, null, 458, 244)!;
+  assert.equal(chart.points.length, 240);
+  assert.deepEqual(chart.points[0], [0, 244]);
+  assert.deepEqual(chart.points.at(-1), [458, 0]);
+  assert.equal(chart.entryY, null);
+  assert.equal(chart.markY, null);
+  const levels = positionCardChart(
+    candles,
+    String(10n ** 60n - 999n),
+    candles.at(-1)!.close,
+    458,
+    244,
+  )!;
+  assert.equal(levels.entryY, 244);
+  assert.equal(levels.markY, 0);
+  assert.equal(levels.points[0][1], 122);
+});
+
+test("a position card's URL carries only the options its image honours", () => {
+  const scope = { pool: audited.HOOKR.poolId, launch: audited.HOOKR.launchTx };
+  const query = cardQuery(
+    {
+      window: "7d",
+      preset: "amber",
+      design: "export",
+      anonymous: true,
+      notional: false,
+    },
+    scope,
+  );
+  assert.equal(
+    query.toString(),
+    `pool=${scope.pool}&launch=${scope.launch}&theme=amber&anon=1`,
+  );
+  assert.equal(
+    cardUrl(
+      audited.HOOKR.position!.trader,
+      parseCardOptions(new URLSearchParams()),
+      scope,
+    ),
+    `/cards/${audited.HOOKR.position!.trader}.png?pool=${scope.pool}&launch=${scope.launch}`,
+  );
 });

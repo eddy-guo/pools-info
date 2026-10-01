@@ -10,8 +10,6 @@ import { DATA_UNAVAILABLE, fetchProduct } from "@/lib/use-product";
 import { useReportCut } from "@/lib/freshness";
 import styles from "./detail-design.module.css";
 import { poolHref, shortAddress } from "@pools/core";
-import catalog from "../../../../data/catalog/chain.json";
-import { useLive } from "./live-provider";
 import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
 import { AddressChip, AddressLabel, EmptyState, UnavailableState } from "./ui";
@@ -742,100 +740,5 @@ function CreatorProfile({ address }: { address: string }) {
         />
       </section>
     </div>
-  );
-}
-
-/** Public launch history only. This does not assert creator identity or allocation. */
-export function WalletLaunches({ address }: { address: string }) {
-  const { snapshot, audits } = useLive();
-  const pools = [
-    ...new Map(
-      [...catalog.pools, ...snapshot.markets].map((m) => [m.id, m]),
-    ).values(),
-  ]
-    .filter((m) => m.launchSender.toLowerCase() === address.toLowerCase())
-    .sort((a, b) => b.launchBlock - a.launchBlock);
-  return (
-    <section className="panel live-section">
-      <div className="panel-heading">
-        <h2>
-          Launches <span className="badge">{pools.length} covered</span>
-        </h2>
-      </div>
-      {pools.length ? (
-        <div className="table-scroll">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Pool</th>
-                <th>Launched (UTC)</th>
-                <th>Status</th>
-                <th>Observed volume</th>
-                <th>Own purchase</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pools.map((p) => {
-                const market = snapshot.markets.find((m) => m.id === p.id);
-                const active =
-                  market &&
-                  snapshot.trades.some(
-                    (t) =>
-                      t.poolId === p.id &&
-                      t.timestamp >= snapshot.toTimestamp - 86400,
-                  );
-                const audit = audits[p.id];
-                const bought = audit?.executions.some(
-                  (e) =>
-                    e.trade.trader.toLowerCase() === address.toLowerCase() &&
-                    e.trade.side === "buy" &&
-                    !e.flags.length,
-                );
-                return (
-                  <tr key={p.id}>
-                    <td>
-                      <Link href={poolHref(p)}>
-                        <strong>{p.symbol}</strong>
-                        <small className="cell-sub">{p.name}</small>
-                      </Link>
-                    </td>
-                    <td>{utc(p.launchedAt)}</td>
-                    <td>
-                      {market ? (
-                        <span className="badge">
-                          {active ? "Active" : "No swap observed"}
-                        </span>
-                      ) : (
-                        <Unavailable />
-                      )}
-                    </td>
-                    <td>
-                      <Eth wei={market?.volumeWei} />
-                    </td>
-                    <td>
-                      {bought ? (
-                        <span className="badge lavender">BOUGHT OWN</span>
-                      ) : (
-                        <Unavailable />
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-state">
-          <h3>No launches in current coverage</h3>
-          <p>A launch outside this catalog may not appear yet.</p>
-        </div>
-      )}
-      <p className="panel-footnote">
-        Grouped by launch transaction sender. Active means an observed swap in
-        the 24 hours before the captured cutoff. This is a covered launch
-        record, not a complete creator identity or allocation audit.
-      </p>
-    </section>
   );
 }
