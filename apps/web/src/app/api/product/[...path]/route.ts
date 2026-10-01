@@ -1,6 +1,7 @@
 import { productRequest } from "@/lib/product-request";
 import {
   EthPriceUnavailableError,
+  InvalidHistoryCursorError,
   ProductUnavailableError,
   productUnavailableResponse,
   readEthPrice,
@@ -75,6 +76,11 @@ export async function GET(
     } catch (error) {
       if (error instanceof ProductUnavailableError)
         return productUnavailableResponse(error);
+      if (error instanceof InvalidHistoryCursorError)
+        return Response.json(
+          { error: "invalid_cursor" },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
+        );
       return Response.json(
         { error: "This item is outside available saved coverage." },
         { status: 404, headers: { "Cache-Control": "no-store" } },

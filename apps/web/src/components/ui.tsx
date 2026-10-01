@@ -27,6 +27,7 @@ import { usdPrice } from "@/lib/usd-price";
 import { tokenInitials } from "@/lib/token-identity";
 import { useProfileStore } from "@/lib/profile-store";
 import { confirmWatch } from "./saved-toast";
+import { DATA_UNAVAILABLE } from "@/lib/use-product";
 
 export function TokenIcon({
   pool,
@@ -616,6 +617,26 @@ export function UnavailableState({
     />
   );
 }
+/**
+ * A re-read that failed while the figures from the last one are still on
+ * screen. They keep their place, dimmed by the caller, and the shared
+ * sentence floats over the top of them rather than being inserted above
+ * them, so nothing on the page moves when the failure lands or when a retry
+ * clears it. The caller's container is its positioning box.
+ */
+export function StaleUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="stale-unavailable">
+      <p role="alert">
+        <CloudOff size={15} aria-hidden="true" />
+        <span>{DATA_UNAVAILABLE}</span>
+        <button type="button" className="button secondary" onClick={onRetry}>
+          Try again
+        </button>
+      </p>
+    </div>
+  );
+}
 export function Pagination({
   total,
   page,
@@ -780,7 +801,9 @@ export function Chart({
             )}
           </QuietUnavailable>
         </strong>
-        <time>
+        {/* Pending holds the time's line box under a skeleton bar: the
+            word it holds only sizes the bar and is never painted. */}
+        <time data-pending={pending && !point}>
           {point
             ? new Date(point.time * 1000).toLocaleString("en-US", {
                 month: "short",
@@ -892,7 +915,7 @@ export function Chart({
       </div>
       <div className="chart-dates">
         {dates.map((p, i) => (
-          <span key={i}>
+          <span key={i} data-pending={pending && !p}>
             {p
               ? oneDay
                 ? new Date(p.time * 1000).toLocaleTimeString("en-US", {

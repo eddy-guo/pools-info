@@ -73,6 +73,22 @@ async function isWarming(response: Response) {
     request - malformed or missing Retry-After guidance stops the loop
     immediately rather than retrying blindly. */
 export async function fetchProduct<T>(path: string, signal: AbortSignal) {
+  try {
+    return await readProductResponse<T>(path, signal);
+  } catch (error) {
+    /* A cancelled read is the caller's own doing and stays one. Anything
+       else - the network, a request cut short, a body that fails its
+       validator - reaches the page as one of the two shared sentences,
+       never as a browser's own wording such as "Failed to fetch". */
+    if (signal.aborted) throw error;
+    throw Error(
+      error instanceof Error && error.message === OUTSIDE_COVERAGE
+        ? OUTSIDE_COVERAGE
+        : DATA_UNAVAILABLE,
+    );
+  }
+}
+async function readProductResponse<T>(path: string, signal: AbortSignal) {
   const deadline = Date.now() + WARMING_CEILING_MS;
   const request = () => {
     const requestSignal = AbortSignal.any([

@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { productRequest } from "./product-request";
 import {
+  InvalidHistoryCursorError,
   ProductUnavailableError,
   preloadedProduct,
   productUnavailableResponse,
   readProduct,
   readScreenerStats,
+  readWalletTradeHistory,
 } from "./product-server";
 import {
   cardCurve,
@@ -2465,4 +2467,37 @@ test("a position card's URL carries only the options its image honours", () => {
     ),
     `/cards/${audited.HOOKR.position!.trader}.png?pool=${scope.pool}&launch=${scope.launch}`,
   );
+});
+
+test("a history cursor the read API refuses crosses the proxy as invalid_cursor, not an outage", async (t) => {
+  const prior = process.env.INDEXER_API_URL;
+  process.env.INDEXER_API_URL = "https://index.example";
+  t.after(() => {
+    if (prior === undefined) delete process.env.INDEXER_API_URL;
+    else process.env.INDEXER_API_URL = prior;
+  });
+  const wallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
+  const read = () =>
+    readWalletTradeHistory(
+      ["wallets", wallet, "history"],
+      new URLSearchParams("kind=trades&cursor=v1cursor"),
+    );
+  const answer = t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ error: "invalid_cursor" }, { status: 400 }),
+  );
+  await assert.rejects(read, (e: unknown) => e instanceof InvalidHistoryCursorError);
+  /* Any other refusal keeps the shared unavailable handling. */
+  for (const reason of ["budget_exhausted", "upstream_unavailable"]) {
+    answer.mock.mockImplementation(async () =>
+      Response.json(
+        { error: "wallet_history_unavailable", reason },
+        { status: 503, headers: { "Retry-After": "30" } },
+      ),
+    );
+    await assert.rejects(read, (e: unknown) => e instanceof ProductUnavailableError);
+  }
+  answer.mock.mockImplementation(async () =>
+    Response.json({ error: "invalid_request" }, { status: 400 }),
+  );
+  await assert.rejects(read, (e: unknown) => e instanceof ProductUnavailableError);
 });

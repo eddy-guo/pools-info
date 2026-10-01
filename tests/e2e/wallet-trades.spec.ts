@@ -216,6 +216,75 @@ test("Load more keys off nextCursor, never a fixed row count", async ({
   );
 });
 
+test("a Load more whose cursor the read API refuses restarts at page one, in place", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const state = { cls: 0 };
+    Object.assign(window, { cursorShifts: state });
+    new PerformanceObserver((list) => {
+      for (const raw of list.getEntries()) {
+        const shift = raw as PerformanceEntry & {
+          hadRecentInput: boolean;
+          value: number;
+        };
+        if (!shift.hadRecentInput) state.cls += shift.value;
+      }
+    }).observe({ type: "layout-shift", buffered: true });
+  });
+  const firstPage = Array.from({ length: 25 }, (_, i) =>
+    trade({ logIndex: i, transactionHash: `0x${String(i).padStart(64, "2")}` }),
+  );
+  const secondPage = Array.from({ length: 5 }, (_, i) =>
+    trade({
+      logIndex: 100 + i,
+      transactionHash: `0x${String(i).padStart(64, "3")}`,
+    }),
+  );
+  /* The first page names a cursor issued before a deploy; the read API then
+     refuses it (`400 invalid_cursor`), and page one names a fresh one. */
+  const cursors: (string | null)[] = [];
+  await page.route(historyPath, async (route: Route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    cursors.push(cursor);
+    if (cursor === "v1cursor") {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return route.fulfill({ status: 400, json: { error: "invalid_cursor" } });
+    }
+    if (cursor === "v2page2")
+      return route.fulfill({ json: envelope(secondPage, null) });
+    return route.fulfill({
+      json: envelope(firstPage, cursors.length === 1 ? "v1cursor" : "v2page2"),
+    });
+  });
+  await openTrades(page);
+  const rows = resolvedRows(page);
+  await expect(rows).toHaveCount(25);
+  await page.evaluate(() => {
+    (window as unknown as { cursorShifts: { cls: number } }).cursorShifts.cls =
+      0;
+  });
+
+  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await expect.poll(() => cursors).toEqual([null, "v1cursor", null]);
+  await expect(rows).toHaveCount(25);
+  await expect(page.locator("main [role=alert]")).toHaveCount(0);
+  await expect(page.locator("main").getByText(/unavailable/i)).toHaveCount(0);
+  const cls = await page.evaluate(
+    () =>
+      (window as unknown as { cursorShifts: { cls: number } }).cursorShifts.cls,
+  );
+  expect(cls, "the restart fills the slots already on screen").toBeLessThan(
+    0.001,
+  );
+
+  /* The refused cursor is gone for good: the next Load more reads on from
+     the fresh one. */
+  await page.getByRole("button", { name: "Load 25 more" }).click();
+  await expect(rows).toHaveCount(30);
+  expect(cursors).toEqual([null, "v1cursor", null, "v2page2"]);
+});
+
 for (const [name, viewport] of [
   ["desktop", { width: 1440, height: 1000 }],
   ["mobile", { width: 390, height: 844 }],

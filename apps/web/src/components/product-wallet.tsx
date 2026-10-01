@@ -35,6 +35,7 @@ import {
   CrowdLine,
   EmptyState,
   NewTabNotice,
+  StaleUnavailable,
   UnavailableState,
   WinLossRecord,
 } from "./ui";
@@ -156,10 +157,15 @@ function stillHeld(data: AnalyticsWalletResponse | undefined) {
 export function ProductWallet({ address }: { address: string }) {
   const { window: period, setWindow } = useWindow("All");
   const { params, set } = useQuery();
-  const { data, loading, stale, error, refresh } =
-    useProduct<AnalyticsWalletResponse>(
-      `wallets/${address.toLowerCase()}?window=${period}`,
-    );
+  const {
+    data,
+    loading,
+    stale: reloading,
+    error,
+    refresh,
+  } = useProduct<AnalyticsWalletResponse>(
+    `wallets/${address.toLowerCase()}?window=${period}`,
+  );
   /* Nothing was served for this wallet. Its identity is in the URL and stays
      on screen; every figure below it is replaced by the one honest line,
      never by a placeholder that goes on shimmering. */
@@ -167,6 +173,11 @@ export function ProductWallet({ address }: { address: string }) {
   /* The header's freshness stamp: the wallet read's own cut (its window
      refresh's chain timestamp), block unnamed; nothing once it failed. */
   useReportCut("wallet", null, failed ? null : (data?.coverage.asOf ?? null));
+  /* A re-read (another window) failed with the last answer's figures still
+     on screen: they stay where they are, dimmed, under the shared sentence,
+     exactly as they sit dimmed while that re-read is in flight. */
+  const reloadFailed = !!error && !!data;
+  const stale = reloading || reloadFailed;
   // The browser's own wallet reads as its portfolio; the server paints the
   // public framing and hydration swaps whole nodes, never text in place.
   const mine = useMyWallet().isMine(address);
@@ -357,15 +368,13 @@ export function ProductWallet({ address }: { address: string }) {
           Updating saved wallet activity
         </span>
       )}
-      {error && !failed && (
-        <p role="alert" className="coverage-notice">
-          {error}
-        </p>
-      )}
       {failed && <UnavailableState subject="Wallet" onRetry={refresh} />}
       {!failed && (
         <>
-          <div className="stats-grid live-eight-stats wallet-stats">
+          <div
+            className="stats-grid live-eight-stats wallet-stats"
+            data-stale={stale}
+          >
             <Stat pending={loading && !data} label="Realized PnL">
               <Eth pending={!data} wei={w?.realizedWei} signed />
             </Stat>
@@ -402,6 +411,9 @@ export function ProductWallet({ address }: { address: string }) {
                 wei={unindexed(data) ? null : w?.volumeWei}
               />
             </Stat>
+            {/* Last, so the cards' own nth-child grid rules still count
+                them from the first. */}
+            {reloadFailed && <StaleUnavailable onRetry={refresh} />}
           </div>
           <div className="workspace-grid">
             <div>
@@ -476,7 +488,7 @@ export function ProductWallet({ address }: { address: string }) {
                     >
                       <div
                         className="table-scroll wallet-list-region"
-                        aria-busy={stale}
+                        aria-busy={reloading}
                         data-stale-rows={stale}
                         data-released={positionRows.length < shown}
                       >
@@ -606,7 +618,7 @@ export function ProductWallet({ address }: { address: string }) {
                         holding and its cost. */}
                       <div
                         className="mobile-wallet-rows"
-                        aria-busy={stale}
+                        aria-busy={reloading}
                         data-stale-rows={stale}
                       >
                         {positionRows.map((p, index) => (
@@ -918,7 +930,7 @@ export function ProductWallet({ address }: { address: string }) {
                   <div {...activity.panel}>
                     <div
                       className="table-scroll wallet-list-region"
-                      aria-busy={stale}
+                      aria-busy={reloading}
                       data-stale-rows={stale}
                     >
                       <table className="data-table wallet-launches-table">
@@ -955,7 +967,7 @@ export function ProductWallet({ address }: { address: string }) {
                     </div>
                     <div
                       className="mobile-wallet-rows"
-                      aria-busy={stale}
+                      aria-busy={reloading}
                       data-stale-rows={stale}
                     >
                       {data?.launches.map((p) => (
@@ -997,7 +1009,7 @@ export function ProductWallet({ address }: { address: string }) {
                 </div>
                 <div
                   className="wallet-top-pools"
-                  aria-busy={!data || stale}
+                  aria-busy={!data || reloading}
                   data-stale-rows={stale}
                 >
                   {!data &&
