@@ -31,6 +31,9 @@ test("Cmd-K search shows a lime focus border without resizing", async ({
   page,
 }) => {
   await page.goto("/");
+  // The trigger stays disabled until the shortcut's keydown listener is
+  // attached, so a press before then would reach no handler.
+  await expect(page.locator(".search-trigger")).toBeEnabled();
   await page.keyboard.press("ControlOrMeta+K");
   const input = page.getByRole("dialog").getByRole("textbox");
   const head = page.locator(".search-dialog-head");
