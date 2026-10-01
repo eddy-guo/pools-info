@@ -12,13 +12,14 @@ test("wallet follows persist locally and can be removed from the You page", asyn
   });
   await expect(follow).toBeEnabled();
   await follow.click();
-  await expect(
-    page.getByRole("button", { name: "Following", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  // The visible label carries the state, so the button has no aria-pressed.
+  const following = page.getByRole("button", { name: "Following", exact: true });
+  await expect(following).toBeVisible();
+  await expect(following).not.toHaveAttribute("aria-pressed");
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Following", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  ).toBeVisible();
   await page
     .locator(".page-heading")
     .filter({ visible: true })
@@ -40,7 +41,7 @@ test("wallet follows persist locally and can be removed from the You page", asyn
   await page.goto(`/wallet/${wallet}/`);
   await expect(
     page.getByRole("button", { name: "Follow wallet", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
+  ).toBeVisible();
 });
 
 test("following updates across browser tabs without a reload", async ({
@@ -62,7 +63,7 @@ test("following updates across browser tabs without a reload", async ({
   await directory.getByRole("button", { name: `Unfollow ${wallet}` }).click();
   await expect(
     page.getByRole("button", { name: "Follow wallet", exact: true }),
-  ).toHaveAttribute("aria-pressed", "false");
+  ).toBeVisible();
   await directoryPage.close();
 });
 
@@ -92,10 +93,8 @@ test("following a trader from a leaderboard row surfaces it on the Following tab
   await expect(follow).toHaveAttribute("aria-pressed", "false");
   await follow.hover();
   await follow.click();
-  const unfollow = page.getByRole("button", {
-    name: `Unfollow ${address}`,
-  });
-  await expect(unfollow).toHaveAttribute("aria-pressed", "true");
+  // One constant name: the pressed state alone says whether it is followed.
+  await expect(follow).toHaveAttribute("aria-pressed", "true");
 
   await page.getByRole("button", { name: "Following", exact: true }).click();
   await expect(page).toHaveURL(/[?&]view=following(?:&|$)/);
@@ -107,7 +106,9 @@ test("following a trader from a leaderboard row surfaces it on the Following tab
     .locator(".leaderboard-panel")
     .screenshot({ path: testInfo.outputPath("traders-following-tab.png") });
 
-  await page.getByRole("button", { name: `Unfollow ${address}` }).click();
+  await page
+    .getByRole("button", { name: `Follow ${address}`, pressed: true })
+    .click();
   await expect(link).toHaveCount(0);
   await expect(
     page.getByRole("heading", { name: "You are not following anyone yet" }),

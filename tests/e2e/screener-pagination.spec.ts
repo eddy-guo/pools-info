@@ -370,7 +370,7 @@ test("New, Watchlist and All each read the server exactly once on their own tab,
   for (const index of [0, 1])
     await page
       .locator(`${rows}[data-row-index='${index}']`)
-      .getByRole("button", { name: "Add to watchlist" })
+      .getByRole("button", { name: "Watch pool", pressed: false })
       .click();
   const watchedNames = await Promise.all(
     [0, 1].map((index) => rowName(page, rows, index).textContent()),

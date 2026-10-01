@@ -259,7 +259,9 @@ for (const cell of cells) {
     await page.keyboard.press("Tab");
     expect(await focused(page)).toBe("button Copy address");
     await page.keyboard.press("Tab");
-    expect(await focused(page)).toBe("a Open address on explorer");
+    expect(await focused(page)).toBe(
+      "a Open address on explorer (opens in a new tab)",
+    );
   });
 }
 

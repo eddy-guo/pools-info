@@ -21,10 +21,11 @@ export function FollowButton({ address }: { address: string }) {
   const toggle = useFollowToggle(address);
   return (
     <div className={styles.control}>
+      {/* The visible label carries the state ("Follow wallet" / "Following"),
+          so this is a plain button: aria-pressed would say it twice. */}
       <button
         type="button"
         className="button secondary"
-        aria-pressed={followed}
         disabled={!available}
         onClick={toggle}
       >
@@ -53,7 +54,7 @@ export function FollowRowButton({ address }: { address: string }) {
       type="button"
       className={`icon-button follow-toggle ${followed ? "active" : ""}`}
       aria-pressed={followed}
-      aria-label={followed ? `Unfollow ${address}` : `Follow ${address}`}
+      aria-label={`Follow ${address}`}
       disabled={!available}
       onClick={toggle}
     >

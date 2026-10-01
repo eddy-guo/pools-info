@@ -444,6 +444,6 @@ for (const [width, height] of [
     expect(fit.cutLines).toEqual([]);
     // Only the symbol no phone row can hold gives way, and only by ellipsis.
     expect(fit.cutSymbols).toEqual([1]);
-    expect(fit.lastLine).toBe("2026-09-18 01:44:45 UTC · 0x8888…8880 ↗");
-    expect(fit.timeless).toBe("0x8888…8883 ↗");
+    expect(fit.lastLine).toBe("2026-09-18 01:44:45 UTC · 0x8888…8880 ↗ (opens in a new tab)");
+    expect(fit.timeless).toBe("0x8888…8883 ↗ (opens in a new tab)");
   });

@@ -147,11 +147,12 @@ test("starring and unstarring on the All view is instant and asks the read API n
 
   await button.click();
   await expect(button).toHaveAttribute("aria-pressed", "true");
-  await expect(button).toHaveAttribute("aria-label", "Remove from watchlist");
+  // One constant name: the pressed state alone says whether it is watched.
+  await expect(button).toHaveAttribute("aria-label", "Watch pool");
 
   await button.click();
   await expect(button).toHaveAttribute("aria-pressed", "false");
-  await expect(button).toHaveAttribute("aria-label", "Add to watchlist");
+  await expect(button).toHaveAttribute("aria-label", "Watch pool");
 
   expect(requests, "neither star toggle asked the read API anything").toEqual(
     [],

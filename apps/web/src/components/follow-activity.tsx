@@ -300,13 +300,18 @@ export function FollowActivity({ feed }: { feed: FollowActivityFeed }) {
         </div>
         {loaded && !items.length && (
           <EmptyState
+            level={3}
             title="No recent trades"
             description="Trades from wallets you follow will appear here."
           />
         )}
       </div>
       {failed && (
-        <UnavailableState subject="Following activity" onRetry={refresh} />
+        <UnavailableState
+          subject="Following activity"
+          onRetry={refresh}
+          level={3}
+        />
       )}
       {!failed && (
         <div className="pagination">

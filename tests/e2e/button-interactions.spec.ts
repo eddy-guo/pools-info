@@ -498,8 +498,14 @@ test("copy, explorer and star icon buttons keep geometry and visible states", as
 
   const icons = [
     page.locator('button[aria-label="Copy address"]:visible').first(),
-    page.locator('a[aria-label="Open address on explorer"]:visible').first(),
-    page.locator('button[aria-label="Add to watchlist"]:visible').first(),
+    page
+      .locator(
+        'a[aria-label="Open address on explorer (opens in a new tab)"]:visible',
+      )
+      .first(),
+    page
+      .locator('button[aria-label="Watch pool"][aria-pressed="false"]:visible')
+      .first(),
   ];
 
   for (const icon of icons) {

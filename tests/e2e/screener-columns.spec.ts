@@ -96,7 +96,7 @@ test.describe("screener column room", () => {
       );
       expect(measured.sender.labels).toEqual([
         "Copy address",
-        "Open address on explorer",
+        "Open address on explorer (opens in a new tab)",
       ]);
       for (const control of measured.sender.controls) {
         expect(
