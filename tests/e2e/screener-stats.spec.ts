@@ -56,7 +56,7 @@ test.describe("contract-backed screener stats", () => {
   let app: ChildProcess;
   let origin: string;
   let status = 200;
-  let body: ReturnType<typeof sample> = sample();
+  let body: ReturnType<typeof sample> | Record<string, unknown> = sample();
 
   test.beforeAll(async () => {
     api = createServer((request, response) => {
@@ -239,6 +239,18 @@ test.describe("contract-backed screener stats", () => {
       ),
     ).toBe(0);
 
+    // A same-document window change fires framenavigated too; only a real
+    // reload clears this marker.
+    await page.evaluate(() => {
+      (window as typeof window & { statsDocument?: boolean }).statsDocument =
+        true;
+    });
+    const sameDocument = () =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { statsDocument?: boolean })
+            .statsDocument === true,
+      );
     body = {
       ...sample("1h"),
       volumeWei: null,
@@ -247,16 +259,22 @@ test.describe("contract-backed screener stats", () => {
       completeWindow: false,
     };
     await page.getByRole("button", { name: "1h", exact: true }).click();
-    await expect(stats.locator(".stat")).toHaveCount(2);
     await expect(stats.locator(".stat > span")).toHaveText([
       "Volume · 1h",
       "Launches · 1h",
+      "Traders · 1h",
     ]);
     await expect(stats.locator(".stat").first().locator("strong")).toHaveText(
       "",
     );
-    await expect(stats).toContainText("Window incomplete");
-    await expect(stats).not.toContainText("Traders");
+    await expect(stats.locator(".stat").nth(2).locator("strong")).toHaveText(
+      "",
+    );
+    await expect(stats.locator(".stat small")).toHaveText([
+      "Window incomplete",
+      "Window incomplete",
+    ]);
+    expect(await sameDocument()).toBe(true);
     const compactGap = await page.evaluate(() => {
       const row = document.querySelector(".screener-stats")!;
       const launches = document.querySelector(".launch-section")!;
@@ -295,15 +313,37 @@ test.describe("contract-backed screener stats", () => {
     ).toBe(0);
 
     status = 503;
-    await page.getByRole("button", { name: "30d", exact: true }).click();
-    await expect(stats).toHaveCount(0);
-    const headingBottom = await page
-      .locator(".page-heading")
-      .evaluate((node) => node.getBoundingClientRect().bottom);
-    const noStatsTop = await page
+    const stripTop = await stats.evaluate(
+      (node) => node.getBoundingClientRect().top,
+    );
+    const launchTopBeforeFailure = await page
       .locator(".launch-section")
       .evaluate((node) => node.getBoundingClientRect().top);
-    expect(noStatsTop - headingBottom).toBeLessThanOrEqual(25);
+    await page.getByRole("button", { name: "30d", exact: true }).click();
+    await expect(stats).toHaveAttribute("aria-busy", "true");
+    await expect(stats).toContainText("Volume · 1h");
+    await expect(stats.getByRole("alert")).toContainText(
+      "Screener stats unavailable",
+    );
+    expect(await sameDocument()).toBe(true);
+    expect(
+      await stats.evaluate((node) => node.getBoundingClientRect().top),
+    ).toBe(stripTop);
+    expect(
+      await page
+        .locator(".launch-section")
+        .evaluate((node) => node.getBoundingClientRect().top),
+    ).toBe(launchTopBeforeFailure);
+    if (process.env.QA_STATS_EVIDENCE) {
+      await page.evaluate(() => scrollTo({ top: 0, behavior: "instant" }));
+      await page.screenshot({
+        path: join(
+          process.cwd(),
+          "docs/evidence/qa-2026-09-30/pools-qa-g-stats-reload",
+          `${testInfo.project.name === "mobile" ? "390" : "1440"}-after.png`,
+        ),
+      });
+    }
     await expect(
       page.locator(".explore-page [data-row='resolved']").first(),
     ).toBeAttached();
@@ -313,6 +353,31 @@ test.describe("contract-backed screener stats", () => {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
         ),
     );
+    expect(
+      await page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              screenerStatsMeasurement: { cls: number };
+            }
+          ).screenerStatsMeasurement.cls,
+      ),
+    ).toBe(0);
+    status = 200;
+    body = sample("30d");
+    await stats.getByRole("button", { name: "Try again" }).click();
+    await expect(stats).toHaveAttribute("aria-busy", "false");
+    await expect(stats.locator(".stat")).toHaveCount(3);
+    await expect(stats.getByRole("alert")).toHaveCount(0);
+    expect(await sameDocument()).toBe(true);
+
+    body = { window: "7d" };
+    await page.getByRole("button", { name: "7d", exact: true }).click();
+    await expect(stats.getByRole("alert")).toContainText(
+      "Screener stats unavailable",
+    );
+    await expect(stats).toContainText("Volume · 30d");
+    expect(await sameDocument()).toBe(true);
     expect(
       await page.evaluate(
         () =>
