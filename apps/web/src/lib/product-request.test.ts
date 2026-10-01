@@ -9,6 +9,7 @@ import {
   productUnavailableResponse,
   readProduct,
   readScreenerStats,
+  readWalletPosition,
   readWalletTradeHistory,
 } from "./product-server";
 import {
@@ -25,6 +26,7 @@ import {
   cardTopPosition,
   cardTradeCount,
   cardEthText,
+  cardReadLifetimeMs,
   positionCardChart,
   positionCardFigures,
   readCardPosition,
@@ -440,7 +442,7 @@ const audited = {
     },
   }),
 };
-/** A position as the wallet read serves it to the card: no per-token price. */
+/** A position as the wallet page serves it, with no per-token price beside it. */
 const fromWallet = (position: AnalyticsWalletPosition): PositionCardSource => ({
   position,
   mark: null,
@@ -987,13 +989,14 @@ test("a position card reads only a supported position of the named pool and laun
     position.launchTx,
   );
   assert.ok(card);
-  // The wallet page's own row, and no price the wallet read does not serve.
+  // The wallet page's own row; the committed dataset folds no mark.
   assert.deepEqual(card.source, {
     position,
     mark: null,
     avgEntryPriceWei: null,
   });
-  assert.equal(card.pool.poolId, position.poolId);
+  assert.equal(card.pool.id, position.poolId);
+  assert.equal(card.pool.launchTx, position.launchTx);
   assert.equal(card.rank, wallet.wallet.rank);
   assert.deepEqual(
     await readCardPosition(wallet.wallet.address, position.poolId),
@@ -1011,6 +1014,13 @@ test("a position card reads only a supported position of the named pool and laun
     await readCardPosition(wallet.wallet.address, `0x${"f".repeat(64)}`),
     null,
   );
+  // The committed dataset's position read is the wallet page's row for every
+  // position it holds, so a fixture card prints what the page prints.
+  for (const { address, row } of datasetPositions())
+    assert.deepEqual(
+      (await readWalletPosition(address, row.poolId.toLowerCase()))?.position,
+      row,
+    );
   // An excluded position has no card, whatever the wallet's other rows say.
   const excluded = datasetPositions().find(({ row }) => !row.supported)!;
   assert.ok(excluded);
@@ -1020,7 +1030,7 @@ test("a position card reads only a supported position of the named pool and laun
   );
 });
 
-test("a position card refuses what the wallet read cannot vouch for", async (t) => {
+test("a position card answers each refusal of the single-position read as its route does", async (t) => {
   const origin = process.env.INDEXER_API_URL,
     disabled = process.env.CHAIN_REFRESH_DISABLED;
   process.env.INDEXER_API_URL = "https://index.example";
@@ -1031,21 +1041,38 @@ test("a position card refuses what the wallet read cannot vouch for", async (t) 
     if (disabled === undefined) delete process.env.CHAIN_REFRESH_DISABLED;
     else process.env.CHAIN_REFRESH_DISABLED = disabled;
   });
-  const row = audited.BCTC,
-    other = audited.POTATCHI;
-  const walletBody = (
-    address: string,
-    positions: AnalyticsWalletPosition[],
-  ) => ({
-    coverage: {},
+  // Past the lifetime of any board read an earlier test left held.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 2 * cardReadLifetimeMs });
+  const positionBody = (of: AnalyticsWalletPosition) => ({
+    coverage: { complete: false },
     window: "All",
-    wallet: { address, rank: 50 },
-    positions,
-    trades: [],
-    curve: [],
-    launches: [],
+    wallet: of.position!.trader,
+    pool: {
+      id: of.poolId,
+      token: of.token,
+      name: of.symbol,
+      symbol: of.symbol,
+      launchTx: of.launchTx,
+      launchSender: `0x${"9".repeat(40)}`,
+      launchBlock: 1,
+      launchedAt: 1,
+      launchType: "instant",
+    },
+    position: of,
+    mark: {
+      sqrtPriceX96: "1",
+      priceWei: "4868000000000",
+      block: 1,
+      timestamp: 1,
+      txHash: `0x${"1".repeat(64)}`,
+      valueWei: "1",
+    },
+    roi: 1,
+    totalRoi: 1,
+    avgEntryPriceWei: "488980000000",
+    cycles: null,
   });
-  const pool = (of: AnalyticsWalletPosition, launch: string) => ({
+  const poolBody = (of: AnalyticsWalletPosition, launch: string) => ({
     pool: {
       poolId: of.poolId,
       token: of.token,
@@ -1056,39 +1083,164 @@ test("a position card refuses what the wallet read cannot vouch for", async (t) 
     },
     analytics: null,
   });
-  let served: Record<string, unknown> = {};
-  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
-    const path = new URL(String(input)).pathname.replace("/v1/", "");
-    const body = served[path];
-    return body === undefined
-      ? Response.json({ error: "not_found" }, { status: 404 })
-      : Response.json(body);
+  const board = (address: string) => ({
+    coverage: {},
+    window: "All",
+    metric: "realized",
+    minTrades: 10,
+    items: [{ address, rank: 50 }],
+    total: 1,
+    nextOffset: null,
   });
-  // Past the wallet read's 500 positions a missing pool is unknown: no card
-  // claims it is absent, and the route answers unavailable rather than 404.
-  const deep = `0x${"4".repeat(40)}`;
-  served = {
-    [`wallets/${deep}`]: {
-      ...walletBody(deep, []),
-      positionsTruncated: true,
+  let served: Record<string, { status?: number; body: unknown }> = {},
+    requested: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: URL | string | Request) => {
+    const url = new URL(String(input)),
+      path = url.pathname.replace("/v1/", "");
+    requested.push(`${path}${url.search}`);
+    const answer = served[path] ?? {
+      status: 404,
+      body: { error: "not_found" },
+    };
+    return Response.json(answer.body, { status: answer.status ?? 200 });
+  });
+  // Each case is its own wallet, so no answer is served from another's cache.
+  let n = 0;
+  const serve = (
+    row: AnalyticsWalletPosition,
+    answer: { status?: number; body: unknown },
+  ) => {
+    const address = `0x${(++n).toString(16).padStart(40, "0")}`;
+    served = {
+      [`wallets/${address}/positions/${row.poolId}`]: answer,
+      leaderboard: { body: board(address) },
+    };
+    requested = [];
+    return address;
+  };
+  const row = audited.BCTC;
+  // The three "no such position" answers are the route's 404: no card.
+  for (const error of [
+    "pool_not_indexed",
+    "wallet_not_found",
+    "position_not_found",
+  ])
+    assert.equal(
+      await readCardPosition(
+        serve(row, { status: 404, body: { error } }),
+        row.poolId,
+      ),
+      null,
+      error,
+    );
+  // Every read it cannot answer is the route's 503, never a guessed card;
+  // so is a read API without the route (its bare `not_found`).
+  for (const error of [
+    "position_coverage_unavailable",
+    "position_refresh_pending",
+    "catalog_identity_conflict",
+  ])
+    await assert.rejects(
+      readCardPosition(
+        serve(row, { status: 503, body: { error } }),
+        row.poolId,
+      ),
+      ProductUnavailableError,
+      error,
+    );
+  await assert.rejects(
+    readCardPosition(
+      serve(row, { status: 404, body: { error: "not_found" } }),
+      row.poolId,
+    ),
+    ProductUnavailableError,
+  );
+  // A body naming another wallet, or a row another launch, is no card either.
+  const own = (address: string) => ({
+    ...row,
+    position: { ...row.position!, trader: address as `0x${string}` },
+  });
+  let address = serve(row, { body: null });
+  served[`wallets/${address}/positions/${row.poolId}`] = {
+    body: positionBody(own(`0x${"e".repeat(40)}`)),
+  };
+  await assert.rejects(
+    readCardPosition(address, row.poolId),
+    ProductUnavailableError,
+  );
+  address = serve(row, { body: null });
+  served[`wallets/${address}/positions/${row.poolId}`] = {
+    body: {
+      ...positionBody(own(address)),
+      position: { ...own(address), launchTx: `0x${"6".repeat(64)}` },
     },
   };
-  await assert.rejects(readCardPosition(deep, row.poolId));
-  // Two reads that disagree on the pool's launch draw no card either.
-  const split = `0x${"5".repeat(40)}`;
-  served = {
-    [`wallets/${split}`]: walletBody(split, [other]),
-    [`pools/${other.poolId}`]: pool(other, `0x${"6".repeat(64)}`),
+  await assert.rejects(
+    readCardPosition(address, row.poolId),
+    ProductUnavailableError,
+  );
+  // A closed position is drawn from the position read and the board alone:
+  // its prices exactly as served, its rank from the board, no pool read.
+  address = serve(row, { body: null });
+  served[`wallets/${address}/positions/${row.poolId}`] = {
+    body: positionBody(own(address)),
   };
-  await assert.rejects(readCardPosition(split, other.poolId));
-  const agreed = `0x${"7".repeat(40)}`;
-  served = {
-    [`wallets/${agreed}`]: walletBody(agreed, [row]),
-    [`pools/${row.poolId}`]: pool(row, row.launchTx),
+  const closed = await readCardPosition(address, row.poolId, row.launchTx);
+  assert.deepEqual(closed?.source, {
+    position: own(address),
+    mark: positionBody(row).mark,
+    avgEntryPriceWei: "488980000000",
+  });
+  assert.equal(closed?.pool.name, "BCTC");
+  assert.equal(closed?.rank, 50);
+  assert.deepEqual(closed?.candles, []);
+  assert.deepEqual(requested, [
+    `wallets/${address}/positions/${row.poolId}?window=All`,
+    "leaderboard?window=All&limit=100",
+  ]);
+  // An open position reads its pool for the chart, which must name the
+  // same launch; an excluded one has no card.
+  const open = audited.HOOKR;
+  address = serve(open, { body: null });
+  served[`wallets/${address}/positions/${open.poolId}`] = {
+    body: positionBody({
+      ...open,
+      position: { ...open.position!, trader: address as `0x${string}` },
+    }),
   };
-  const card = await readCardPosition(agreed, row.poolId, row.launchTx);
-  assert.equal(card?.pool.name, "BCTC");
-  assert.deepEqual(card?.candles, []);
+  served[`pools/${open.poolId}`] = {
+    body: poolBody(open, `0x${"6".repeat(64)}`),
+  };
+  await assert.rejects(readCardPosition(address, open.poolId));
+  // The pool read that disagreed is held like any other until it lapses.
+  t.mock.timers.setTime(Date.now() + 2 * cardReadLifetimeMs);
+  address = serve(open, { body: null });
+  served[`wallets/${address}/positions/${open.poolId}`] = {
+    body: positionBody({
+      ...open,
+      position: { ...open.position!, trader: address as `0x${string}` },
+    }),
+  };
+  served[`pools/${open.poolId}`] = { body: poolBody(open, open.launchTx) };
+  const held = await readCardPosition(address, open.poolId);
+  assert.equal(held?.source.avgEntryPriceWei, "488980000000");
+  assert.ok(requested.includes(`pools/${open.poolId}?window=All`));
+  address = serve(row, { body: null });
+  served[`wallets/${address}/positions/${row.poolId}`] = {
+    body: {
+      ...positionBody(own(address)),
+      position: {
+        ...own(address),
+        supported: false,
+        flags: ["unattributed_outflow"],
+        realizedWei: null,
+        netWei: null,
+        unrealizedWei: null,
+        position: null,
+      },
+    },
+  };
+  assert.equal(await readCardPosition(address, row.poolId), null);
 });
 
 test("following proxy bounds and canonicalizes explicit wallet selections", () => {
@@ -2259,7 +2411,7 @@ test("position card figures reproduce the audited HOOKR, BCTC and POTATCHI posit
   assert.equal(hookr.sells, 55);
   // Opened 6 Aug 2026 04:22:56Z, 54 days before the cut.
   assert.equal(hookr.held, "54d");
-  // The wallet read serves neither price: the cells stay blank.
+  // A source that serves neither price leaves both cells blank.
   assert.equal(hookr.entry, null);
   assert.equal(hookr.mark, null);
 

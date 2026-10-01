@@ -6,6 +6,7 @@ import {
 } from "./explore-response";
 import { validateFollowingResponse } from "./following-response";
 import { normalizePoolLaunch, validatePoolResponse } from "./pool-response";
+import { validatePositionResponse } from "./position-response";
 import {
   validateStatsResponse,
   type ScreenerStatsResponse,
@@ -33,6 +34,7 @@ import {
   type EthPriceResponse,
   type LiveWindow,
   type SearchGroup,
+  type WalletPositionResponse,
 } from "@pools/core";
 import initial from "../../../../data/snapshots/chain.json";
 import captured from "../../../../data/pools/index.json";
@@ -194,6 +196,13 @@ function creatorsPreload(
  */
 export const productFixtures = () => process.env.PRODUCT_FIXTURES === "1";
 let model: ReturnType<typeof preloadModel> | undefined;
+/** A pool's catalog row in the committed dataset, or undefined outside it. */
+const preloadedPool = (id: string) =>
+  [
+    ...catalog.pools,
+    ...initial.markets,
+    ...Object.values(captured.snapshots).flatMap((s) => s.markets),
+  ].find((p) => p.id.toLowerCase() === id);
 export function preloadedProduct(
   endpoint: string,
   params: URLSearchParams,
@@ -236,11 +245,7 @@ export function preloadedProduct(
     );
   if (endpoint.startsWith("pools/")) {
     const id = endpoint.slice(6);
-    const pool = [
-      ...catalog.pools,
-      ...initial.markets,
-      ...Object.values(captured.snapshots).flatMap((s) => s.markets),
-    ].find((p) => p.id.toLowerCase() === id);
+    const pool = preloadedPool(id);
     if (!pool) return null;
     return {
       poolId: pool.id,
@@ -474,6 +479,96 @@ export async function readWalletTradeHistory(
     throw new ProductUnavailableError();
   }
   return { ...(data as WalletTradeHistoryResponse), delivery: { source: "indexer" } };
+}
+/** The single-position read's refusals that mean this wallet holds nothing
+ * in this pool, as opposed to a read the API cannot answer right now. */
+const positionAbsent = new Set([
+  "pool_not_indexed",
+  "wallet_not_found",
+  "position_not_found",
+]);
+/**
+ * One wallet's position in one pool (`GET /v1/wallets/:address/positions/
+ * :poolId?window=All`), the read the position card is drawn from: the wallet
+ * page's row for the pool with the pool's catalog row and the ledger's mark
+ * beside it. Server-side only; the public proxy does not forward it.
+ *
+ * Null when the read API answers that there is no such position
+ * (`pool_not_indexed`, `wallet_not_found`, `position_not_found`). Every other
+ * refusal, `position_coverage_unavailable`, `position_refresh_pending` and
+ * `catalog_identity_conflict` among them, and any body that fails
+ * {@link validatePositionResponse}, raises {@link ProductUnavailableError}.
+ */
+export async function readWalletPosition(
+  address: string,
+  poolId: string,
+): Promise<WalletPositionResponse | null> {
+  if (!/^0x[0-9a-f]{40}$/.test(address) || !/^0x[0-9a-f]{64}$/.test(poolId))
+    throw Error("Invalid position request");
+  let origin: URL | null;
+  try {
+    origin = indexerOrigin();
+  } catch {
+    throw new ProductUnavailableError();
+  }
+  if (origin) {
+    let response: Response;
+    try {
+      const url = new URL(`/v1/wallets/${address}/positions/${poolId}`, origin);
+      url.search = "window=All";
+      response = await fetch(url, {
+        signal: AbortSignal.timeout(8000),
+        cache: "no-store",
+        redirect: "error",
+      });
+    } catch {
+      throw new ProductUnavailableError();
+    }
+    if (response.status === 404) {
+      const body = await response.json().catch(() => null);
+      // Any other 404 (`not_found`) is a read API without this route.
+      if (positionAbsent.has(body?.error)) return null;
+      throw new ProductUnavailableError();
+    }
+    if (!response.ok) throw await productUnavailable(response);
+    const data = await response.json().catch(() => null);
+    try {
+      validatePositionResponse(data, address, poolId);
+    } catch {
+      throw new ProductUnavailableError();
+    }
+    return data;
+  }
+  if (!productFixtures()) throw new ProductUnavailableError();
+  model ??= preloadModel();
+  const pool = preloadedPool(poolId),
+    page = walletAnalytics(model, address, "All"),
+    row = page.positions.find((p) => p.poolId.toLowerCase() === poolId);
+  if (!pool || !row) return null;
+  /* The committed dataset folds no ledger price state and no inventory
+     cycles, so the figures built on them are not served here. */
+  return {
+    coverage: page.coverage,
+    window: "All",
+    wallet: address,
+    pool: {
+      id: pool.id,
+      token: pool.token,
+      name: pool.name,
+      symbol: pool.symbol,
+      launchTx: pool.launchTx,
+      launchSender: pool.launchSender,
+      launchBlock: pool.launchBlock,
+      launchedAt: pool.launchedAt,
+      launchType: fixtureLaunchType,
+    },
+    position: row,
+    mark: null,
+    roi: null,
+    totalRoi: null,
+    avgEntryPriceWei: null,
+    cycles: null,
+  };
 }
 /**
  * One product read, from the configured read API and nowhere else.

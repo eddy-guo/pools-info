@@ -6,21 +6,23 @@ import {
   since,
   WALLET_ROI_DIGITS,
   type EthFigure,
+  type AnalyticsLeaderboardResponse,
   type AnalyticsWalletPosition,
   type AnalyticsWalletResponse,
+  type CatalogPool,
   type AnalyticsWalletSummary,
   type ObservedMarket,
   type LiveWindow,
   type WalletPositionResponse,
 } from "@pools/core";
-import { readProduct } from "./product-server";
+import { readProduct, readWalletPosition } from "./product-server";
 import type { Delivered } from "./use-product";
 
 export interface CardWallet {
   result: Delivered<AnalyticsWalletResponse>;
 }
 
-/** How long one wallet read serves the modal's customize toggles before it is read again. */
+/** How long one card read serves the modal's customize toggles before it is read again. */
 export const cardReadLifetimeMs = 30_000;
 const cardReadEntries = 64;
 /**
@@ -331,44 +333,48 @@ export function cardCurve(
 /**
  * What a position card is drawn from: the single-position read's own shape
  * (`WalletPositionResponse`, `GET /v1/wallets/:address/positions/:poolId`),
- * whose `position` is the wallet page's row for the pool, field for field.
- * {@link readCardPosition} fills it from the wallet read, which serves that
- * row but neither per-token price, so `mark` and `avgEntryPriceWei` are null
- * there and their cells stay blank: a price is never worked back out of the
- * row's other figures.
+ * whose `position` is the wallet page's row for the pool, field for field,
+ * beside the ledger's mark and the held units' average entry. A price the
+ * read withholds (null) leaves its cell blank: it is never worked back out of
+ * the row's other figures.
  */
 export type PositionCardSource = Pick<
   WalletPositionResponse,
   "position" | "mark" | "avgEntryPriceWei"
 >;
-/** The pool a position card names, from its catalog row. */
-export interface CardPool {
-  poolId: string;
-  token: string;
-  name: string;
-  symbol: string;
-  launchType?: "instant" | "crowd";
-  launch: { transactionHash: string };
-}
 /** The pool read as it arrives: the read API nests the catalog row under
  * `pool`, the committed dataset serves it flat and with no market. */
-type CardPoolResponse = CardPool & {
-  pool?: CardPool;
+interface CardPoolIdentity {
+  token: string;
+  launch: { transactionHash: string };
+}
+type CardPoolResponse = CardPoolIdentity & {
+  pool?: CardPoolIdentity;
   market?: ObservedMarket | null;
 };
 export interface CardPosition {
   source: PositionCardSource;
-  pool: CardPool;
-  /** The pool's served hourly price history, oldest first; empty where none is served. */
+  /** The pool's catalog row, as the position read names it. */
+  pool: CatalogPool;
+  /** The pool's served hourly price history, oldest first; empty where none
+   * is served, and never read for a closed position, which draws no chart. */
   candles: { time: number; close: string }[];
   /** The wallet's rank on the All board; null while unranked. */
   rank: number | null;
 }
+const positionReads = new Map<
+  string,
+  { expires: number; read: Promise<WalletPositionResponse | null> }
+>();
 const poolReads = new Map<
   string,
   { expires: number; read: Promise<Delivered<CardPoolResponse>> }
 >();
-/** The pool read behind a position card, held as long as the wallet read. */
+const boardReads = new Map<
+  string,
+  { expires: number; read: Promise<Delivered<AnalyticsLeaderboardResponse>> }
+>();
+/** The pool read behind an open position's chart, held as long as the position read. */
 const readCardPool = (poolId: string) =>
   cachedRead(poolReads, poolId, () =>
     readProduct<CardPoolResponse>(
@@ -376,46 +382,68 @@ const readCardPool = (poolId: string) =>
       new URLSearchParams({ window: "All" }),
     ),
   );
+/**
+ * The All board's ranked top 100, one read shared by every position card for
+ * as long as a position read is held. A wallet's rank is its place on this
+ * board (`wallet.rank` on the wallet read is the same realized order at the
+ * same gate), which the single-position read does not carry.
+ */
+const readCardBoard = () =>
+  cachedRead(boardReads, "All", () =>
+    readProduct<AnalyticsLeaderboardResponse>(
+      ["leaderboard"],
+      new URLSearchParams({ window: "All", limit: "100" }),
+    ),
+  );
 
 /**
  * A position card's source and the pool it belongs to, or null when the
  * wallet holds no supported position in that pool or `launch` names another
- * launch: an excluded position gets no card, never a number. This is the one
- * function to change when the card moves to the single-position read, which
- * serves the two prices the wallet read does not; until then the card shares
- * the portfolio card's All read of the wallet.
+ * launch: an excluded position gets no card, never a number. Built on the
+ * single-position read; the pool read joins it only for an open position's
+ * price chart, and must name the same launch.
  */
 export async function readCardPosition(
   address: string,
   poolId: string,
   launch?: string,
 ): Promise<CardPosition | null> {
-  const { result } = await readCardWallet(address, "All");
-  const row = result.positions.find((p) => p.poolId.toLowerCase() === poolId);
-  // The wallet read carries the first 500 positions in pool order; past them
-  // a pool it does not list is unknown, not absent.
-  if (!row && result.positionsTruncated)
-    throw Error("Position past the wallet read's page");
+  const read = await cachedRead(positionReads, `${address}:${poolId}`, () =>
+    readWalletPosition(address, poolId),
+  );
+  const row = read?.position;
   if (
+    !read ||
     !row?.supported ||
     !row.position ||
     (launch && row.launchTx.toLowerCase() !== launch)
   )
     return null;
-  const response = await readCardPool(poolId),
-    pool = response.pool ?? response;
+  const open = BigInt(row.position.quantity) > 0n;
+  const [board, response] = await Promise.all([
+    readCardBoard(),
+    open ? readCardPool(poolId) : null,
+  ]);
+  const pool = response && (response.pool ?? response);
   // Both reads name the pool's launch: a disagreement is the catalog's to
   // settle, not a card to draw.
   if (
-    pool.token.toLowerCase() !== row.token.toLowerCase() ||
-    pool.launch.transactionHash.toLowerCase() !== row.launchTx.toLowerCase()
+    pool &&
+    (pool.token.toLowerCase() !== row.token.toLowerCase() ||
+      pool.launch.transactionHash.toLowerCase() !== row.launchTx.toLowerCase())
   )
     throw Error("Pool identity disagrees with the position");
   return {
-    source: { position: row, mark: null, avgEntryPriceWei: null },
-    pool,
-    candles: response.market?.history.candles ?? [],
-    rank: result.wallet.rank,
+    source: {
+      position: row,
+      mark: read.mark,
+      avgEntryPriceWei: read.avgEntryPriceWei,
+    },
+    pool: read.pool,
+    candles: response?.market?.history.candles ?? [],
+    rank:
+      board.items.find((item) => item.address.toLowerCase() === address)
+        ?.rank ?? null,
   };
 }
 
