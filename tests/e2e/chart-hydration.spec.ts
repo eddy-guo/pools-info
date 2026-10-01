@@ -47,7 +47,7 @@ test("chart accepts its first selection only once hydration can retain it", asyn
       page.locator(".interactive-chart canvas").first(),
     ).toBeVisible();
     await expect(
-      page.getByRole("img", { name: /Price candle chart/ }),
+      page.getByRole("application", { name: /Price candle chart/ }),
     ).toBeVisible();
     await expect(range).toHaveAttribute("aria-pressed", "true");
     await expect(all).toHaveAttribute("aria-pressed", "false");

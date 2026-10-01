@@ -313,7 +313,7 @@ test("chart ranges from the panel head with no select", async ({
   );
   await page.goto(poolHref(market));
   await expect(
-    page.getByRole("img", { name: /Price candle chart/ }),
+    page.getByRole("application", { name: /Price candle chart/ }),
   ).toBeVisible();
   const panel = page.locator(".pool-chart-panel");
   await expect(panel.locator("select")).toHaveCount(0);

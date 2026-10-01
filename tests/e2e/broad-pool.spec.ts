@@ -94,7 +94,7 @@ test("broad-only pool uses the real chart and exact market stats, with nothing u
   await page.goto(`/pool/${id}/`);
   await expect(page.getByRole("heading", { name: pool.name })).toBeVisible();
   await expect(
-    page.getByRole("img", { name: /Price candle chart/ }),
+    page.getByRole("application", { name: /Price candle chart/ }),
   ).toBeVisible();
   await expect(page.locator(".stat > span")).toHaveText([
     "FDV",
@@ -305,7 +305,7 @@ test("quiet token retains its chart with a dated unit basis after the global mar
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect.poll(() => reads).toBe(2);
   await expect(
-    page.getByRole("img", { name: /Price candle chart/ }),
+    page.getByRole("application", { name: /Price candle chart/ }),
   ).toBeVisible();
   await expect(page.locator(".live-price-heading")).toContainText("2");
 });
@@ -548,7 +548,7 @@ for (const sample of [
       }),
     );
     await page.goto(`/pool/${id}/`);
-    const chart = page.getByRole("img", { name: /Price candle chart/ });
+    const chart = page.getByRole("application", { name: /Price candle chart/ });
     await expect(chart.locator("canvas").first()).toBeVisible();
     await page.getByRole("button", { name: "All", exact: true }).click();
     await chart.focus();

@@ -678,6 +678,17 @@ function geometry(
       .join(" "),
   };
 }
+/** The point a chart's keyboard crosshair moves to, or null for a key it
+    does not handle: arrows step one point, Home and End jump to the ends. */
+export function chartStep(key: string, index: number, length: number) {
+  if (!length) return null;
+  const last = length - 1;
+  if (key === "Home") return 0;
+  if (key === "End") return last;
+  if (key === "ArrowLeft") return Math.max(0, Math.min(last, index - 1));
+  if (key === "ArrowRight") return Math.max(0, Math.min(last, index + 1));
+  return null;
+}
 export function Chart({
   points,
   label = "Price",
@@ -735,7 +746,10 @@ export function Chart({
     );
   return (
     <div className="chart" aria-busy={pending}>
-      <div className="chart-readout">
+      {/* The readout is the chart's figure for keyboard and screen-reader
+          users too: each step of the crosshair is announced from here, the
+          same value and time the pointer shows. */}
+      <div className="chart-readout" aria-live="polite" aria-atomic="true">
         <span className="muted">{label}</span>
         <strong>
           {/* The quiet mark, as a stat card's value slot: an empty slot has
@@ -768,24 +782,16 @@ export function Chart({
           viewBox="0 0 820 230"
           preserveAspectRatio="none"
           tabIndex={0}
-          role="img"
-          aria-label={`${label} chart. Use left and right arrow keys to inspect observations.`}
+          /* An application, not an image: a screen reader in browse mode
+             keeps the arrow keys for itself on an image, so they never
+             reach the crosshair. */
+          role="application"
+          aria-label={`${label} chart. Use the left and right arrow keys, Home and End to inspect observations.`}
           onKeyDown={(e) => {
-            if (
-              points.length &&
-              (e.key === "ArrowLeft" || e.key === "ArrowRight")
-            ) {
-              e.preventDefault();
-              setHover(
-                Math.max(
-                  0,
-                  Math.min(
-                    points.length - 1,
-                    index + (e.key === "ArrowRight" ? 1 : -1),
-                  ),
-                ),
-              );
-            }
+            const step = chartStep(e.key, index, points.length);
+            if (step === null) return;
+            e.preventDefault();
+            setHover(step);
           }}
           onPointerMove={(e) => {
             if (!points.length) return;

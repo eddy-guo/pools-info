@@ -26,7 +26,7 @@ import {
   type ObservedMarket,
   type Candle,
 } from "@pools/core";
-import { Price } from "./ui";
+import { Price, chartStep } from "./ui";
 import { Eth, utc } from "./live-ui";
 import { candlePriceDivisor } from "../lib/candle-scale";
 export const chartRanges = {
@@ -335,25 +335,22 @@ export function Candles(
   return (
     <div
       className="interactive-chart"
-      role="img"
+      /* An application, not an image: a screen reader in browse mode keeps
+         the arrow keys for itself on an image, and an image's subtree is
+         hidden from it, which hid the readout below. */
+      role="application"
       aria-busy={!hydrated || pending}
-      aria-label="Price candle chart with ETH volume. Drag to pan, scroll to zoom, arrow keys to inspect."
+      aria-label="Price candle chart with ETH volume. Drag to pan, scroll to zoom, use the left and right arrow keys, Home and End to inspect candles."
       tabIndex={hydrated ? 0 : -1}
       onKeyDown={(e) => {
-        if ((e.key !== "ArrowRight" && e.key !== "ArrowLeft") || !bars.length)
-          return;
-        e.preventDefault();
         const i = Math.max(
           0,
           bars.findIndex((b) => b.time === (focus?.time ?? bars.at(-1)?.time)),
         );
-        const b =
-          bars[
-            Math.min(
-              bars.length - 1,
-              Math.max(0, i + (e.key === "ArrowRight" ? 1 : -1)),
-            )
-          ];
+        const step = chartStep(e.key, i, bars.length);
+        if (step === null) return;
+        e.preventDefault();
+        const b = bars[step];
         const a = api.current;
         if (!a || !container.current) return;
         a.chart.setCrosshairPosition(
@@ -369,10 +366,14 @@ export function Candles(
       }}
     >
       <div className="chart-surface" ref={container} />
-      {/* The OHLC readout follows the crosshair instead of holding a row. */}
+      {/* The OHLC readout follows the crosshair instead of holding a row.
+          It mounts with its figures, which a live region would not announce,
+          so a screen reader hears the same figures from the region after it,
+          which stays mounted and names each one in words. */}
       {active && (
         <div
           className="chart-tooltip"
+          aria-hidden="true"
           style={{
             left:
               focus.x + 16 + tooltipWidth > focus.width
@@ -402,6 +403,30 @@ export function Candles(
           </span>
         </div>
       )}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {active && (
+          <>
+            <time dateTime={new Date(active.time * 1000).toISOString()}>
+              {utc(active.time)}
+            </time>
+            {(
+              [
+                ["Open", active.open],
+                ["High", active.high],
+                ["Low", active.low],
+                ["Close", active.close],
+              ] as const
+            ).map(([name, value]) => (
+              <span key={name}>
+                , {name} <Price wei={value.toString()} />
+              </span>
+            ))}
+            <span>
+              , Volume <Eth wei={active.volume.toString()} />
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
