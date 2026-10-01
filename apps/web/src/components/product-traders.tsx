@@ -383,11 +383,7 @@ function MobileTraderCard({
             </span>
             <span className="mobile-trader-foot-stat">
               Hold{" "}
-              {w.avgHold == null ? (
-                <Unavailable />
-              ) : (
-                holdDuration(w.avgHold)
-              )}
+              {w.avgHold == null ? <Unavailable /> : holdDuration(w.avgHold)}
             </span>
           </div>
           {/* The unattributed-swap disclosure as a third line inside the card's
