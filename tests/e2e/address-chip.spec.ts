@@ -25,7 +25,7 @@ type Cell = {
   /** The identity tile's rendered size. */
   identicon: { desktop: number; mobile: number };
   /** Copy/explorer tap target on mobile: 44px where the row has room for
-      it, the chip's own compact size on the screener's 104px card. */
+      it, 24px on the screener's compact sender line. */
   tapTarget: number;
 };
 const cells: Cell[] = [
@@ -41,7 +41,7 @@ const cells: Cell[] = [
     href: /^\/wallet\/0x[0-9a-f]{40}\/$/,
     height: { desktop: 62, mobile: 104 },
     identicon: { desktop: 16, mobile: 16 },
-    tapTarget: 16,
+    tapTarget: 24,
   },
   {
     name: "leaderboard trader",
@@ -191,6 +191,20 @@ for (const cell of cells) {
       }
       expect(chip.copyLabel).toBe("Copy address");
       expect(chip.fits, "the chip stays inside its row").toBe(true);
+      for (const target of [chip.copyBox, chip.openBox]) {
+        expect(
+          target.right - target.left,
+          "icon target width",
+        ).toBeGreaterThanOrEqual(24);
+        expect(
+          target.bottom - target.top,
+          "icon target height",
+        ).toBeGreaterThanOrEqual(24);
+      }
+      expect(
+        chip.openBox.left,
+        "icon targets do not overlap",
+      ).toBeGreaterThanOrEqual(chip.copyBox.right);
       if (project === "mobile") {
         expect(chip.copyBox.bottom - chip.copyBox.top, "copy tap target").toBe(
           cell.tapTarget,

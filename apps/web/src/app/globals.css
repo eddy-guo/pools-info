@@ -1050,6 +1050,16 @@ main {
 .address-label > .address-short {
   display: none;
 }
+/* 24px targets (WCAG 2.5.8) around the 14px glyphs; the negative block
+   margin keeps them out of an 18px meta line's height. */
+.address-label .icon-button {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  margin-block: -3px;
+  padding: 0;
+}
 .copy-wrap {
   position: relative;
   display: inline-flex;
@@ -3926,8 +3936,8 @@ button.icon-button:disabled {
 }
 /* Address chip: an address inside a table cell at the row's own height. The
    identicon and both-end truncation open the address's page; copy and
-   explorer follow as 16px icon buttons rather than the 32px controls, so a
-   62px row keeps its height. The copy confirmation is the floating status
+   explorer follow as 24px icon targets rather than the 32px controls, held
+   out of the line's height, so a 62px row keeps its height. The copy confirmation is the floating status
    the header label uses, so it never reflows the row. `data-stacked` puts
    the two actions under the address, past the identicon, for the screener's
    sender column: 92px holds the address but not the actions beside it. */
@@ -3974,12 +3984,20 @@ button.icon-button:disabled {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  /* The copy target starts where the address link ends, over the chip's own
+     4px gap, so the pair of 24px targets widens the chip by 10px only. */
+  margin-left: -4px;
 }
+/* Each action is a 24px target (WCAG 2.5.8) around the unchanged 12px glyph.
+   The negative block margin keeps the box out of the line's height, so the
+   16px sender line and every row keep their measured height. */
 .address-chip .icon-button {
-  min-height: 0;
-  min-width: 0;
-  padding: 2px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  min-width: 24px;
+  margin-block: -4px;
+  padding: 0;
   border-radius: 4px;
   color: var(--color-text-3);
 }
@@ -4058,6 +4076,14 @@ button.icon-button:disabled {
   }
   .address-chip .icon-button {
     min-width: 28px;
+    width: 28px;
+  }
+  .creators-page .address-chip .icon-button {
+    margin-block: 0;
+  }
+  .address-chip-actions {
+    gap: 2px;
+    margin-left: 0;
   }
 }
 .mobile-traders,
@@ -4604,6 +4630,14 @@ button.icon-button:disabled {
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
+/* The Trader cell gives its chip 9px of its right padding: the chip's 24px
+   copy and explorer targets need 10px more than the 16px icons did, which
+   left it 0.65px to spare at 1280 on macOS and 0.44px short in CI's Linux
+   glyphs. The right-aligned PnL beside it keeps its own padding, so every
+   column edge and drop width stays where it was. */
+.leaderboard-panel .data-table td:nth-child(2) {
+  padding-right: 4px;
+}
 /* Right-aligned values fill their cell so the pending-to-value swap changes
    only the text, never the box (a resized inline-block would move its edge). */
 .leaderboard-panel .data-table td .number,
@@ -4971,6 +5005,12 @@ button.icon-button:disabled {
   height: 18px;
   overflow: hidden;
 }
+/* Tall enough for the 24px copy and explorer targets, held out of the 18px
+   meta line by the same negative block margin the targets would need. */
+.pool-address-slot {
+  height: 24px;
+  margin-block: -3px;
+}
 /* The separator travels with the launch line, outside its text. */
 .pool-launch-meta::before {
   content: "·";
@@ -4984,10 +5024,10 @@ button.icon-button:disabled {
   white-space: nowrap;
 }
 .pool-meta .icon-button {
-  min-height: 0;
-  min-width: 0;
-  width: 18px;
-  height: 18px;
+  min-height: 24px;
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   color: var(--color-text-3);
 }
@@ -5163,7 +5203,7 @@ button.icon-button:disabled {
   line-height: 18px;
   color: var(--color-text-3);
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
   min-width: 0;
 }
 /* The wallet's pooled-swap disclosure (`excludedPositionsCaption`), one line
@@ -5186,7 +5226,7 @@ button.icon-button:disabled {
 }
 .wallet-meta .address-label {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 .wallet-meta .address-label > .mono {
   overflow: hidden;
@@ -5207,10 +5247,11 @@ button.icon-button:disabled {
   }
 }
 .wallet-meta .icon-button {
-  min-height: 0;
-  min-width: 0;
-  width: 18px;
-  height: 18px;
+  min-height: 24px;
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  margin-block: -3px;
   padding: 0;
   flex-shrink: 0;
   color: var(--color-text-3);
@@ -5703,6 +5744,11 @@ a.wallet-top-pool:hover {
   .leaderboard-panel .data-table :is(th, td):nth-child(9) {
     display: none;
   }
+  /* At this narrowest table the Trader cell is 168px: the chip with its 24px
+     targets fits only with a 6px lead, header and cells alike. */
+  .leaderboard-panel .data-table :is(th, td):nth-child(2) {
+    padding-left: 6px;
+  }
 }
 @container traders-board (width < 896px) {
   .leaderboard-panel .desktop-traders {
@@ -5798,6 +5844,9 @@ a.wallet-top-pool:hover {
   .mobile-trader-heading .address-chip .icon-button {
     min-height: 44px;
   }
+  .mobile-trader-heading .address-chip .icon-button {
+    margin-block: 0;
+  }
   .mobile-trader-heading .follow-toggle {
     min-height: 44px;
     min-width: 44px;
@@ -5860,10 +5909,13 @@ a.wallet-top-pool:hover {
   right: 14px;
   opacity: 1;
 }
+/* 7px, not the export's 11px, between the medallion and the chip: at 768px
+   the card holds the chip's 24px copy and explorer targets only with those
+   4px. */
 .trader-podium-card-head {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 7px;
   padding-right: 28px;
   margin-bottom: 14px;
   min-width: 0;
@@ -6481,6 +6533,9 @@ a.wallet-top-pool:hover {
   .pool-address-slot,
   .pool-launch-meta {
     height: 44px;
+  }
+  .pool-address-slot {
+    margin-block: 0;
   }
   .pool-meta .icon-button {
     width: 32px;

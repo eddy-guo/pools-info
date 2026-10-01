@@ -215,6 +215,30 @@ for (const entry of routes) {
       await expect.poll(() => responses.length).toBeGreaterThan(0);
       await expect(page.locator('[aria-busy="true"]:visible')).toHaveCount(0);
       const after = await sentinel.boundingBox();
+      if (entry.name === "screener" || entry.name === "traders") {
+        const rowSelector =
+          entry.name === "screener"
+            ? testInfo.project.name === "desktop"
+              ? ".desktop-pools [data-row='resolved']"
+              : ".mobile-pools [data-row='resolved']"
+            : testInfo.project.name === "desktop"
+              ? ".desktop-traders [data-row='resolved']"
+              : ".mobile-traders .mobile-trader:has(.address-chip)";
+        const row = page.locator(rowSelector).first();
+        await expect(row).toBeVisible();
+        expect(
+          (await row.boundingBox())?.height,
+          "address icon targets preserve the row height",
+        ).toBe(
+          entry.name === "screener"
+            ? testInfo.project.name === "desktop"
+              ? 62
+              : 104
+            : testInfo.project.name === "desktop"
+              ? 60
+              : 101,
+        );
+      }
       if (entry.name === "screener") {
         const toolbar = page.locator(".explore-toolbar");
         const rects = (selector: string) =>
