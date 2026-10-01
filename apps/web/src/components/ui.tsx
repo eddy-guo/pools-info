@@ -803,7 +803,8 @@ export function Chart({
               }) + " UTC"
             : pending
               ? "Observation pending"
-              : "No observations"}
+              : /* Nothing to date: the slot stays empty, holding its line. */
+                "\u00a0"}
         </time>
       </div>
       <div className="chart-frame">

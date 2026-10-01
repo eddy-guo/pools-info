@@ -432,9 +432,12 @@ test("a served wallet whose curve is not sent says so, with an uncounted Trades 
   await expect(page.locator(".wallet-page .chart-empty-note")).toHaveText(
     "The PnL curve is not served for this wallet yet.",
   );
-  await expect(page.locator(".wallet-page .chart-readout time")).toHaveText(
-    "No observations",
-  );
+  // With no point to date, the readout's time slot stays empty.
+  await expect
+    .poll(() =>
+      page.locator(".wallet-page .chart-readout time").textContent(),
+    )
+    .toBe("\u00a0");
   await expect(
     page.locator(".wallet-page .chart-readout .unavailable"),
   ).toHaveText("\u2013Unavailable");
