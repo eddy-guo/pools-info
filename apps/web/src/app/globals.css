@@ -6003,6 +6003,24 @@ button.icon-button:disabled {
 .wallet-positions-table td:nth-child(n + 2) .number {
   min-width: 100%;
 }
+/* A holding reads quantity then symbol in its fixed 150px column. A token's
+   symbol is any string it likes (production holds a 20-glyph emoji one), so
+   the quantity keeps its full width and the symbol ellipsises beside it
+   rather than drawing over Cost; the whole symbol stays in the text. */
+.wallet-holding {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.3em;
+}
+.wallet-holding > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wallet-holding > .wallet-holding-quantity {
+  flex-shrink: 0;
+  max-width: 100%;
+}
 .wallet-token-cell {
   display: flex;
   align-items: center;
