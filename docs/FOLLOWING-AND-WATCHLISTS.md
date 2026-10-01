@@ -25,7 +25,7 @@ shown.
 
 ## Following activity
 
-Follow a wallet from its profile, then open the Wallet directory. Following
+Follow a wallet from its profile, then open the You page (`/you/`). Following
 activity shows up to 50 newest verified trades across the followed selection.
 A wallet profile no longer opens this view for its own address: its Copy trade
 action opens the designed copy-trading card as a read-only preview instead

@@ -6805,3 +6805,469 @@ a.my-rank:hover {
 button[aria-selected="true"] .tab-count {
   color: var(--color-text-2);
 }
+/* The header entry's saved count (`SavedCountBadge` in saved-count.tsx),
+   the export's YOU chip recipe: inside the entry on desktop, where the box
+   is one fixed width in both states (the chip, its address and a
+   three-character count fit it with the wordmark's slack), and at the
+   corner of the 44px phone square. Never more than "99+", so it never
+   grows. */
+.connect-button {
+  position: relative;
+  width: 180px;
+  min-width: 0;
+}
+/* The count mounts after hydration, so it sits out of the flow in the box's
+   right gutter: in the flow it would push the centred label or the chip
+   aside as it arrived, a shift on every page once anything is saved. The
+   chip starts at the box's left edge so a "99+" never covers its address. */
+.connect-button.wallet-chip {
+  justify-content: flex-start;
+}
+.connect-count {
+  position: absolute;
+  top: 7px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ac);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* The follow/star confirmation (`ToastProvider` in saved-toast.tsx): fixed
+   over the page, so it moves nothing, in a live region that is always
+   mounted; at the bottom right on desktop and the bottom centre on a phone. */
+.saved-toast-region {
+  position: fixed;
+  right: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 45;
+  display: flex;
+  justify-content: flex-end;
+  max-width: calc(100% - 36px);
+  pointer-events: none;
+}
+.saved-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 560px;
+  min-height: 48px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 12px;
+  background: var(--color-panel-raised);
+  color: var(--color-text);
+  box-shadow: 0 18px 50px #000a;
+  font-size: 13px;
+  animation: saved-toast-in 180ms ease-out;
+}
+.saved-toast-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: var(--ac);
+}
+.saved-toast[data-icon="warn"] .saved-toast-icon {
+  color: var(--color-warn-bright);
+}
+.saved-toast-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.saved-toast-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 36px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--ac);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.saved-toast-link:hover {
+  background: var(--control-secondary-hover-bg);
+}
+.saved-toast-close {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  color: var(--color-text-3);
+}
+@keyframes saved-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes saved-toast-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .saved-toast {
+    animation: saved-toast-fade 120ms ease-out;
+  }
+}
+/* The You page (`you.tsx`). Its identity row is the leaderboard's YOU row
+   (`.my-rank`), one height in every state, with the page's own action slot
+   at the right; each section is a heading row over a panel. */
+.you-page .page-heading p {
+  max-width: 60ch;
+}
+.you-identity {
+  margin-bottom: 0;
+}
+.you-identity-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 14px;
+  margin-left: auto;
+}
+.you-identity-actions .my-rank-link {
+  margin-left: 0;
+}
+.you-identity-actions .button {
+  min-height: 36px;
+  white-space: nowrap;
+}
+.you-forget {
+  min-height: 36px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  color: var(--color-down);
+  white-space: nowrap;
+}
+.you-forget:not(:disabled):hover {
+  color: var(--color-down);
+}
+.you-forget-short {
+  display: none;
+}
+.you-section {
+  margin-top: 28px;
+}
+.you-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 10px;
+}
+.you-section-head h2 {
+  min-width: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.you-section-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* Followed wallets: one 56px row each, the identity at the left as the
+   retired directory drew it (avatar, short address over the full one, the
+   feed's read state beside the name), the 7d summary at the right and the
+   unfollow target past it. The list reserves its rows from the count
+   before any row exists (the pre-paint script's `--you-following-rows`,
+   then its own). */
+.you-followed-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-height: calc(var(--you-following-rows, 0) * 56px);
+}
+.you-followed-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 4px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.you-followed-identity {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+}
+.you-followed-lines {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.you-followed-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.you-followed-name strong {
+  font-weight: 500;
+}
+.you-followed-identity:hover strong {
+  color: var(--ac);
+}
+.you-followed-lines small {
+  font-size: 11px;
+  color: var(--color-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.you-followed-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.you-followed-summary .number {
+  font-weight: 600;
+}
+.you-followed-row > .icon-button {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--color-text-3);
+}
+/* The watchlist's table: the screener's row geometry (62px rows, its four
+   figure tracks) without the sender column, so it fits the panel at every
+   width the table is shown at; the phone shows the screener's cards. */
+.you-page .pool-table {
+  table-layout: fixed;
+  min-width: 620px;
+}
+.you-page .pool-table th,
+.you-page .pool-table td {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+.you-page .pool-table tbody tr,
+.you-page .pool-table tbody td {
+  height: 62px;
+}
+.you-page .col-watch {
+  width: 44px;
+}
+.you-page .col-price {
+  width: 132px;
+}
+.you-page .col-change {
+  width: 112px;
+}
+.you-page .col-volume {
+  width: 140px;
+}
+.you-page .pool-table th:nth-child(n + 3):not([colspan]),
+.you-page .pool-table td:nth-child(n + 3):not(.launch-cell) {
+  text-align: right;
+}
+.you-page .pool-table td > .number,
+.you-page .pool-table td > .price,
+.you-page .pool-table td > .change {
+  display: block;
+  min-width: 0;
+}
+.you-page .launch-cell {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  color: var(--color-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The watchlist panel's own foot (Copy watchlist link): one control's row,
+   held from first paint; the status and the fallback link take the row's
+   free space and only appear on a click. */
+.you-panel-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  /* The button's own height (44px on a phone) inside 12px of padding and
+     the rule above, whether or not the button has mounted yet. */
+  min-height: calc(25px + max(38px, var(--ctl-min)));
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+.you-panel-foot-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.you-panel-foot-link {
+  flex-basis: 100%;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--text);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+}
+/* Before hydration the served page cannot know this device's lists, so the
+   pre-paint script (`youPrepaintScript`) marks `<html>` with what each list
+   holds, and each section shows either its empty state or its rows' final
+   height: the followed rows from `--you-following-rows`, the watchlist's
+   table from a spacer row of `--you-watchlist-rows` rows under its head
+   (so the head's own height never enters the arithmetic) and its phone
+   cards from the same count. Hydration then mounts the real rows on the
+   same geometry and this shell goes. */
+.you-prepaint > .you-prepaint-rows {
+  display: none;
+}
+html[data-you-following="some"]
+  .you-prepaint[data-section="following"]
+  > .you-prepaint-rows,
+html[data-you-watchlist="some"]
+  .you-prepaint[data-section="watchlist"]
+  > .you-prepaint-rows {
+  display: block;
+}
+html[data-you-following="some"]
+  .you-prepaint[data-section="following"]
+  > .panel,
+html[data-you-watchlist="some"]
+  .you-prepaint[data-section="watchlist"]
+  > .panel {
+  display: none;
+}
+.you-prepaint .pool-table tbody::after {
+  content: "";
+  display: table-row;
+  height: calc(var(--you-watchlist-rows, 0) * 62px);
+}
+.you-prepaint .mobile-pools {
+  min-height: calc(var(--you-watchlist-rows, 0) * 104px);
+}
+@container site (max-width: 767px) {
+  .connect-button {
+    width: 44px;
+  }
+  .connect-button.wallet-chip {
+    justify-content: center;
+  }
+  /* A corner badge on the 44px square, out of the flow. */
+  .connect-count {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    z-index: 1;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid var(--color-bg);
+    border-radius: 9px;
+    background: var(--color-accent);
+    color: #131a06;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .saved-toast-region {
+    left: 14px;
+    right: 14px;
+    justify-content: center;
+    max-width: none;
+  }
+  .saved-toast {
+    max-width: 100%;
+  }
+  /* The YOU row's phone grid: the actions take the link's corner cell. */
+  .you-identity-actions {
+    grid-area: 1 / 2;
+    margin-left: 0;
+    justify-self: end;
+    gap: 8px;
+  }
+  .you-forget-long {
+    display: none;
+  }
+  .you-forget-short {
+    display: inline;
+  }
+  .you-section-head h2 {
+    font-size: 18px;
+  }
+  /* A phone row stacks the summary under the name and keeps the short
+     address only: the full one and the summary cannot share 390px. */
+  .you-followed-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-rows: auto auto;
+    align-content: center;
+    row-gap: 2px;
+    column-gap: 8px;
+    padding-left: 10px;
+  }
+  .you-followed-identity {
+    grid-area: 1 / 1;
+    min-height: 26px;
+  }
+  /* Kept in the row's text (a filter by the full address still finds the
+     row) but off the phone's screen. */
+  .you-followed-lines small {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .you-followed-summary {
+    grid-area: 2 / 1;
+    padding-left: 36px;
+    text-align: left;
+  }
+  .you-followed-row > .icon-button {
+    grid-area: 1 / 2 / 3 / 3;
+  }
+  /* The screener's phone card, held to its 104px as the screener holds it,
+     so the pre-paint reservation above is exactly the cards it stands for. */
+  .you-page .mobile-pool {
+    height: 104px;
+    overflow: auto;
+  }
+  .you-page .table-region[data-empty="true"] > .empty-state {
+    inset: 0 0 auto;
+  }
+}

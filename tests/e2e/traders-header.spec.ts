@@ -441,7 +441,7 @@ test("without a wallet the leaderboard's you row is the quiet prompt", async ({
   await expect(row.locator("a, button")).toHaveCount(0);
   await expect(row.locator(".my-rank-chip")).toHaveText("YOU");
   await expect(row.locator(".my-rank-summary")).toHaveText(
-    "Set your wallet in the header to see your rank here",
+    "Set your wallet to see your rank here",
   );
   await expect(row.locator(".my-rank-link")).toHaveCount(0);
   await expect(row).not.toContainText("Find your wallet");
