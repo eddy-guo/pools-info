@@ -650,7 +650,7 @@ function CreatorProfile({ address }: { address: string }) {
             <div className={styles.title}>
               <h1>{shortAddress(address)}</h1>
             </div>
-            <AddressLabel address={address} full />
+            <AddressLabel address={address} />
           </div>
         </div>
         <div className={styles.actions}>

@@ -1045,11 +1045,6 @@ main {
   overflow-wrap: anywhere;
   white-space: normal;
 }
-/* A full address carries its short form too, for a box that cannot hold the
-   whole string; only such a box shows it. */
-.address-label > .address-short {
-  display: none;
-}
 /* 24px targets (WCAG 2.5.8) around the 14px glyphs; the negative block
    margin keeps them out of an 18px meta line's height. */
 .address-label .icon-button {
@@ -5269,19 +5264,6 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* The 42-character address does not fit a phone's page heading (the wallet's
-   one-line meta row clipped it mid-string; the creator's wrapped one
-   character onto a second line): the head-and-tail short form every other
-   surface uses stands in, and the full address stays on the copy control
-   beside it. */
-@container site (max-width: 767px) {
-  .page-heading .address-label > .address-full {
-    display: none;
-  }
-  .page-heading .address-label > .address-short {
-    display: inline;
-  }
 }
 .wallet-meta .icon-button {
   min-height: 24px;
