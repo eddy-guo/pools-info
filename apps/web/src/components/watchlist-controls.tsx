@@ -45,11 +45,6 @@ export function WatchlistControls({
         <strong>
           {watchlistHeading(shared !== null, hydrated ? ids.length : undefined)}
         </strong>
-        <small>
-          {shared
-            ? "Stars change only your saved list. This link does not save anything automatically."
-            : "Saved in this browser. Share a link to these pools with the current filters."}
-        </small>
         {shared?.error && (
           <p className="panel-footnote" role="alert">
             {shared.error}

@@ -438,18 +438,16 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
     );
     const unmeasured = cards.nth(4).locator(".mobile-creator-stats");
     await expect(unmeasured).not.toContainText("Vol");
-    await expect(unmeasured.locator(".unavailable")).toHaveAttribute(
-      "aria-label",
-      "Unavailable: No measured launch",
+    await expect(unmeasured.locator(".unavailable .sr-only")).toHaveText(
+      "Unavailable",
     );
     // A creator with launches the read has no figure for shows no bar: its
     // "4 of 4" would read as a survival rate over the 21 launches beside it.
     const partial = cards.nth(3).locator(".mobile-creator-stats");
     await expect(partial).toContainText("Vol 266.90 ETH");
     await expect(partial.locator(".still-trading")).toHaveCount(0);
-    await expect(partial.locator(".unavailable")).toHaveAttribute(
-      "aria-label",
-      "Unavailable: Not every launch measured",
+    await expect(partial.locator(".unavailable .sr-only")).toHaveText(
+      "Unavailable",
     );
     await expect(cards.locator(".still-trading")).toHaveCount(3);
     await expect(page.getByText("N/A")).toHaveCount(0);
@@ -552,22 +550,18 @@ test("creators rows match the export's cell shapes: rank colour, chip, still-tra
   );
   // A creator with no measured launch renders the cell empty, never "N/A".
   const unmeasuredCell = rowsLocator.nth(4).locator("td").nth(3);
-  await expect(unmeasuredCell).toHaveText("");
-  await expect(unmeasuredCell.locator(".unavailable")).toHaveAttribute(
-    "aria-label",
-    "Unavailable: No measured launch",
+  await expect(unmeasuredCell.locator(".unavailable .sr-only")).toHaveText(
+    "Unavailable",
   );
   // So does one whose measured launches are fewer than its launches: the
   // export's fraction is "traded of launches", and "4 of 4" beside a launch
   // count of 21 would read as a survival rate the figures do not support.
   const partialCell = rowsLocator.nth(3).locator("td").nth(3);
   await expect(rowsLocator.nth(3).locator("td").nth(2)).toHaveText("21");
-  await expect(partialCell).toHaveText("");
-  await expect(partialCell.locator(".still-trading")).toHaveCount(0);
-  await expect(partialCell.locator(".unavailable")).toHaveAttribute(
-    "aria-label",
-    "Unavailable: Not every launch measured",
+  await expect(partialCell.locator(".unavailable .sr-only")).toHaveText(
+    "Unavailable",
   );
+  await expect(partialCell.locator(".still-trading")).toHaveCount(0);
   await expect(rowsLocator.locator(".still-trading")).toHaveCount(3);
   await expect(page.getByText("N/A")).toHaveCount(0);
 
@@ -652,7 +646,7 @@ test("a creator's unmeasured launches show their identity and launch time with e
       `${utc(launches[0].launchedAt)} · No swap observed`,
     );
     await expect(unmeasured.locator(".mobile-launch-top .number")).toHaveText(
-      "",
+      "Unavailable",
     );
     await expect(unmeasured.locator(".mobile-launch-stats")).toHaveText(
       utc(launches[1].launchedAt),
@@ -665,19 +659,19 @@ test("a creator's unmeasured launches show their identity and launch time with e
     utc(launches[0].launchedAt),
     "No swap observed",
     "1.00 ETH",
-    "",
+    "Unavailable",
   ]);
   await expect(cells(unmeasured)).toHaveText([
     "Launch 9 (L9)",
     utc(launches[1].launchedAt),
-    "",
-    "",
-    "",
+    "Unavailable",
+    "Unavailable",
+    "Unavailable",
   ]);
   await expect(
     cells(unmeasured).nth(2).locator(".unavailable"),
-    "the empty activity cell still says why",
-  ).toHaveAttribute("aria-label", "Unavailable: No measured activity");
+    "the empty activity cell still has an accessible status",
+  ).toContainText("Unavailable");
 });
 
 test("a creator's launches take the shared 25-row Show more, never the whole history at once", async ({

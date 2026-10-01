@@ -289,9 +289,6 @@ test.describe("Wallet profile entry", () => {
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Set my wallet" });
     await expect(dialog).toBeVisible();
-    await expect(
-      dialog.getByText("Saved only in this browser. No connection is made."),
-    ).toBeVisible();
     const input = dialog.getByLabel("Your wallet address");
     await input.fill("not-an-address");
     await dialog.getByRole("button", { name: "Use this wallet" }).click();

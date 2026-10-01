@@ -21,9 +21,7 @@ export function WalletLookup() {
         onSubmit={(e) => {
           e.preventDefault();
           if (!/^0x[0-9a-f]{40}$/i.test(address.trim())) {
-            setError(
-              "Enter a 42-character Ethereum address. ENS resolution is not connected yet.",
-            );
+            setError("Enter a 42-character Ethereum address.");
             return;
           }
           router.push(`/wallet/${address.trim().toLowerCase()}/`);

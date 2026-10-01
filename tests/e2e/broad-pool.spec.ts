@@ -266,12 +266,14 @@ for (const [creatorFees, expected] of [
       .locator(".stat")
       .filter({ has: page.getByText("Creator fee", { exact: true }) })
       .locator("strong");
-    await expect(stat).toHaveText(expected);
+    await expect(stat).toHaveText(
+      creatorFees === undefined ? "\u2013Unavailable" : expected,
+    );
     if (creatorFees === undefined)
       await expect(
         stat.locator(".unavailable"),
         "a missing flag is unavailable, not an inferred Disabled",
-      ).toHaveText("\u2013");
+      ).toHaveText("\u2013Unavailable");
   });
 }
 test("quiet token retains its chart with a dated unit basis after the global market cutoff advances", async ({
@@ -411,7 +413,7 @@ test("discovered-only pool shows no invented zero totals", async ({ page }) => {
   await expect(
     volume.locator("strong .unavailable"),
     "Volume 24h carries the quiet mark, never an invented zero",
-  ).toHaveText("\u2013");
+  ).toHaveText("\u2013Unavailable");
   await expect(
     volume.locator("small"),
     "no trade count is invented under it",

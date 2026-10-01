@@ -617,11 +617,6 @@ export function ProductWallet({ address }: { address: string }) {
                       loading={!data}
                       onMore={showMore}
                     />
-                    {data?.positionsTruncated && (
-                      <p className="panel-footnote">
-                        Showing the first {data.positions.length} positions.
-                      </p>
-                    )}
                   </>
                 )}
                 {tab === "trades" && (
@@ -841,12 +836,6 @@ export function ProductWallet({ address }: { address: string }) {
                           </button>
                         )}
                       </div>
-                    )}
-                    {!tradeHistory.failed && (
-                      <p className="panel-footnote">
-                        Explorer history for display only; not accounting or PnL
-                        evidence.
-                      </p>
                     )}
                   </>
                 )}

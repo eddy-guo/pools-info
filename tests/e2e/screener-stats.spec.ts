@@ -173,9 +173,6 @@ test.describe("contract-backed screener stats", () => {
       "Launches · 24h",
       "Traders · 24h",
     ]);
-    await expect(
-      stats.getByTitle("Wallets with an attributed trade in the window"),
-    ).toBeVisible();
     await expect(stats).not.toContainText("Covered launches");
     await expect(stats).not.toContainText("Liquidity");
     await expect(stats).toContainText("123");
@@ -270,10 +267,7 @@ test.describe("contract-backed screener stats", () => {
     await expect(stats.locator(".stat").nth(2).locator("strong")).toHaveText(
       "",
     );
-    await expect(stats.locator(".stat small")).toHaveText([
-      "Window incomplete",
-      "Window incomplete",
-    ]);
+    await expect(stats).not.toContainText("Window incomplete");
     expect(await sameDocument()).toBe(true);
     const compactGap = await page.evaluate(() => {
       const row = document.querySelector(".screener-stats")!;

@@ -338,7 +338,6 @@ function ScreenerStats({
             <Eth wei={data.volumeWei} />
           )}
         </strong>
-        <small>{data?.volumeWei === null ? "Window incomplete" : null}</small>
       </div>
       <div className="stat">
         <span>Launches · {labelWindow}</span>
@@ -351,9 +350,7 @@ function ScreenerStats({
         </strong>
       </div>
       <div className="stat">
-        <span title="Wallets with an attributed trade in the window">
-          Traders · {labelWindow}
-        </span>
+        <span>Traders · {labelWindow}</span>
         <strong data-pending={pending}>
           {data?.activeTraders === null || !data ? (
             <span className="stats-empty" />
@@ -361,9 +358,6 @@ function ScreenerStats({
             data.activeTraders.toLocaleString("en-US")
           )}
         </strong>
-        <small>
-          {data?.activeTraders === null ? "Window incomplete" : null}
-        </small>
       </div>
       {failed && (
         <div className="screener-stats-error">

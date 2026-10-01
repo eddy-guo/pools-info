@@ -17,7 +17,7 @@ import { useEthPrice } from "./eth-price-provider";
 import { useLive } from "./live-provider";
 import { useQuery, useUnit } from "./state";
 import { QuietUnavailable, Unavailable, useUnavailable } from "./ui";
-import { countLabel, plural } from "@/lib/plural";
+import { plural } from "@/lib/plural";
 export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
 export const utc = (seconds: number) =>
@@ -40,10 +40,7 @@ export function Eth({
   pending?: boolean;
 }) {
   const known = wei !== null && wei !== undefined;
-  const { children: unavailableText, ...unavailable } = useUnavailable(
-    "Not collected yet",
-    pending,
-  );
+  const { children: unavailableText, ...unavailable } = useUnavailable(pending);
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (!known || pending)
@@ -172,10 +169,7 @@ export function useMarket(id?: string, launch?: string | null) {
             ]),
           },
         );
-        if (!response.ok)
-          throw Error(
-            "This pool could not be loaded within the current scan limits.",
-          );
+        if (!response.ok) throw Error("Pool unavailable");
         const next: ChainSnapshot = await response.json();
         if (next.markets?.[0]?.id !== id) throw Error("Invalid pool response");
         if (!controller.signal.aborted) {
@@ -271,12 +265,7 @@ export function AuditAction({ market }: { market: ChainMarket }) {
             ? "Refresh audit"
             : "Audit traders"}
       </button>
-      {auditing[market.id] && (
-        <p role="status">
-          Checking receipts, token transfers and balances. Busy pools can take a
-          few minutes.
-        </p>
-      )}
+      {auditing[market.id] && <p role="status">Auditing…</p>}
       {auditErrors[market.id] && (
         <p role="status" className="negative">
           {auditErrors[market.id]}
@@ -286,9 +275,7 @@ export function AuditAction({ market }: { market: ChainMarket }) {
       {a && (
         <p>
           Audited through block {a.toBlock.toLocaleString("en-US")} ·{" "}
-          {utc(a.toTimestamp)}. {countLabel(a.transfersChecked, "transfer")}{" "}
-          checked; {a.unattributedSwaps} unsupported swap{" "}
-          {plural(a.unattributedSwaps, "leg")}.
+          {utc(a.toTimestamp)}
         </p>
       )}
     </div>

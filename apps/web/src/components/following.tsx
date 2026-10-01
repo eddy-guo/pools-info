@@ -86,7 +86,6 @@ export function FollowButton({ address }: { address: string }) {
         className="button secondary"
         aria-pressed={followed}
         disabled={!available}
-        title="Saved only in this browser"
         onClick={() => toggle(address)}
       >
         {followed ? <UserRoundCheck size={16} /> : <UserRoundPlus size={16} />}
@@ -114,7 +113,6 @@ export function FollowRowButton({ address }: { address: string }) {
       className={`icon-button follow-toggle ${followed ? "active" : ""}`}
       aria-pressed={followed}
       aria-label={followed ? `Unfollow ${address}` : `Follow ${address}`}
-      title="Saved only in this browser"
       disabled={!available}
       onClick={() => toggle(address)}
     >
@@ -146,7 +144,6 @@ function FollowedWalletList({
       <h2>
         Following <span>({addresses.length})</span>
       </h2>
-      <p>Saved in this browser. No account or wallet connection needed.</p>
       <ul className={styles.list}>
         {addresses.map((address) => (
           <li key={address}>

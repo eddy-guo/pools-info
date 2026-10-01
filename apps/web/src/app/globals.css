@@ -3052,12 +3052,6 @@ main {
   width: 100%;
   margin-top: 14px;
 }
-.wallet-set-note {
-  margin-top: 10px;
-  color: var(--color-text-3);
-  font-size: 11.5px;
-  text-align: center;
-}
 .network-subnav {
   display: flex;
   align-items: center;
@@ -6375,10 +6369,6 @@ a.wallet-top-pool:hover {
 }
 .explore-page .screener-stats .stat > strong .number {
   white-space: nowrap;
-}
-.explore-page .screener-stats .stat > small {
-  min-height: 0;
-  font-size: 11.5px;
 }
 .explore-page .screener-stats .stats-empty {
   display: inline-block;

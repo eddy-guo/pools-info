@@ -188,11 +188,8 @@ test("a young pool names its missing comparison without inventing a percentage",
   await expect(normal).toHaveClass(/positive/);
   await expect(normal).toHaveCSS("font-variant-numeric", /tabular-nums/);
   const unknown = resolved(page).nth(2).locator(".change");
-  await expect(unknown, "an older unknown stays unknown").toHaveText("");
-  await expect(unknown).toHaveAttribute(
-    "aria-label",
-    "Unavailable: No opening price observation",
-  );
+  await expect(unknown.locator(".sr-only")).toHaveText("Unavailable");
+  await expect(unknown).not.toHaveAttribute("title");
   await page.waitForTimeout(600);
   expect(
     await page.evaluate(

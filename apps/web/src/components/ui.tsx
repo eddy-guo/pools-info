@@ -280,7 +280,7 @@ export function AddressChip({
 /**
  * How an unknown datum reads. A table cell stays empty, as the export leaves
  * one; a stat card's value slot carries a quiet mark so its label does not
- * float over nothing. Either way the reason travels in the accessible name.
+ * float over nothing. Screen readers get a short, consistent status.
  */
 const UnavailableMark = createContext<"empty" | "quiet">("empty");
 export const QuietUnavailable = UnavailableMark.Provider;
@@ -289,29 +289,29 @@ export const QuietUnavailable = UnavailableMark.Provider;
  * the same `span` it renders a value into, so the node a skeleton painted is
  * the node the value resolves into and nothing is remounted.
  */
-export function useUnavailable(reason: string, pending: boolean) {
+export function useUnavailable(pending: boolean) {
   const mark = useContext(UnavailableMark);
   return {
     "data-pending": pending,
-    title: pending ? undefined : reason,
-    "aria-label": pending ? undefined : `Unavailable: ${reason}`,
-    children: pending ? "Pending" : mark === "quiet" ? "\u2013" : "",
+    children: pending ? (
+      "Pending"
+    ) : (
+      <>
+        {mark === "quiet" ? "\u2013" : null}
+        <span className="sr-only">Unavailable</span>
+      </>
+    ),
   };
 }
 export function Unavailable({
-  reason = "Not collected yet",
   className = "",
   pending = false,
 }: {
-  reason?: string;
   className?: string;
   pending?: boolean;
 }) {
   return (
-    <span
-      className={`unavailable ${className}`}
-      {...useUnavailable(reason, pending)}
-    />
+    <span className={`unavailable ${className}`} {...useUnavailable(pending)} />
   );
 }
 export function Money({
@@ -325,10 +325,7 @@ export function Money({
   className?: string;
   pending?: boolean;
 }) {
-  const { children: unavailableText, ...unavailable } = useUnavailable(
-    "Not collected yet",
-    pending,
-  );
+  const { children: unavailableText, ...unavailable } = useUnavailable(pending);
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (wei == null)
@@ -378,10 +375,7 @@ export function Price({
   wei?: string | null;
   pending?: boolean;
 }) {
-  const { children: unavailableText, ...unavailable } = useUnavailable(
-    "No observed swap price",
-    pending,
-  );
+  const { children: unavailableText, ...unavailable } = useUnavailable(pending);
   const { unit } = useUnit();
   const usdPerEth = useEthPrice();
   if (wei == null)
@@ -455,7 +449,7 @@ export function Change({
       without it. */
   abbreviate?: boolean;
 }) {
-  const unavailable = useUnavailable("No opening price observation", pending);
+  const unavailable = useUnavailable(pending);
   if (value == null)
     return <span className="number change unavailable" {...unavailable} />;
   const displayed = Number(value.toFixed(digits));

@@ -217,10 +217,6 @@ export function Search() {
                 {data.message ??
                   "No matching records in this category. Try All or paste the wallet address."}
               </p>
-              <small>
-                ENS lookup uses Ethereum RPC. This does not establish trading
-                activity on Robinhood.
-              </small>
             </div>
           )}
           {searchGroups.map((type) => {
@@ -277,10 +273,7 @@ export function Search() {
             !current?.pending && (
               <div className="empty-state">
                 <h3>No matches</h3>
-                <p>
-                  This does not mean the token or wallet does not exist. Try its
-                  full address or a shorter name.
-                </p>
+                <p>Try its full address or a shorter name.</p>
               </div>
             )}
           {current?.error && (

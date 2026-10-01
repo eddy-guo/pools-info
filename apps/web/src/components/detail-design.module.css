@@ -90,15 +90,6 @@
   color: var(--purple);
   border-color: #45184f;
 }
-.meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 6px;
-}
 .actions {
   display: flex;
   align-items: center;
