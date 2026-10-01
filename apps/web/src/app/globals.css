@@ -5326,6 +5326,11 @@ button.icon-button:disabled {
   background: var(--control-ghost-active-bg);
   color: var(--text);
 }
+/* The panel's overflow: hidden clipped the shared 4px-offset focus ring at
+   the strip's edges, so a tab's ring sits inside its own box. */
+.wallet-page .live-section > .table-tabs button:focus-visible {
+  outline-offset: -2px;
+}
 /* Three tabs and their count slots fit a 320px phone once the padding
    tightens; the strip never becomes a sideways scroll box. */
 @container site (max-width: 399px) {
