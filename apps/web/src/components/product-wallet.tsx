@@ -249,7 +249,7 @@ export function ProductWallet({ address }: { address: string }) {
      table's own `shown` reservation: a wallet with fewer trades than the
      step blank-fills the shortfall (RowFiller) rather than shrinking the
      region once the read resolves, so the skeleton-to-content transition
-     moves nothing. A "Load more" that fetches reserves its step at the
+     moves nothing. A "Show more" that fetches reserves its step at the
      click (`reservedRows`), inside the window Chrome leaves unscored after
      an input, so an answer that lands seconds later only fills slots. */
   const tradeRowCount = reservedRowCount(
@@ -261,7 +261,7 @@ export function ProductWallet({ address }: { address: string }) {
     (_, index) => tradeHistory.trades[index],
   );
   const tradesLoaded = !tradeHistory.loading && !tradeHistory.failed;
-  /* A slot still waiting on a read (the first page or a Load more) reads
+  /* A slot still waiting on a read (the first page or a Show more) reads
      Pending; one no read will fill is blank. */
   const tradeSlotsPending = tradeHistory.loading || tradeHistory.loadingMore;
   return (
@@ -919,7 +919,7 @@ export function ProductWallet({ address }: { address: string }) {
                           >
                             {tradeHistory.moreFailed
                               ? "Try again"
-                              : `Load ${TRADE_HISTORY_STEP} more`}
+                              : `Show ${TRADE_HISTORY_STEP} more`}
                           </button>
                         )}
                       </div>

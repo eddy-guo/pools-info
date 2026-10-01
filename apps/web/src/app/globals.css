@@ -5711,13 +5711,20 @@ button.icon-button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Buy/sell is not a PnL signal - it never borrows the app's positive/negative
-   colours, which belong to actual realized/unrealized figures elsewhere on
-   this page. Both sides read in the same neutral ink; the word itself is the
-   only distinction. */
+/* The export's side label: uppercase, semibold, BUY in the up colour and
+   SELL in the down colour. The word stays the distinction for a reader who
+   cannot tell the two hues apart. */
 .wallet-trade-side {
-  color: var(--color-text-2);
-  text-transform: capitalize;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wallet-trade-side[data-side="buy"] {
+  color: var(--color-up);
+}
+.wallet-trade-side[data-side="sell"] {
+  color: var(--color-down);
 }
 .wallet-top-pools {
   height: calc(5 * 62px);

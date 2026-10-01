@@ -61,10 +61,13 @@ export function TradeAmount({
   );
 }
 
-/** Buy/sell in neutral ink: it is not a PnL signal (`.wallet-trade-side`). */
+/** Buy/sell as the export's live feed prints it: BUY in the up colour, SELL
+    in the down colour (`.wallet-trade-side`). */
 export function TradeSide({ side }: { side: "buy" | "sell" }) {
   return (
-    <span className="wallet-trade-side">{side === "buy" ? "Buy" : "Sell"}</span>
+    <span className="wallet-trade-side" data-side={side}>
+      {side === "buy" ? "Buy" : "Sell"}
+    </span>
   );
 }
 
