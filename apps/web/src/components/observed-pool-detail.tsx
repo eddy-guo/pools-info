@@ -135,11 +135,8 @@ export function PoolHeading({
               ) : pending ? (
                 /* The skeleton has the short address's shape, so the line
                    after it stands still when the address lands. */
-                <span
-                  className="address-label"
-                  data-pending="true"
-                  aria-label="Token address pending"
-                >
+                <span className="address-label" data-pending="true">
+                  <span className="sr-only">Token address pending</span>
                   <span className="mono" aria-hidden="true">
                     0x0000…0000
                   </span>

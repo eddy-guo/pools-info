@@ -4824,11 +4824,16 @@ button.icon-button:disabled {
    7 trades"), where abbreviating the count buys nothing, so dropping the
    whole segment is the one rule that is correct for every row, not just the
    ones with a large count to shorten. Symbol and age are never touched. The
-   full line still reaches assistive tech and a hover as `.row-subtitle`'s
-   title/aria-label. */
+   full line still reaches assistive tech through the visually hidden segment
+   and remains available to a mouse hover in `.row-subtitle`'s title. */
 @container pool-list (width < 868px) {
   .row-subtitle-trades {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }
 /* The figures and their heads read from the right, as the export's and the
