@@ -195,8 +195,10 @@ export function ProductWallet({ address }: { address: string }) {
     .slice()
     .sort((a, b) => (BigInt(b.volumeWei) > BigInt(a.volumeWei) ? 1 : -1))
     .slice(0, 5);
+  /* One string, one text node: a separate "%" node moved whenever the
+     figure before it changed width on a window change. */
   const pct = (n: number | null | undefined) =>
-    n == null ? <Unavailable /> : <span>{n.toFixed(1)}%</span>;
+    n == null ? <Unavailable /> : <span>{`${n.toFixed(1)}%`}</span>;
   /* The positions the URL's `limit` names, 25 by default, are reserved from
      first paint and grown by the shared Show more control: the read sends
      every position at once, so growing shows rows already on hand and the
