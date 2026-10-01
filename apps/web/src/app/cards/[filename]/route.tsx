@@ -1,26 +1,30 @@
 import { ImageResponse } from "next/og";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import {
   cardCurve,
   cardEthFigure,
-  cardEthText,
   cardExportHero,
   cardExportHeroSize,
   cardExportTrio,
   cardHero,
   cardInitials,
+  cardLineSize,
+  cardMoney,
+  cardMoneyText,
   cardStats,
   cardSymbol,
   cardTopPosition,
   cardTradeCount,
+  cardUsdPerEth,
   positionCardChart,
   positionCardFigures,
   readCardPosition,
   readCardWallet,
   type CardEth,
+  type CardMoney,
   type CardPosition,
   type PositionCardFigures,
   type CardExportTrio,
@@ -33,7 +37,7 @@ import {
 } from "@/lib/card-options";
 import { countLabel } from "@/lib/plural";
 import { tokenInitials } from "@/lib/token-identity";
-import { fontCodePoints } from "@/lib/font-coverage";
+import { fontAdvances, fontCodePoints } from "@/lib/font-coverage";
 import { tokenImageResponse } from "@/lib/token-image-server";
 import {
   identityTint,
@@ -49,12 +53,9 @@ export const maxDuration = 30;
 // faces once per process (apps/web/public/fonts/SOURCE.txt).
 const face = (file: string) =>
   readFile(join(process.cwd(), "public/fonts", file));
-const semibold = face("Geist-SemiBold.ttf");
-const fonts = Promise.all([
-  face("Geist-Regular.ttf"),
-  semibold,
-  face("GeistMono-Medium.ttf"),
-])
+const regular = face("Geist-Regular.ttf"),
+  semibold = face("Geist-SemiBold.ttf");
+const fonts = Promise.all([regular, semibold, face("GeistMono-Medium.ttf")])
   .then(([regular, bold, mono]) => [
     {
       name: "Geist",
@@ -91,6 +92,9 @@ const symbolDrawable = semibold
     return (codePoint: number) => points.has(codePoint);
   })
   .catch(() => (codePoint: number) => codePoint >= 0x20 && codePoint < 0x7f);
+
+/** Geist Regular's advance widths, or null when the face could not be read. */
+const regularAdvances = regular.then(fontAdvances).catch(() => null);
 
 const alpha = (hex: string, a: number) =>
   `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${a})`;
@@ -139,24 +143,44 @@ async function tokenImage(poolId: string): Promise<string | null> {
 }
 
 /**
- * An ETH figure drawn as the site draws it: the plain string, or the
+ * A run of text drawn one glyph to a box. The renderer sizes a word by its
+ * glyphs' advances but draws it kerned, so a word with tight pairs ends
+ * short of its box and the next word drifts away from it: a dollar figure's
+ * "7," and ",1" left "+$169,107.07  realized" five pixels wider apart than
+ * "+62.48 ETH realized". One glyph to a box, each is drawn where it is
+ * measured. `style` is the run's text style; the line breaks nowhere.
+ */
+function Glyphs({ text, style }: { text: string; style: CSSProperties }) {
+  return (
+    <span style={{ ...style, display: "flex", whiteSpace: "pre" }}>
+      {[...text].map((glyph, i) => (
+        <span key={i}>{glyph}</span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * A money figure drawn as the site draws it: the plain string, or the
  * subscript-zero form with the zero count set small on the baseline's lower
- * edge, since the renderer has no `<sub>` and no font feature for one.
+ * edge, since the renderer has no `<sub>` and no font feature for one. A USD
+ * figure carries its "$" in the figure itself, so it has no unit to set apart.
  */
 function CardFigure({
-  eth,
+  money,
   size,
   color,
   letterSpacing = 0,
-  unit,
+  unit: ethUnit,
 }: {
-  eth: CardEth;
+  money: CardMoney;
   size: number;
   color: string;
   letterSpacing?: number;
-  /** Sets the unit apart, smaller and quieter, beside an amount a label names. */
+  /** Sets the ETH unit apart, smaller and quieter, beside an amount a label names. */
   unit?: { size: number; color: string };
 }) {
+  const unit = money.currency === "ETH" ? ethUnit : undefined;
   const text = {
     fontSize: size,
     fontWeight: 600,
@@ -167,17 +191,26 @@ function CardFigure({
     // otherwise wrap its unit onto a second line and push the card apart.
     whiteSpace: "nowrap",
   } as const;
-  const suffix = unit ? "" : " ETH";
+  const usd = money.currency === "USD",
+    suffix = unit || usd ? "" : " ETH",
+    // A dollar figure's grouping commas kern tight, so it is drawn a glyph
+    // to a box (`Glyphs`); an ETH figure keeps the run it always had.
+    run = (content: string, style: CSSProperties) =>
+      usd ? (
+        <Glyphs text={content} style={style} />
+      ) : (
+        <span style={style}>{content}</span>
+      );
   const figure =
-    eth.figure.form === "plain" ? (
-      <span style={text}>{`${eth.sign}${eth.figure.text}${suffix}`}</span>
+    money.figure.form === "plain" ? (
+      run(`${money.sign}${money.figure.text}${suffix}`, text)
     ) : (
       <span style={{ display: "flex", alignItems: "flex-end" }}>
-        <span style={text}>{`${eth.sign}${eth.figure.sign}0.0`}</span>
+        {run(`${money.sign}${money.figure.sign}${usd ? "$" : ""}0.0`, text)}
         <span style={{ ...text, fontSize: Math.round(size * 0.55) }}>
-          {String(eth.figure.zeros)}
+          {String(money.figure.zeros)}
         </span>
-        <span style={text}>{`${eth.figure.digits}${suffix}`}</span>
+        {run(`${money.figure.digits}${suffix}`, text)}
       </span>
     );
   if (!unit) return figure;
@@ -336,7 +369,7 @@ function ExportCard({
   preset: string;
   window: LiveWindow;
   rank: number | null;
-  hero: { value: string; eth: CardEth };
+  hero: CardMoney;
   heroColor: string;
   trio: CardExportTrio;
 }) {
@@ -348,7 +381,7 @@ function ExportCard({
       ? { label: "Best trade", value: null, tile: best.token }
       : { label: "Best trade", value: best?.symbol ?? null },
   ];
-  const heroSize = cardExportHeroSize(hero.value);
+  const heroSize = cardExportHeroSize(cardMoneyText(hero));
   return (
     <div
       style={{
@@ -443,7 +476,7 @@ function ExportCard({
           </div>
           <div style={{ display: "flex", marginTop: 12 }}>
             <CardFigure
-              eth={hero.eth}
+              money={hero}
               size={heroSize}
               color={heroColor}
               letterSpacing={-heroSize * 0.045}
@@ -515,9 +548,10 @@ function ExportCard({
   );
 }
 
-/** The right-hand column, and the OPEN card's chart inside it: the end dot
- * and its halo sit within the column's edge. */
-const positionColumn = 470,
+/** The left-hand column the figures take, the right-hand one, and the OPEN
+ * card's chart inside it: the end dot and its halo sit within its edge. */
+const positionLeftColumn = 580,
+  positionColumn = 470,
   positionChart = { width: 458, height: 232 };
 
 /**
@@ -535,6 +569,8 @@ function PositionCard({
   figures: f,
   image,
   drawable,
+  usdPerEth,
+  lineAdvances,
 }: {
   address: string;
   anonymous: boolean;
@@ -543,8 +579,12 @@ function PositionCard({
   figures: PositionCardFigures;
   image: string | null;
   drawable: (codePoint: number) => boolean;
+  /** Draws every amount and price in USD at this served rate; null is ETH. */
+  usdPerEth: number | null;
+  lineAdvances: Map<number, number> | null;
 }) {
-  const row = position.source.position,
+  const money = (eth: CardEth) => cardMoney(eth, usdPerEth),
+    row = position.source.position,
     color = tone(f.hero.tone),
     symbol = cardSymbol(row.symbol, drawable),
     name = cardSymbol(position.pool.name, drawable),
@@ -569,26 +609,59 @@ function PositionCard({
         .join(" ") ?? "",
     end = chart?.points[chart.points.length - 1],
     endY = chart?.markY ?? end?.[1],
-    holding = [
-      f.holding === null
+    unrealized =
+      f.hero.label !== "Realized ROI"
         ? null
-        : `Still holding ${f.holding}${symbol ? ` ${symbol}` : ""}`,
-      f.hero.label === "Unrealized PnL"
-        ? f.unrealizedRoi && `${f.unrealizedRoi} unrealized`
-        : f.unrealized &&
-          `${cardEthText(f.unrealized)} unrealized${f.unrealizedRoi ? ` (${f.unrealizedRoi})` : ""}`,
-    ]
-      .filter(Boolean)
-      .join(" · "),
+        : f.unrealized
+          ? `${cardMoneyText(money(f.unrealized))} unrealized${f.unrealizedRoi ? ` (${f.unrealizedRoi})` : ""}`
+          : !f.notional && f.unrealizedRoi
+            ? `${f.unrealizedRoi} unrealized`
+            : null,
+    /* Units held and what they are worth, on the left column's one line:
+       sized to fit it, and past the smallest size without the symbol, which
+       the token line above already names. */
+    held = (named: boolean) =>
+      [
+        f.notional
+          ? f.holding === null
+            ? null
+            : `Still holding ${f.holding}${named && symbol ? ` ${symbol}` : ""}`
+          : `Still holding${named && symbol ? ` ${symbol}` : ""}`,
+        f.hero.label === "Unrealized PnL"
+          ? f.unrealizedRoi && `${f.unrealizedRoi} unrealized`
+          : unrealized,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    // The left column's width: a line the renderer measures within it fits.
+    holdingWidth = positionLeftColumn,
+    holdingMin = 15,
+    holding =
+      cardLineSize(lineAdvances, held(true), holdingWidth, 20) >= holdingMin
+        ? held(true)
+        : held(false),
+    holdingSize = Math.max(
+      holdingMin,
+      cardLineSize(lineAdvances, holding, holdingWidth, 20),
+    ),
+    tradeCount = new Intl.NumberFormat("en-US"),
     strip: (
       { label: string; eth: CardEth } | { label: string; value: string }
     )[] = [
-      { label: "ETH IN", eth: f.invested },
-      { label: "ETH OUT", eth: f.proceeds },
-      {
-        label: "TRADES",
-        value: `${countLabel(f.buys, "buy")} · ${countLabel(f.sells, "sell")}`,
-      },
+      ...(f.notional
+        ? [
+            { label: "ETH IN", eth: f.invested },
+            { label: "ETH OUT", eth: f.proceeds },
+            {
+              label: "TRADES",
+              value: `${countLabel(f.buys, "buy")} · ${countLabel(f.sells, "sell")}`,
+            },
+          ]
+        : [
+            // Notional hidden: the counts alone, each in its own cell.
+            { label: "BUYS", value: tradeCount.format(f.buys) },
+            { label: "SELLS", value: tradeCount.format(f.sells) },
+          ]),
       ...(f.held === null ? [] : [{ label: "HELD", value: f.held }]),
     ],
     // A hold is a few glyphs, so beside it the trade counts take its room.
@@ -675,7 +748,7 @@ function PositionCard({
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
-            width: 580,
+            width: positionLeftColumn,
           }}
         >
           <div
@@ -757,8 +830,12 @@ function PositionCard({
             >
               {f.hero.eth ? (
                 <CardFigure
-                  eth={f.hero.eth}
-                  size={cardExportHeroSize(f.hero.value ?? "", 570, 84)}
+                  money={money(f.hero.eth)}
+                  size={cardExportHeroSize(
+                    cardMoneyText(money(f.hero.eth)),
+                    570,
+                    84,
+                  )}
                   color={color}
                   letterSpacing={-3}
                 />
@@ -787,7 +864,7 @@ function PositionCard({
                   height: 38,
                 }}
               >
-                <CardFigure eth={f.realized} size={30} color={color} />
+                <CardFigure money={money(f.realized)} size={30} color={color} />
                 <span
                   style={{
                     fontSize: 30,
@@ -800,19 +877,32 @@ function PositionCard({
                 </span>
               </div>
             )}
-            {f.open && holding && (
-              <span
-                style={{
-                  ...symbolLine,
-                  fontSize: 20,
-                  lineHeight: 1,
-                  color: visualTheme.text3,
-                  marginTop: 14,
-                }}
-              >
-                {holding}
-              </span>
-            )}
+            {f.open &&
+              holding &&
+              (usdPerEth === null ? (
+                <span
+                  style={{
+                    ...symbolLine,
+                    fontSize: holdingSize,
+                    lineHeight: 1,
+                    color: visualTheme.text3,
+                    marginTop: 14,
+                  }}
+                >
+                  {holding}
+                </span>
+              ) : (
+                <Glyphs
+                  text={holding}
+                  style={{
+                    fontSize: holdingSize,
+                    lineHeight: 1,
+                    color: visualTheme.text3,
+                    marginTop: 14,
+                    overflow: "hidden",
+                  }}
+                />
+              ))}
           </div>
         </div>
         {/* The price chart where the pool serves one; else, and on a closed
@@ -838,7 +928,7 @@ function PositionCard({
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={label}>MARK</span>
                   <CardFigure
-                    eth={f.mark}
+                    money={money(f.mark)}
                     size={19}
                     color={visualTheme.text}
                     unit={{ size: 15, color: visualTheme.text3 }}
@@ -949,7 +1039,7 @@ function PositionCard({
                 >
                   <span style={label}>ENTRY</span>
                   <CardFigure
-                    eth={f.entry}
+                    money={money(f.entry)}
                     size={19}
                     color={visualTheme.text}
                     unit={{ size: 15, color: visualTheme.text3 }}
@@ -998,12 +1088,16 @@ function PositionCard({
                   }}
                 >
                   <span style={label}>{bar.label}</span>
-                  <CardFigure
-                    eth={bar.eth}
-                    size={26}
-                    color={visualTheme.text}
-                    unit={{ size: 18, color: visualTheme.text3 }}
-                  />
+                  {/* Notional hidden, the bars keep their lengths and the
+                      multiple beside them, but not the amounts. */}
+                  {f.notional && (
+                    <CardFigure
+                      money={money(bar.eth)}
+                      size={26}
+                      color={visualTheme.text}
+                      unit={{ size: 18, color: visualTheme.text3 }}
+                    />
+                  )}
                 </div>
                 <div
                   style={{
@@ -1078,8 +1172,8 @@ function PositionCard({
             <span style={label}>{cell.label}</span>
             {"eth" in cell ? (
               <CardFigure
-                eth={cell.eth}
-                size={stripSize(cell.label, cardEthText(cell.eth))}
+                money={money(cell.eth)}
+                size={stripSize(cell.label, cardMoneyText(money(cell.eth)))}
                 color={visualTheme.text}
               />
             ) : (
@@ -1145,6 +1239,276 @@ function PositionCard({
   );
 }
 
+/**
+ * The export layout for a position: the portfolio export's wordmark, chip,
+ * identity line, amount headline, fixed trio and profile URL, with the token
+ * where the wallet was and the wallet beside the URL. The headline is the
+ * lifetime realized amount, or before a first sale the held units'
+ * unrealized amount in the neutral colour; the trio is the realized ROI, the
+ * trade counts, and the unrealized ROI on an open position or ETH out over
+ * ETH in on a closed one, each slot left empty where it is not served.
+ */
+function PositionExportCard({
+  address,
+  anonymous,
+  preset,
+  position,
+  figures: f,
+  image,
+  drawable,
+  usdPerEth,
+}: {
+  address: string;
+  anonymous: boolean;
+  preset: string;
+  position: CardPosition;
+  figures: PositionCardFigures;
+  image: string | null;
+  drawable: (codePoint: number) => boolean;
+  usdPerEth: number | null;
+}) {
+  const row = position.source.position,
+    symbol = cardSymbol(row.symbol, drawable),
+    realized = f.hero.label === "Realized ROI",
+    hero = realized ? f.realized : f.hero.eth,
+    heroMoney = hero && cardMoney(hero, usdPerEth),
+    heroSize = heroMoney ? cardExportHeroSize(cardMoneyText(heroMoney)) : 0,
+    count = new Intl.NumberFormat("en-US"),
+    stats: { label: string; value: string | null }[] = [
+      { label: "ROI", value: realized ? f.hero.value : null },
+      {
+        label: "Buys · Sells",
+        value: `${count.format(f.buys)} · ${count.format(f.sells)}`,
+      },
+      f.open
+        ? { label: "Unrealized", value: f.unrealizedRoi }
+        : { label: "Out / In", value: f.multiple },
+    ];
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        padding: "64px 72px",
+        color: visualTheme.text,
+        fontFamily: "Geist",
+        backgroundColor: visualTheme.panelInset,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Mark size={34} color={preset} />
+          <div
+            style={{
+              display: "flex",
+              fontSize: 53,
+              fontWeight: 600,
+              lineHeight: 1,
+              letterSpacing: -1.6,
+            }}
+          >
+            pools
+            <span style={{ color: visualTheme.muted, fontWeight: 400 }}>
+              info
+            </span>
+            <span style={{ color: preset }}>.</span>
+          </div>
+        </div>
+        <span
+          style={{
+            display: "flex",
+            fontFamily: mono,
+            fontSize: 33,
+            fontWeight: 400,
+            lineHeight: 1,
+            letterSpacing: 3,
+            color: f.open ? preset : visualTheme.muted,
+            border: `1px solid ${f.open ? alpha(preset, 0.5) : visualTheme.lineActive}`,
+            borderRadius: 10,
+            padding: "10px 18px",
+          }}
+        >
+          {`${f.open ? "OPEN" : "CLOSED"} ${realized ? "REALIZED" : "UNREALIZED"}`}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          justifyContent: "space-between",
+          marginTop: 40,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            {image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={image}
+                alt=""
+                width={56}
+                height={56}
+                style={{ borderRadius: 28, objectFit: "cover", flexShrink: 0 }}
+              />
+            ) : (
+              <Monogram
+                address={row.token}
+                size={56}
+                radius={28}
+                label={tokenInitials(symbol)}
+              />
+            )}
+            {symbol !== null && (
+              <span
+                style={{
+                  fontSize: 57,
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  ...symbolLine,
+                }}
+              >
+                {symbol}
+              </span>
+            )}
+            {position.pool.launchType && (
+              <span
+                style={{
+                  display: "flex",
+                  flexShrink: 0,
+                  fontFamily: mono,
+                  fontSize: 26,
+                  lineHeight: 1,
+                  letterSpacing: 3,
+                  color: visualTheme.text2,
+                  border: `1px solid ${visualTheme.lineRaised}`,
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                }}
+              >
+                {position.pool.launchType.toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", height: 207, marginTop: 12 }}>
+            {heroMoney && (
+              <CardFigure
+                money={heroMoney}
+                size={heroSize}
+                color={tone(realized ? f.hero.tone : "text")}
+                letterSpacing={-heroSize * 0.045}
+              />
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", gap: 56 }}>
+            {stats.map((s) => (
+              <div
+                key={s.label}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  ...(s === stats[stats.length - 1]
+                    ? { flex: 1, minWidth: 0 }
+                    : { flexShrink: 0 }),
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 33,
+                    fontWeight: 400,
+                    lineHeight: 1,
+                    color: visualTheme.muted,
+                  }}
+                >
+                  {s.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 57,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    ...symbolLine,
+                  }}
+                >
+                  {s.value ?? ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              height: 28,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Monogram
+                address={address}
+                size={28}
+                radius={8}
+                anonymous={anonymous}
+                label={null}
+              />
+              <span
+                style={{
+                  fontSize: 24,
+                  lineHeight: 1,
+                  color: visualTheme.muted,
+                }}
+              >
+                {anonymous ? "Anonymous" : shortAddress(address)}
+              </span>
+              {!anonymous && position.rank !== null && (
+                <span
+                  style={{
+                    display: "flex",
+                    fontSize: 18,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    color: preset,
+                    background: "rgba(255, 255, 255, 0.07)",
+                    borderRadius: 7,
+                    padding: "5px 10px",
+                  }}
+                >
+                  {`RANK ${rankFormat.format(position.rank)}`}
+                </span>
+              )}
+            </div>
+            <span
+              style={{
+                display: "flex",
+                fontFamily: mono,
+                fontSize: 24,
+                fontWeight: 400,
+                lineHeight: 1,
+                color: visualTheme.muted,
+              }}
+            >
+              {anonymous
+                ? "poolsinfo.com"
+                : `poolsinfo.com/wallet/${shortAddress(address)}`}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** A card at the 1200x630 every share target unfurls, as the renderer writes it. */
 async function renderCard(card: ReactElement) {
   const image = new ImageResponse(card, {
@@ -1177,24 +1541,38 @@ export async function GET(
       (launch !== undefined && !/^0x[0-9a-f]{64}$/.test(launch))
     )
       return new Response("Invalid pool scope", { status: 400 });
+    const usdPerEth =
+      options.unit === "USD" ? await cardUsdPerEth(options.usdPerEth) : null;
     if (poolId !== undefined) {
+      // The export layout's headline is the realized amount, notional or not.
       const position = await readCardPosition(address, poolId, launch),
-        figures = position && positionCardFigures(position.source);
+        figures =
+          position &&
+          positionCardFigures(
+            position.source,
+            options.design === "export" || options.notional,
+          );
       if (!position || !figures)
         return new Response(
           "No supported position for this wallet in this pool",
           { status: 404, headers: { "Cache-Control": "no-store" } },
         );
+      const card = {
+        address,
+        anonymous: options.anonymous,
+        preset: cardPresets[options.preset].color,
+        position,
+        figures,
+        image: await tokenImage(poolId),
+        drawable: await symbolDrawable,
+        usdPerEth,
+      };
       const png = await renderCard(
-        <PositionCard
-          address={address}
-          anonymous={options.anonymous}
-          preset={cardPresets[options.preset].color}
-          position={position}
-          figures={figures}
-          image={await tokenImage(poolId)}
-          drawable={await symbolDrawable}
-        />,
+        options.design === "export" ? (
+          <PositionExportCard {...card} />
+        ) : (
+          <PositionCard {...card} lineAdvances={await regularAdvances} />
+        ),
       );
       // The renderer writes RGBA and the card is opaque: as RGB at the
       // strongest compression the same pixels take a sixth less, which holds
@@ -1251,7 +1629,7 @@ export async function GET(
           preset={preset}
           window={options.window}
           rank={w.rank}
-          hero={exportHero}
+          hero={cardMoney(exportHero.eth, usdPerEth)}
           heroColor={heroColor}
           trio={trio}
         />
@@ -1397,7 +1775,10 @@ export async function GET(
                 </span>
                 {options.notional && w.realizedWei !== null && (
                   <CardFigure
-                    eth={cardEthFigure(w.realizedWei, true)}
+                    money={cardMoney(
+                      cardEthFigure(w.realizedWei, true),
+                      usdPerEth,
+                    )}
                     size={30}
                     color={heroColor}
                   />
@@ -1546,7 +1927,11 @@ export async function GET(
                   {s.label}
                 </span>
                 {s.eth ? (
-                  <CardFigure eth={s.eth} size={30} color={tone(s.tone)} />
+                  <CardFigure
+                    money={cardMoney(s.eth, usdPerEth)}
+                    size={30}
+                    color={tone(s.tone)}
+                  />
                 ) : (
                   <span
                     style={{

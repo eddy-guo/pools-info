@@ -11,6 +11,7 @@ import {
   readScreenerStats,
   readWalletPosition,
   readWalletTradeHistory,
+  servedEthRateLifetimeMs,
 } from "./product-server";
 import {
   cardCurve,
@@ -26,14 +27,20 @@ import {
   cardTopPosition,
   cardTradeCount,
   cardEthText,
+  cardLineSize,
+  cardMoney,
+  cardMoneyText,
   cardReadLifetimeMs,
+  cardUsdPerEth,
+  type CardEth,
   positionCardChart,
   positionCardFigures,
   readCardPosition,
   type PositionCardSource,
 } from "./product-card";
 import { cardQuery, cardUrl, parseCardOptions } from "./card-options";
-import { fontCodePoints } from "./font-coverage";
+import { fontAdvances, fontCodePoints } from "./font-coverage";
+import { usdPrice } from "./usd-price";
 import { validatePoolResponse } from "./pool-response";
 import { validateCreatorsResponse } from "./creators-response";
 import { validateStatsResponse } from "./stats-response";
@@ -45,11 +52,14 @@ import {
   displayEth,
   ethFigure,
   figureText,
+  formatMoney,
   formatTokenAmount,
+  subscript,
   type AnalyticsExploreResponse,
   type AnalyticsLeaderboardResponse,
   type AnalyticsWalletPosition,
   type AnalyticsWalletResponse,
+  type AnalyticsWalletSummary,
   type CreatorsResponse,
 } from "@pools/core";
 
@@ -484,6 +494,8 @@ test("share card options round-trip through the query the modal and the route sh
     design: "liquid",
     anonymous: false,
     notional: false,
+    unit: "ETH",
+    usdPerEth: null,
   });
   const chosen = {
     window: "7d" as const,
@@ -491,6 +503,8 @@ test("share card options round-trip through the query the modal and the route sh
     design: "liquid" as const,
     anonymous: true,
     notional: true,
+    unit: "ETH" as const,
+    usdPerEth: null,
   };
   assert.deepEqual(parseCardOptions(cardQuery(chosen)), chosen);
   assert.equal(
@@ -528,12 +542,99 @@ test("share card options round-trip through the query the modal and the route sh
     parseCardOptions(new URLSearchParams("design=export&notional=1")).notional,
     false,
   );
+  // The unit and the rate the page showed travel together, on both designs.
+  const usd = { ...chosen, unit: "USD" as const, usdPerEth: 2706.735 };
+  for (const design of ["liquid", "export"] as const)
+    assert.deepEqual(parseCardOptions(cardQuery({ ...usd, design })), {
+      ...usd,
+      design,
+      notional: design === "liquid",
+    });
+  assert.equal(
+    cardQuery(usd).toString(),
+    "window=7d&theme=mint&anon=1&notional=1&unit=usd&rate=2706.735",
+  );
+  // USD with no rate on hand stays USD on the URL: the route reads the rate
+  // itself or falls back to ETH. A rate never stands alone.
+  assert.deepEqual(parseCardOptions(cardQuery({ ...usd, usdPerEth: null })), {
+    ...usd,
+    usdPerEth: null,
+  });
+  for (const rate of ["0", "-1", "NaN", "Infinity", "abc", ""])
+    assert.equal(
+      parseCardOptions(new URLSearchParams(`unit=usd&rate=${rate}`)).usdPerEth,
+      null,
+      rate,
+    );
+  assert.deepEqual(
+    parseCardOptions(new URLSearchParams("rate=2706.735")),
+    parseCardOptions(new URLSearchParams("")),
+  );
   // A stale or hand-edited link still renders with the defaults.
   assert.deepEqual(
     parseCardOptions(
-      new URLSearchParams("window=2y&theme=neon&anon=yes&design=bogus"),
+      new URLSearchParams(
+        "window=2y&theme=neon&anon=yes&design=bogus&unit=eur&rate=3000",
+      ),
     ),
     parseCardOptions(new URLSearchParams("")),
+  );
+});
+
+test("a position card's options round-trip, its amounts shown unless the URL hides them", () => {
+  const scope = {
+      pool: `0x${"b".repeat(64)}`,
+      launch: `0x${"c".repeat(64)}`,
+    },
+    scoped = `pool=${scope.pool}&launch=${scope.launch}`,
+    parsed = (query: string) =>
+      parseCardOptions(new URLSearchParams(`${scoped}${query}`)),
+    defaults = parseCardOptions(new URLSearchParams(scoped));
+  // Every position link written before the option existed showed the
+  // amounts, and still does.
+  assert.equal(defaults.notional, true);
+  assert.equal(cardQuery(defaults, scope).toString(), scoped);
+  for (const options of [
+    { ...defaults, notional: false },
+    { ...defaults, design: "export" as const, notional: false },
+    { ...defaults, preset: "amber" as const, anonymous: true },
+    { ...defaults, unit: "USD" as const, usdPerEth: 2706.735 },
+    {
+      ...defaults,
+      notional: false,
+      design: "export" as const,
+      unit: "USD" as const,
+      usdPerEth: 1999.5,
+    },
+  ]) {
+    const query = cardQuery(options, scope);
+    assert.deepEqual(
+      parseCardOptions(query),
+      {
+        ...options,
+        notional: options.notional && options.design === "liquid",
+      },
+      query.toString(),
+    );
+  }
+  assert.equal(
+    cardQuery({ ...defaults, notional: false }, scope).toString(),
+    `${scoped}&notional=0`,
+  );
+  // The export layout ignores the option, so it never reaches its URL.
+  assert.equal(
+    cardQuery(
+      { ...defaults, design: "export", notional: false },
+      scope,
+    ).toString(),
+    `${scoped}&design=export`,
+  );
+  assert.equal(parsed("&notional=1").notional, true);
+  assert.equal(parsed("&notional=0&design=export").notional, false);
+  // A window is not a position's to take: it never reaches a scoped URL.
+  assert.equal(
+    cardQuery({ ...defaults, window: "1h" }, scope).has("window"),
+    false,
   );
 });
 
@@ -803,11 +904,13 @@ test("share card prints the wallet page's own figures for the audited wallets", 
     {
       sign: "",
       figure: { form: "subscript", sign: "-", zeros: 8, digits: "5731" },
+      wei: "-5731698824",
     },
   );
   assert.deepEqual(cardEthFigure(top.realizedWei, true), {
     sign: "+",
     figure: { form: "plain", text: "66.22" },
+    wei: top.realizedWei,
   });
   // The win rate, record and trade count read as the page's tiles: Trades
   // is the supported count, 103 and 193 where every attributed trade was 110
@@ -2566,6 +2669,236 @@ test("position card leaves every figure its source does not serve blank", () => 
   assert.equal(closedMark.mark, null);
 });
 
+test("position card with notional hidden keeps percentages, trade counts and prices only", () => {
+  const priced = (row: AnalyticsWalletPosition): PositionCardSource => ({
+    position: row,
+    avgEntryPriceWei: "488980000000",
+    mark: {
+      sqrtPriceX96: "1",
+      priceWei: "4868000000000",
+      block: 1,
+      timestamp: 1,
+      txHash: `0x${"1".repeat(64)}`,
+      valueWei: "40290106768115037953",
+    },
+  });
+  const shown = positionCardFigures(priced(audited.HOOKR))!,
+    hidden = positionCardFigures(priced(audited.HOOKR), false)!;
+  assert.equal(shown.notional, true);
+  assert.equal(hidden.notional, false);
+  assert.deepEqual(hidden.hero, shown.hero);
+  for (const amount of ["realized", "holding", "unrealized"] as const) {
+    assert.notEqual(shown[amount], null, amount);
+    assert.equal(hidden[amount], null, amount);
+  }
+  // Ratios, counts, the hold and the prices are not the wallet's size.
+  for (const kept of [
+    "unrealizedRoi",
+    "multiple",
+    "bars",
+    "buys",
+    "sells",
+    "held",
+    "entry",
+    "mark",
+    "open",
+  ] as const)
+    assert.deepEqual(hidden[kept], shown[kept], kept);
+  // Before a first sale the headline is the unrealized ROI, not its amount.
+  const bought = {
+    ...audited.HOOKR,
+    realizedWei: "0",
+    position: {
+      ...audited.HOOKR.position!,
+      investedWei: audited.HOOKR.position!.costWei,
+      realizedWei: "0",
+      proceedsWei: "0",
+      sells: 0,
+    },
+  };
+  assert.deepEqual(positionCardFigures(fromWallet(bought), false)!.hero, {
+    label: "Unrealized ROI",
+    value: "+895.73%",
+    eth: null,
+    tone: "text",
+  });
+  assert.equal(
+    positionCardFigures(fromWallet({ ...bought, unrealizedWei: null }), false)!
+      .hero.value,
+    null,
+  );
+});
+
+test("a card in USD prints the page's own USD string for every amount and price it draws", () => {
+  // `Money` and `Eth` in USD print formatMoney at the served rate, `Price`
+  // prints usdPrice: the card converts the very wei its ETH figure holds.
+  const usdPerEth = 2706.735;
+  const pagePrice = (wei: string) => {
+    const price = usdPrice(wei, usdPerEth);
+    return price.form === "plain"
+      ? price.text
+      : `$0.0${subscript(price.zeros)}${price.digits}`;
+  };
+  const usd = (eth: CardEth | null) =>
+    eth && cardMoneyText(cardMoney(eth, usdPerEth));
+  const rows = [
+    ...datasetPositions().map(({ row }) => row),
+    ...Object.values(audited),
+  ];
+  let amounts = 0;
+  for (const row of rows) {
+    const card = positionCardFigures({
+      position: row,
+      avgEntryPriceWei: "488980000000",
+      mark: {
+        sqrtPriceX96: "1",
+        priceWei: "4868000000000",
+        block: 1,
+        timestamp: 1,
+        txHash: `0x${"1".repeat(64)}`,
+        valueWei: "0",
+      },
+    });
+    if (!card || !row.position) continue;
+    // In ETH the card is unchanged: no rate, no conversion.
+    for (const eth of [card.realized, card.unrealized, card.invested])
+      if (eth) assert.equal(cardMoneyText(cardMoney(eth, null)), text(eth));
+    if (card.realized)
+      assert.equal(
+        usd(card.realized),
+        formatMoney(row.position.realizedWei!, "USD", usdPerEth, true),
+      );
+    if (card.unrealized)
+      assert.equal(
+        usd(card.unrealized),
+        formatMoney(row.unrealizedWei!, "USD", usdPerEth, true),
+      );
+    assert.equal(
+      usd(card.invested),
+      formatMoney(row.position.investedWei, "USD", usdPerEth),
+    );
+    assert.equal(
+      usd(card.proceeds),
+      formatMoney(row.position.proceedsWei, "USD", usdPerEth),
+    );
+    if (card.entry) {
+      assert.equal(usd(card.entry), pagePrice("488980000000"));
+      assert.equal(usd(card.mark), pagePrice("4868000000000"));
+    }
+    amounts++;
+  }
+  assert.ok(amounts > 10, `${amounts} positions`);
+  // The audited HOOKR position: the realized line the page's tile prints.
+  const hookr = positionCardFigures(fromWallet(audited.HOOKR))!;
+  assert.equal(usd(hookr.realized), "+$169,107.07");
+  assert.equal(usd(hookr.unrealized), "+$98,102.45");
+  assert.equal(usd(hookr.invested), "$12,058.50");
+  // A price prints as `Price` does: four significant digits under a dollar.
+  assert.equal(
+    usd(
+      positionCardFigures({
+        position: audited.HOOKR,
+        avgEntryPriceWei: "488980000000",
+        mark: null,
+      })!.entry,
+    ),
+    "$0.001324",
+  );
+  // The portfolio card's amounts convert the same way.
+  const wallet = {
+    realizedWei: "66223734506390192560",
+    roi: 805.667,
+  } as AnalyticsWalletSummary;
+  const exportHero = cardExportHero(wallet)!;
+  assert.equal(
+    cardMoneyText(cardMoney(exportHero.eth, usdPerEth)),
+    formatMoney(wallet.realizedWei!, "USD", usdPerEth, true),
+  );
+  assert.equal(
+    cardMoneyText(cardMoney(exportHero.eth, usdPerEth)),
+    "+$179,250.10",
+  );
+});
+
+test("a card's line and hero sizes measure text as the card's own faces do", () => {
+  const font = (file: string) =>
+    fontAdvances(
+      readFileSync(new URL(`../../public/fonts/${file}`, import.meta.url)),
+    );
+  const regular = font("Geist-Regular.ttf"),
+    semibold = font("Geist-SemiBold.ttf"),
+    width = (advances: Map<number, number>, text: string, size: number) =>
+      ([...text].reduce((sum, g) => sum + advances.get(g.codePointAt(0)!)!, 0) *
+        size) /
+      1000;
+  // The OPEN card's holding line that lost its closing parenthesis: 584.6 px
+  // at 20 px in the card's 580 px column. Sized to fit, it ends inside it,
+  // and the line beside today's figure (579.0 px) keeps the design's size.
+  const line = "Still holding 8.27M HOOKR · +54.38 ETH unrealized (+1343.96%)";
+  assert.equal(Math.round(width(regular, line, 20) * 10) / 10, 584.6);
+  const size = cardLineSize(regular, line, 580, 20);
+  assert.ok(size < 20);
+  assert.ok(width(regular, line, size) <= 580);
+  assert.ok(width(regular, line, size + 0.1) > 580);
+  // A line that fits keeps the design's size; with no face, so does any.
+  const today = "Still holding 8.27M HOOKR · +53.87 ETH unrealized (+1331.44%)";
+  assert.equal(Math.round(width(regular, today, 20) * 10) / 10, 579);
+  assert.equal(cardLineSize(regular, today, 580, 20), 20);
+  assert.equal(cardLineSize(null, line, 580, 20), 20);
+  // The export hero's table is the SemiBold face's own advances, "$" too.
+  for (const hero of ["+$179,250.10", "-$1,546.02", "+66.22 ETH", "+$1.23M"])
+    assert.equal(
+      cardExportHeroSize(hero),
+      Math.min(
+        207,
+        Math.floor(
+          1040 / (width(semibold, hero, 1) - 0.045 * (hero.length - 1)),
+        ),
+      ),
+      hero,
+    );
+});
+
+test("a USD card converts at the rate the page showed, and only at one this server served", async (t) => {
+  withIndexer(t, "https://index.example");
+  let served = 2718.375,
+    reads = 0,
+    up = true;
+  t.mock.method(globalThis, "fetch", async () => {
+    reads++;
+    return up
+      ? Response.json({
+          usdPerEth: served,
+          asOf: new Date().toISOString(),
+          source: "coinbase",
+        })
+      : Response.json({ error: "price_unavailable" }, { status: 503 });
+  });
+  t.mock.timers.enable({ apis: ["Date"], now: 1_790_830_000_000 });
+  // No rate on the URL: the rate served now.
+  assert.equal(await cardUsdPerEth(null), 2718.375);
+  assert.equal(reads, 1);
+  // The rate the page was shown, which this server passed on: no new read,
+  // even once the read API has moved on.
+  served = 2721.04;
+  assert.equal(await cardUsdPerEth(2718.375), 2718.375);
+  assert.equal(reads, 1);
+  // A rate this server never served is not drawn: the card reads its own.
+  assert.equal(await cardUsdPerEth(9999), 2721.04);
+  assert.equal(reads, 2);
+  // Past its lifetime a served rate is read again, never kept.
+  t.mock.timers.tick(servedEthRateLifetimeMs + 1);
+  assert.equal(await cardUsdPerEth(2718.375), 2721.04);
+  assert.equal(reads, 3);
+  // And with no rate served, there is none: the card falls back to ETH.
+  t.mock.timers.tick(servedEthRateLifetimeMs + 1);
+  up = false;
+  assert.equal(await cardUsdPerEth(2721.04), null);
+  assert.equal(await cardUsdPerEth(null), null);
+  withIndexer(t);
+  assert.equal(await cardUsdPerEth(null), null);
+});
+
 test("position card chart keeps real candles, both ends and only served levels", () => {
   assert.equal(positionCardChart([], null, null, 458, 244), null);
   assert.equal(
@@ -2604,17 +2937,19 @@ test("a position card's URL carries only the options its image honours", () => {
       design: "export",
       anonymous: true,
       notional: false,
+      unit: "ETH",
+      usdPerEth: null,
     },
     scope,
   );
   assert.equal(
     query.toString(),
-    `pool=${scope.pool}&launch=${scope.launch}&theme=amber&anon=1`,
+    `pool=${scope.pool}&launch=${scope.launch}&theme=amber&anon=1&design=export`,
   );
   assert.equal(
     cardUrl(
       audited.HOOKR.position!.trader,
-      parseCardOptions(new URLSearchParams()),
+      parseCardOptions(new URLSearchParams(scope)),
       scope,
     ),
     `/cards/${audited.HOOKR.position!.trader}.png?pool=${scope.pool}&launch=${scope.launch}`,

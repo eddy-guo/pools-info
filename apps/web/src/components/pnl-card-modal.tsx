@@ -18,22 +18,82 @@ import {
 } from "@/lib/card-options";
 import styles from "./pnl-card-modal.module.css";
 import { useCardDesign } from "./card-design";
+import { useEthPrice } from "./eth-price-provider";
+import { useUnit, type Unit } from "./state";
 
-/** The card's geometry, as fractions of 1200 x 630, drawn while the PNG renders. */
-const bones: [number, number, number, number][] = [
-  [5.3, 7, 15, 5.6],
-  [5.3, 17.5, 4.4, 8.3],
-  [11.2, 18.4, 16, 4.4],
-  [11.2, 24, 7, 2.6],
-  [5.3, 34.5, 3.4, 6.4],
-  [10, 35, 9, 5.2],
-  [20, 35.4, 5.5, 4.4],
-  [5.3, 51, 30, 16],
-  [56, 18, 39, 51],
-  [5.3, 73, 89.4, 13],
-  [5.3, 90.6, 25, 3.4],
-  [82.5, 90.6, 12, 3.4],
-];
+type Bone = [left: number, top: number, width: number, height: number];
+/**
+ * Each card's geometry, as percentages of 1200 x 630, drawn while its PNG
+ * renders: one set per card and design, so the shimmer is the layout that
+ * lands rather than another card's.
+ */
+const bones: Record<CardKind, Record<CardDesign, Bone[]>> = {
+  portfolio: {
+    liquid: [
+      [5.3, 7, 15, 5.6],
+      [5.3, 17.5, 4.4, 8.3],
+      [11.2, 18.4, 16, 4.4],
+      [11.2, 24, 7, 2.6],
+      [5.3, 34.5, 3.4, 6.4],
+      [10, 35, 9, 5.2],
+      [20, 35.4, 5.5, 4.4],
+      [5.3, 51, 30, 16],
+      [56, 18, 39, 51],
+      [5.3, 73, 89.4, 13],
+      [5.3, 90.6, 25, 3.4],
+      [82.5, 90.6, 12, 3.4],
+    ],
+    export: [
+      [6, 11.1, 23.6, 7.6],
+      [68, 10.2, 26, 8.7],
+      [6, 25.4, 4.7, 8.9],
+      [12.3, 25.9, 29.6, 7.8],
+      [43.9, 25.7, 13.4, 8.3],
+      [6, 40, 82, 24.6],
+      [6, 69.2, 4.3, 4.6],
+      [6, 76.5, 19.3, 7.3],
+      [30.4, 69.2, 8.8, 4.6],
+      [30.4, 76.5, 17.4, 7.3],
+      [52.5, 69.2, 13.3, 4.6],
+      [52.5, 76.5, 16.8, 7.3],
+      [55.6, 86.8, 38.4, 3.2],
+    ],
+  },
+  position: {
+    liquid: [
+      [5.3, 7.3, 14.7, 5.1],
+      [76.2, 7, 18.5, 5.7],
+      [5.3, 16.5, 4.3, 8.3],
+      [10.8, 18.4, 9.8, 4.8],
+      [22, 19, 7.3, 3.2],
+      [31.5, 18.6, 6.8, 4.3],
+      [5.3, 33.8, 11, 2.1],
+      [5.3, 41, 32.6, 12.4],
+      [5.3, 57.5, 24, 4.4],
+      [5.3, 64.1, 48, 3],
+      [55.5, 17.1, 39.2, 44],
+      [5.3, 71.4, 89.4, 14.6],
+      [5.3, 89.4, 20.7, 4.3],
+      [65.8, 90, 28.9, 3.3],
+    ],
+    export: [
+      [6, 11.1, 23.6, 7.6],
+      [66, 10.2, 28, 8.7],
+      [6, 25.4, 4.7, 8.9],
+      [12.3, 26.5, 16, 6.8],
+      [30.3, 26.3, 13.4, 7],
+      [6, 37.8, 80, 27.6],
+      [6, 69.5, 7, 4.6],
+      [6, 76.5, 19, 7.3],
+      [29.8, 69.5, 14.4, 4.6],
+      [29.8, 76.5, 12.5, 7.3],
+      [49, 69.5, 13.3, 4.6],
+      [49, 76.5, 24, 7.3],
+      [6, 87, 24, 4.4],
+      [55.6, 87.6, 38.4, 3.2],
+    ],
+  },
+};
 const twitter = (url: string) =>
   `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}`;
 
@@ -51,6 +111,7 @@ export interface CardScope {
   supported: boolean;
 }
 type CardKind = "position" | "portfolio";
+const units: Unit[] = ["ETH", "USD"];
 const cardKinds: Record<CardKind, string> = {
   position: "Position",
   portfolio: "Portfolio",
@@ -176,20 +237,41 @@ export function PnlCardModal({
   const [preset, setPreset] = useState<CardPreset>(defaultCardOptions.preset);
   const { design, setDesign: chooseDesign } = useCardDesign();
   const [anonymous, setAnonymous] = useState(false);
-  const [notional, setNotional] = useState(false);
-  const [ready, setReady] = useState<string | null>(null);
+  /* Each card keeps its own notional choice, from its own default: the
+     portfolio card's amounts are opt-in, a position card's opt-out. */
+  const [notionalBy, setNotionalBy] = useState<Record<CardKind, boolean>>({
+    portfolio: false,
+    position: true,
+  });
+  const notional = notionalBy[kind];
+  /* The card follows the site's unit, at the rate the page itself shows;
+     with no rate served the card stays in ETH and the toggle says why. */
+  const { unit: chosenUnit, setUnit } = useUnit();
+  const usdPerEth = useEthPrice();
+  const unit: Unit = chosenUnit === "USD" && usdPerEth !== null ? "USD" : "ETH";
+  const rateNote = open && usdPerEth === null;
+  /* The last card that loaded, and its layout: a new image of the same
+     layout (another preset, the address hidden) dims the one on show while
+     it renders, but another card or design is a different layout, so its
+     own skeleton stands in for it rather than one card morphing into the
+     other. */
+  const [ready, setReady] = useState<{ url: string; layout: string } | null>(
+    null,
+  );
   const [failed, setFailed] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [sharing, setSharing] = useState(false);
   /* The notional toggle is offered disabled, with its reason, on a design
      that does not honour it; the choice is kept for the designs that do. */
-  const notionalOffered = kind === "portfolio" && cardDesigns[design].notional;
+  const notionalOffered = cardDesigns[design].notional;
   const options: CardOptions = {
     window: period,
     preset,
     design,
     anonymous,
     notional: notional && notionalOffered,
+    unit,
+    usdPerEth: unit === "USD" ? usdPerEth : null,
   };
   /* A position card is one history in one pool, so its URL names the pool
      and its launch instead of a window. */
@@ -202,15 +284,16 @@ export function PnlCardModal({
       : pool
         ? cardUrl(address, options, pool)
         : null;
+  const layout = `${kind}:${design}`;
   const state = positionNotice
     ? "unavailable"
     : url === null
       ? "loading"
       : failed === url
         ? "failed"
-        : ready === url
+        : ready?.url === url
           ? "ready"
-          : ready
+          : ready?.layout === layout
             ? "rendering"
             : "loading";
   const subject = target ? fileSlug(target.symbol) : period.toLowerCase();
@@ -340,45 +423,55 @@ export function PnlCardModal({
             </div>
           </div>
           <div className={styles.group}>
-            {/* A position card has one design: the choice is kept for the
-                portfolio card and offered disabled here, its reason on the
-                label's own line so the column keeps its height. */}
-            <span className={styles.groupLabel}>
-              <span id="pnl-card-design">Design</span>
-              {kind === "position" && (
-                <span id="pnl-card-design-note">
-                  {" "}
-                  · {cardDesigns[defaultCardOptions.design].label} only for
-                  positions
-                </span>
-              )}
+            <span className={styles.groupLabel} id="pnl-card-design">
+              Design
             </span>
             <div
               className="segmented"
               role="group"
               aria-labelledby="pnl-card-design"
-              aria-describedby={
-                kind === "position" ? "pnl-card-design-note" : undefined
-              }
             >
-              {(Object.keys(cardDesigns) as CardDesign[]).map((id) => {
-                const shown =
-                  kind === "position"
-                    ? id === defaultCardOptions.design
-                    : design === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    aria-pressed={shown}
-                    className={shown ? "selected" : ""}
-                    disabled={kind === "position"}
-                    onClick={() => chooseDesign(id)}
-                  >
-                    {cardDesigns[id].label}
-                  </button>
-                );
-              })}
+              {(Object.keys(cardDesigns) as CardDesign[]).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={design === id}
+                  className={design === id ? "selected" : ""}
+                  onClick={() => chooseDesign(id)}
+                >
+                  {cardDesigns[id].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.group}>
+            {/* The reason USD is not offered sits on the label's own line, so
+                the column keeps its height whichever way the rate goes. It is
+                a status of the open card only: a closed dialog states none. */}
+            <span className={styles.groupLabel}>
+              <span id="pnl-card-unit">Unit</span>
+              {rateNote && (
+                <span id="pnl-card-unit-note"> · USD rate unavailable</span>
+              )}
+            </span>
+            <div
+              className="segmented"
+              role="group"
+              aria-labelledby="pnl-card-unit"
+              aria-describedby={rateNote ? "pnl-card-unit-note" : undefined}
+            >
+              {units.map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={unit === id}
+                  className={unit === id ? "selected" : ""}
+                  disabled={id === "USD" && usdPerEth === null}
+                  onClick={() => setUnit(id)}
+                >
+                  {id}
+                </button>
+              ))}
             </div>
           </div>
           <div className={styles.group}>
@@ -463,11 +556,11 @@ export function PnlCardModal({
                 <span>
                   <strong>Show notional</strong>
                   <small>
-                    {notionalOffered
-                      ? "Show the realized amount and traded volume in ETH."
+                    {!notionalOffered
+                      ? `Not offered on the ${cardDesigns[design].label} design: its headline is already the realized amount.`
                       : kind === "position"
-                        ? "Not offered on a position card: it always shows the ETH in and out."
-                        : `Not offered on the ${cardDesigns[design].label} design: its headline is already the realized amount in ETH.`}
+                        ? "Show the realized amount, the units held and ETH in and out."
+                        : "Show the realized amount and traded volume."}
                   </small>
                 </span>
                 <input
@@ -475,7 +568,12 @@ export function PnlCardModal({
                   role="switch"
                   checked={notional && notionalOffered}
                   disabled={!notionalOffered}
-                  onChange={(event) => setNotional(event.target.checked)}
+                  onChange={(event) =>
+                    setNotionalBy((by) => ({
+                      ...by,
+                      [kind]: event.target.checked,
+                    }))
+                  }
                 />
                 <span className={styles.knob} aria-hidden="true" />
               </label>
@@ -547,8 +645,8 @@ export function PnlCardModal({
             )}
           </div>
           <div className={styles.preview} data-state={state}>
-            <div className={styles.skeleton} aria-hidden="true">
-              {bones.map(([left, top, width, height], i) => (
+            <div key={layout} className={styles.skeleton} aria-hidden="true">
+              {bones[kind][design].map(([left, top, width, height], i) => (
                 <span
                   key={i}
                   className={styles.bone}
@@ -574,7 +672,7 @@ export function PnlCardModal({
                 }
                 width={1200}
                 height={630}
-                onLoad={() => setReady(url)}
+                onLoad={() => setReady({ url, layout })}
                 onError={() => setFailed(url)}
               />
             )}

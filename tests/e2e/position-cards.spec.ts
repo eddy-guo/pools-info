@@ -82,19 +82,26 @@ test("a supported position row opens its own card; an excluded row has no action
     /^PEPE · /,
     /^SEYMOUR · /,
   ]);
-  // A position card has one design and always shows ETH in and out: both
-  // options are offered disabled, with their reasons.
-  await expect(
-    dialog.getByRole("group", { name: "Design" }).getByRole("button", {
-      name: "Export",
-    }),
-  ).toBeDisabled();
-  await expect(
-    dialog.getByRole("switch", { name: /Show notional/ }),
-  ).toBeDisabled();
+  // A position card shows its amounts until the switch hides them, and
+  // takes either design; the export layout, whose headline is the realized
+  // amount, offers the switch disabled with its reason.
+  const notional = dialog.getByRole("switch", { name: /Show notional/ });
+  await expect(notional).toBeEnabled();
+  await expect(notional).toBeChecked();
+  await notional.click();
+  await expect(download).toHaveAttribute("href", `${scoped}&notional=0`);
+  await notional.click();
+  await expect(download).toHaveAttribute("href", scoped);
+  const designs = dialog.getByRole("group", { name: "Design" });
+  await designs.getByRole("button", { name: "Export" }).click();
+  await expect(download).toHaveAttribute("href", `${scoped}&design=export`);
+  await expect(notional).toBeDisabled();
   await expect(
     dialog.locator("label").filter({ hasText: "Show notional" }),
-  ).toContainText("Not offered on a position card");
+  ).toContainText("Not offered on the Export design");
+  await designs.getByRole("button", { name: "Liquid" }).click();
+  await expect(download).toHaveAttribute("href", scoped);
+  await expect(notional).toBeChecked();
   // Options the position card honours stay on its URL.
   await dialog.getByRole("switch", { name: /Anonymous mode/ }).click();
   await expect(download).toHaveAttribute("href", `${scoped}&anon=1`);
@@ -285,6 +292,153 @@ test("the card modal's presets are one radio group and its toggles are switches"
   await expect(
     dialog.getByRole("switch", { name: /Show notional/ }),
   ).not.toBeChecked();
+});
+
+test("each card and design draws its own skeleton, in a slot that never moves", async ({
+  page,
+}) => {
+  // Every card image waits on a gate the test opens, so each skeleton holds.
+  let open!: () => void;
+  let gate = new Promise<void>((resolve) => (open = resolve));
+  await page.route(/\/cards\/0x[0-9a-f]{40}\.png/, async (route) => {
+    await gate;
+    await route.continue().catch(() => {});
+  });
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await page.getByRole("button", { name: "Share PnL card" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share PnL card" }),
+    preview = dialog.locator("[data-state]"),
+    designs = dialog.getByRole("group", { name: "Design" });
+  await dialog.evaluate((node) =>
+    Promise.all(node.getAnimations().map((animation) => animation.finished)),
+  );
+  const slot = () =>
+    preview.evaluate((node) => {
+      const rect = node.getBoundingClientRect(),
+        scroll = node.closest("dialog")!.scrollTop;
+      return [rect.x, rect.y + scroll, rect.width, rect.height];
+    });
+  /** The bones on show, as fractions of the slot, so layouts compare. */
+  const bones = () =>
+    preview.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return [...node.querySelectorAll("span")]
+        .filter((bone) => bone.getClientRects().length > 0)
+        .map((bone) => {
+          const rect = bone.getBoundingClientRect();
+          return [
+            (rect.x - box.x) / box.width,
+            (rect.y - box.y) / box.height,
+          ].map((v) => Math.round(v * 1000));
+        });
+    });
+  const reserved = await slot(),
+    seen: string[] = [];
+  const layout = async (count: number) => {
+    await expect(preview).toHaveAttribute("data-state", "loading");
+    await expect.poll(async () => (await bones()).length).toBe(count);
+    const drawn = JSON.stringify(await bones());
+    expect(seen).not.toContain(drawn);
+    seen.push(drawn);
+    expect(await slot()).toEqual(reserved);
+  };
+  await layout(12);
+  await designs.getByRole("button", { name: "Export" }).click();
+  await layout(13);
+  await dialog.getByRole("button", { name: "Position", exact: true }).click();
+  await layout(14);
+  await designs.getByRole("button", { name: "Liquid" }).click();
+  await layout(14);
+  open();
+  await expect(preview).toHaveAttribute("data-state", "ready");
+  expect(await slot()).toEqual(reserved);
+  // Another preset is the same layout: the card on show dims while the new
+  // one renders. Another design is not, so its own skeleton stands in.
+  gate = new Promise<void>((resolve) => (open = resolve));
+  await dialog.getByRole("radio", { name: "Mint" }).click();
+  await expect(preview).toHaveAttribute("data-state", "rendering");
+  expect(await bones()).toEqual([]);
+  await designs.getByRole("button", { name: "Export" }).click();
+  await expect(preview).toHaveAttribute("data-state", "loading");
+  expect(JSON.stringify(await bones())).toBe(seen[2]);
+  expect(await slot()).toEqual(reserved);
+  open();
+  await expect(preview).toHaveAttribute("data-state", "ready");
+});
+
+test("with no ETH/USD rate served the card stays in ETH and the unit toggle says why", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("poolsinfo.unit.v1", "USD"),
+  );
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  await page.getByRole("button", { name: "Share PnL card" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share PnL card" }),
+    units = dialog.getByRole("group", { name: "Unit" });
+  await expect(units).toHaveAccessibleDescription(/USD rate unavailable/);
+  await expect(units.getByRole("button", { name: "USD" })).toBeDisabled();
+  await expect(units.getByRole("button", { name: "ETH" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // Never a placeholder rate: the card's URL names no unit at all.
+  await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "href",
+    `/cards/${wallet}.png?window=All`,
+  );
+});
+
+test("the card is in the page's unit, at the rate the page shows", async ({
+  page,
+}) => {
+  const usdPerEth = 2706.735;
+  await page.route("**/api/product/prices/eth-usd/", (route) =>
+    route.fulfill({
+      json: { usdPerEth, asOf: new Date().toISOString(), source: "coinbase" },
+    }),
+  );
+  await page.addInitScript(() =>
+    localStorage.setItem("poolsinfo.unit.v1", "USD"),
+  );
+  const rows = await positions(page),
+    pepe = bySymbol(rows, "PEPE");
+  await page.goto(`/wallet/${wallet}/?window=All`);
+  const realized = page
+    .locator(".wallet-stats .stat")
+    .filter({ has: page.getByText("Realized PnL", { exact: true }) });
+  await expect(realized).toContainText("$");
+  await page.getByRole("button", { name: "Share PnL card" }).click();
+  const dialog = page.getByRole("dialog", { name: "Share PnL card" }),
+    units = dialog.getByRole("group", { name: "Unit" }),
+    download = dialog.getByRole("link", { name: "Download" });
+  await expect(units).not.toHaveAccessibleDescription(/unavailable/);
+  await expect(units.getByRole("button", { name: "USD" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(download).toHaveAttribute(
+    "href",
+    `/cards/${wallet}.png?window=All&unit=usd&rate=${usdPerEth}`,
+  );
+  // The toggle is the site's own: ETH here is ETH on the page behind it.
+  await units.getByRole("button", { name: "ETH" }).click();
+  await expect(download).toHaveAttribute(
+    "href",
+    `/cards/${wallet}.png?window=All`,
+  );
+  await expect(realized).toContainText("ETH");
+  await units.getByRole("button", { name: "USD" }).click();
+  await expect(realized).toContainText("$");
+  // A position card carries the same unit and rate.
+  await dialog.getByRole("button", { name: "Position", exact: true }).click();
+  await expect(
+    dialog.getByRole("combobox", { name: "Preview · Position" }),
+  ).toHaveValue(pepe.poolId);
+  await expect(download).toHaveAttribute(
+    "href",
+    `/cards/${wallet}.png?pool=${pepe.poolId}&launch=${pepe.launchTx}&unit=usd&rate=${usdPerEth}`,
+  );
 });
 
 for (const kind of ["portfolio", "position"] as const)

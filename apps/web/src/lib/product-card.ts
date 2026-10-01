@@ -1,6 +1,7 @@
 import {
   ethFigure,
   figureText,
+  formatMoney,
   formatPercent,
   formatTokenAmount,
   since,
@@ -15,7 +16,13 @@ import {
   type LiveWindow,
   type WalletPositionResponse,
 } from "@pools/core";
-import { readProduct, readWalletPosition } from "./product-server";
+import {
+  readEthPrice,
+  readProduct,
+  readWalletPosition,
+  servedEthRate,
+} from "./product-server";
+import { usdPrice } from "./usd-price";
 import type { Delivered } from "./use-product";
 
 export interface CardWallet {
@@ -87,21 +94,95 @@ export function cardTopPosition(
  * the "+" a signed slot adds, so the card prints the string the wallet page's
  * tile prints ("+66.22 ETH" on both; the audit of 29 Sep 2026 found the card
  * at four significant digits against the page's own rule). The renderer draws
- * the subscript-zero form itself, so the figure travels beside its text.
+ * the subscript-zero form itself, so the figure travels beside its text, and
+ * beside its wei, which {@link cardMoney} converts when the card is in USD.
  */
 export interface CardEth {
   sign: "" | "+";
   figure: EthFigure;
+  wei: string;
+  /** A price per whole token, which USD prints as the site's `Price` does. */
+  price?: true;
 }
 export const cardEthFigure = (wei: string, signed = false): CardEth => ({
   sign: signed && BigInt(wei) > 0n ? "+" : "",
   figure: ethFigure(wei),
+  wei,
+});
+const cardPriceFigure = (wei: string): CardEth => ({
+  ...cardEthFigure(wei),
+  price: true,
 });
 /** A {@link CardEth} as one run of text, the subscript form in subscript digits. */
-export const cardEthText = ({ sign, figure }: CardEth) =>
-  `${sign}${figureText(figure)} ETH`;
+export const cardEthText = ({
+  sign,
+  figure,
+}: Pick<CardEth, "sign" | "figure">) => `${sign}${figureText(figure)} ETH`;
 export const cardEth = (wei: string, signed = false) =>
   cardEthText(cardEthFigure(wei, signed));
+/**
+ * A figure as the card draws it, in the unit the card is in. In ETH it is
+ * the {@link CardEth} itself; in USD it is that same wei at the served rate
+ * and nothing else, in the strings the site's own `Money` and `Price` print
+ * ("+$177,365.70", "$0.0₅1894"), so the card in USD says what the page in
+ * USD says. The subscript form's figure holds the digits after "$0.0".
+ */
+export interface CardMoney {
+  sign: "" | "+";
+  figure: EthFigure;
+  currency: "ETH" | "USD";
+}
+export function cardMoney(eth: CardEth, usdPerEth: number | null): CardMoney {
+  if (usdPerEth === null)
+    return { sign: eth.sign, figure: eth.figure, currency: "ETH" };
+  if (eth.price) {
+    const price = usdPrice(eth.wei, usdPerEth);
+    return {
+      sign: "",
+      figure:
+        price.form === "plain"
+          ? price
+          : {
+              form: "subscript",
+              sign: "",
+              zeros: price.zeros,
+              digits: price.digits,
+            },
+      currency: "USD",
+    };
+  }
+  return {
+    sign: eth.sign,
+    figure: { form: "plain", text: formatMoney(eth.wei, "USD", usdPerEth) },
+    currency: "USD",
+  };
+}
+/** A {@link CardMoney} as one run of text. */
+export const cardMoneyText = (money: CardMoney) =>
+  money.currency === "ETH"
+    ? `${money.sign}${figureText(money.figure)} ETH`
+    : `${money.sign}${
+        money.figure.form === "plain"
+          ? money.figure.text
+          : `$${figureText(money.figure)}`
+      }`;
+/**
+ * The rate a USD card is drawn at: the rate its URL names when this server
+ * passed that very rate on moments ago (the page beside the card showing
+ * it), else the rate the read API serves now, else none, and the card falls
+ * back to ETH. A rate is never kept past its read or made up.
+ */
+export async function cardUsdPerEth(
+  pinned: number | null,
+): Promise<number | null> {
+  if (pinned !== null && servedEthRate(pinned)) return pinned;
+  try {
+    return (await readEthPrice(["prices", "eth-usd"], new URLSearchParams()))
+      .usdPerEth;
+  } catch {
+    return null;
+  }
+}
 export interface CardStat {
   label: string;
   value: string;
@@ -207,6 +288,30 @@ export function cardExportHero(
   };
 }
 
+/**
+ * The largest size, up to `max` and in tenths of a pixel, at which one line
+ * fits `width` by the renderer's own measure: the unkerned sum of the face's
+ * advances (`fontAdvances`, per 1000 em). The renderer clips a line that
+ * overruns its box by a few pixels instead of ending it in its ellipsis
+ * (the OPEN card's "(+1343.96%" lost its closing parenthesis), so a line
+ * that can run long is sized to fit before it is drawn. With no advances to
+ * measure by, the line keeps `max`.
+ */
+export function cardLineSize(
+  advances: Map<number, number> | null,
+  text: string,
+  width: number,
+  max: number,
+): number {
+  if (!advances) return max;
+  const em =
+    [...text].reduce(
+      (sum, glyph) => sum + (advances.get(glyph.codePointAt(0)!) ?? 1000),
+      0,
+    ) / 1000;
+  return Math.min(max, Math.floor((width / em) * 10) / 10);
+}
+
 /** Geist SemiBold advance widths, per 1000 em, of every glyph an ETH hero holds. */
 const heroAdvance: Record<string, number> = {
   "0": 683,
@@ -231,6 +336,8 @@ const heroAdvance: Record<string, number> = {
   K: 672,
   M: 902,
   B: 695,
+  // The card in USD.
+  $: 656,
 };
 /**
  * The export hero's font size: the design's 207 px, or the largest whole
@@ -461,10 +568,11 @@ export interface PositionCardFigures {
   /**
    * The headline: the realized ROI once any cost has been disposed of, over
    * that disposed cost as the board computes a wallet's; before the first
-   * sale, the held units' unrealized PnL in ETH, in the neutral colour.
+   * sale, the held units' unrealized PnL in ETH, or with notional hidden its
+   * percentage of their cost, in the neutral colour.
    */
   hero: {
-    label: "Realized ROI" | "Unrealized PnL";
+    label: "Realized ROI" | "Unrealized PnL" | "Unrealized ROI";
     value: string | null;
     eth: CardEth | null;
     tone: CardStat["tone"];
@@ -474,6 +582,8 @@ export interface PositionCardFigures {
   /** Units held in whole tokens, the wallet page's Holding figure. */
   holding: string | null;
   unrealized: CardEth | null;
+  /** Whether the amounts are drawn: realized, held, unrealized, ETH in and out. */
+  notional: boolean;
   /** The unrealized PnL over the held units' cost. */
   unrealizedRoi: string | null;
   invested: CardEth;
@@ -491,8 +601,16 @@ export interface PositionCardFigures {
   held: string | null;
 }
 
+/**
+ * A position card's figures. With `notional` off the card shows percentages,
+ * trade counts and prices only: no realized, held or unrealized amount and
+ * no ETH in or out, so the headline before a first sale is the unrealized
+ * ROI rather than the unrealized amount. The amounts stay ETH here; a USD
+ * card converts them where it draws them ({@link cardMoney}).
+ */
 export function positionCardFigures(
   source: PositionCardSource,
+  notional = true,
 ): PositionCardFigures | null {
   const row = source.position,
     p = row.position;
@@ -517,18 +635,26 @@ export function positionCardFigures(
     open,
     hero:
       roi === null || shownRoi === null
-        ? {
-            label: "Unrealized PnL",
-            value:
-              row.unrealizedWei === null
-                ? null
-                : cardEth(row.unrealizedWei, true),
-            eth:
-              row.unrealizedWei === null
-                ? null
-                : cardEthFigure(row.unrealizedWei, true),
-            tone: "text",
-          }
+        ? notional
+          ? {
+              label: "Unrealized PnL",
+              value:
+                row.unrealizedWei === null
+                  ? null
+                  : cardEth(row.unrealizedWei, true),
+              eth:
+                row.unrealizedWei === null
+                  ? null
+                  : cardEthFigure(row.unrealizedWei, true),
+              tone: "text",
+            }
+          : {
+              label: "Unrealized ROI",
+              value:
+                unrealizedRoi === null ? null : formatPercent(unrealizedRoi),
+              eth: null,
+              tone: "text",
+            }
         : {
             label: "Realized ROI",
             value: formatPercent(roi),
@@ -536,17 +662,18 @@ export function positionCardFigures(
             tone: shownRoi > 0 ? "up" : shownRoi < 0 ? "down" : "text",
           },
     realized:
-      roi === null || p.realizedWei === null
+      !notional || roi === null || p.realizedWei === null
         ? null
         : cardEthFigure(p.realizedWei, true),
     holding:
-      row.decimals === null
+      !notional || row.decimals === null
         ? null
         : formatTokenAmount(p.quantity, row.decimals),
     unrealized:
-      row.unrealizedWei === null
+      !notional || row.unrealizedWei === null
         ? null
         : cardEthFigure(row.unrealizedWei, true),
+    notional,
     unrealizedRoi: unrealizedRoi === null ? null : formatPercent(unrealizedRoi),
     invested: cardEthFigure(p.investedWei),
     proceeds: cardEthFigure(p.proceedsWei),
@@ -559,11 +686,11 @@ export function positionCardFigures(
     sells: p.sells,
     entry:
       open && source.avgEntryPriceWei !== null
-        ? cardEthFigure(source.avgEntryPriceWei)
+        ? cardPriceFigure(source.avgEntryPriceWei)
         : null,
     mark:
       open && source.mark?.priceWei != null
-        ? cardEthFigure(source.mark.priceWei)
+        ? cardPriceFigure(source.mark.priceWei)
         : null,
     held: open && p.openedAt != null ? since(p.openedAt, row.asOf) : null,
   };

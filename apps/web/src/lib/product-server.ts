@@ -421,8 +421,35 @@ export async function readEthPrice(
   } catch {
     throw new EthPriceUnavailableError(30);
   }
+  servedEthRates().set(body.usdPerEth, Date.now());
   return body;
 }
+/**
+ * How long a rate this server passed on still counts as one it served: the
+ * page asks for a fresh rate every minute and names the one it shows on the
+ * share card's URL, so two minutes covers a page between two of its reads.
+ */
+export const servedEthRateLifetimeMs = 120_000;
+/**
+ * Every ETH/USD rate {@link readEthPrice} passed on in the last
+ * {@link servedEthRateLifetimeMs}, by when. Held on `globalThis` because the
+ * price proxy and the card route are separate server bundles, which would
+ * each hold their own copy of a module-level map.
+ */
+function servedEthRates(): Map<number, number> {
+  const held = globalThis as typeof globalThis & {
+    [servedEthRatesKey]?: Map<number, number>;
+  };
+  const rates = (held[servedEthRatesKey] ??= new Map());
+  const now = Date.now();
+  for (const [rate, at] of rates)
+    if (now - at > servedEthRateLifetimeMs) rates.delete(rate);
+  return rates;
+}
+const servedEthRatesKey = Symbol.for("poolsinfo.servedEthRates");
+/** Whether this server passed on exactly this ETH/USD rate moments ago. */
+export const servedEthRate = (usdPerEth: number): boolean =>
+  servedEthRates().has(usdPerEth);
 /**
  * The wallet's explorer-backed trade history (`wallets/:address/history
  * ?kind=trades`): on demand only, like the ETH/USD rate above and unlike
