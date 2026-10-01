@@ -40,6 +40,7 @@ import {
   rankedShown,
 } from "@/lib/ranked-rows";
 import { countLabel } from "@/lib/plural";
+import { holdDuration } from "@/lib/hold-duration";
 import { excludedPositionsCaption } from "@/lib/excluded-positions";
 /** Pump.fun-style gold/silver/bronze for a flat list's own ranks 1-3, keyed
     by the wallet's actual rank rather than row position so the Following
@@ -385,7 +386,7 @@ function MobileTraderCard({
               {w.avgHold == null ? (
                 <Unavailable />
               ) : (
-                `${Math.round(w.avgHold)}s`
+                holdDuration(w.avgHold)
               )}
             </span>
           </div>
