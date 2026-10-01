@@ -362,7 +362,7 @@ for (const entry of routes) {
         /* Sorting moved onto the column headers, so the select and the
            direction button no longer sit in this row. */
         const controls = await rects(".filter-input, .icon-button, .segmented");
-        expect(controls, "filter, refresh, window").toHaveLength(3);
+        expect(controls, "filter, window").toHaveLength(2);
         for (const control of controls)
           if (testInfo.project.name === "desktop")
             expect(

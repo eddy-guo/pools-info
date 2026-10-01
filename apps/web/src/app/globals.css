@@ -4920,14 +4920,6 @@ button.icon-button:disabled {
   width: 150px;
   font-weight: 400;
 }
-.explore-toolbar .icon-button {
-  height: var(--ctl-min);
-  width: var(--ctl-min);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 9px;
-  background: var(--color-panel-raised);
-  color: var(--color-text-3);
-}
 .explore-toolbar .segmented button {
   font-size: 12px;
   font-weight: 600;

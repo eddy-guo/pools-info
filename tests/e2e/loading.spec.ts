@@ -4,51 +4,6 @@ import captures from "../../data/pools/index.json";
 import { poolHref } from "@pools/core";
 const topWallet = "0x474583e46d2ea052fb5690bdebdb41d6cf1ebce1";
 
-test("Explore retains saved rows during refresh", async ({ page, request }) => {
-  const payload = await (
-    await request.get(
-      "/api/product/explore/?window=24h&view=all&offset=0&limit=25&q=&sort=launch&direction=desc",
-    )
-  ).json();
-  let release: () => void = () => {},
-    calls = 0;
-  await page.route("**/api/product/explore/?**", async (route) => {
-    if (new URL(route.request().url()).searchParams.get("limit") !== "25")
-      return route.continue();
-    calls++;
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    await route.fulfill({ json: payload });
-  });
-  await page.goto("/");
-  const pendingRows = page
-    .locator(".desktop-pools, .mobile-pools")
-    .locator('[data-pending="true"]')
-    .filter({ visible: true });
-  await expect(pendingRows.first()).toBeVisible();
-  await expect.poll(() => calls).toBe(1);
-  release();
-  const first = page
-    .locator(".desktop-pools, .mobile-pools")
-    .getByText(payload.items[0].name, { exact: true })
-    .filter({ visible: true });
-  await expect(first).toBeVisible();
-  await page
-    .locator("main")
-    .getByRole("button", { name: "Refresh saved data", exact: true })
-    .click();
-  await expect.poll(() => calls).toBe(2);
-  await expect(first).toBeVisible();
-  await expect(pendingRows).toHaveCount(0);
-  release();
-  await expect(
-    page
-      .locator("main")
-      .getByRole("button", { name: "Refresh saved data", exact: true }),
-  ).toBeEnabled();
-});
-
 test("Explore keeps the previous order's own rows on show, dimmed, never a skeleton flash, while a sort change loads", async ({
   page,
   request,
