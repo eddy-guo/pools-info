@@ -25,8 +25,11 @@ async function tab(page: Page): Promise<Stop> {
     const style = getComputedStyle(el);
     return {
       name: (el.getAttribute("aria-label") ?? el.textContent ?? "").trim(),
-      x: rect.x,
-      y: rect.y,
+      /* Page coordinates: a Tab past the fold starts a smooth scroll that
+         is still running when the next stop is read, so viewport rects of
+         two stops on one line can differ by however far it got. */
+      x: rect.x + scrollX,
+      y: rect.y + scrollY,
       width: rect.width,
       height: rect.height,
       ring: el.matches(":focus-visible")
