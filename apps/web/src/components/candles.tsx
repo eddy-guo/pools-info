@@ -142,6 +142,8 @@ function observedBars(observed: ObservedMarket, interval: number): Candle[] {
 /* The tooltip's box, so it can flip to the crosshair's other side before it
    would leave the chart. */
 const tooltipWidth = 196;
+/* The widest a bar's slot grows when the All range fits a short history. */
+const maxBarSpacing = 32;
 export function Candles(
   props: { range: ChartRange } & (
     | { market: ChainMarket; snapshot: ChainSnapshot }
@@ -314,12 +316,18 @@ export function Candles(
     if (bars.length) {
       if (previousView.current !== viewKey) {
         if (range === "All") {
-          a.chart.timeScale().fitContent();
-          if (bars.length < 40)
-            a.chart.timeScale().setVisibleLogicalRange({
-              from: bars.length - 40,
-              to: bars.length + 3,
+          /* Every bar fits the plot, but a young pool's few bars stop at the
+             widest candle the panel draws and sit centred in it rather than
+             stretching across it or hugging the right edge. */
+          const timeScale = a.chart.timeScale();
+          const slots = timeScale.width() / maxBarSpacing;
+          if (bars.length < slots) {
+            const middle = (bars.length - 1) / 2;
+            timeScale.setVisibleLogicalRange({
+              from: middle - (slots - 1) / 2,
+              to: middle + (slots - 1) / 2,
             });
+          } else timeScale.fitContent();
         } else
           a.chart.timeScale().setVisibleRange({
             from: Math.max(

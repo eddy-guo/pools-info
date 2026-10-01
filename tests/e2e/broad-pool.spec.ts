@@ -237,6 +237,110 @@ test("price-scale labels stay whole at the edges of every pane", async ({
   ).toBeGreaterThanOrEqual(expected[0]);
   expect(firstTop).toBeLessThanOrEqual(expected[1]);
 });
+/* The All range fits every bar into the plot, but a young pool's few bars
+   stop growing at a 32px slot and sit centred rather than at the right edge
+   of an otherwise empty plot (QA item 22: a 40-slot window put one to three
+   candles in its last few slots). A pool with more bars than that fills the
+   plot edge to edge, as before. Candle ink is measured on the price pane's
+   canvas: a column is a bar's when four or more of its pixels carry the up
+   or down colour, which the one-pixel dotted price line never does. */
+for (const [count, shape] of [
+  [1, "a lone bar sits centred, one slot wide"],
+  [3, "three bars sit centred, a slot apiece"],
+  [90, "a long history fills the plot"],
+] as const) {
+  test(`All range on ${count} bar(s): ${shape}`, async ({ page }) => {
+    const market = fixture();
+    const last = 199980;
+    market.history.fromTimestamp = last - 60 * (count - 1);
+    market.history.candles = Array.from({ length: count }, (_, i) => ({
+      time: last - 60 * (count - 1 - i),
+      open: i % 2 ? "2000000000000000000" : "1000000000000000000",
+      high: "2000000000000000000",
+      low: "1000000000000000000",
+      close: i % 2 ? "1000000000000000000" : "2000000000000000000",
+      volume: "1000000000000000000",
+    }));
+    await page.route(`**/api/product/pools/${id}/`, (route) =>
+      route.fulfill({
+        json: {
+          pool,
+          analytics: null,
+          market,
+          delivery: { source: "indexer", notice: null },
+        },
+      }),
+    );
+    await page.goto(`/pool/${id}/`);
+    await expect(
+      page.locator(".pool-chart-head").getByRole("button", { name: "All" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const rgb = (hex: string) =>
+      [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16));
+    const ink = () =>
+      page.evaluate(
+        ({ colours }) => {
+          const row = [
+            ...document.querySelectorAll(".interactive-chart table tr"),
+          ].find((r) => r.children.length === 3);
+          const canvas = row?.children[1].querySelector("canvas");
+          if (!canvas) return null;
+          const { width, height } = canvas;
+          const ratio = width / canvas.getBoundingClientRect().width;
+          const pixels = canvas
+            .getContext("2d")!
+            .getImageData(0, 0, width, height).data;
+          const columns: number[] = [];
+          for (let x = 0; x < width; x++) {
+            let hits = 0;
+            for (let y = 0; y < height; y++) {
+              const i = (y * width + x) * 4;
+              if (
+                colours.some(
+                  (c) =>
+                    Math.abs(pixels[i] - c[0]) +
+                      Math.abs(pixels[i + 1] - c[1]) +
+                      Math.abs(pixels[i + 2] - c[2]) <
+                    24,
+                )
+              )
+                hits++;
+            }
+            if (hits >= 4) columns.push(x);
+          }
+          return columns.length
+            ? {
+                plot: width / ratio,
+                first: columns[0] / ratio,
+                last: (columns.at(-1)! + 1) / ratio,
+              }
+            : null;
+        },
+        { colours: [rgb(visualTheme.up), rgb(visualTheme.down)] },
+      );
+    await expect.poll(ink, { message: "the bars are drawn" }).not.toBeNull();
+    const { plot, first, last: end } = (await ink())!;
+    if (count === 90) {
+      expect(first, "the first bar at the plot's left edge").toBeLessThan(
+        plot * 0.05,
+      );
+      expect(end, "the last bar at the plot's right edge").toBeGreaterThan(
+        plot * 0.95,
+      );
+    } else {
+      expect(
+        Math.abs((first + end) / 2 - plot / 2),
+        "the bars centred in the plot",
+      ).toBeLessThan(4);
+      expect(end - first, "each bar within its 32px slot").toBeLessThanOrEqual(
+        32 * count,
+      );
+      expect(end - first, "each bar wider than a sliver").toBeGreaterThan(
+        16 * count,
+      );
+    }
+  });
+}
 /* A bare pool link has only its observed market, and the ledger's market
    carries the creator-fee flag when it is known. Only a real boolean renders
    a setting: an absent flag is the unavailable mark, never Disabled. */
