@@ -96,9 +96,10 @@ export function WinLossRecord({
   return (
     <span className="wl-record">
       <WinLossBar wins={wins} losses={losses} />
-      <span className="wl-text">
-        {wins}W · {losses}L
-      </span>
+      {/* One string, one text node: as interpolated children each part was
+          its own node, and a record changing width on a window change moved
+          every node after the first, which Chrome scores as a shift. */}
+      <span className="wl-text">{`${wins}W · ${losses}L`}</span>
     </span>
   );
 }
