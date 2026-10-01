@@ -61,11 +61,13 @@ import { CopyTradePreview } from "./copy-trade-preview";
 import styles from "./detail-design.module.css";
 import { tokenLine } from "@/lib/token-identity";
 import { excludedPositionsCaption } from "@/lib/excluded-positions";
+import { useTabs } from "@/lib/use-tabs";
 const tabs = [
   { id: "positions", label: "Positions" },
   { id: "trades", label: "Trades" },
   { id: "launches", label: "Launches" },
 ];
+const tabIds = tabs.map((t) => t.id);
 /**
  * The accounting has never observed this wallet: `asOf` is the latest cut of
  * the pools it holds a position in and is null only when it holds none, while
@@ -133,6 +135,7 @@ export function ProductWallet({ address }: { address: string }) {
   // public framing and hydration swaps whole nodes, never text in place.
   const mine = useMyWallet().isMine(address);
   const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? "positions",
+    activity = useTabs(tabIds, tab),
     [copyTrade, setCopyTrade] = useState(false),
     [card, setCard] = useState(false),
     // A clock frozen at mount: the header's "last Nm ago" only ever paints
@@ -388,8 +391,7 @@ export function ProductWallet({ address }: { address: string }) {
                     const count = tabCount(data, t.id);
                     return (
                       <button
-                        role="tab"
-                        aria-selected={tab === t.id}
+                        {...activity.tab(t.id)}
                         key={t.id}
                         onClick={() => set({ tab: t.id })}
                       >
@@ -406,7 +408,7 @@ export function ProductWallet({ address }: { address: string }) {
                   })}
                 </div>
                 {tab === "positions" && (
-                  <>
+                  <div {...activity.panel}>
                     <p className="wallet-positions-caption">
                       Realized: {period} · Holding, cost, unrealized: lifetime
                     </p>
@@ -632,10 +634,10 @@ export function ProductWallet({ address }: { address: string }) {
                       loading={!data}
                       onMore={showMore}
                     />
-                  </>
+                  </div>
                 )}
                 {tab === "trades" && (
-                  <>
+                  <div {...activity.panel}>
                     {/* The explorer page's own fetch time is a cut of its
                         own, not the page's, so the tab keeps a stamp beside
                         the header's. */}
@@ -839,10 +841,10 @@ export function ProductWallet({ address }: { address: string }) {
                         )}
                       </div>
                     )}
-                  </>
+                  </div>
                 )}
                 {tab === "launches" && (
-                  <>
+                  <div {...activity.panel}>
                     <div
                       className="table-scroll wallet-list-region"
                       aria-busy={stale}
@@ -909,7 +911,7 @@ export function ProductWallet({ address }: { address: string }) {
                         Showing the latest {data.launches.length} launches.
                       </p>
                     )}
-                  </>
+                  </div>
                 )}
               </section>
             </div>
