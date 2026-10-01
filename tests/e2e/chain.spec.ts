@@ -239,6 +239,13 @@ test("server-generated card uses captured RPC audit data and returns a 1200 by 6
   );
   expect(spoofed.status()).toBe(200);
   expect(await spoofed.body()).toEqual(image);
+  // Nor is a rate the URL names: this deployment serves no ETH/USD rate, so
+  // a USD card is the ETH card, never one drawn at a placeholder rate.
+  const usd = await request.get(
+    `/cards/${address}.png?window=All&unit=usd&rate=2706.735`,
+  );
+  expect(usd.status()).toBe(200);
+  expect(await usd.body()).toEqual(image);
   expect((await request.get(walletHref(address, m))).status()).toBe(200);
 });
 
@@ -1121,15 +1128,27 @@ test("position card route serves only a supported position, for its own launch",
   expect(png.readUInt32BE(16)).toBe(1200);
   expect(png.readUInt32BE(20)).toBe(630);
   expect(png.length).toBeLessThan(120_000);
-  // A position is one history, not a window, and has one design yet: the
-  // options it ignores never change its image. Its own launch is accepted.
-  expect(
-    await (
-      await request.get(
-        `${url}&window=1h&design=export&notional=1&launch=${closed.p.launchTx}`,
-      )
-    ).body(),
-  ).toEqual(png);
+  // A position is one history, not a window: a window never changes its
+  // image, its amounts show unless the URL hides them, and its own launch is
+  // accepted. With no ETH/USD rate served here, USD is the ETH card.
+  for (const same of [
+    `${url}&window=1h&notional=1&launch=${closed.p.launchTx}`,
+    `${url}&unit=usd&rate=2706.735`,
+  ])
+    expect(await (await request.get(same)).body(), same).toEqual(png);
+  // The export layout and the card with its amounts hidden are images of
+  // their own, inside the same budget.
+  const others = [png];
+  for (const option of ["design=export", "notional=0"]) {
+    const other = await request.get(`${url}&${option}`);
+    expect(other.status(), option).toBe(200);
+    const body = await other.body();
+    expect(body.readUInt32BE(16)).toBe(1200);
+    expect(body.readUInt32BE(20)).toBe(630);
+    expect(body.length).toBeLessThan(120_000);
+    for (const seen of others) expect(body.equals(seen), option).toBe(false);
+    others.push(body);
+  }
   const open = find(
     (p) => !!p.position && p.supported && p.position.quantity !== "0",
   )!;
