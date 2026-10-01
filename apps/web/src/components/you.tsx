@@ -126,6 +126,10 @@ function IdentityRow({
 }) {
   const { set } = useMyWallet();
   const [dialogOpen, setDialogOpen] = useState(false);
+  /* Marking a wallet swaps this row for the marked one, so the button that
+     opened the dialog is gone; focus lands on the new row's Portfolio link
+     rather than falling back to the page body. */
+  const focusMarked = useRef(false);
   return (
     <>
       {hydrated && address ? (
@@ -137,6 +141,12 @@ function IdentityRow({
           />
           <span className="you-identity-actions">
             <Link
+              ref={(node) => {
+                if (node && focusMarked.current) {
+                  focusMarked.current = false;
+                  node.focus();
+                }
+              }}
               className="my-rank-link"
               href={`${walletHref(address)}?window=${RANK_WINDOW}`}
               aria-label={copy.identity.portfolio}
@@ -181,6 +191,7 @@ function IdentityRow({
         <SetWalletDialog
           onClose={() => setDialogOpen(false)}
           onSet={(next) => {
+            focusMarked.current = true;
             set(next);
             setDialogOpen(false);
           }}

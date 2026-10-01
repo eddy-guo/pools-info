@@ -11,7 +11,9 @@ import { SavedCountBadge, useSavedCount } from "./saved-count";
 
 /** The one way this browser marks a wallet as its own: a typed address,
     saved like the follow list, with no connection and no signature. The
-    You page opens it from its identity row. */
+    You page opens it from its identity row. It opens on the address field,
+    and every dismissal goes through the native close, which hands focus
+    back to the control that opened it before `onClose` unmounts it. */
 export function SetWalletDialog({
   onClose,
   onSet,
@@ -20,10 +22,12 @@ export function SetWalletDialog({
   onSet: (address: string) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const input = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState("");
   const [invalid, setInvalid] = useState(false);
   useEffect(() => {
     dialog.current?.showModal();
+    input.current?.focus();
   }, []);
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -41,7 +45,7 @@ export function SetWalletDialog({
       aria-labelledby="wallet-set-title"
       onClose={onClose}
       onClick={(event) => {
-        if (event.target === dialog.current) onClose();
+        if (event.target === dialog.current) dialog.current.close();
       }}
     >
       <form onSubmit={submit}>
@@ -51,13 +55,14 @@ export function SetWalletDialog({
             type="button"
             className="icon-button"
             aria-label="Close"
-            onClick={onClose}
+            onClick={() => dialog.current?.close()}
           >
             ×
           </button>
         </div>
         <label htmlFor="wallet-set-address">Your wallet address</label>
         <input
+          ref={input}
           id="wallet-set-address"
           value={value}
           onChange={(event) => {
