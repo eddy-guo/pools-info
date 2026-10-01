@@ -149,7 +149,8 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
   );
 
   // Positions like the export: a 30px identity beside the token, and the
-  // four figure columns right-aligned under right-aligned heads.
+  // four figure columns right-aligned under right-aligned heads, then the
+  // row's share action under a head named for screen readers only.
   const positionsHead = main.locator("thead th");
   await expect(positionsHead).toHaveText([
     "Token",
@@ -157,6 +158,7 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     "Cost",
     "Realized",
     "Unrealized",
+    "Share",
   ]);
   for (const head of await positionsHead.all())
     if ((await head.textContent()) !== "Token")
@@ -170,7 +172,7 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
     ).locator(".wallet-token-cell .avatar"),
   ).toBeVisible();
   const cellBoxes = await firstPosition
-    .locator("td:nth-child(n + 2)")
+    .locator("td:nth-child(n + 2):not(:last-child)")
     .evaluateAll((nodes) =>
       nodes.map((node) => getComputedStyle(node).textAlign),
     );

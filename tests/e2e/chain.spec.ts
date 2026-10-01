@@ -684,9 +684,23 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     Promise.all(node.getAnimations().map((animation) => animation.finished)),
   );
   await expect(preview).toHaveAttribute("data-state", "loading");
-  const reserved = await preview.boundingBox();
+  /* The slot's box within the dialog's own scrolled content: on a phone a
+     control further down the dialog scrolls it into view when clicked,
+     which moves the viewport box without moving the slot. */
+  const slot = () =>
+    preview.evaluate((node) => {
+      const rect = node.getBoundingClientRect(),
+        scroll = node.closest("dialog")!.scrollTop;
+      return {
+        x: rect.x,
+        y: rect.y + scroll,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  const reserved = await slot();
   await expect(preview).toHaveAttribute("data-state", "ready");
-  expect(await preview.boundingBox()).toEqual(reserved);
+  expect(await slot()).toEqual(reserved);
   expect(reserved!.width / reserved!.height).toBeCloseTo(1200 / 630, 2);
   // Every customize control re-renders the same route with a query parameter.
   await dialog.getByRole("radio", { name: "Mint" }).click();
@@ -730,7 +744,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
   );
-  expect(await preview.boundingBox()).toEqual(reserved);
+  expect(await slot()).toEqual(reserved);
   await expect(dialog.getByRole("link", { name: "Download" })).toHaveAttribute(
     "href",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&design=export`,
@@ -743,7 +757,7 @@ test("default saved leaderboard opens matching global wallet positions, trades a
     "src",
     `/cards/${wallet}.png?window=All&theme=mint&anon=1&notional=1`,
   );
-  expect(await preview.boundingBox()).toEqual(reserved);
+  expect(await slot()).toEqual(reserved);
   // Back to Liquid is a URL already fetched once, so the browser serves it
   // from cache rather than repeating the request.
   expect(cardRequests).toEqual([

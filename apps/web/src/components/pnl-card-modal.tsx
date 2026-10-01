@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { shortAddress, type LiveWindow } from "@pools/core";
+import {
+  shortAddress,
+  type AnalyticsWalletResponse,
+  type LiveWindow,
+} from "@pools/core";
+import { fetchProduct } from "@/lib/use-product";
 import {
   cardDesigns,
   cardPresets,
@@ -32,18 +37,142 @@ const bones: [number, number, number, number][] = [
 const twitter = (url: string) =>
   `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}`;
 
+/**
+ * The position a card opens on. A wallet row has already read the position
+ * as supported, so its card renders at once; the pool page has not read the
+ * wallet, so its position stays unconfirmed until the modal's own read finds
+ * it among the wallet's supported positions.
+ */
+export interface CardScope {
+  poolId: string;
+  launchTx: string;
+  symbol: string;
+  token: string;
+  supported: boolean;
+}
+type CardKind = "position" | "portfolio";
+const cardKinds: Record<CardKind, string> = {
+  position: "Position",
+  portfolio: "Portfolio",
+};
+type ListedPosition = Omit<CardScope, "supported">;
+/**
+ * The wallet's supported positions, the only ones with a card, largest
+ * lifetime realized first; read once per opening of a position card, from
+ * the same All read the card route draws them from.
+ */
+function useCardPositions(address: string, enabled: boolean) {
+  const [state, setState] = useState<{
+    address: string;
+    positions?: ListedPosition[];
+    truncated?: boolean;
+    error?: string;
+  }>({ address });
+  useEffect(() => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    fetchProduct<AnalyticsWalletResponse>(
+      `wallets/${address}?window=All`,
+      controller.signal,
+    ).then(
+      (data) =>
+        setState({
+          address,
+          positions: data.positions
+            .flatMap((p) =>
+              p.supported && p.position
+                ? [{ row: p, realized: BigInt(p.position.realizedWei ?? "0") }]
+                : [],
+            )
+            .sort((a, b) =>
+              a.realized === b.realized ? 0 : a.realized > b.realized ? -1 : 1,
+            )
+            .map(({ row }) => ({
+              poolId: row.poolId.toLowerCase(),
+              launchTx: row.launchTx.toLowerCase(),
+              symbol: row.symbol,
+              token: row.token,
+            })),
+          truncated: !!data.positionsTruncated,
+        }),
+      (error: Error) => {
+        if (!controller.signal.aborted)
+          setState({ address, error: error.message });
+      },
+    );
+    return () => controller.abort();
+  }, [address, enabled]);
+  return state.address === address ? state : { address };
+}
+/** A file name piece from a token symbol: letters and digits only. */
+const fileSlug = (symbol: string) =>
+  symbol
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "position";
+
 export function PnlCardModal({
   address,
   window: period,
   open,
   onClose,
+  scope = null,
 }: {
   address: string;
   window: LiveWindow;
   open: boolean;
   onClose: () => void;
+  /** Opens on this position's card; null opens on the portfolio card. */
+  scope?: CardScope | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  /* Each opening starts on the card it was opened for: a row's position, or
+     the portfolio. Corrected during render, keyed on the scope's pool rather
+     than its object, so a caller that rebuilds the scope each render does
+     not reset the choice. */
+  const opening = `${open}:${scope?.poolId ?? ""}`;
+  const [openedFor, setOpenedFor] = useState(opening);
+  const [kind, setKind] = useState<CardKind>(scope ? "position" : "portfolio");
+  const [picked, setPicked] = useState<string | null>(scope?.poolId ?? null);
+  if (openedFor !== opening) {
+    setOpenedFor(opening);
+    if (open) {
+      setKind(scope ? "position" : "portfolio");
+      setPicked(scope?.poolId ?? null);
+    }
+  }
+  const listing = useCardPositions(
+    address.toLowerCase(),
+    open && kind === "position",
+  );
+  const listed = listing.positions;
+  /* The position the card draws: the one picked if the wallet's read lists
+     it as supported, else the largest. Until the read answers (or if it
+     cannot be read in full) only a row's own position is drawn, which that
+     row already read as supported; the pool page's position waits for it. */
+  const trusted = scope?.supported && scope.poolId === picked ? scope : null;
+  const target: ListedPosition | null =
+    kind !== "position"
+      ? null
+      : listed
+        ? (listed.find((p) => p.poolId === picked) ??
+          (picked === null
+            ? (listed[0] ?? null)
+            : listing.truncated && scope?.poolId === picked
+              ? scope
+              : null))
+        : trusted;
+  const positionNotice =
+    kind !== "position" || target
+      ? null
+      : listing.error
+        ? listing.error
+        : !listed
+          ? null
+          : picked !== null
+            ? "No supported position in this pool for your wallet."
+            : "No supported position to share for this wallet.";
+  const choices = listed ?? (trusted ? [trusted] : []);
   const [preset, setPreset] = useState<CardPreset>(defaultCardOptions.preset);
   const { design, setDesign: chooseDesign } = useCardDesign();
   const [anonymous, setAnonymous] = useState(false);
@@ -54,7 +183,7 @@ export function PnlCardModal({
   const [sharing, setSharing] = useState(false);
   /* The notional toggle is offered disabled, with its reason, on a design
      that does not honour it; the choice is kept for the designs that do. */
-  const notionalOffered = cardDesigns[design].notional;
+  const notionalOffered = kind === "portfolio" && cardDesigns[design].notional;
   const options: CardOptions = {
     window: period,
     preset,
@@ -62,18 +191,32 @@ export function PnlCardModal({
     anonymous,
     notional: notional && notionalOffered,
   };
-  const url = cardUrl(address, options);
-  const state =
-    failed === url
-      ? "failed"
-      : ready === url
-        ? "ready"
-        : ready
-          ? "rendering"
-          : "loading";
+  /* A position card is one history in one pool, so its URL names the pool
+     and its launch instead of a window. */
+  const pool = target
+    ? { pool: target.poolId, launch: target.launchTx }
+    : undefined;
+  const url =
+    kind === "portfolio"
+      ? cardUrl(address, options)
+      : pool
+        ? cardUrl(address, options, pool)
+        : null;
+  const state = positionNotice
+    ? "unavailable"
+    : url === null
+      ? "loading"
+      : failed === url
+        ? "failed"
+        : ready === url
+          ? "ready"
+          : ready
+            ? "rendering"
+            : "loading";
+  const subject = target ? fileSlug(target.symbol) : period.toLowerCase();
   const filename = anonymous
-    ? `poolsinfo-pnl-${period.toLowerCase()}.png`
-    : `poolsinfo-${address.toLowerCase()}-${period.toLowerCase()}.png`;
+    ? `poolsinfo-pnl-${subject}.png`
+    : `poolsinfo-${address.toLowerCase()}-${subject}.png`;
   useEffect(() => {
     const node = dialog.current;
     if (!node) return;
@@ -93,11 +236,11 @@ export function PnlCardModal({
   /** The wallet page with the card's options, whose preview image is this very card. */
   const pageUrl = () =>
     new URL(
-      `/wallet/${address.toLowerCase()}/?${cardQuery(options)}`,
+      `/wallet/${address.toLowerCase()}/?${cardQuery(options, pool)}`,
       window.location.origin,
     ).href;
   const png = () =>
-    fetch(url).then((response) => {
+    fetch(url!).then((response) => {
       if (!response.ok) throw Error("Card unavailable");
       return response.blob();
     });
@@ -124,7 +267,7 @@ export function PnlCardModal({
     }
   }
   async function copy() {
-    const absolute = new URL(url, window.location.origin).href;
+    const absolute = new URL(url!, window.location.origin).href;
     try {
       if (typeof ClipboardItem === "undefined")
         throw Error("No image clipboard");
@@ -172,38 +315,106 @@ export function PnlCardModal({
         <div className={styles.customize}>
           <div>
             <h3>Customize</h3>
-            <p>Choose a colour preset and what the card shows.</p>
+            <p>Choose a card, a colour preset and what the card shows.</p>
           </div>
           <div className={styles.group}>
-            <span className={styles.groupLabel} id="pnl-card-design">
-              Design
+            <span className={styles.groupLabel} id="pnl-card-kind">
+              Card
+            </span>
+            <div
+              className="segmented"
+              role="group"
+              aria-labelledby="pnl-card-kind"
+            >
+              {(Object.keys(cardKinds) as CardKind[]).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={kind === id}
+                  className={kind === id ? "selected" : ""}
+                  onClick={() => setKind(id)}
+                >
+                  {cardKinds[id]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.group}>
+            {/* A position card has one design: the choice is kept for the
+                portfolio card and offered disabled here, its reason on the
+                label's own line so the column keeps its height. */}
+            <span className={styles.groupLabel}>
+              <span id="pnl-card-design">Design</span>
+              {kind === "position" && (
+                <span id="pnl-card-design-note">
+                  {" "}
+                  · {cardDesigns[defaultCardOptions.design].label} only for
+                  positions
+                </span>
+              )}
             </span>
             <div
               className="segmented"
               role="group"
               aria-labelledby="pnl-card-design"
+              aria-describedby={
+                kind === "position" ? "pnl-card-design-note" : undefined
+              }
             >
-              {(Object.keys(cardDesigns) as CardDesign[]).map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  aria-pressed={design === id}
-                  className={design === id ? "selected" : ""}
-                  onClick={() => chooseDesign(id)}
-                >
-                  {cardDesigns[id].label}
-                </button>
-              ))}
+              {(Object.keys(cardDesigns) as CardDesign[]).map((id) => {
+                const shown =
+                  kind === "position"
+                    ? id === defaultCardOptions.design
+                    : design === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={shown}
+                    className={shown ? "selected" : ""}
+                    disabled={kind === "position"}
+                    onClick={() => chooseDesign(id)}
+                  >
+                    {cardDesigns[id].label}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div className={styles.group}>
             <span className={styles.groupLabel} id="pnl-card-presets">
               Colour preset
             </span>
+            {/* One tab stop, on the checked swatch; the arrow keys move the
+                choice and the focus together, as a radio group does. */}
             <div
               className={styles.presets}
               role="radiogroup"
               aria-labelledby="pnl-card-presets"
+              onKeyDown={(event) => {
+                const ids = Object.keys(cardPresets) as CardPreset[];
+                const at = ids.indexOf(preset);
+                const step =
+                  event.key === "ArrowRight" || event.key === "ArrowDown"
+                    ? 1
+                    : event.key === "ArrowLeft" || event.key === "ArrowUp"
+                      ? -1
+                      : null;
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? ids.length - 1
+                      : step === null
+                        ? null
+                        : (at + step + ids.length) % ids.length;
+                if (next === null) return;
+                event.preventDefault();
+                setPreset(ids[next]);
+                event.currentTarget
+                  .querySelectorAll<HTMLElement>('[role="radio"]')
+                  [next]?.focus();
+              }}
             >
               {(Object.keys(cardPresets) as CardPreset[]).map((id) => (
                 <button
@@ -212,6 +423,7 @@ export function PnlCardModal({
                   role="radio"
                   aria-checked={preset === id}
                   aria-label={cardPresets[id].label}
+                  tabIndex={preset === id ? 0 : -1}
                   className={styles.swatch}
                   style={
                     { "--swatch": cardPresets[id].color } as React.CSSProperties
@@ -253,7 +465,9 @@ export function PnlCardModal({
                   <small>
                     {notionalOffered
                       ? "Show the realized amount and traded volume in ETH."
-                      : `Not offered on the ${cardDesigns[design].label} design: its headline is already the realized amount in ETH.`}
+                      : kind === "position"
+                        ? "Not offered on a position card: it always shows the ETH in and out."
+                        : `Not offered on the ${cardDesigns[design].label} design: its headline is already the realized amount in ETH.`}
                   </small>
                 </span>
                 <input
@@ -282,18 +496,56 @@ export function PnlCardModal({
             >
               {copied ? "Copied" : "Copy"}
             </button>
-            <a
-              className="button secondary"
-              href={url}
-              download={filename}
-              aria-disabled={state !== "ready"}
-            >
-              Download
-            </a>
+            {/* A link is only a link once the card it names is ready; until
+                then it is a disabled button, out of the tab order. */}
+            {state === "ready" && url ? (
+              <a className="button secondary" href={url} download={filename}>
+                Download
+              </a>
+            ) : (
+              <button className="button secondary" disabled>
+                Download
+              </button>
+            )}
           </div>
         </div>
         <div className={styles.stage}>
-          <span className={styles.stageLabel}>Preview · {period} realized</span>
+          <div className={styles.stageHead}>
+            {kind === "portfolio" ? (
+              <span className={styles.stageLabel}>
+                Preview · {period} realized
+              </span>
+            ) : (
+              <>
+                <label
+                  className={styles.stageLabel}
+                  htmlFor="pnl-card-position"
+                >
+                  Preview · Position
+                </label>
+                <select
+                  id="pnl-card-position"
+                  className={styles.position}
+                  value={target?.poolId ?? ""}
+                  disabled={!choices.length}
+                  onChange={(event) => setPicked(event.target.value)}
+                >
+                  {!target && (
+                    <option value="" disabled>
+                      {listed || listing.error
+                        ? "No position"
+                        : "Loading positions…"}
+                    </option>
+                  )}
+                  {choices.map((p) => (
+                    <option key={p.poolId} value={p.poolId}>
+                      {p.symbol} · {shortAddress(p.token)}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </div>
           <div className={styles.preview} data-state={state}>
             <div className={styles.skeleton} aria-hidden="true">
               {bones.map(([left, top, width, height], i) => (
@@ -309,22 +561,29 @@ export function PnlCardModal({
                 />
               ))}
             </div>
-            {open && (
+            {open && url && (
               // The route renders every option server-side, so this preview and
               // the shared image are the same request.
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={url}
-                alt={`PnL card for ${anonymous ? "an anonymous wallet" : shortAddress(address)}, ${period} window`}
+                alt={
+                  target
+                    ? `PnL card for ${anonymous ? "an anonymous wallet" : shortAddress(address)}'s ${target.symbol} position`
+                    : `PnL card for ${anonymous ? "an anonymous wallet" : shortAddress(address)}, ${period} window`
+                }
                 width={1200}
                 height={630}
                 onLoad={() => setReady(url)}
                 onError={() => setFailed(url)}
               />
             )}
-            {state === "failed" && (
+            {(state === "failed" || state === "unavailable") && (
               <p className={styles.empty} role="status">
-                No saved PnL to share for this window.
+                {positionNotice ??
+                  (target
+                    ? "The card for this position could not be rendered."
+                    : "No saved PnL to share for this window.")}
               </p>
             )}
           </div>

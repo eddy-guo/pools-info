@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Fragment, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Share } from "lucide-react";
 import {
   poolWindow,
   shortAddress,
@@ -24,6 +24,8 @@ import {
 } from "./candles";
 import { useHydrated } from "@/lib/use-hydrated";
 import { countLabel } from "@/lib/plural";
+import { useMyWallet } from "./my-wallet";
+import { PnlCardModal } from "./pnl-card-modal";
 
 export interface ObservedPoolIdentity {
   poolId: string;
@@ -190,6 +192,63 @@ export function PoolHeading({
   );
 }
 /**
+ * The browser's own wallet's position card for this pool. The browser's
+ * wallet is local state the server cannot see, so the slot is painted empty
+ * at its full width and the button mounts into it as a new node; which
+ * position the wallet holds here is the modal's own read to find.
+ */
+function ShareMyPosition({
+  id,
+  pool,
+  address,
+}: {
+  id: string;
+  pool?: NullableIdentity;
+  address: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const launchTx = pool?.launch?.transactionHash;
+  const scope =
+    launchTx && pool?.token
+      ? {
+          poolId: id.toLowerCase(),
+          launchTx: launchTx.toLowerCase(),
+          symbol: pool.symbol ?? "",
+          token: pool.token,
+          supported: false,
+        }
+      : null;
+  return (
+    <div className="share-position-slot">
+      {address && (
+        <Fragment key={address}>
+          <button
+            type="button"
+            className="button secondary"
+            aria-label="Share my position"
+            aria-haspopup="dialog"
+            disabled={!scope}
+            onClick={() => setOpen(true)}
+          >
+            <Share size={14} aria-hidden="true" />
+            {/* One flex item, so the words share its spacing, not the gap. */}
+            <span>
+              Share<span className="share-position-rest"> my position</span>
+            </span>
+          </button>
+          <PnlCardModal
+            address={address}
+            window="All"
+            open={open}
+            scope={scope}
+            onClose={() => setOpen(false)}
+          />
+        </Fragment>
+      )}
+    </div>
+  );
+}
+/**
  * The chart panel's head: the price with its unit, the explicitly labelled
  * window changes the read API sent, and the range control on the same row.
  */
@@ -282,6 +341,7 @@ export function ObservedPoolDetail({
   renderedAt: number;
 }) {
   const [range, setRange] = useState<ChartRange>("All");
+  const myWallet = useMyWallet().address;
   const candles =
     !!(accountedMarket && snapshot) || !!market?.history.candles.length;
   const stat =
@@ -325,6 +385,7 @@ export function ObservedPoolDetail({
         pending={pending}
         renderedAt={renderedAt}
       >
+        <ShareMyPosition id={id} pool={pool} address={myWallet} />
         <WatchButton id={id} />
         <button
           className="icon-button"
@@ -345,7 +406,10 @@ export function ObservedPoolDetail({
           Explorer ↗
           <NewTabNotice />
         </a>
+        {/* A phone gives the share button half of this row: the link is
+            remounted beside it rather than resized in place. */}
         <a
+          key={myWallet ? "beside-share" : "alone"}
           className="button"
           href={
             pool?.token

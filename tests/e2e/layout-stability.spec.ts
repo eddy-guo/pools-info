@@ -98,6 +98,14 @@ const routes: Route[] = [
     url: poolHref(chain.markets[0]),
     sentinel: ".pool-page .live-six-stats",
   },
+  /* The pool page's "Share my position" mounts into a slot painted empty at
+     its full width, so nothing beside or under it moves. */
+  {
+    name: "pool-my-wallet",
+    url: poolHref(chain.markets[0]),
+    sentinel: ".pool-page .live-six-stats",
+    seed: { "poolsinfo.my-wallet.v1": wallet },
+  },
   {
     name: "traders",
     url: "/traders/?window=All",
@@ -287,7 +295,11 @@ for (const entry of routes) {
       releaseScripts();
       /* A preloaded pool paints whole from its snapshot, so it has no
          pending state to show while the saved read is held. */
-      if (entry.name !== "pool" && !entry.nothingPending)
+      if (
+        entry.name !== "pool" &&
+        entry.name !== "pool-my-wallet" &&
+        !entry.nothingPending
+      )
         await expect
           .poll(() => page.locator('[data-pending="true"]:visible').count())
           .toBeGreaterThan(0);
@@ -427,6 +439,10 @@ for (const entry of routes) {
             }),
           ).toBeVisible();
       }
+      if (entry.name === "pool-my-wallet")
+        await expect(
+          page.getByRole("button", { name: "Share my position" }),
+        ).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath(`${entry.name}-resolved.png`),
         fullPage: false,
