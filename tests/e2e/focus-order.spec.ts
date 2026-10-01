@@ -25,8 +25,11 @@ async function tab(page: Page): Promise<Stop> {
     const style = getComputedStyle(el);
     return {
       name: (el.getAttribute("aria-label") ?? el.textContent ?? "").trim(),
-      x: rect.x,
-      y: rect.y,
+      /* Page coordinates: a Tab past the fold starts a smooth scroll that
+         is still running when the next stop is read, so viewport rects of
+         two stops on one line can differ by however far it got. */
+      x: rect.x + scrollX,
+      y: rect.y + scrollY,
       width: rect.width,
       height: rect.height,
       ring: el.matches(":focus-visible")
@@ -97,7 +100,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
         "Search tokens, wallets, creators",
         "ETH",
         "USD, price unavailable",
-        "Set my wallet",
+        "You: nothing saved yet",
         "Pools",
         "Traders",
         "Creators",
@@ -111,7 +114,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
         "Search tokens, wallets, creators",
         "ETH",
         "USD, price unavailable",
-        "Set my wallet",
+        "You: nothing saved yet",
       ];
   expect(names.slice(0, header.length)).toEqual(
     header.map((name) => expect.stringContaining(name)),
@@ -131,7 +134,7 @@ test("Tab follows the header and the traders cards and rows as they read", async
     expect(card.map((stop) => stop.name)).toEqual([
       `${wallet.slice(0, 6)}…${wallet.slice(-4)}`,
       "Copy address",
-      "Open address on explorer",
+      "Open address on explorer (opens in a new tab)",
       `Follow ${wallet}`,
     ]);
     expectReadingOrder(card);
