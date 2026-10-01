@@ -5704,6 +5704,51 @@ a.wallet-top-pool:hover {
   .desktop-traders:not(.following-traders):not([data-failed="true"]) {
   min-height: calc(var(--ranked-rows, 22) * 60px + 44px);
 }
+/* `/traders/` serves the ranked board's shell whatever the URL names. On a
+   Following URL rankedRowsScript marks the root before first paint, and until
+   hydration (`data-prepaint`) that one shell takes the Following view's
+   geometry: no podium, the table's head over the rows the list will hold
+   (`--following-rows`), the same Show more foot, or the empty state alone.
+   The rows are reserved under the real head at their own 60px, less the half
+   of the head's collapsed bottom border a row-less table paints outside
+   itself. */
+.following-prepaint-empty,
+:root:not([data-ranked-view="following"])
+  .following-figures-caption[data-prepaint] {
+  display: none;
+}
+:root[data-ranked-view="following"]
+  .ranked-traders
+  .leaderboard-panel[data-prepaint]
+  :is(.live-podium, .desktop-traders tbody, .mobile-trader) {
+  display: none;
+}
+:root[data-ranked-view="following"]
+  .ranked-traders
+  .leaderboard-panel[data-prepaint]
+  .desktop-traders {
+  min-height: 0;
+}
+:root[data-ranked-view="following"]
+  .ranked-traders
+  .leaderboard-panel[data-prepaint]
+  .desktop-traders::after {
+  content: "";
+  display: block;
+  height: calc(var(--following-rows, 0) * 60px - 0.5px);
+}
+:root[data-following-empty]
+  .ranked-traders
+  .leaderboard-panel[data-prepaint]
+  :is(.desktop-traders, .mobile-traders, .pagination) {
+  display: none;
+}
+:root[data-following-empty]
+  .ranked-traders
+  .leaderboard-panel[data-prepaint]
+  .following-prepaint-empty {
+  display: block;
+}
 .leaderboard-panel .data-table tbody tr,
 .leaderboard-panel .data-table tbody td {
   height: 60px;
@@ -5755,6 +5800,12 @@ a.wallet-top-pool:hover {
     .leaderboard-panel
     .mobile-traders:not(.following-traders):not([data-failed="true"]) {
     min-height: calc(var(--ranked-rows, 22) * 101px);
+  }
+  :root[data-ranked-view="following"]
+    .ranked-traders
+    .leaderboard-panel[data-prepaint]
+    .mobile-traders {
+    min-height: calc(var(--following-rows, 0) * 101px);
   }
   .ranked-traders .leaderboard-panel .mobile-trader {
     position: relative;
