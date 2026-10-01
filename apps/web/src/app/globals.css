@@ -4962,6 +4962,19 @@ button.icon-button:disabled {
   flex: 1;
   min-width: 0;
 }
+/* "Share my position" holds its width from first paint: the browser's
+   wallet is only known after hydration, so the slot is painted empty and
+   the button mounts into it without moving its neighbours. */
+.share-position-slot {
+  display: flex;
+  justify-content: flex-end;
+  width: 164px;
+  flex-shrink: 0;
+}
+.share-position-slot > .button {
+  width: 100%;
+  justify-content: center;
+}
 .pool-heading-copy {
   flex: 1;
   min-width: 0;
@@ -5422,14 +5435,14 @@ button.icon-button:disabled {
 }
 /* The wallet's lists fit the panel's own width rather than scrolling
    sideways. Positions give the token at least 180px beside four 150px figures
-   (780px) and drop Cost under that (630px); launches hold a 200px token beside
-   their fixed columns (570px). Under 672px both tabs show rows instead of
-   their tables. */
+   and the 44px share action (824px) and drop Cost under that (674px);
+   launches hold a 200px token beside their fixed columns (570px). Under 674px
+   every tab shows rows instead of its table. */
 .wallet-activity {
   container: wallet-activity / inline-size;
 }
 .wallet-positions-table {
-  min-width: 780px;
+  min-width: 824px;
 }
 .wallet-launches-table {
   min-width: 570px;
@@ -5472,9 +5485,9 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-@container wallet-activity (width < 780px) {
+@container wallet-activity (width < 824px) {
   .wallet-positions-table {
-    min-width: 630px;
+    min-width: 674px;
   }
   .wallet-positions-table col:nth-child(3),
   .wallet-positions-table :is(th, td):nth-child(3) {
@@ -5493,7 +5506,7 @@ button.icon-button:disabled {
 .mobile-wallet-rows {
   display: none;
 }
-@container wallet-activity (width < 672px) {
+@container wallet-activity (width < 674px) {
   .wallet-activity .wallet-list-region {
     display: none;
   }
@@ -5592,6 +5605,9 @@ button.icon-button:disabled {
   font-variant-numeric: tabular-nums;
 }
 .mobile-position-pnl {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -5652,6 +5668,26 @@ button.icon-button:disabled {
 .wallet-holding > .wallet-holding-quantity {
   flex-shrink: 0;
   max-width: 100%;
+}
+/* The share action: a fixed 44px column on the table, the end of the top
+   line on a phone row, both held from first paint whether or not the
+   position has a card to share. */
+.wallet-positions-table td:last-child {
+  padding-left: 0;
+  padding-right: 12px;
+}
+.position-share {
+  color: var(--color-text-3);
+}
+.position-share-slot {
+  display: flex;
+  justify-content: flex-end;
+  width: 44px;
+  margin: -6px -12px -6px -4px;
+}
+.position-share-slot .position-share {
+  width: 44px;
+  height: 44px;
 }
 .wallet-token-cell {
   display: flex;
@@ -6571,6 +6607,27 @@ a.wallet-top-pool:hover {
   }
   .pool-page.page .page-heading > :last-child > .button:last-child {
     grid-column: 1 / -1;
+  }
+  /* With a wallet set, Share takes the two icon columns of the second row
+     and the trade link the Explorer column under it; without one the empty
+     slot leaves the row to the link. */
+  .pool-page.page .page-heading > :last-child > .share-position-slot {
+    grid-row: 2;
+    grid-column: 1 / 3;
+    width: auto;
+  }
+  .pool-page.page .page-heading > :last-child > .share-position-slot:empty {
+    display: none;
+  }
+  .pool-page.page
+    .page-heading
+    > :last-child
+    > .share-position-slot:not(:empty)
+    ~ .button:last-child {
+    grid-column: 3;
+  }
+  .share-position-rest {
+    display: none;
   }
   .pool-page .pool-identity-title {
     flex-wrap: wrap;

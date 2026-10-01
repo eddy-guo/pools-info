@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Share } from "lucide-react";
 import {
   formatTokenAmount,
   shortAddress,
@@ -49,7 +49,7 @@ import {
 } from "./product-common";
 import { useBelowListKey, useListRelease } from "@/lib/list-release";
 import { useQuery } from "./state";
-import { PnlCardModal } from "./pnl-card-modal";
+import { PnlCardModal, type CardScope } from "./pnl-card-modal";
 import {
   RowFiller,
   TradeAmount,
@@ -110,6 +110,41 @@ function holding(p: AnalyticsWalletResponse["positions"][number]) {
     ? formatTokenAmount(p.position.quantity, p.decimals)
     : null;
 }
+/** The card a position row opens, for the positions the ledger supports:
+    an excluded position has no card, so its row has no share action. */
+function positionScope(
+  p: AnalyticsWalletResponse["positions"][number],
+): CardScope | null {
+  return p.supported && p.position
+    ? {
+        poolId: p.poolId,
+        launchTx: p.launchTx,
+        symbol: p.symbol,
+        token: p.token,
+        supported: true,
+      }
+    : null;
+}
+/** A position row's share action, opening the card on that position. */
+function SharePosition({
+  scope,
+  onShare,
+}: {
+  scope: CardScope;
+  onShare: (scope: CardScope) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="icon-button position-share"
+      aria-label={`Share ${scope.symbol} position`}
+      aria-haspopup="dialog"
+      onClick={() => onShare(scope)}
+    >
+      <Share size={15} aria-hidden="true" />
+    </button>
+  );
+}
 /** The existing Behaviour-panel figure, now presented with the positions it describes. */
 function stillHeld(data: AnalyticsWalletResponse | undefined) {
   const known = (data?.positions ?? []).flatMap((p) =>
@@ -139,6 +174,7 @@ export function ProductWallet({ address }: { address: string }) {
     activity = useTabs(tabIds, tab),
     [copyTrade, setCopyTrade] = useState(false),
     [card, setCard] = useState(false),
+    [cardScope, setCardScope] = useState<CardScope | null>(null),
     // A clock frozen at mount: the header's "last Nm ago" only ever paints
     // once data resolves, so nothing already on screen depends on it ticking.
     [renderedAt] = useState(() => Math.floor(Date.now() / 1000));
@@ -190,6 +226,10 @@ export function ProductWallet({ address }: { address: string }) {
     [...(links ?? [])].find((link) => link.getClientRects().length)?.focus();
   }, [data, shown]);
   const held = stillHeld(data);
+  const openPositionCard = useCallback((scope: CardScope) => {
+    setCardScope(scope);
+    setCard(true);
+  }, []);
   const tradeHistory = useWalletTradeHistory(
     address.toLowerCase(),
     tab === "trades",
@@ -284,7 +324,13 @@ export function ProductWallet({ address }: { address: string }) {
             Explorer ↗
             <NewTabNotice />
           </a>
-          <button className="button secondary" onClick={() => setCard(true)}>
+          <button
+            className="button secondary"
+            onClick={() => {
+              setCardScope(null);
+              setCard(true);
+            }}
+          >
             Share PnL card
           </button>
           <FollowButton address={address} />
@@ -446,6 +492,7 @@ export function ProductWallet({ address }: { address: string }) {
                             <col style={{ width: "150px" }} />
                             <col style={{ width: "150px" }} />
                             <col style={{ width: "150px" }} />
+                            <col style={{ width: "44px" }} />
                           </colgroup>
                           <thead>
                             <tr>
@@ -454,6 +501,9 @@ export function ProductWallet({ address }: { address: string }) {
                               <th>Cost</th>
                               <th>Realized</th>
                               <th>Unrealized</th>
+                              <th>
+                                <span className="sr-only">Share</span>
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -538,6 +588,14 @@ export function ProductWallet({ address }: { address: string }) {
                                     <RowFiller blank />
                                   )}
                                 </td>
+                                <td>
+                                  {p && positionScope(p) && (
+                                    <SharePosition
+                                      scope={positionScope(p)!}
+                                      onShare={openPositionCard}
+                                    />
+                                  )}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -581,6 +639,17 @@ export function ProductWallet({ address }: { address: string }) {
                                       Unrealized{" "}
                                       <Eth wei={p.unrealizedWei} signed />
                                     </span>
+                                  </span>
+                                  {/* An excluded position keeps the action's
+                                      width empty, so its figures line up
+                                      with the rows that have one. */}
+                                  <span className="position-share-slot">
+                                    {positionScope(p) && (
+                                      <SharePosition
+                                        scope={positionScope(p)!}
+                                        onShare={openPositionCard}
+                                      />
+                                    )}
                                   </span>
                                 </div>
                                 <div className="mobile-wallet-row-stats">
@@ -985,6 +1054,7 @@ export function ProductWallet({ address }: { address: string }) {
         address={address}
         window={period}
         open={card}
+        scope={cardScope}
         onClose={() => setCard(false)}
       />
     </div>
