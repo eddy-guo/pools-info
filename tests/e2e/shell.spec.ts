@@ -181,7 +181,7 @@ test("the header's items fit a 320px screen without overlapping or clipping", as
     ".header-actions .search-trigger",
     ".header-actions .unit-toggle",
     ".wallet-profile-entry",
-    ".primary-nav a",
+    ".primary-nav-narrow a",
   ];
   const measure = () =>
     page.evaluate(async (selectors) => {

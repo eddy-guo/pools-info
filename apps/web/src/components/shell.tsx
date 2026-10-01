@@ -11,6 +11,44 @@ import { useBelowListKey } from "@/lib/list-release";
 
 const oneEthWei = (10n ** 18n).toString();
 
+const navItems = [
+  { label: "Pools", href: "/" },
+  { label: "Traders", href: "/traders/" },
+  { label: "Creators", href: "/creators/" },
+];
+
+function PrimaryNav({
+  pathname,
+  placement,
+}: {
+  pathname: string;
+  placement: "wide" | "narrow";
+}) {
+  return (
+    <nav
+      className={`primary-nav primary-nav-${placement}`}
+      aria-label="Main navigation"
+    >
+      {navItems.map((item) => {
+        const active =
+          item.href === "/"
+            ? pathname === "/" || pathname.startsWith("/pool/")
+            : pathname.startsWith(item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={active ? "active" : ""}
+            aria-current={active ? "page" : undefined}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const usdPerEth = useEthPrice();
@@ -65,33 +103,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <span className="brand-period">.</span>
             </span>
           </Link>
-          <nav className="primary-nav" aria-label="Main navigation">
-            {[
-              { label: "Pools", href: "/" },
-              { label: "Traders", href: "/traders/" },
-              { label: "Creators", href: "/creators/" },
-            ].map((item) => {
-              const active =
-                item.href === "/"
-                  ? pathname === "/" || pathname.startsWith("/pool/")
-                  : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={active ? "active" : ""}
-                  aria-current={active ? "page" : undefined}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          {/* The nav sits between the wordmark and the actions on a wide
+              screen but under both on a phone, and Tab follows the DOM, so
+              each layout gets its own copy at the place it is read and the
+              other copy is display: none (globals.css). */}
+          <PrimaryNav pathname={pathname} placement="wide" />
           <div className="header-actions">
             <Search />
             <UnitToggle />
             <WalletProfileEntry />
           </div>
+          <PrimaryNav pathname={pathname} placement="narrow" />
         </div>
         <div className="network-subnav">
           <span className="network-context">v4 · Robinhood Chain</span>

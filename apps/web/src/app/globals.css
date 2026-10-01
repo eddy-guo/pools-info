@@ -2800,6 +2800,14 @@ main {
   align-self: stretch;
   margin: 0;
 }
+/* The header renders the nav twice, each copy where its layout reads it,
+   so Tab follows the eye: between the wordmark and the actions here, under
+   both on a phone (shell.tsx). The copy a layout does not show is
+   display: none, which also takes it out of the tab order and the
+   accessibility tree. */
+.primary-nav.primary-nav-narrow {
+  display: none;
+}
 .primary-nav a {
   display: flex;
   align-items: center;
@@ -4122,6 +4130,12 @@ button.icon-button:disabled {
     justify-content: space-between;
     height: 44px;
     overflow: visible;
+  }
+  .primary-nav.primary-nav-wide {
+    display: none;
+  }
+  .primary-nav.primary-nav-narrow {
+    display: flex;
   }
   .primary-nav a {
     flex: 1;

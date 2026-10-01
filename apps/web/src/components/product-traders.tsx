@@ -440,7 +440,6 @@ function PodiumCard({
   const excludedCaption = w ? excludedPositionsCaption(w) : null;
   return (
     <div className="trader-podium-card" data-row-index={rank - 1}>
-      {w && <FollowRowButton address={w.address} />}
       <div className="trader-podium-card-head">
         <span
           className="trader-podium-card-rank"
@@ -467,6 +466,9 @@ function PodiumCard({
           </span>
         )}
       </div>
+      {/* After the head it overlays, so Tab reaches it after the chip's
+          actions it sits right of. */}
+      {w && <FollowRowButton address={w.address} />}
       <div className="trader-podium-card-pnl">
         <Eth
           pending={pending}
