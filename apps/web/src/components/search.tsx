@@ -126,7 +126,7 @@ export function Search() {
         onClick={open}
       >
         <SearchIcon size={16} />
-        <span>Search anything…</span>
+        <span>Token, wallet, tx, or ENS</span>
         <kbd>
           <Command size={11} /> K
         </kbd>

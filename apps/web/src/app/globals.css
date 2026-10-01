@@ -2852,10 +2852,21 @@ main {
   color: var(--color-text-3);
   font-size: 12px;
 }
+/* The export keeps its label at every desktop width, ellipsised where the
+   box narrows; the legacy rule above that hid it under 1250px does not
+   apply to the header's trigger. */
 .header-actions .search-trigger > span {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Disabled only until hydration wires it up: it paints as it will look,
+   label included, instead of a dimmed empty box. */
+.header-actions .search-trigger:disabled {
+  opacity: 1;
+  cursor: default;
 }
 .header-actions .search-trigger kbd {
   margin-left: auto;
@@ -4053,7 +4064,7 @@ button.icon-button:disabled {
     padding: 0 9px;
   }
   .header-actions .search-trigger {
-    max-width: 210px;
+    max-width: 300px;
   }
   .workspace-grid {
     grid-template-columns: minmax(0, 1fr) 260px;
