@@ -201,10 +201,9 @@ export function AddressLabel({
     beside it. `badge` sits inline after the address, inside the same
     single-line row height, rather than adding a second line. `size="large"`
     is the export's 28px identity tile: no name field exists anywhere in this
-    app, so the short address fills both the primary and secondary line, the
-    same fallback the export itself uses for an address without an ENS name.
-    Its badge follows the secondary line, as the export sets it, and stacks
-    beneath it in a column too narrow to hold both. `avatarSize="monogram"`
+    app, so the short address is the primary line, printed once rather than
+    repeated as a secondary line under itself. Its badge takes the secondary
+    line, as the export sets it under a name. `avatarSize="monogram"`
     keeps the one-line chip but promotes its shared Avatar to a readable 30px
     monogram. */
 export function AddressChip({
@@ -233,10 +232,7 @@ export function AddressChip({
       {size === "large" ? (
         <span className="address-chip-lines">
           <span className="address-chip-name">{shortAddress(address)}</span>
-          <span className="address-chip-meta">
-            <span className="mono">{shortAddress(address)}</span>
-            {badge}
-          </span>
+          {badge && <span className="address-chip-meta">{badge}</span>}
         </span>
       ) : (
         <span className="mono">{shortAddress(address)}</span>

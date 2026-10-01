@@ -3739,6 +3739,12 @@ button.icon-button:disabled {
   color: var(--purple);
   border-color: #45184f;
 }
+/* The export's BOUGHT OWN chip: the up colour on its own outline, no fill. */
+.badge.bought-own {
+  color: var(--color-up);
+  border-color: color-mix(in srgb, var(--color-up) 45%, transparent);
+  background: transparent;
+}
 /* The export's launch mode chip: 10/600 uppercase on an 11px line, outlined
    with no fill, so with its padding and border it stands 15px, the
    subtitle's own line, and a crowd row keeps every other row's height. */
@@ -4017,11 +4023,7 @@ button.icon-button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.address-chip-lines .mono {
-  font-size: 11.5px;
-  color: var(--color-text-3);
-}
-/* The secondary line and its badge side by side, as the export sets them. */
+/* The secondary line, which holds the badge alone. */
 .address-chip-meta {
   display: flex;
   align-items: center;
@@ -4726,7 +4728,6 @@ button.icon-button:disabled {
 }
 .table-region[data-empty="true"] tbody,
 .table-region[data-empty="true"] .mobile-pool,
-.table-region[data-empty="true"] .mobile-launch,
 .table-region[data-empty="true"] .mobile-position,
 .table-region[data-empty="true"] .mobile-creator,
 .table-region[data-empty="true"] .mobile-wallet-row {
@@ -6064,26 +6065,14 @@ a.wallet-top-pool:hover {
 }
 /* Column widths follow the export's grid, which keeps the creator column at its
    width (about 600px at 1440) and never under 190px: the chip with both its
-   actions, its cell padding and slack for Linux's wider glyphs. A BOUGHT OWN
-   badge stacks beneath the address in a column too narrow to hold it beside. */
+   actions, its cell padding and slack for Linux's wider glyphs. */
 .creators-page .data-table {
   table-layout: fixed;
   min-width: 998px;
 }
-/* The chip spans its cell and measures it. Under the 240px a badge needs
-   beside the address (with slack for Linux's wider glyphs) the badge stacks
-   beneath the address, a grid so the line is only as wide as its widest item
-   and the chip's actions still follow the address. */
+/* The chip spans its cell. */
 .creators-page .data-table .address-chip {
-  container: creator-chip / inline-size;
   width: 100%;
-}
-@container creator-chip (width < 240px) {
-  .address-chip-meta {
-    display: grid;
-    justify-items: start;
-    gap: 2px;
-  }
 }
 /* The board fits its own width rather than scrolling sideways: under the full
    table's 998px it drops Median, under 854px Best as well, and under the 686px
@@ -6279,9 +6268,13 @@ a.wallet-top-pool:hover {
   align-items: center;
   min-height: 44px;
 }
-/* Creator detail's launches table: the token column takes what's left, never
-   under 200px, and ellipsises a longer name. Under the full table's 850px the
-   panel drops Creator fees rather than scrolling; under 768px it shows rows. */
+/* Creator detail's launches table, on the export's grid: the token tile
+   takes what is left, never under 262px, and whole-pixel tracks hold mode,
+   price, 24h change, 24h volume and status. The figures and status read from
+   the right; a value fills its cell so the pending-to-value swap changes only
+   the text, never the box. The table fits its panel rather than scrolling
+   sideways: under its 850px it drops Mode, under 754px Status as well, and a
+   phone shows the screener's cards. */
 .creator-launches {
   container: creator-launches / inline-size;
 }
@@ -6291,70 +6284,74 @@ a.wallet-top-pool:hover {
 }
 .creator-launches-table td:first-child {
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.creator-launches-table .col-mode {
+  width: 96px;
+}
+.creator-launches-table .col-price {
+  width: 132px;
+}
+.creator-launches-table .col-change {
+  width: 112px;
+}
+.creator-launches-table .col-volume {
+  width: 140px;
+}
+.creator-launches-table .col-status {
+  width: 104px;
+}
+.creator-launches-table :is(th, td):nth-child(n + 3) {
+  text-align: right;
+}
+.creator-launches-table td > .number,
+.creator-launches-table td > .price,
+.creator-launches-table td > .change {
+  display: block;
+  min-width: 0;
+}
+.creator-launches-table td:nth-child(2) {
+  color: var(--color-muted);
 }
 @container creator-launches (width < 850px) {
   .creator-launches-table {
-    min-width: 710px;
+    min-width: 754px;
   }
-  .creator-launches-table .col-fees,
-  .creator-launches-table :is(th, td):nth-child(5) {
+  .creator-launches-table .col-mode,
+  .creator-launches-table :is(th, td):nth-child(2) {
     display: none;
   }
 }
-.mobile-launches {
-  display: none;
+@container creator-launches (width < 754px) {
+  .creator-launches-table {
+    min-width: 650px;
+  }
+  .creator-launches-table .col-status,
+  .creator-launches-table :is(th, td):nth-child(6) {
+    display: none;
+  }
 }
 @container site (max-width: 767px) {
   .desktop-creator-launches {
     display: none;
   }
-  .mobile-launches {
-    display: block;
+  /* The screener's 104px card: 13 + 44 + 10 + 24 + 13. */
+  .creator-launches .mobile-pool {
+    height: 104px;
+    overflow: hidden;
   }
 }
-.mobile-launch {
-  padding: 12px 14px;
-  border-bottom: 1px solid #17171c;
+/* The three tiles the reads serve share the row; a phone sets them two to a
+   row, the odd one out across both. */
+.creator-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.mobile-launch:last-child {
-  border-bottom: 0;
-}
-.mobile-launch-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 44px;
-  font-size: 13px;
-}
-.mobile-launch-top > :first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 44px;
-}
-.mobile-launch-top > .number {
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.mobile-launch-stats {
-  font-size: 12px;
-  color: var(--color-text-3);
-  font-variant-numeric: tabular-nums;
-}
-.creator-launches-table .col-launch {
-  width: 210px;
-}
-.creator-launches-table .col-activity {
-  width: 160px;
-}
-.creator-launches-table .col-volume {
-  width: 140px;
-}
-.creator-launches-table .col-fees {
-  width: 140px;
+@container site (max-width: 767px) {
+  .creator-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .creator-stats .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
 }
 .cell-sub,
 .panel-footnote {

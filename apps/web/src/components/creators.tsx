@@ -2,26 +2,38 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AnalyticsExploreResponse,
   AnalyticsPoolRow,
   CreatorRow,
   CreatorsResponse,
 } from "@pools/core";
-import { DATA_UNAVAILABLE, fetchProduct } from "@/lib/use-product";
+import { DATA_UNAVAILABLE, fetchProduct, useProduct } from "@/lib/use-product";
 import { useReportCut } from "@/lib/freshness";
 import styles from "./detail-design.module.css";
-import { poolHref, shortAddress } from "@pools/core";
-import { Eth, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
+import { poolHref, shortAddress, since } from "@pools/core";
+import { Eth, Stat, Unavailable, useWindow, utc, WindowTabs } from "./live-ui";
 import { useQuery } from "./state";
-import { AddressChip, AddressLabel, EmptyState, UnavailableState } from "./ui";
+import {
+  AddressChip,
+  AddressLabel,
+  Avatar,
+  Change,
+  EmptyState,
+  Price,
+  UnavailableState,
+} from "./ui";
 import { useListRelease } from "@/lib/list-release";
 import {
   EXPLORE_ROWS_CAP,
   answeredRowCount,
+  PoolCell,
   SHOW_MORE_STEP,
   ShowMore,
+  useClockSeconds,
 } from "./product-common";
 import { useExploreRows } from "@/lib/use-explore-rows";
-import { tokenLine } from "@/lib/token-identity";
+import { tokenSubSymbol } from "@/lib/token-identity";
+import { plural } from "@/lib/plural";
 
 /** Mapped onto the read API's own sort keys. */
 const CREATOR_SORTS = [
@@ -90,13 +102,13 @@ function MobileCreatorRow({
               href={`/creators/${r.address}/`}
               badge={
                 r.boughtOwnLaunch === true ? (
-                  <span className="badge lavender">BOUGHT OWN</span>
+                  <span className="badge bought-own">BOUGHT OWN</span>
                 ) : undefined
               }
             />
             <span className="mobile-creator-launches">
               <strong>{r.launches}</strong>
-              <span>launches</span>
+              <span>{plural(r.launches, "launch", "launches")}</span>
             </span>
           </div>
           <div className="mobile-creator-stats">
@@ -378,7 +390,7 @@ function CreatorDirectory() {
                             size="large"
                             badge={
                               r.boughtOwnLaunch === true ? (
-                                <span className="badge lavender">
+                                <span className="badge bought-own">
                                   BOUGHT OWN
                                 </span>
                               ) : undefined
@@ -476,30 +488,95 @@ function CreatorDirectory() {
 }
 
 /**
- * A measured launch's trading state over the last 24 hours. A launch the
+ * A measured launch's trading state over the last 24 hours, as the export
+ * names it: Active with an observed swap, Dormant without one. A launch the
  * read has no market figure for shows no state at all, as its figure cells
- * are empty: nothing here is waiting on a later pass.
+ * are empty. The state is an element rather than a bare string, so it mounts
+ * as a new node over the pending text rather than rewriting right-aligned
+ * text in place, which Chrome scores as a shift.
  */
-function launchActivity(p: AnalyticsPoolRow) {
-  return p.stats.trades === null ? (
+function LaunchStatus({ pool }: { pool: AnalyticsPoolRow }) {
+  return pool.stats.trades === null ? (
     <Unavailable />
-  ) : p.stats.trades > 0 ? (
-    "Active"
+  ) : pool.stats.trades > 0 ? (
+    <span className="positive">Active</span>
   ) : (
-    "No swap observed"
+    <span className="muted">Dormant</span>
   );
 }
 
+/** Where the launch came from, when the read names it. */
+function launchMode(pool: AnalyticsPoolRow) {
+  return pool.launchType === "crowd"
+    ? "Crowd"
+    : pool.launchType === "instant"
+      ? "Instant"
+      : null;
+}
+
+/** The token tile's subtitle: the symbol in mono and the launch's age, the
+    exact launch time on hover. The age paints once the client knows the
+    time; until then the line holds its height. */
+function LaunchAge({
+  pool,
+  now,
+}: {
+  pool: AnalyticsPoolRow;
+  now: number | null;
+}) {
+  const symbol = tokenSubSymbol(pool);
+  return (
+    <>
+      {symbol && <span className="mono">{symbol}</span>}
+      {now !== null && (
+        <span title={utc(pool.launchedAt)}>
+          {symbol && " · "}
+          {since(pool.launchedAt, now)} old
+        </span>
+      )}
+      {!symbol && now === null && " "}
+    </>
+  );
+}
+
+/** A launch time as a stat tile shows it: the age, with its UTC date as the
+    note and the exact time on hover. */
+function LaunchTime({
+  at,
+  now,
+}: {
+  at: number | null | undefined;
+  now: number | null;
+}) {
+  if (at === undefined || now === null) return null;
+  if (at === null) return <Unavailable />;
+  return (
+    <time dateTime={new Date(at * 1000).toISOString()} title={utc(at)}>
+      {since(at, now)} ago
+    </time>
+  );
+}
+const launchDate = (at: number | null | undefined) =>
+  at ? new Date(at * 1000).toISOString().slice(0, 10) : " ";
+
 /**
- * The creator's launches in launch order, read through the screener's own
- * hook: the rows the URL's `limit` names are reserved at first paint (25 by
- * default, grown by the shared Show more control up to the explore ceiling),
- * so a read that lands never resizes the panel and the footer under it never
- * moves. Rows are keyed by position, so a pending row becomes the real one in
- * place rather than remounting under a shift-scoring swap.
+ * A creator's own page, as the export sets it: a breadcrumb, the identity,
+ * the stat tiles and the launches. The tiles carry only figures the reads
+ * serve: the launch count, and the first and latest launch times from the
+ * launch order's two ends. The export's other tiles (still trading, volume
+ * created, median, creator fee, bought own) have no per-creator read, so
+ * they are left out rather than shown empty or estimated.
+ *
+ * The launches come in launch order through the screener's own hook: the
+ * rows the URL's `limit` names are reserved at first paint (25 by default,
+ * grown by the shared Show more control up to the explore ceiling), so a
+ * read that lands never resizes the panel and the footer under it never
+ * moves. Rows are keyed by position, so a pending row becomes the real one
+ * in place rather than remounting under a shift-scoring swap.
  */
 function CreatorProfile({ address }: { address: string }) {
   const { params, set } = useQuery();
+  const now = useClockSeconds();
   const rawShown = Number(params.get("limit"));
   const shown =
     Number.isInteger(rawShown) && rawShown > 0
@@ -509,8 +586,12 @@ function CreatorProfile({ address }: { address: string }) {
     `window=24h&sort=launch&q=${address}`,
     shown,
   );
-  /* The header's freshness stamp: the launches are the page's one read. */
+  /* The header's freshness stamp: the launch list's own cut. */
   useReportCut("creator-launches", null, asOf);
+  /* The launch order's other end: the creator's first launch. */
+  const first = useProduct<AnalyticsExploreResponse>(
+    `explore?window=24h&sort=launch&direction=asc&q=${address}&limit=1`,
+  );
   /* Nothing was served: the reserved rows stay reserved and blank rather
      than shimmering on for ever, and the panel says what happened over the
      top of them. */
@@ -525,6 +606,13 @@ function CreatorProfile({ address }: { address: string }) {
   const skeletonAt = (index: number) =>
     !failed && (!list || (loading && index < list.total));
   const empty = settled && total === 0;
+  /* Each end of the launch order: undefined while its read is out, null
+     once it is known there is no launch. */
+  const latestAt = list ? (list.rows[0]?.launchedAt ?? null) : undefined;
+  const firstAt = first.data
+    ? (first.data.items[0]?.launchedAt ?? null)
+    : undefined;
+  const firstFailed = !first.data && !!first.error;
 
   const focusAt = useRef<number | null>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -549,14 +637,29 @@ function CreatorProfile({ address }: { address: string }) {
   }, [held]);
 
   return (
-    <div className={`page ${styles.page}`}>
+    <div className={`page creator-page ${styles.page}`}>
+      <nav className={styles.breadcrumb} aria-label="Breadcrumb">
+        <Link href="/creators/">Creators</Link>
+        <span>/</span>
+        <span>{shortAddress(address)}</span>
+      </nav>
       <div className="page-heading">
-        <div>
-          <h1>
-            {shortAddress(address)}
-            <span className="title-dot">.</span>
-          </h1>
-          <AddressLabel address={address} full />
+        <div className={styles.identity}>
+          <Avatar address={address} large />
+          <div>
+            <div className={styles.title}>
+              <h1>{shortAddress(address)}</h1>
+            </div>
+            <AddressLabel address={address} full />
+          </div>
+        </div>
+        <div className={styles.actions}>
+          <Link
+            className="button secondary"
+            href={`/wallet/${address}/?window=All`}
+          >
+            Trading activity
+          </Link>
         </div>
       </div>
       {error && !failed && (
@@ -564,23 +667,32 @@ function CreatorProfile({ address }: { address: string }) {
           {error}
         </p>
       )}
+      <div className="stats-grid live-six-stats creator-stats">
+        <Stat label="Launches" pending={total === null && !failed}>
+          {failed ? <Unavailable /> : total?.toLocaleString("en-US")}
+        </Stat>
+        <Stat
+          label="First launch"
+          pending={!firstFailed && (firstAt === undefined || now === null)}
+          note={launchDate(firstAt)}
+        >
+          {firstFailed ? (
+            <Unavailable />
+          ) : (
+            <LaunchTime at={firstAt} now={now} />
+          )}
+        </Stat>
+        <Stat
+          label="Latest launch"
+          pending={!failed && (latestAt === undefined || now === null)}
+          note={launchDate(latestAt)}
+        >
+          {failed ? <Unavailable /> : <LaunchTime at={latestAt} now={now} />}
+        </Stat>
+      </div>
       <section className="panel live-section creator-launches" ref={panelRef}>
         <div className="panel-heading">
-          <h2>
-            Launches{" "}
-            {/* The count the read names, and only that: a launch with no
-                market figure is still a launch. */}
-            <span className="badge" data-pending={total === null && !failed}>
-              {failed
-                ? "unavailable"
-                : total === null
-                  ? "count pending"
-                  : total.toLocaleString()}
-            </span>
-          </h2>
-          <Link href={`/wallet/${address}/?window=All`}>
-            View wallet profile ↗
-          </Link>
+          <h2>Launches</h2>
         </div>
         {loading && list && (
           <span className="sr-only" role="status">
@@ -593,30 +705,33 @@ function CreatorProfile({ address }: { address: string }) {
             and the failed state overlays the top of them, right under the
             heading. */}
         <div className="table-region" data-empty={empty || failed}>
-          <div className="table-scroll desktop-creator-launches">
+          <div className="table-scroll desktop-pools desktop-creator-launches">
             <table className="data-table creator-launches-table">
-              {/* Fixed widths so a row streamed in later, with a longer
-                token name or a resolved date, cannot reflow the columns
-                already on screen. */}
+              {/* Whole-pixel widths so a row streamed in later, with a longer
+                  token name or a resolved figure, cannot reflow the columns
+                  already on screen. */}
               <colgroup>
                 <col />
-                <col className="col-launch" />
-                <col className="col-activity" />
+                <col className="col-mode" />
+                <col className="col-price" />
+                <col className="col-change" />
                 <col className="col-volume" />
-                <col className="col-fees" />
+                <col className="col-status" />
               </colgroup>
               <thead>
                 <tr>
                   <th>Token</th>
-                  <th>Launch (UTC)</th>
-                  <th>24h activity</th>
+                  <th>Mode</th>
+                  <th>Price</th>
+                  <th>24h</th>
                   <th>24h volume</th>
-                  <th>Creator fees</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((p, index) => {
                   const skeleton = !p && skeletonAt(index);
+                  const blank = !p && !skeleton;
                   return (
                     <tr
                       key={index}
@@ -628,49 +743,55 @@ function CreatorProfile({ address }: { address: string }) {
                     >
                       <td data-pending={skeleton}>
                         {p ? (
-                          <Link href={poolHref(p)}>{tokenLine(p)}</Link>
+                          <PoolCell
+                            pool={p}
+                            subtitle={<LaunchAge pool={p} now={now} />}
+                          />
                         ) : skeleton ? (
                           "Token pending"
                         ) : (
-                          "\u00a0"
-                        )}
-                      </td>
-                      <td data-pending={skeleton}>
-                        {p
-                          ? utc(p.launchedAt)
-                          : skeleton
-                            ? "Launch pending"
-                            : "\u00a0"}
-                      </td>
-                      <td data-pending={skeleton}>
-                        {p
-                          ? launchActivity(p)
-                          : skeleton
-                            ? "Pending"
-                            : "\u00a0"}
-                      </td>
-                      <td data-pending={skeleton}>
-                        {p || skeleton ? (
-                          <Eth wei={p?.stats.volumeWei} pending={skeleton} />
-                        ) : (
-                          "\u00a0"
+                          " "
                         )}
                       </td>
                       <td data-pending={skeleton}>
                         {p ? (
-                          p.market ? (
-                            p.market.creatorFees ? (
-                              "On"
-                            ) : (
-                              "Off"
-                            )
-                          ) : (
-                            <Unavailable />
-                          )
+                          <span>{launchMode(p)}</span>
                         ) : skeleton ? (
                           "Pending"
                         ) : (
-                          "\u00a0"
+                          " "
+                        )}
+                      </td>
+                      <td data-pending={skeleton}>
+                        {blank ? (
+                          " "
+                        ) : (
+                          <Price wei={p?.stats.priceWei} pending={skeleton} />
+                        )}
+                      </td>
+                      <td data-pending={skeleton}>
+                        {blank ? (
+                          " "
+                        ) : p ? (
+                          <Change value={p.stats.change} />
+                        ) : (
+                          <Change pending />
+                        )}
+                      </td>
+                      <td data-pending={skeleton}>
+                        {blank ? (
+                          " "
+                        ) : (
+                          <Eth wei={p?.stats.volumeWei} pending={skeleton} />
+                        )}
+                      </td>
+                      <td data-pending={skeleton}>
+                        {p ? (
+                          <LaunchStatus pool={p} />
+                        ) : skeleton ? (
+                          "Pending"
+                        ) : (
+                          " "
                         )}
                       </td>
                     </tr>
@@ -679,47 +800,73 @@ function CreatorProfile({ address }: { address: string }) {
               </tbody>
             </table>
           </div>
-          {/* Below 768px: the token with its 24h volume at the right, then the
-            launch time and activity; creator fees stay out, as the table
-            drops that column first. */}
-          <div className="mobile-launches">
+          {/* Below 768px: the screener's own card, the token tile with its
+              price over its 24h change at the right, then the mode and 24h
+              volume with the status at the right. */}
+          <div className="mobile-pools">
             {rows.map((p, index) => {
               const skeleton = !p && skeletonAt(index);
               return (
-                <div
-                  className="mobile-launch"
+                <article
+                  className="mobile-pool"
                   key={index}
                   data-row-index={index}
                   data-row={p ? "resolved" : skeleton ? "skeleton" : "reserved"}
                   aria-hidden={!p}
                 >
-                  <div className="mobile-launch-top">
-                    {p ? (
-                      <Link href={poolHref(p)}>{tokenLine(p)}</Link>
-                    ) : (
-                      <span data-pending={skeleton}>
-                        {skeleton ? "Token pending" : "\u00a0"}
-                      </span>
-                    )}
-                    {p || skeleton ? (
-                      <Eth wei={p?.stats.volumeWei} pending={skeleton} />
-                    ) : (
-                      <span className="number">{"\u00a0"}</span>
-                    )}
-                  </div>
-                  <div className="mobile-launch-stats" data-pending={skeleton}>
-                    {p ? (
-                      <>
-                        {utc(p.launchedAt)}
-                        {p.stats.trades !== null && <> · {launchActivity(p)}</>}
-                      </>
-                    ) : skeleton ? (
-                      "Launch pending"
-                    ) : (
-                      "\u00a0"
-                    )}
-                  </div>
-                </div>
+                  {p ? (
+                    <Fragment key="resolved">
+                      <div className="mobile-pool-top">
+                        <PoolCell
+                          pool={p}
+                          subtitle={<LaunchAge pool={p} now={now} />}
+                        />
+                        <div className="mobile-pool-price">
+                          <Price wei={p.stats.priceWei} />
+                          <Change value={p.stats.change} />
+                        </div>
+                      </div>
+                      <div className="mobile-pool-stats">
+                        <span>
+                          {[
+                            launchMode(p),
+                            p.stats.volumeWei !== null ? "Vol" : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          {p.stats.volumeWei !== null && (
+                            <>
+                              {" "}
+                              <Eth wei={p.stats.volumeWei} />
+                            </>
+                          )}
+                        </span>
+                        <LaunchStatus pool={p} />
+                      </div>
+                    </Fragment>
+                  ) : skeleton ? (
+                    <Fragment key="pending">
+                      <div className="mobile-pool-top">
+                        <span className="token-cell">
+                          <span className="chain-token" data-pending="true">
+                            Token
+                          </span>
+                          <span>
+                            <strong data-pending="true">Token pending</strong>
+                            <small data-pending="true">{" "}</small>
+                          </span>
+                        </span>
+                        <div className="mobile-pool-price">
+                          <Price pending />
+                          <Change pending />
+                        </div>
+                      </div>
+                      <div className="mobile-pool-stats">
+                        <span data-pending="true">{" "}</span>
+                      </div>
+                    </Fragment>
+                  ) : null}
+                </article>
               );
             })}
           </div>
