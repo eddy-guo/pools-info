@@ -303,8 +303,16 @@ export function PnlCardModal({
   useEffect(() => {
     const node = dialog.current;
     if (!node) return;
-    if (open && !node.open) node.showModal();
-    else if (!open && node.open) node.close();
+    if (open && !node.open) {
+      node.showModal();
+      /* The dialog opens on its first control, the card it was opened for,
+         rather than on the close button the browser would pick. */
+      node
+        .querySelector<HTMLElement>(
+          '[aria-labelledby="pnl-card-kind"] [aria-pressed="true"]',
+        )
+        ?.focus();
+    } else if (!open && node.open) node.close();
     // The page behind a modal card must not scroll under it.
     document.body.style.overflow = open ? "hidden" : "";
     return () => {
