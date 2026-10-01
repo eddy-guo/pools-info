@@ -102,7 +102,7 @@ test("copied watchlists open in a fresh browser and import only with an explicit
     await disableLive(otherTab);
     await otherTab.goto(`${baseURL}/?q=${personal.token}`);
     await otherTab
-      .getByRole("button", { name: "Add to watchlist", exact: true })
+      .getByRole("button", { name: "Watch pool", exact: true, pressed: false })
       .filter({ visible: true })
       .click();
     await expect.poll(() => savedIds(otherTab)).toEqual([personal.id]);

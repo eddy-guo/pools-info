@@ -91,7 +91,7 @@ test("an empty window asks for a wider one and nothing else", async ({
   await page.goto("/traders/?window=24h");
   await settled(page);
   const empty = page.locator("main .empty-state");
-  await expect(empty.locator("h3")).toHaveText(
+  await expect(empty.locator("h2")).toHaveText(
     "No qualifying traders in this window",
   );
   await expect(empty.locator("p")).toHaveText("Try a wider window.");

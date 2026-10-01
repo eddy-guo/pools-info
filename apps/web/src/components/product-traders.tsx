@@ -70,7 +70,7 @@ function FollowingEmpty({ prepaint = false }: { prepaint?: boolean }) {
         prepaint ? "empty-state following-prepaint-empty" : "empty-state"
       }
     >
-      <h3>You are not following anyone yet</h3>
+      <h2>You are not following anyone yet</h2>
       <p>
         Follow a wallet from this leaderboard or a wallet profile to see it
         here.
@@ -838,7 +838,7 @@ export function ProductTraders() {
             )}
             {settled && total === 0 && (
               <div className="empty-state">
-                <h3>No qualifying traders in this window</h3>
+                <h2>No qualifying traders in this window</h2>
                 <p>Try a wider window.</p>
               </div>
             )}

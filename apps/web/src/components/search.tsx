@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Command, Search as SearchIcon, ArrowUpRight } from "lucide-react";
 import { searchGroups, shortAddress, type SearchResponse } from "@pools/core";
 import { createSearchProvider, type SearchResult } from "@/lib/search-provider";
-import { Avatar } from "./ui";
+import { Avatar, NewTabNotice } from "./ui";
 import { SearchSkeleton } from "./skeletons";
 import { useLive } from "./live-provider";
 import { searchResultSymbol, searchResultTitle } from "@/lib/token-identity";
@@ -236,7 +236,7 @@ export function Search() {
                       prefetch={false}
                       onClick={close}
                       target={r.external ? "_blank" : undefined}
-                      rel={r.external ? "noreferrer" : undefined}
+                      rel={r.external ? "noopener noreferrer" : undefined}
                     >
                       <Avatar
                         address={r.address}
@@ -261,6 +261,7 @@ export function Search() {
                         </span>
                       )}
                       {r.external && <ArrowUpRight size={15} />}
+                      {r.external && <NewTabNotice />}
                     </Link>
                   );
                 })}

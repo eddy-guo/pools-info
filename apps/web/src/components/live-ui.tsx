@@ -16,7 +16,12 @@ import {
 import { useEthPrice } from "./eth-price-provider";
 import { useLive } from "./live-provider";
 import { useQuery, useUnit } from "./state";
-import { QuietUnavailable, Unavailable, useUnavailable } from "./ui";
+import {
+  NewTabNotice,
+  QuietUnavailable,
+  Unavailable,
+  useUnavailable,
+} from "./ui";
 import { plural } from "@/lib/plural";
 export { Unavailable };
 export const explorer = "https://robinhoodchain.blockscout.com";
@@ -337,9 +342,10 @@ export function Trades({
                       className="mono"
                       href={`${explorer}/tx/${t.txHash}`}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                     >
                       {shortAddress(t.txHash)} ↗
+                      <NewTabNotice />
                     </a>
                   </td>
                 </tr>

@@ -92,9 +92,11 @@ for (const route of routes) {
     await expect(footer).not.toContainText("Robinhood Chain · Values in ETH");
     const credit = footer.locator(".footer-credit");
     await expect(credit).toBeVisible();
+    // The NOTICE verbatim, then the link's visually hidden new-tab notice.
     await expect(credit).toHaveText(
-      "TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc. https://www.tradingview.com/",
+      "TradingView Lightweight Charts™ Copyright (c) 2025 TradingView, Inc. https://www.tradingview.com/ (opens in a new tab)",
     );
+    await expect(credit.locator(".sr-only")).toHaveText("(opens in a new tab)");
     await expect(credit.getByRole("link")).toHaveAttribute(
       "href",
       "https://www.tradingview.com/",

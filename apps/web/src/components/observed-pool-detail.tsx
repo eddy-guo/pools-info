@@ -12,7 +12,7 @@ import {
   type ObservedMarket,
 } from "@pools/core";
 import styles from "./detail-design.module.css";
-import { AddressLabel, Change, Price, WatchButton } from "./ui";
+import { AddressLabel, Change, NewTabNotice, Price, WatchButton } from "./ui";
 import { Eth, Stat, Unavailable, explorer, utc } from "./live-ui";
 import { PendingValue } from "./product-common";
 import { PoolImage } from "./pool-image";
@@ -340,9 +340,10 @@ export function ObservedPoolDetail({
           href={pool?.token ? `${explorer}/token/${pool.token}` : undefined}
           aria-disabled={!pool?.token}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           Explorer ↗
+          <NewTabNotice />
         </a>
         <a
           className="button"
@@ -353,9 +354,10 @@ export function ObservedPoolDetail({
           }
           aria-disabled={!pool?.token}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           Trade on Pools ↗
+          <NewTabNotice />
         </a>
       </PoolHeading>
       <section className="panel pool-chart-panel">
@@ -391,7 +393,7 @@ export function ObservedPoolDetail({
                read that failed reports itself here rather than leaving a
                chart-shaped hole or, worse, a stored chart. */
             <div className="empty-state" role={notice ? "alert" : undefined}>
-              <h3>{notice ?? "Price chart unavailable"}</h3>
+              <h2>{notice ?? "Price chart unavailable"}</h2>
             </div>
           )}
         </div>

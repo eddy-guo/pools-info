@@ -34,6 +34,7 @@ import {
   Chart,
   CrowdLine,
   EmptyState,
+  NewTabNotice,
   UnavailableState,
   WinLossRecord,
 } from "./ui";
@@ -275,9 +276,10 @@ export function ProductWallet({ address }: { address: string }) {
             className="button secondary"
             href={`${explorer}/address/${address}`}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
           >
             Explorer ↗
+            <NewTabNotice />
           </a>
           <button className="button secondary" onClick={() => setCard(true)}>
             Share PnL card
@@ -859,9 +861,10 @@ export function ProductWallet({ address }: { address: string }) {
                                 <a
                                   href={`${explorer}/tx/${p.launchTx}`}
                                   target="_blank"
-                                  rel="noreferrer"
+                                  rel="noopener noreferrer"
                                 >
                                   Launch transaction ↗
+                                  <NewTabNotice />
                                 </a>
                               </td>
                             </tr>
@@ -883,9 +886,10 @@ export function ProductWallet({ address }: { address: string }) {
                             <a
                               href={`${explorer}/tx/${p.launchTx}`}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noopener noreferrer"
                             >
                               Launch transaction ↗
+                              <NewTabNotice />
                             </a>
                           </div>
                           <div className="mobile-wallet-row-stats">

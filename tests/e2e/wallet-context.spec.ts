@@ -224,7 +224,7 @@ test("a ranked wallet shows profile content without coverage or preview copy", a
 
   const actions = page.locator(".page-heading .button");
   await expect(actions).toHaveText([
-    "Explorer ↗",
+    "Explorer ↗ (opens in a new tab)",
     "Share PnL card",
     "Follow wallet",
     "Copy trade",

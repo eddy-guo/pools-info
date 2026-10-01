@@ -142,6 +142,13 @@ export function CopyButton({
     </span>
   );
 }
+/** The visually hidden tail of every link that opens a new tab, so its
+    accessible name says so rather than leaving the "↗" glyph as the only hint
+    (WCAG G201). Off-screen, so the link's painted box is unchanged. */
+export const NEW_TAB_NOTICE = "(opens in a new tab)";
+export function NewTabNotice() {
+  return <span className="sr-only"> {NEW_TAB_NOTICE}</span>;
+}
 /** Transactions live under a different explorer path than accounts do. */
 type ExplorerKind = "address" | "tx";
 function ExplorerLink({
@@ -158,10 +165,10 @@ function ExplorerLink({
   return (
     <a
       className={className}
-      aria-label={`Open ${kind === "tx" ? "transaction" : "address"} on explorer`}
+      aria-label={`Open ${kind === "tx" ? "transaction" : "address"} on explorer ${NEW_TAB_NOTICE}`}
       href={`https://robinhoodchain.blockscout.com/${kind}/${address}`}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
     >
       <ExternalLink size={size} />
     </a>
@@ -256,9 +263,10 @@ export function AddressChip({
           href={href}
           title={address}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           {identity}
+          <NewTabNotice />
         </a>
       ) : (
         <Link className="address-chip-link" href={href} title={address}>
@@ -511,7 +519,7 @@ export function WatchButton({ id }: { id: string }) {
   return (
     <button
       className={`icon-button watch ${active ? "active" : ""}`}
-      aria-label={active ? "Remove from watchlist" : "Add to watchlist"}
+      aria-label="Watch pool"
       aria-pressed={active}
       onClick={() => setSaveFailed(!toggle(id))}
     >
@@ -552,6 +560,7 @@ export function EmptyState({
   action,
   symbol,
   alert = false,
+  level = 2,
 }: {
   title?: string;
   description: string;
@@ -559,11 +568,14 @@ export function EmptyState({
   /** The magnifier suits a search that found nothing; an outage has its own. */
   symbol?: React.ReactNode;
   alert?: boolean;
+  /** An h2 under the page's h1; an h3 inside a section that has its own h2. */
+  level?: 2 | 3;
 }) {
+  const Heading = level === 3 ? "h3" : "h2";
   return (
     <div className="empty-state" role={alert ? "alert" : undefined}>
       <span className="empty-symbol">{symbol ?? <Search size={25} />}</span>
-      <h3>{title}</h3>
+      <Heading>{title}</Heading>
       <p>{description}</p>
       {action}
     </div>
@@ -578,14 +590,17 @@ export function EmptyState({
 export function UnavailableState({
   subject,
   onRetry,
+  level,
 }: {
   /** The thing that is unavailable, capitalised: "Pools", "Leaderboard". */
   subject: string;
   onRetry?: () => void;
+  level?: 2 | 3;
 }) {
   return (
     <EmptyState
       alert
+      level={level}
       symbol={<CloudOff size={25} />}
       title={`${subject} unavailable`}
       description="Try again shortly."

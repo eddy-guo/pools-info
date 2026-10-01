@@ -7,6 +7,7 @@ import { UnitToggle } from "./unit-toggle";
 import { useEthPrice } from "./eth-price-provider";
 import { SubnavFreshness } from "./freshness";
 import { WalletProfileEntry } from "./wallet-profile";
+import { NewTabNotice } from "./ui";
 import { useBelowListKey } from "@/lib/list-release";
 
 const oneEthWei = (10n ** 18n).toString();
@@ -128,9 +129,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <a
             href="https://www.tradingview.com/"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
           >
             https://www.tradingview.com/
+            <NewTabNotice />
           </a>
         </p>
       </footer>

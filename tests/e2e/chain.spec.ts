@@ -98,18 +98,18 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
   await page.getByRole("textbox", { name: "Filter pools" }).fill(market.token);
   await expect(
     page
-      .getByRole("button", { name: "Add to watchlist" })
+      .getByRole("button", { name: "Watch pool", pressed: false })
       .filter({ visible: true }),
   ).toHaveCount(1);
   await page
-    .getByRole("button", { name: "Add to watchlist" })
+    .getByRole("button", { name: "Watch pool", pressed: false })
     .filter({ visible: true })
     .click();
   await page.getByRole("button", { name: "Watchlist", exact: true }).click();
   await page.reload();
   await expect(
     page
-      .getByRole("button", { name: "Remove from watchlist" })
+      .getByRole("button", { name: "Watch pool", pressed: true })
       .filter({ visible: true }),
   ).toBeVisible();
   await page.goto(poolHref(market));
@@ -117,7 +117,10 @@ test("real screener keeps watchlists, filters, pool navigation and the legacy li
     page.getByRole("heading", { name: market.name, exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Explorer ↗", exact: true }),
+    page.getByRole("link", {
+      name: "Explorer ↗ (opens in a new tab)",
+      exact: true,
+    }),
   ).toHaveAttribute(
     "href",
     `https://robinhoodchain.blockscout.com/token/${market.token}`,
@@ -430,7 +433,7 @@ test("existing device watchlists survive the design key migration and can stay e
   }, market.id);
   await page.goto(`/?view=watchlist&q=${market.token}`);
   const remove = page
-    .getByRole("button", { name: "Remove from watchlist" })
+    .getByRole("button", { name: "Watch pool", pressed: true })
     .filter({ visible: true });
   await expect(remove).toHaveCount(1);
   await remove.click();
@@ -443,7 +446,7 @@ test("existing device watchlists survive the design key migration and can stay e
   await expect(page.getByRole("heading", { name: "Pools." })).toBeVisible();
   await expect(
     page
-      .getByRole("button", { name: "Remove from watchlist" })
+      .getByRole("button", { name: "Watch pool", pressed: true })
       .filter({ visible: true }),
   ).toHaveCount(0);
 });

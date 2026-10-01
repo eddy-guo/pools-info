@@ -1,7 +1,7 @@
 import { shortAddress } from "@pools/core";
 import type { ReactNode } from "react";
 import { explorer, utc } from "./live-ui";
-import { Unavailable } from "./ui";
+import { NewTabNotice, Unavailable } from "./ui";
 
 /*
  * The cells of an explorer trade row (the wallet page's Trades tab and the
@@ -74,8 +74,13 @@ export function TradeTime({ timestamp }: { timestamp: number | null }) {
 
 export function TradeTransaction({ hash }: { hash: string }) {
   return (
-    <a href={`${explorer}/tx/${hash}`} target="_blank" rel="noreferrer">
+    <a
+      href={`${explorer}/tx/${hash}`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
       {shortAddress(hash)} ↗
+      <NewTabNotice />
     </a>
   );
 }

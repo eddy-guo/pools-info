@@ -458,7 +458,7 @@ function CreatorDirectory() {
           )}
           {empty && (
             <div className="empty-state">
-              <h3>No creators in this window</h3>
+              <h2>No creators in this window</h2>
               <p>Switch the window or sort to find launches to group.</p>
             </div>
           )}
