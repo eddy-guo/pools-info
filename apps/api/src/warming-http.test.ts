@@ -156,13 +156,14 @@ test("readiness follows a pending warm set on the fake clock", async (t) => {
   assert.equal((await fetch(base + "/v1/status")).status, 200);
 });
 
-test("slow explorer reads cannot occupy database slots or request budget", async (t) => {
+test("slow explorer reads cannot occupy database slots or drain request budget", async (t) => {
   const releases: (() => void)[] = [];
   let started = 0;
   const history = {
     read: async () => {
       started++;
-      await new Promise<void>((resolve) => releases.push(resolve));
+      if (started <= 8)
+        await new Promise<void>((resolve) => releases.push(resolve));
       return { items: [] };
     },
     peekTrades: () => null,
@@ -204,10 +205,9 @@ test("slow explorer reads cannot occupy database slots or request budget", async
       );
       assert.equal(busy.status, 503);
     }
-    const limited = await fetch(
-      `${base}/v1/wallets/0x${"f".repeat(40)}/history`,
-    );
-    assert.equal(limited.status, 429);
+    const busy = await fetch(`${base}/v1/wallets/0x${"f".repeat(40)}/history`);
+    assert.equal(busy.status, 503);
+    assert.deepEqual(await busy.json(), { error: "busy" });
     for (const path of ["/v1/explore", `/v1/pools/0x${"a".repeat(64)}`])
       assert.equal((await fetch(base + path)).status, 200, path);
     assert.equal((await fetch(base + "/ready")).status, 200);
@@ -215,6 +215,19 @@ test("slow explorer reads cannot occupy database slots or request budget", async
     releases.forEach((release) => release());
     await Promise.allSettled(held);
   }
+  // Busy refusals spend none of the four remaining explorer requests.
+  for (let i = 8; i < 12; i++) {
+    const response = await fetch(
+      `${base}/v1/wallets/0x${i.toString(16).padStart(40, "0")}/history`,
+    );
+    assert.equal(response.status, 200);
+  }
+  const limited = await fetch(`${base}/v1/wallets/0x${"f".repeat(40)}/history`);
+  assert.equal(limited.status, 429);
+  assert.deepEqual(await limited.json(), {
+    error: "request_limit",
+    reason: "shared_budget",
+  });
 });
 
 test("health serves the ledger's freshness outside the warmth gate and the request budget, 503 once the ledger is stale, one read per cache window", async (t) => {

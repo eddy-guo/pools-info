@@ -1,4 +1,5 @@
-import { productRequest } from "@/lib/product-request";
+import { admission, visitorAddress } from "../../../../lib/product-admission";
+import { productRequest } from "../../../../lib/product-request";
 import {
   EthPriceUnavailableError,
   InvalidHistoryCursorError,
@@ -7,8 +8,9 @@ import {
   readEthPrice,
   readProduct,
   readScreenerStats,
+  readsUpstream,
   readWalletTradeHistory,
-} from "@/lib/product-server";
+} from "../../../../lib/product-server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 12;
@@ -26,28 +28,53 @@ export async function GET(
       { status: 400 },
     );
   }
+  // The proxy's own admission line, in front of every upstream read: a
+  // visitor past it is answered here, with the wait that clears it, and
+  // spends nothing of the read API's allowance (product-admission.ts).
+  const visitor = visitorAddress(request.headers);
+  if (readsUpstream()) {
+    const admitted = admission.admit(visitor);
+    if (!admitted.ok)
+      return productUnavailableResponse(
+        new ProductUnavailableError(
+          String(admitted.retryAfterSeconds),
+          "request_limit",
+        ),
+      );
+  }
   if (path.length === 1 && path[0] === "stats") {
     const result = await readScreenerStats(
       (query.get("window") ?? "24h") as
         "1h" | "6h" | "24h" | "7d" | "30d" | "All",
+      visitor,
     );
+    if (result.status === 200)
+      return Response.json(result.data, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    if (result.reason === "request_limit")
+      return productUnavailableResponse(
+        new ProductUnavailableError(result.retryAfter, "request_limit"),
+      );
     return Response.json(
-      result.status === 200
-        ? result.data
-        : {
-            error:
-              result.status === 404
-                ? "not_found"
-                : "stats_coverage_unavailable",
-          },
-      { status: result.status, headers: { "Cache-Control": "no-store" } },
+      {
+        error:
+          result.status === 404 ? "not_found" : "stats_coverage_unavailable",
+      },
+      {
+        status: result.status,
+        headers: {
+          "Cache-Control": "no-store",
+          ...(result.retryAfter ? { "Retry-After": result.retryAfter } : {}),
+        },
+      },
     );
   }
   // Display-only market context with no saved counterpart: an outage stays an
   // outage instead of falling back to the preloaded dataset or a stale rate.
   if (path.length === 2 && path[0] === "prices" && path[1] === "eth-usd")
     try {
-      return Response.json(await readEthPrice(path, query), {
+      return Response.json(await readEthPrice(path, query, visitor), {
         headers: { "Cache-Control": "no-store" },
       });
     } catch (error) {
@@ -70,7 +97,7 @@ export async function GET(
   // never served from the preloaded dataset (see readWalletTradeHistory).
   if (path.length === 3 && path[0] === "wallets" && path[2] === "history")
     try {
-      return Response.json(await readWalletTradeHistory(path, query), {
+      return Response.json(await readWalletTradeHistory(path, query, visitor), {
         headers: { "Cache-Control": "no-store" },
       });
     } catch (error) {
@@ -87,7 +114,7 @@ export async function GET(
       );
     }
   try {
-    return Response.json(await readProduct(path, query), {
+    return Response.json(await readProduct(path, query, visitor), {
       headers: {
         "Cache-Control": ["following", "trades"].includes(path[0])
           ? "no-store"

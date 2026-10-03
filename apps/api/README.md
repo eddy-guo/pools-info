@@ -198,8 +198,7 @@ Four Postgres connections, 2-second connection timeout, 3-second statement
 timeout, 16 concurrent database and readiness reads, separate 240 requests/minute
 budgets for non-explorer and explorer JSON reads per instance, and
 five-second cache/request coalescing keep a public read service bounded. Cache
-storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. This
-is an instance-wide pilot budget, not an account/IP tracking system. Search and
+storage caps at 256 entries and 16 MiB; each response caps at 8 MiB. Search and
 wallet reads still need the read indexes as history grows; timeouts return a
 retryable 503. No HTTP response exposes credentials, SQL, or provider errors.
 
@@ -208,6 +207,103 @@ Errors use `{error:code}` with 400 for validation, 404 for missing routes/pools,
 unavailable data, or missing feed coverage. Responses use `Cache-Control:
 no-store`; only the bounded in-process cache is shared. No permissive CORS is
 enabled. Browsers should use Next.js's same-origin adapter.
+
+### Request limits and client identity
+
+The request budgets are per process and in memory. A spent budget answers
+`429 {"error":"request_limit","reason":<which>}` with its own whole-second
+`Retry-After`. After the readiness gate, a visitor JSON read that would start
+new work meets the in-flight bound before either request budget; cache hits and
+coalesced reads can still be served while that bound is full. A busy refusal
+answers 503 with `Retry-After: 5` and spends neither budget. Then the read
+meets these budgets in order:
+
+- `client_budget`: the caller's own token bucket, when the contract below can
+  name the caller. Its capacity is `CLIENT_TOKEN_BURST` (default 150,
+  at least the refill), and `CLIENT_TOKENS_PER_MINUTE` refills it
+  continuously (default 60, minimum 10). At startup, valid settings that
+  exceed the shared JSON ceiling are clamped so burst plus one minute of
+  refill stays below 240; one warning names any adjusted setting. Each
+  request costs by the work it starts: 1 for a fresh cache hit, a coalesced
+  in-flight read or the ETH price (one in-process entry), 2 for a bounded
+  database read (status, pools, a pool page, trades, live trades, the feed,
+  wallet activity, stats, the leaderboard, a trade share), 4 for a
+  catalog-wide or whole-wallet read (explore, creators, search, a wallet
+  profile) and 8 for a paid explorer page (wallet history, following).
+  `Retry-After` is the seconds until the refill covers the cost. Ordinary
+  browsing (the screener, three pool pages and a wallet page inside a
+  minute, measured through the website) spends under a third of the
+  default burst. At most 10,000 clients are tracked at once; the least
+  recently seen is dropped first, and a dropped client that returns starts full.
+  HEAD costs what GET costs, since it does the same read. A request the shared
+  ceiling then refuses is refunded to its client.
+- `shared_budget`: the process's 240 requests/minute ceilings, one for the
+  explorer-backed reads (wallet history, following) and one for every other
+  JSON route, hits included, unchanged as the backstop for everyone;
+  `Retry-After` is the window's remainder.
+
+The in-flight bound is 16 distinct database reads or 8 explorer reads. The
+readiness route also uses the database bound, independently of visitor tokens.
+
+Icons keep their own `image_budget` of 1,200 requests/minute and are never
+charged to a client. `/ready` draws on its own allowance of 60 answers a
+minute in place of any visitor budget; after that it uses the shared JSON
+ceiling and answers `shared_budget` only when that ceiling is spent too.
+Probes spend no visitor tokens; `/health` is outside these budgets and remains
+unlimited. `/v1/prices/eth-usd` is charged like any JSON read.
+
+Who the caller is comes from an explicit contract, never from a header any
+caller could set on direct traffic; a request the contract cannot attribute
+draws on the shared ceilings alone. Without any of the three settings the api
+cannot tell its callers apart and applies only those ceilings, so a
+deployment behind a proxy it has not been told to trust keeps its old
+capacity instead of folding every visitor into one budget:
+
+- `TRUSTED_PROXY_ADDRESSES`: comma-separated addresses or CIDR blocks of the
+  peers that are trusted proxies (the platform's edge in front of the api).
+  A request from such a peer is charged to the last `X-Forwarded-For` entry,
+  the one that proxy appended itself, so nothing a caller wrote earlier in
+  the header counts; a request from any other peer is charged to that peer
+  and its forwarded headers are ignored. A trusted peer that forwarded no
+  usable address leaves the request unattributed rather than charging the
+  proxy's own key. On Railway the service's public port is reachable only
+  through Railway's proxy, so the address that proxy connects from, as the
+  container sees it, is the entry to trust.
+- `TRUSTED_PROXY_SECRET` (at least 16 characters): the website's product
+  proxy presents it in `X-Pools-Proxy-Secret` beside the visitor's address in
+  `X-Pools-Client-Address` (its `INDEXER_PROXY_SECRET`), and that visitor is
+  charged, whatever the connection or forwarded chain say. The matching
+  secret with no usable address leaves the request unattributed; public card
+  reads carry the visitor's address. A wrong secret falls back to the address
+  rules above. This is what lets a proxy with no fixed egress address, such as the
+  website on Vercel, keep each of its visitors on their own budget rather
+  than all of them on the proxy's.
+- `CLIENT_IDENTITY=peer`: the connection's own address is the client, for an
+  api reached directly with no proxy in front.
+
+#### Turning on per-visitor limits
+
+Set `TRUSTED_PROXY_SECRET` on the api and the same value as
+`INDEXER_PROXY_SECRET` on the website. The website setting also switches on
+its admission line. Optionally set `TRUSTED_PROXY_ADDRESSES` for trusted edge
+peers or `CLIENT_IDENTITY=peer` for a directly reached api. With none of these
+identity settings set, every limit behaves as before this change.
+
+IPv6 clients are charged by their /64 at both the api and the website's
+admission line; the website forwards the full address. The startup log line
+names the configured sources (`clientIdentity`); identity keys remain only in
+bounded process memory and are never logged or answered back.
+
+When `INDEXER_PROXY_SECRET` is set, the website gives each visitor a 120-read
+burst, refilled at 120 reads per minute, before forwarding product,
+market, feed, card and server-rendered stats reads. Its bucket is per website
+process and groups IPv6 visitors by /64. Refused product reads answer 503 with
+`reason:"request_limit"` and `Retry-After`; cards answer 503 with their own
+unavailable text and the same wait. The legacy feed keeps its existing error
+body and forwards the wait. The website sends the visitor's full address to
+the API only under the shared-secret contract above. Browser product reads
+retry a transient request-limit answer within their 60-second
+retry window; an unavailable first server render does not invent stat cards.
 
 ## Published analytics and product endpoints
 
@@ -393,8 +489,9 @@ Responses:
   keeps its generated icon on any 404.
 - `503 {error:"busy"}` with `Retry-After: 5` and `no-store` when the process's
   fetch slots and their waiting line are full, or when more than 64 image
-  requests are in flight; `429` with `Retry-After` from the route's own
-  1,200 requests/minute budget, separate from the JSON read budget.
+  requests are in flight; `429 {error:"request_limit",reason:"image_budget"}`
+  with `Retry-After` from the route's own 1,200 requests/minute budget,
+  separate from the JSON read budget and never charged to a client.
 
 Variables, all optional:
 

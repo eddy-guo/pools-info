@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import net from "node:net";
 import test from "node:test";
@@ -8,9 +9,12 @@ import {
   RequestError,
   searchPattern,
 } from "./request";
+import type { ReadRequest } from "./request";
 import { createApi } from "./server";
+import { ingressSettings } from "./ingress";
 import { readData } from "./reader";
 import type { TokenImageService } from "./token-image-store";
+import type { WalletHistory } from "./wallet-history";
 
 const hash = (s: string) => "0x" + s.repeat(64);
 test("rejects invalid parameters, duplicate parameters, cross-query and malformed cursors", () => {
@@ -189,6 +193,9 @@ test("HTTP rejects mutations, coalesces/caches reads, limits traffic and hides D
   assert.deepEqual(lines, [
     '{"event":"read_failed","route":"ready","code":"57014","ms":0}\n',
   ]);
+  // The probe drew on its own allowance, so a fourth JSON read still fits
+  // under the shared ceiling of four; the fifth does not.
+  assert.equal((await fetch(url + "/v1/pools")).status, 200);
   assert.equal((await fetch(url + "/v1/pools")).status, 429);
   assert.equal((await fetch(url + "/health")).status, 200);
   now = 61000;
@@ -229,6 +236,70 @@ test("503 busy on the JSON in-flight bound carries Retry-After", async (t) => {
   assert.deepEqual(await busy.json(), { error: "busy" });
   releases.forEach((release) => release());
   await Promise.all(held);
+});
+
+test("busy database and explorer refusals leave the client's tokens available", async (t) => {
+  for (const kind of ["database", "explorer"] as const) {
+    await t.test(kind, async (t) => {
+      const limit = kind === "database" ? 16 : 8;
+      const releases: (() => void)[] = [];
+      let started = 0;
+      const hold = async () => {
+        started++;
+        if (started <= limit)
+          await new Promise<void>((resolve) => releases.push(resolve));
+        return { items: [] };
+      };
+      const history: WalletHistory = {
+        read: async () => (await hold()) as never,
+        peekTrades: () => null,
+        refreshTrades: async () => {
+          throw Error("Unexpected trades refresh");
+        },
+      };
+      const url = await listen(
+        t,
+        createApi(
+          { read: hold, async close() {} },
+          {
+            now: () => 0,
+            maxPerMinute: limit + 3,
+            history,
+            ingress: ingressSettings({
+              TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+              CLIENT_TOKENS_PER_MINUTE: "10",
+              CLIENT_TOKEN_BURST: "10",
+            }),
+          },
+        ),
+      );
+      const path = (n: number) =>
+        kind === "database"
+          ? `/v1/pools/0x${n.toString(16).padStart(64, "0")}`
+          : `/v1/wallets/0x${n.toString(16).padStart(40, "0")}/history`;
+      const as = (n: number, client: string) =>
+        fetch(url + path(n), { headers: { "x-forwarded-for": client } });
+      const held = Array.from({ length: limit }, (_, i) =>
+        as(i + 1, `198.51.100.${i + 2}`),
+      );
+      while (started < limit)
+        await new Promise((resolve) => setImmediate(resolve));
+      const coalesced = as(1, "203.0.113.3");
+      try {
+        for (let i = 0; i < (kind === "database" ? 6 : 2); i++) {
+          const busy = await as(limit + i + 1, "203.0.113.1");
+          assert.equal(busy.status, 503);
+          assert.deepEqual(await busy.json(), { error: "busy" });
+        }
+      } finally {
+        releases.forEach((release) => release());
+        await Promise.all(held);
+      }
+      assert.equal((await coalesced).status, 200);
+      assert.equal((await as(limit + 9, "203.0.113.1")).status, 200);
+      assert.equal((await as(limit + 10, "203.0.113.2")).status, 200);
+    });
+  }
 });
 
 test("503 busy on the image in-flight bound carries Retry-After", async (t) => {
@@ -335,4 +406,385 @@ test("feed fails closed if streams are absent or have no shared indexed interval
     ),
     /feed_coverage_unavailable/,
   );
+});
+
+/** A reader that answers every route at once, so only the ingress decides. */
+const stubReader = () => ({
+  async read(request: ReadRequest) {
+    return request.route === "health"
+      ? { ok: true, ledger: null }
+      : { items: [] };
+  },
+  async close() {},
+});
+async function listen(
+  t: import("node:test").TestContext,
+  server: ReturnType<typeof createApi>,
+) {
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  const address = server.address();
+  assert(address && typeof address !== "string");
+  return `http://127.0.0.1:${address.port}`;
+}
+async function refusal(response: Response, reason: string, retryAfter: string) {
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get("retry-after"), retryAfter);
+  assert.deepEqual(await response.json(), { error: "request_limit", reason });
+}
+
+test("a client's spent budget refuses that client alone, names its wait exactly, and starves neither other clients nor probes", async (t) => {
+  let now = 0;
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => now,
+      maxPerMinute: 1000,
+      cacheMs: 100000,
+      // The loopback peer is the trusted proxy; the address it appends last
+      // is the client, whatever the caller wrote before it.
+      ingress: ingressSettings({
+        TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+        CLIENT_TOKENS_PER_MINUTE: "60",
+        CLIENT_TOKEN_BURST: "60",
+      }),
+    }),
+  );
+  const as = (client: string, path = "/v1/status") =>
+    fetch(url + path, {
+      headers: { "x-forwarded-for": `203.0.113.99, ${client}` },
+    });
+  // 60 tokens: one status miss (2) and 58 cache hits (1 each) spend them.
+  const first = await as("203.0.113.1");
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("x-data-cache"), "MISS");
+  for (let i = 0; i < 58; i++) {
+    const hit = await as("203.0.113.1");
+    assert.equal(hit.status, 200, `request ${i + 2}`);
+    assert.equal(hit.headers.get("x-data-cache"), "HIT");
+  }
+  // One token a second: the next hit waits one whole second.
+  await refusal(await as("203.0.113.1"), "client_budget", "1");
+  // Another client and the readiness probe are untouched; a request the
+  // proxy attributes to the first client shares its refusal.
+  assert.equal((await as("203.0.113.2")).status, 200);
+  assert.equal((await fetch(url + "/ready")).status, 200);
+  await refusal(
+    await fetch(url + "/v1/status", {
+      headers: { "x-forwarded-for": "203.0.113.1" },
+    }),
+    "client_budget",
+    "1",
+  );
+  // The wait is exact: a millisecond early is refused, on time is admitted.
+  now = 999;
+  await refusal(await as("203.0.113.1"), "client_budget", "1");
+  now = 1000;
+  assert.equal((await as("203.0.113.1")).status, 200);
+});
+
+test("one client's cached reads stop at its burst before the shared JSON ceiling", async (t) => {
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      cacheMs: 100000,
+      ingress: ingressSettings({ TRUSTED_PROXY_ADDRESSES: "127.0.0.1" }),
+    }),
+  );
+  const as = (client: string) =>
+    fetch(url + "/v1/status", { headers: { "x-forwarded-for": client } });
+  const first = await as("203.0.113.1");
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("x-data-cache"), "MISS");
+  for (let i = 0; i < 148; i++) {
+    const hit = await as("203.0.113.1");
+    assert.equal(hit.status, 200, `cached request ${i + 1}`);
+    assert.equal(hit.headers.get("x-data-cache"), "HIT");
+  }
+  await refusal(await as("203.0.113.1"), "client_budget", "1");
+  assert.equal((await as("203.0.113.2")).status, 200);
+});
+
+test("forwarded headers on direct traffic never make an identity, and an unconfigured api keeps only its shared ceiling", async (t) => {
+  // The trusted proxy is some other address: every request here is direct
+  // traffic from the loopback peer, whatever it claims to forward.
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      maxPerMinute: 1000,
+      cacheMs: 100000,
+      ingress: ingressSettings({
+        TRUSTED_PROXY_ADDRESSES: "10.0.0.1",
+        TRUSTED_PROXY_SECRET: randomBytes(32).toString("hex"),
+        CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
+      }),
+    }),
+  );
+  // 10 tokens: a miss (2) and eight hits; the tenth request is refused no
+  // matter which address it claims, with a secret it does not hold.
+  for (let i = 0; i < 9; i++)
+    assert.equal(
+      (
+        await fetch(url + "/v1/status", {
+          headers: { "x-forwarded-for": `203.0.113.${i + 1}` },
+        })
+      ).status,
+      200,
+      `request ${i + 1}`,
+    );
+  await refusal(
+    await fetch(url + "/v1/status", {
+      headers: {
+        "x-forwarded-for": "203.0.113.50",
+        "x-pools-proxy-secret": "0123456789abcdeF",
+        "x-pools-client-address": "203.0.113.51",
+      },
+    }),
+    "client_budget",
+    "6",
+  );
+  // The same traffic against an api with no identity contract at all is
+  // never refused for a client's sake: only the shared ceiling applies.
+  const plain = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      maxPerMinute: 1000,
+      cacheMs: 100000,
+    }),
+  );
+  for (let i = 0; i < 20; i++)
+    assert.equal(
+      (
+        await fetch(plain + "/v1/status", {
+          headers: { "x-forwarded-for": `203.0.113.${i + 1}` },
+        })
+      ).status,
+      200,
+      `plain request ${i + 1}`,
+    );
+});
+
+test("the proxy secret names the visitor the site proxy vouches for, and nobody else", async (t) => {
+  const secret = randomBytes(32).toString("hex");
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      maxPerMinute: 1000,
+      cacheMs: 100000,
+      ingress: ingressSettings({
+        TRUSTED_PROXY_SECRET: secret,
+        CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
+      }),
+    }),
+  );
+  const via = (visitor: string, presented = secret) =>
+    fetch(url + "/v1/status", {
+      headers: {
+        "x-pools-proxy-secret": presented,
+        "x-pools-client-address": visitor,
+      },
+    });
+  for (let i = 0; i < 9; i++)
+    assert.equal((await via("203.0.113.1")).status, 200, `request ${i + 1}`);
+  await refusal(await via("203.0.113.1"), "client_budget", "6");
+  assert.equal((await via("203.0.113.2")).status, 200);
+  // Without the secret, or with a wrong one, the request is direct traffic
+  // this api has no contract to identify: the shared ceiling alone applies,
+  // and the spent visitor's name buys no refusal for it.
+  for (let i = 0; i < 20; i++) {
+    assert.equal((await fetch(url + "/v1/status")).status, 200);
+    assert.equal((await via("203.0.113.1", "wrong-" + secret)).status, 200);
+  }
+});
+
+test("the shared ceiling still holds across clients, and a request it refuses costs its client nothing", async (t) => {
+  let now = 0;
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => now,
+      maxPerMinute: 6,
+      cacheMs: 100000,
+      ingress: ingressSettings({
+        TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+        CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
+      }),
+    }),
+  );
+  const as = (client: string, path = "/v1/status") =>
+    fetch(url + path, { headers: { "x-forwarded-for": client } });
+  // A second before the shared window ends, one client spends 8 of its 10
+  // tokens on two catalog-wide reads and four others fill the ceiling.
+  now = 59000;
+  assert.equal((await as("203.0.113.1", "/v1/explore")).status, 200);
+  assert.equal((await as("203.0.113.1", "/v1/creators")).status, 200);
+  for (let i = 2; i <= 5; i++)
+    assert.equal((await as(`203.0.113.${i}`)).status, 200, `client ${i}`);
+  // The first client's next read (2) is inside its own budget but meets the
+  // shared ceiling: refused for the window's last second, and refunded.
+  await refusal(await as("203.0.113.1", "/v1/stats"), "shared_budget", "1");
+  await refusal(await as("203.0.113.6"), "shared_budget", "1");
+  // Once the window resets, the refunded read fits (2 tokens and a sixth of
+  // one refilled); had the refusal been charged, this would be 11 seconds away.
+  now = 60000;
+  assert.equal((await as("203.0.113.1", "/v1/stats")).status, 200);
+  await refusal(await as("203.0.113.1", "/v1/stats"), "client_budget", "5");
+  assert.equal((await as("203.0.113.6")).status, 200);
+});
+
+test("readiness keeps its own probe allowance; a probe flood spends no visitor budget and health is never limited", async (t) => {
+  let now = 0;
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => now,
+      maxPerMinute: 3,
+      cacheMs: 100000,
+      ingress: ingressSettings({
+        TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+        CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
+      }),
+    }),
+  );
+  const probe = () =>
+    fetch(url + "/ready", { headers: { "x-forwarded-for": "203.0.113.1" } });
+  // Visitors spend the whole shared ceiling; readiness still answers.
+  for (let i = 0; i < 3; i++)
+    assert.equal(
+      (
+        await fetch(url + "/v1/status", {
+          headers: { "x-forwarded-for": `203.0.113.${i + 2}` },
+        })
+      ).status,
+      200,
+    );
+  await refusal(
+    await fetch(url + "/v1/status", {
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    }),
+    "shared_budget",
+    "60",
+  );
+  for (let i = 0; i < 60; i++)
+    assert.equal((await probe()).status, 200, `probe ${i + 1}`);
+  await refusal(await probe(), "shared_budget", "60");
+  assert.equal((await fetch(url + "/health")).status, 200);
+  // The probing client's own budget is untouched by its 61 probes.
+  now = 60000;
+  for (let i = 0; i < 9; i++)
+    assert.equal(
+      (
+        await fetch(url + "/v1/status", {
+          headers: { "x-forwarded-for": "203.0.113.1" },
+        })
+      ).status,
+      i < 3 ? 200 : 429,
+      `request ${i + 1}`,
+    );
+});
+
+test("readiness falls back to the shared JSON ceiling after its probe allowance", async (t) => {
+  const url = await listen(
+    t,
+    createApi(stubReader(), { now: () => 0, maxPerMinute: 2 }),
+  );
+  for (let i = 0; i < 62; i++)
+    assert.equal((await fetch(url + "/ready")).status, 200, `probe ${i + 1}`);
+  await refusal(await fetch(url + "/ready"), "shared_budget", "60");
+  await refusal(await fetch(url + "/v1/status"), "shared_budget", "60");
+});
+
+test("a request costs its client by the work it starts: cached, light, heavy or paid", async (t) => {
+  const history: WalletHistory = {
+    read: async () => ({ items: [] }) as never,
+    peekTrades: () => null,
+    refreshTrades: async () => {
+      throw Error("Unexpected trades refresh");
+    },
+  };
+  const url = await listen(
+    t,
+    createApi(stubReader(), {
+      now: () => 0,
+      maxPerMinute: 1000,
+      cacheMs: 100000,
+      history,
+      ingress: ingressSettings({
+        TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+        CLIENT_TOKENS_PER_MINUTE: "10",
+        CLIENT_TOKEN_BURST: "10",
+      }),
+    }),
+  );
+  const as = (client: string, path: string) =>
+    fetch(url + path, { headers: { "x-forwarded-for": client } });
+  // Two catalog-wide reads (4 each) leave 2; a cache hit (1) leaves 1; a
+  // bounded database read (2) is refused, six seconds short of its cost,
+  // while another hit (1) still fits.
+  assert.equal((await as("203.0.113.1", "/v1/explore")).status, 200);
+  assert.equal((await as("203.0.113.1", "/v1/creators")).status, 200);
+  const hit = await as("203.0.113.1", "/v1/explore");
+  assert.equal(hit.headers.get("x-data-cache"), "HIT");
+  await refusal(await as("203.0.113.1", "/v1/status"), "client_budget", "6");
+  assert.equal((await as("203.0.113.1", "/v1/creators")).status, 200);
+  await refusal(await as("203.0.113.1", "/v1/creators"), "client_budget", "6");
+  // A paid explorer page (8) leaves 2: a second one is 36 seconds away.
+  const wallet = "0x" + "2".repeat(40);
+  assert.equal(
+    (await as("203.0.113.2", `/v1/wallets/${wallet}/history`)).status,
+    200,
+  );
+  await refusal(
+    await as("203.0.113.2", `/v1/wallets/${wallet}/history`),
+    "client_budget",
+    "36",
+  );
+});
+
+test("a read coalesced with an identical one in flight costs what a cache hit costs", async (t) => {
+  const releases: (() => void)[] = [];
+  const url = await listen(
+    t,
+    createApi(
+      {
+        async read() {
+          await new Promise<void>((resolve) => releases.push(resolve));
+          return { items: [] };
+        },
+        async close() {},
+      },
+      {
+        now: () => 0,
+        maxPerMinute: 1000,
+        ingress: ingressSettings({
+          TRUSTED_PROXY_ADDRESSES: "127.0.0.1",
+          CLIENT_TOKENS_PER_MINUTE: "10",
+          CLIENT_TOKEN_BURST: "10",
+        }),
+      },
+    ),
+  );
+  const pool = `/v1/pools/${"0x" + "3".repeat(64)}`;
+  const as = () =>
+    fetch(url + pool, { headers: { "x-forwarded-for": "203.0.113.1" } });
+  // The first pool read (2) is held open; eight identical requests join it
+  // for a token each, and the tenth is refused while the read is still pending.
+  const held = [as()];
+  while (releases.length < 1) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 8; i++) held.push(as());
+  await new Promise((r) => setTimeout(r, 20));
+  await refusal(await as(), "client_budget", "6");
+  assert.equal(releases.length, 1);
+  releases[0]();
+  for (const response of await Promise.all(held))
+    assert.equal(response.status, 200);
 });

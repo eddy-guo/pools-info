@@ -60,11 +60,13 @@ const reads = new Map<string, { expires: number; read: Promise<CardWallet> }>();
 export const readCardWallet = (
   address: string,
   window: LiveWindow,
+  visitor: string | null = null,
 ): Promise<CardWallet> =>
   cachedRead(reads, `${address}:${window}`, () =>
     readProduct<AnalyticsWalletResponse>(
       ["wallets", address],
       new URLSearchParams({ window }),
+      visitor,
     ).then((result) => ({ result })),
   );
 
@@ -174,11 +176,13 @@ export const cardMoneyText = (money: CardMoney) =>
  */
 export async function cardUsdPerEth(
   pinned: number | null,
+  visitor: string | null = null,
 ): Promise<number | null> {
   if (pinned !== null && servedEthRate(pinned)) return pinned;
   try {
-    return (await readEthPrice(["prices", "eth-usd"], new URLSearchParams()))
-      .usdPerEth;
+    return (
+      await readEthPrice(["prices", "eth-usd"], new URLSearchParams(), visitor)
+    ).usdPerEth;
   } catch {
     return null;
   }
@@ -482,11 +486,12 @@ const boardReads = new Map<
   { expires: number; read: Promise<Delivered<AnalyticsLeaderboardResponse>> }
 >();
 /** The pool read behind an open position's chart, held as long as the position read. */
-const readCardPool = (poolId: string) =>
+const readCardPool = (poolId: string, visitor: string | null) =>
   cachedRead(poolReads, poolId, () =>
     readProduct<CardPoolResponse>(
       ["pools", poolId],
       new URLSearchParams({ window: "All" }),
+      visitor,
     ),
   );
 /**
@@ -495,11 +500,12 @@ const readCardPool = (poolId: string) =>
  * board (`wallet.rank` on the wallet read is the same realized order at the
  * same gate), which the single-position read does not carry.
  */
-const readCardBoard = () =>
+const readCardBoard = (visitor: string | null) =>
   cachedRead(boardReads, "All", () =>
     readProduct<AnalyticsLeaderboardResponse>(
       ["leaderboard"],
       new URLSearchParams({ window: "All", limit: "100" }),
+      visitor,
     ),
   );
 
@@ -514,9 +520,10 @@ export async function readCardPosition(
   address: string,
   poolId: string,
   launch?: string,
+  visitor: string | null = null,
 ): Promise<CardPosition | null> {
   const read = await cachedRead(positionReads, `${address}:${poolId}`, () =>
-    readWalletPosition(address, poolId),
+    readWalletPosition(address, poolId, visitor),
   );
   const row = read?.position;
   if (
@@ -528,8 +535,8 @@ export async function readCardPosition(
     return null;
   const open = BigInt(row.position.quantity) > 0n;
   const [board, response] = await Promise.all([
-    readCardBoard(),
-    open ? readCardPool(poolId) : null,
+    readCardBoard(visitor),
+    open ? readCardPool(poolId, visitor) : null,
   ]);
   const pool = response && (response.pool ?? response);
   // Both reads name the pool's launch: a disagreement is the catalog's to

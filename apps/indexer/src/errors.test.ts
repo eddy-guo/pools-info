@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { errorDetails, safeError } from "./errors";
 test("collector diagnostics distinguish provider rejection, network failure and database constraints", () => {
   assert.match(safeError(Error("RPC HTTP 403")), /rpc_access_denied/);
@@ -35,7 +36,8 @@ test("collector diagnostics distinguish provider rejection, network failure and 
   );
 });
 test("diagnostics never echo URLs, credentials, SQL, arbitrary codes or attacker-controlled names", () => {
-  const secret = "https://example.test/key?token=private_secret";
+  const credential = randomBytes(32).toString("hex");
+  const secret = `https://example.test/key?token=${credential}`;
   for (const e of [
     Object.assign(Error(secret), {
       code: secret,
@@ -47,7 +49,7 @@ test("diagnostics never echo URLs, credentials, SQL, arbitrary codes or attacker
   ]) {
     const output = JSON.stringify({ error: safeError(e), ...errorDetails(e) });
     assert.ok(!output.includes(secret));
-    assert.ok(!output.includes("private_secret"));
+    assert.ok(!output.includes(credential));
     assert.equal(errorDetails(e).sqlState, null);
     assert.equal(errorDetails(e).networkCode, null);
   }

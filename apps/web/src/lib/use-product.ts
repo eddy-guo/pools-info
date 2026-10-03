@@ -46,15 +46,20 @@ function waitForRetry(delay: number, signal: AbortSignal) {
     warming or not. */
 const REQUEST_TIMEOUT_MS = 12000;
 /** The read API's warming gate runs one warm attempt for up to a minute
-    (`docs/DATABASE-WARMING.md`); the client keeps honoring the server's own
-    Retry-After guidance for as many warming responses as land inside that
-    same ceiling, so warming stays a loading state rather than surfacing as
-    an error after one retry. A database still warming past it is finally
-    reported unavailable instead of retried forever. */
+    (`docs/DATABASE-WARMING.md`), and its request budgets refill within one
+    (`apps/api/README.md`, "Request limits and client identity"); the client
+    keeps honoring the server's own Retry-After guidance for as many warming
+    or request-limited responses as land inside that same ceiling, so either
+    stays a loading state rather than surfacing as an error after one retry.
+    A read still refused past it is finally reported unavailable instead of
+    retried forever. */
 const WARMING_CEILING_MS = 60000;
-/** Whether a 503 body is the warming reason the proxy documents, as opposed
-    to a generic outage with no useful Retry-After to honor. */
-async function isWarming(response: Response) {
+/** Reasons the proxy documents for a 503 that clears on its own after the
+    Retry-After it names: a warming database, and a request budget spent. */
+const TRANSIENT_REASONS: unknown[] = ["warming", "request_limit"];
+/** Whether a 503 body names one of those transient reasons, as opposed to a
+    generic outage with no useful Retry-After to honor. */
+async function isTransient(response: Response) {
   const body = await response
     .clone()
     .json()
@@ -63,15 +68,16 @@ async function isWarming(response: Response) {
     !!body &&
     typeof body === "object" &&
     !Array.isArray(body) &&
-    (body as { reason?: unknown }).reason === "warming"
+    TRANSIENT_REASONS.includes((body as { reason?: unknown }).reason)
   );
 }
 /** One product read through the app's own proxy. Each request is cut short
-    at `REQUEST_TIMEOUT_MS`; a warming 503 is retried after its own
-    Retry-After delay, repeatedly, as long as the database keeps reporting
-    warming and the retry stays inside `WARMING_CEILING_MS` of the first
-    request - malformed or missing Retry-After guidance stops the loop
-    immediately rather than retrying blindly. */
+    at `REQUEST_TIMEOUT_MS`; a warming or request-limited 503 is retried
+    after its own Retry-After delay, repeatedly, as long as the proxy keeps
+    reporting a transient reason and the retry stays inside
+    `WARMING_CEILING_MS` of the first request - malformed or missing
+    Retry-After guidance stops the loop immediately rather than retrying
+    blindly. */
 export async function fetchProduct<T>(path: string, signal: AbortSignal) {
   try {
     return await readProductResponse<T>(path, signal);
@@ -101,7 +107,7 @@ async function readProductResponse<T>(path: string, signal: AbortSignal) {
     });
   };
   let response = await request();
-  while (response.status === 503 && (await isWarming(response))) {
+  while (response.status === 503 && (await isTransient(response))) {
     const delay = retryAfterMilliseconds(response.headers.get("retry-after"));
     if (delay === null) break;
     if (Date.now() + delay > deadline) break;

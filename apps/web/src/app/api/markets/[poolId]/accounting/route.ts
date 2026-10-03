@@ -2,7 +2,16 @@ import {
   auditedPoolSnapshot,
   currentChainSnapshot,
   capturedPoolSnapshot,
-} from "@/lib/chain-server";
+} from "../../../../../lib/chain-server";
+import {
+  admission,
+  visitorAddress,
+} from "../../../../../lib/product-admission";
+import {
+  ProductUnavailableError,
+  productUnavailableResponse,
+  readsUpstream,
+} from "../../../../../lib/product-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +32,19 @@ export async function GET(
       !capturedPoolSnapshot(poolId, suppliedLaunch)?.markets[0]?.accounting)
   )
     return Response.json({ error: "refresh_disabled" }, { status: 503 });
+  // The product proxy's admission line and visitor: this route reads the
+  // same pool from the read API (product-admission.ts).
+  const visitor = visitorAddress(request.headers);
+  if (readsUpstream()) {
+    const admitted = admission.admit(visitor);
+    if (!admitted.ok)
+      return productUnavailableResponse(
+        new ProductUnavailableError(
+          String(admitted.retryAfterSeconds),
+          "request_limit",
+        ),
+      );
+  }
   try {
     const launch = new URL(request.url).searchParams.get("launch");
     const current = launch ? null : await currentChainSnapshot();
@@ -38,6 +60,7 @@ export async function GET(
       poolId,
       launchTx as `0x${string}`,
       refresh,
+      visitor,
     );
     const { accounting, ...auditedMarket } = result.markets[0];
     return Response.json(
@@ -51,7 +74,9 @@ export async function GET(
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof ProductUnavailableError)
+      return productUnavailableResponse(error);
     return Response.json(
       { error: "audit_unavailable" },
       {

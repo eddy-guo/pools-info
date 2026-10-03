@@ -39,6 +39,8 @@ import { countLabel } from "@/lib/plural";
 import { tokenInitials } from "@/lib/token-identity";
 import { fontAdvances, fontCodePoints } from "@/lib/font-coverage";
 import { tokenImageResponse } from "@/lib/token-image-server";
+import { admission, visitorAddress } from "@/lib/product-admission";
+import { ProductUnavailableError, readsUpstream } from "@/lib/product-server";
 import {
   identityTint,
   shortAddress,
@@ -1541,11 +1543,25 @@ export async function GET(
       (launch !== undefined && !/^0x[0-9a-f]{64}$/.test(launch))
     )
       return new Response("Invalid pool scope", { status: 400 });
+    const visitor = visitorAddress(request.headers);
+    if (readsUpstream()) {
+      const admitted = admission.admit(visitor);
+      if (!admitted.ok)
+        return new Response("PnL card unavailable. Try again later.", {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+            "Retry-After": String(admitted.retryAfterSeconds),
+          },
+        });
+    }
     const usdPerEth =
-      options.unit === "USD" ? await cardUsdPerEth(options.usdPerEth) : null;
+      options.unit === "USD"
+        ? await cardUsdPerEth(options.usdPerEth, visitor)
+        : null;
     if (poolId !== undefined) {
       // The export layout's headline is the realized amount, notional or not.
-      const position = await readCardPosition(address, poolId, launch),
+      const position = await readCardPosition(address, poolId, launch, visitor),
         figures =
           position &&
           positionCardFigures(
@@ -1586,7 +1602,7 @@ export async function GET(
         ),
       );
     }
-    const { result } = await readCardWallet(address, options.window);
+    const { result } = await readCardWallet(address, options.window, visitor);
     const w = result.wallet,
       exportHero = options.design === "export" ? cardExportHero(w) : null,
       hero = options.design === "export" ? exportHero : cardHero(w);
@@ -1969,10 +1985,14 @@ export async function GET(
       ),
     );
     return pngResponse(card);
-  } catch {
+  } catch (error) {
     return new Response("PnL card unavailable. Try again later.", {
       status: 503,
-      headers: { "Cache-Control": "no-store", "Retry-After": "300" },
+      headers: {
+        "Cache-Control": "no-store",
+        "Retry-After":
+          error instanceof ProductUnavailableError ? error.retryAfter : "300",
+      },
     });
   }
 }
