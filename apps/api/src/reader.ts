@@ -221,7 +221,18 @@ export async function readData(
       // 025), which the tip loop's start applies.
       await query("SELECT 1 FROM agg_trader_windows WHERE false");
       await query("SELECT 1 FROM wallet_code_observations WHERE false");
-      await query("SELECT token_supply_block FROM indexed_pools WHERE false");
+      await query(
+        "SELECT token_total_supply_raw,token_supply_block FROM indexed_pools WHERE false",
+      );
+      // The stream's fold rule and the position unit totals (migration
+      // 027), which the ledger cut and the wallet page read.
+      await query(
+        "SELECT fold_rule,fold_rule_since FROM agg_streams WHERE false",
+      );
+      await query("SELECT pooled_wallet_refs FROM agg_live_trades WHERE false");
+      await query(
+        "SELECT pooled_swaps,bought_raw,sold_raw FROM agg_positions WHERE false",
+      );
     }
     await accountingCoverage(query);
     return { ready: true };

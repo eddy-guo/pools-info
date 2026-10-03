@@ -193,6 +193,7 @@ async function session(
         windowRefreshMs: config.windowRefreshMs,
         crowdEnabled: config.crowdEnabled,
         staleMs: config.staleMs,
+        foldRule: config.foldRule,
       });
     health?.starting("locking");
     if (!(await locks(db, signal, Math.max(180000, horizonMs)))) {
@@ -248,6 +249,7 @@ async function session(
           log: emit,
           throttled: () => throttled,
           ...(mode === "once" ? { maxCycles: 1 } : {}),
+          ...(config.foldRule === null ? {} : { foldRule: config.foldRule }),
         });
         emit({ event: "ledger_tip_summary", session: n, ...summary });
         if (reconnect()) return "reconnect";

@@ -273,6 +273,7 @@ export async function runLedgerCrowdRange(
     unsupportedSwaps: c.unsupportedSwaps,
     transfers: c.transfers.length,
     attributed: applied.attributed,
+    pooled: applied.pooled,
     unattributed: applied.unattributed,
     unregisteredSwaps: applied.unregisteredSwaps,
     positionsChanged: applied.positions,

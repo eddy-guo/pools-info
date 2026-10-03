@@ -36,6 +36,12 @@ export interface LedgerCut extends MarketBoundary {
   startBlock: number;
   newestHour: number;
   indexedAt: string;
+  /** The attribution rule the stream's history is folded under (migration
+   * 027): 2 attributes pooled sells pro rata, 1 leaves them unattributed. */
+  foldRule: 1 | 2;
+  /** When readers started serving the stream under rule 2 (unix seconds),
+   * set at the swap-in; null before it and under rule 1. */
+  foldRuleSince: number | null;
 }
 /** The ledger's cut, or null when it has folded nothing yet (no cursor or no
  * pool hour), in which case every pool answers from the broad and deep
@@ -43,7 +49,7 @@ export interface LedgerCut extends MarketBoundary {
  * committed batch's end, and no pool hour may start after it. */
 export async function ledgerCut(query: ReadQuery): Promise<LedgerCut | null> {
   const { rows } =
-    await query(`SELECT s.start_block,s.cursor_block,'0x'||encode(s.cursor_hash,'hex') AS cursor_hash,s.cursor_timestamp,
+    await query(`SELECT s.start_block,s.cursor_block,'0x'||encode(s.cursor_hash,'hex') AS cursor_hash,s.cursor_timestamp,s.fold_rule,s.fold_rule_since,
     '0x'||encode(b.block_hash,'hex') AS batch_hash,b.to_timestamp AS batch_timestamp,b.collected_at,
     (SELECT max(hour) FROM agg_pool_hours WHERE chain_id=4663) AS newest_hour,
     EXISTS(SELECT 1 FROM analytics_accounting_pools a WHERE a.chain_id=4663 AND a.through_block=s.cursor_block
@@ -70,6 +76,8 @@ export async function ledgerCut(query: ReadQuery): Promise<LedgerCut | null> {
     startBlock: whole(r.start_block),
     newestHour,
     indexedAt: new Date(r.collected_at).toISOString(),
+    foldRule: Number(r.fold_rule) === 2 ? 2 : 1,
+    foldRuleSince: r.fold_rule_since === null ? null : whole(r.fold_rule_since),
   };
 }
 /** The rolling hour 1h names: the swaps from `start` (the cutoff's time

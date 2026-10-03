@@ -59,7 +59,10 @@ async function main() {
   try {
     await migrate(db);
     if (mode === "status") {
-      emit({ event: "ledger_pass_status", ...(await ledgerPassStatus(db)) });
+      emit({
+        event: "ledger_pass_status",
+        ...(await ledgerPassStatus(db, config.foldRule ?? undefined)),
+      });
       return;
     }
     let throttled = 0;
@@ -82,6 +85,7 @@ async function main() {
       maxPages: config.maxPages,
       maxRequests: config.maxRequests,
       maxRanges: config.maxRanges,
+      foldRule: config.foldRule,
     });
     const fromBlock = Number(process.argv[3]),
       toBlock = Number(process.argv[4]);
@@ -141,6 +145,7 @@ async function main() {
         log: emit,
         throttled: () => throttled,
         ...(config.maxRanges === null ? {} : { maxRanges: config.maxRanges }),
+        ...(config.foldRule === null ? {} : { foldRule: config.foldRule }),
       });
       emit({ event: "ledger_pass_summary", ...summary });
       if (summary.stopped === "throttled")

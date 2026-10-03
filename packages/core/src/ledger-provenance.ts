@@ -49,7 +49,9 @@ export function ledgerTransferProvenance(
     `${tx.toLowerCase()}:${pool.toLowerCase()}`;
   const contexts = new Map<string, LedgerTransferProvenance["context"]>();
   for (const e of events) {
-    if (e.kind === "swap") continue;
+    // A pooled swap (rule 2) explains every leg of its transaction, as an
+    // attributed swap does: nothing residual is left to retain.
+    if (e.kind === "swap" || e.kind === "pooled_swap") continue;
     contexts.set(
       key(e.txHash, e.poolId),
       e.kind === "unattributed_swap" ? "unattributed_swap" : "residual",

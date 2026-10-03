@@ -30,7 +30,9 @@ the ordinary migration runner deliberately does not activate their storage.
   outflows with proportional basis removal. Two registered swaps of one pool
   in one transaction, or no single candidate, leave the swap unattributed:
   nothing of that transaction is applied and every address whose balance of
-  the token moved has its position excluded with `unattributed_swap_activity`.
+  the token moved has its position excluded with `unattributed_swap_activity`
+  (fold rule 1; rule 2, "Pooled swaps" below, attributes pooled sells
+  pro rata instead).
   Transfers in transactions without a swap of the token are plain inflows and
   outflows. Swaps apply before residual transfers, transactions in block
   order, both in log order. `wrapper_route` marks a swap whose transaction
@@ -525,6 +527,124 @@ the journal guard, hold times persisted and walked back) and
 equal to `walletMetrics`' `fastHoldShare` on every accounting fixture). The
 local run at the real tip against a copy of `pools_agg_pass` is in the pull
 request.
+
+## Pooled swaps: fold rule 2 (decided 29 Sep 2026)
+
+A batch-sell contract (`0xbefe1731277769ba8e4f7e05bbfc1ef4715424f7`, the
+figures audit's item H1) collects many wallets' tokens in one transaction
+and sells them in one PoolManager swap. The contract nets to zero and no
+single address's movement covers the swap, so rule 1 leaves the swap
+unattributed and excludes every contributor with
+`unattributed_swap_activity`: the buy's cost and the sale's proceeds both
+vanish from realized, net, ROI, win rate, best and the curve. On the 27 Sep
+2026 backup that was 39,187 bought positions holding 3,030 ETH of cost and,
+of each window's top 100, 4 (24h), 3 (6h), 69 (7d), 59 (30d) and 57 (All)
+wallets with at least one such position. The recorded transaction
+`0x3ce590c1…7387` (block 70,274,936, `packages/core/src/fixtures/`) has 147
+contributors (the audit's "about 50" was the explorer's first page of legs)
+whose movements sum exactly to the 695,318,196.60 CS sold for 6.000424 ETH.
+
+**The rule** (`LedgerRules.pooledSwaps`, `planLedgerBatch`). For a sell with no
+single candidate, when every address whose balance of the token moved
+in the transaction sent tokens into the swap, there are at least two
+of them, their movements sum to exactly the swapped amount, the PoolManager
+received exactly that amount and every other infrastructure address nets to
+zero, the swap is a pooled swap: each contributor is attributed a swap of the
+tokens it moved and its share of the ETH leg. The share is
+`ethWei * tokenRaw_i / tokenRaw`
+truncated, and the wei the truncations leave (fewer than there are
+contributors) go one each to the contributors whose exact share lost the
+most, the lower address first among equal losses, so the shares sum to
+`ethWei` exactly and the same rows give the same shares everywhere
+(`pooledSwapShares`). No residual movement is left, since each
+contributor's whole net movement is its share; the initiator is a
+contributor when it moved tokens and nothing otherwise, as under rule 1
+(`transaction_sender` is never the beneficiary). A movement against the
+sell direction, a total the swap does not account for (a mint, a burn, a fee
+kept in tokens), a single mover, or two swaps of the pool in the transaction
+keep rule 1's outcome, since the rule never guesses who covers a gap. A pooled
+buy fanned out to many recipients stays unattributed under both rules; it
+needs separate proof before the history re-fold. A pooled sell is one trade
+for the pool (its hour's `trades`, `volume` and OHLC and the pool state count
+it once; its hour's `sellers` count every contributor, so since migration 027
+they may exceed `sells`), one sale per contributor for the wallets (positions,
+hour rows, `LedgerSale`, closures), and one row in the live ring with
+`attribution = 'pooled'` and no wallet, as an unattributed swap is kept,
+whose `pooled_wallet_refs` name its contributors so that the rolling hour's
+active traders (`/v1/stats?window=1h`) count them as the whole hours'
+`agg_wallet_hours` rows do for the longer windows. A position counts them in
+`pooled_swaps`; the api's contract census reads a pooled sell as one the wallet
+did not initiate, like a counterparty swap.
+
+**Versioning.** The rule a stream folds under is the stream's own,
+`agg_streams.fold_rule` (migration 027: 1 for every stream that exists when
+it runs, 2 only for a stream created under `LEDGER_FOLD_RULE=2`), read by
+the writer inside every batch and never a deployment's default: the code
+lands and the live stream keeps folding under rule 1 unchanged (every
+earlier test still folds under rule 1 and reproduces every figure; the new
+ones fold the same batches under both rules). `ensureLedgerStream` fixes
+the rule at creation, refuses a different one for an existing stream
+(`ledger_fold_rule_mismatch`) and creates the crowd stream under the main
+stream's rule, since the two share one ledger; the pass creates a stream
+under `LEDGER_FOLD_RULE` (unset: rule 1), and the tip loop, which never
+creates a stream, refuses a ledger whose rule differs from a configured
+`LEDGER_FOLD_RULE` (exit 78) and otherwise folds under the stream's. Rule 2
+reaches production only as a re-fold of the whole history into a fresh
+ledger under rule 2 that is then swapped in for the live one (the
+re-fold and its cutover are planned and approved separately, and recorded
+in `docs/LEDGER-CUTOVER.md` once run), never by folding on: a rule change on
+`supported` is not reversible from the database, and an excluded position's
+hour finances are kept nowhere else. `agg_streams.fold_rule_since` records
+the swap-in, and the wallet page discloses it as the date of the rule
+change (`pooledSwapsAttributedSince` on `GET /v1/wallets/:address`): the
+re-fold attributes the whole history, earlier pooled sells included, so the
+date names when the rule changed, not the first sell it covers. Migration
+027 adds every constraint on an existing table `NOT VALID`, since the rows
+already there satisfy them by construction and validating would scan
+`agg_positions` under the `ALTER`'s exclusive lock (0.5 s against 4.0 s on
+the 27 Sep backup; every constraint validates on it).
+
+**Unit totals.** `agg_positions.bought_raw` and `sold_raw` (migration 027)
+count the token units of every attributed swap, buy and sell, so a
+position's average entry and exit prices are exact (`invested_wei /
+bought_raw`, `proceeds_wei / sold_raw`; the position cards of the frontend
+audit of 29 Sep 2026 asked for them). Null together on a position written
+before the fold recorded them, and a later swap leaves them null (a total
+from then on would read as the whole history); a position created since
+starts at zero, and the rule-2 re-fold fills them for the whole history.
+The units identity `quantity = bought + inflow - sold - outflow` holds
+unless an oversell or an outflow above the held quantity emptied the
+inventory (`unknown_basis`), and the database checks it.
+
+Evidence: `packages/core/src/ledger.test.ts` (two, three and fifty
+contributors, the remainder rule, a pass-through mover, a shortfall, a
+counter-movement, two swaps of the pool, a pooled buy's exclusion, the initiator as a
+contributor, the unit totals), `packages/core/src/ledger-pooled-fixture.test.ts`
+(the recorded transaction under both rules, the audited wallet
+`0x0b75…f928` reconciled to the wei: 4,423,505.17 CS bought for 0.0495 ETH,
+sold in the pooled swap for 38,173,752,269,579,151 wei, realized
+-0.011326 ETH), `packages/db/src/ledger-pooled-swaps.test.ts` (the writer
+under both rules, the ring row, the walk-back, the rule's immutability, 027
+on rows written before it), `apps/api/src/ledger-wallet.integration.test.ts`
+(a rule-2 ledger served: the contributors' shares and unit totals, the
+disclosure date, the rolling hour's active traders) and
+`apps/indexer/src/ledger-tip.test.ts` (the loop's refusal of a mismatched
+rule). On a copy of the 27 Sep 2026 backup, the four wallets the figures
+audit recomputed from chain (`0x68bb…5713`, `0xe0f7…a610`, `0xb302…fd0f`,
+`0x0b75…f928`) re-fold through `planLedgerBatch`/`applyLedgerEvents` from
+their explorer legs and the full receipts of their 9 pooled transactions
+(12 legs, 4 through `0xbefe…24f7` and 8 through a second batch contract
+`0x7537…03f0`): under rule 1 every window row and every position equals
+the backup's to the wei; under rule 2 every non-pooled position is
+unchanged, all 12 pooled positions become supported with their shares
+(each within one wei of `ethWei * moved / tokenRaw`, each swap's shares
+summing exactly), and the window rows move by exactly those positions
+(e.g. `0x68bb…5713` 7d realized 12.508796 to 12.352517 ETH, 31 to 41
+supported trades). On the same copy after 027, a full window rebuild
+leaves every served figure of all 577,080 wallet window rows and 557,204
+trader window rows unchanged, and the api answers every board window and
+metric, explore, a pool page, stats and creators byte for byte as before,
+the wallet pages differing only by the new null fields.
 
 ## What phases 4 and 5 still owe
 

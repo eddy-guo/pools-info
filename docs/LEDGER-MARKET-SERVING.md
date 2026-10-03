@@ -191,8 +191,9 @@ changes:
   can move when other wallets are excluded. An observed contract leaves the
   ledger board: the api's census reads the code of each wallet the board
   could show that the ledger never saw send a
-  swap (every attributed swap of every position it holds went to it as the
-  counterparty; a contract never sends a transaction), and one whose code is
+  swap (every attributed swap of every position it holds was either
+  counterparty-attributed or its share of a pooled sell; a contract never
+  sends a transaction), and one whose code is
   not an EIP-7702 delegation designator (`0xef0100` and a 20-byte delegate)
   is a contract. A delegated wallet is still an externally owned one, however
   its gas is paid: All #67 of 27 Sep (#32 once the launchers left),
@@ -392,7 +393,12 @@ response is the accounting reader's, field for field; what its values mean:
   the window's own figures per pool, summed from `agg_wallet_hours` from the
   refresh's own first hour so they sum to the summary's; `position` is the
   fold's lifetime state (`quantity`, `costWei`, lifetime `realizedWei`,
-  `investedWei`, `proceedsWei`, `buys`, `sells`) with its times: `openedAt`,
+  `investedWei`, `proceedsWei`, `buys`, `sells`, and since migration 027
+  `boughtRaw` and `soldRaw`, the token units bought and sold through the
+  position's attributed swaps, so `investedWei / boughtRaw` and
+  `proceedsWei / soldRaw` are its exact average entry and exit prices, both
+  null on a position written before the fold recorded them, never a partial
+  count) with its times: `openedAt`,
   when its open inventory cycle began (`cycle_opened_at`, unix seconds; null
   while flat), and `firstHour` and `lastHour`, the UTC hours of its first and
   last attributed swap as unix seconds at the hour's start, from the same
@@ -429,6 +435,16 @@ response is the accounting reader's, field for field; what its values mean:
   accounting tables, which would put two worlds on one page.
 - **`launches`** are catalog rows whoever serves the page, the same
   statement as before.
+- **`pooledSwapsAttributedSince`** is the wallet page's disclosure of the
+  rule change: the unix time since which eligible pooled sells, earlier ones
+  included (the history is re-folded), are attributed to each contributor
+  pro rata by the tokens they moved
+  (`agg_streams.fold_rule_since`, set at the swap-in of a ledger folded
+  under rule 2), or null while the served ledger folds under rule 1 or the
+  swap-in date is not recorded yet. The page states the day in UTC beside
+  the positions list, in the fixed-height row that holds Still held, and
+  renders nothing there for null. Pooled buys remain unattributed under both
+  rules; attributing them requires separate proof before the history re-fold.
 
 Failure behaviour is the board's: a ledger with no cursor or no pool hour
 answers as with `broad`; a window without a refresh row answers 503

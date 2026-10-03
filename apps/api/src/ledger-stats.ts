@@ -85,9 +85,10 @@ export async function readLedgerStats(query: ReadQuery, window: LiveWindow) {
     flow === "none" || window === "All"
       ? `SELECT NULL::integer AS wallet_ref WHERE false`
       : flow === "ring"
-        ? `SELECT t.wallet_ref FROM agg_live_trades t JOIN eligible e USING(pool_ref)
+        ? `SELECT coalesce(t.wallet_ref,p.wallet_ref) AS wallet_ref FROM agg_live_trades t JOIN eligible e USING(pool_ref)
+           LEFT JOIN LATERAL unnest(t.pooled_wallet_refs) AS p(wallet_ref) ON true
            WHERE t.chain_id=4663 AND t.block_number>$4 AND t.block_number<=$2
-             AND t.timestamp>=$5 AND t.wallet_ref IS NOT NULL`
+             AND t.timestamp>=$5 AND coalesce(t.wallet_ref,p.wallet_ref) IS NOT NULL`
         : `SELECT w.wallet_ref FROM agg_wallet_hours w JOIN eligible e USING(pool_ref)
            WHERE w.chain_id=4663 AND w.hour>=$4`;
   const { rows } = await query(

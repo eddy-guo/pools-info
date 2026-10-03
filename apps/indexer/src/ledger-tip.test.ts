@@ -1643,6 +1643,7 @@ test("the configuration gates the loop, keeps the free-tier floor, refuses Alche
     crowdEnabled: true,
     staleMs: 600000,
     healthPort: 3103,
+    foldRule: null,
   });
   assert.equal(
     ledgerTipConfig({ LEDGER_CROWD_ENABLED: "0" }).crowdEnabled,
@@ -1816,3 +1817,64 @@ test(
     assert.equal(active, false);
   },
 );
+
+test(
+  "the loop refuses a ledger folded under another rule than LEDGER_FOLD_RULE names, without a request",
+  dbTest,
+  async (t) => {
+    const db = await database(t);
+    await writer(db);
+    const { fake } = tipChain();
+    const log: Record<string, unknown>[] = [];
+    await passTwoRanges(db, fake);
+    assert.equal((await readLedgerStream(db)).foldRule, 1);
+    const requests = fake.requests.length;
+    const refused = await runLedgerTip(
+      db,
+      tipOptions(fake, log, { foldRule: 2 }),
+    );
+    assert.equal(refused.stopped, "inspection");
+    assert.equal(ledgerTipExitCodes[refused.stopped], 78);
+    assert.match(refused.error!, /^ledger_fold_rule_mismatch/);
+    assert.equal(fake.requests.length, requests);
+    assert.equal((await readLedgerStream(db)).mode, "pass");
+    assert.deepEqual(
+      log
+        .filter((e) => e.event === "ledger_tip_refused")
+        .map((e) => [e.foldRule, e.configured]),
+      [[1, 2]],
+    );
+    // The stream's own rule, or none named, extends it as before.
+    const extended = await runLedgerTip(
+      db,
+      tipOptions(fake, log, { foldRule: 1 }),
+    );
+    assert.deepEqual(
+      [extended.stopped, extended.through],
+      ["aborted", start + 499],
+    );
+    assert.equal(
+      log.find((e) => e.event === "ledger_tip_started")!.foldRule,
+      1,
+    );
+  },
+);
+
+test("LEDGER_FOLD_RULE is 1, 2 or unset", () => {
+  const env = {
+    LEDGER_TIP_ENABLED: "1",
+    ENVIO_API_TOKEN: "t",
+  };
+  assert.equal(ledgerTipConfig(env).foldRule, null);
+  assert.equal(ledgerTipConfig({ ...env, LEDGER_FOLD_RULE: "2" }).foldRule, 2);
+  assert.equal(ledgerTipConfig({ ...env, LEDGER_FOLD_RULE: "1" }).foldRule, 1);
+  for (const value of ["0", "3", "two", "1.0"])
+    assert.throws(
+      () => ledgerTipConfig({ ...env, LEDGER_FOLD_RULE: value }),
+      /Invalid LEDGER_FOLD_RULE/,
+    );
+  assert.match(
+    ledgerTipSafeError(Error("ledger_fold_rule_mismatch")),
+    /^ledger_fold_rule_mismatch: the stream is folded under another rule/,
+  );
+});

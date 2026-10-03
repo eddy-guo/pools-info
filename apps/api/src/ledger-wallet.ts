@@ -51,6 +51,7 @@ export const markSql = `CASE WHEN NOT p.supported THEN NULL WHEN p.quantity_raw=
 export const positionColumns = `p.pool_ref,i.pool_id,i.token,i.symbol,i.decimals,i.launch_tx,p.supported,p.flags,
       p.quantity_raw::text AS quantity_raw,p.cost_wei::text AS cost_wei,p.realized_wei::text AS realized_wei,
       p.invested_wei::text AS invested_wei,p.proceeds_wei::text AS proceeds_wei,p.buys,p.sells,
+      p.bought_raw::text AS bought_raw,p.sold_raw::text AS sold_raw,
       p.cycle_opened_at::text AS cycle_opened_at,f.first_hour,f.last_hour,
       coalesce(f.realized,0)::text AS window_realized,coalesce(f.net,0)::text AS net,coalesce(f.volume,0)::text AS volume,
       ${markSql} AS mark`;
@@ -126,6 +127,8 @@ export function walletPosition(
           proceedsWei: p.proceeds_wei,
           buys: p.buys,
           sells: p.sells,
+          boughtRaw: p.bought_raw,
+          soldRaw: p.sold_raw,
           flags: [],
           realizations: [],
           openedAt:
@@ -261,6 +264,10 @@ export async function readLedgerWallet(
     curve,
     launches: launches.slice(0, 500).map(catalogPool),
     launchesTruncated: launches.length > 500,
+    // The wallet page's disclosure: since when pooled sells are attributed
+    // to each contributor (the stream folds under rule 2 and its swap-in
+    // date is recorded); null under rule 1 and before the swap-in.
+    pooledSwapsAttributedSince: cut.foldRule >= 2 ? cut.foldRuleSince : null,
   });
   if (ref === undefined)
     return response(walletSummary(undefined, address), [], false, [], false);
