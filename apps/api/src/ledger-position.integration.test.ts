@@ -306,6 +306,8 @@ test(
         proceedsWei: (15n * tenth).toString(),
         buys: 1,
         sells: 1,
+        boughtRaw: "10",
+        soldRaw: "10",
         flags: [],
         realizations: [],
         openedAt: null,
